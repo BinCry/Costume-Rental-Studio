@@ -1,0 +1,40 @@
+{
+  "name": "costume-rental-studio",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm -r --parallel --if-present dev",
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "lint": "eslint \"*.{js,mjs,cjs}\" && pnpm -r --if-present lint",
+    "lint:fix": "eslint \"*.{js,mjs,cjs}\" --fix && pnpm -r --if-present lint:fix",
+    "format": "prettier . --write --ignore-unknown",
+    "format:check": "prettier . --check --ignore-unknown",
+    "dev:api": "pnpm --filter @costume/api dev",
+    "build:api": "pnpm --filter @costume/api build",
+    "test:api": "pnpm --filter @costume/api test",
+    "prepare": "husky"
+  },
+  "license": "ISC",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "11.1.2",
+      "onFail": "download"
+    }
+  },
+  "type": "module",
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "17.12.0",
+    "husky": "9.1.7",
+    "lint-staged": "17.5.1",
+    "prettier": "3.9.9",
+    "prettier-plugin-tailwindcss": "0.8.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.69.0"
+  }
+}
