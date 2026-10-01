@@ -1,5 +1,7 @@
 # Phân tích nghiệp vụ và thiết kế hệ thống studio cho thuê trang phục
 
+> **Trạng thái: tài liệu phân tích lịch sử.** Tài liệu này chứa cả những phương án đã bị rút gọn trong quá trình review. Nguồn nghiệp vụ hiện hành là [`business-rules.md`](business-rules.md); nguồn database hiện hành là [`database-schema.dbml`](database-schema.dbml), [`database-schema-summary.md`](database-schema-summary.md) và [`database-constraints.md`](database-constraints.md). Không dùng tên bảng trong tài liệu lịch sử này để viết migration/API khi chúng khác schema hiện hành.
+
 **Phiên bản:** 1.0 — 25/09/2026
 
 **Mục đích:** tài liệu BA/OOAD để trao đổi với giảng viên, chủ studio và nhóm phát triển.
@@ -59,7 +61,7 @@ Các tác nhân ngoài hệ thống: Google cung cấp danh tính đăng nhập;
 |---|---|---|
 | FR-01 | Xác thực | Đăng nhập Google, phiên đăng nhập nội bộ, đăng xuất, khóa/mở tài khoản, liên kết tài khoản |
 | FR-02 | Chi nhánh | Tạo/sửa chi nhánh, địa chỉ, giờ làm việc, trạng thái, cấu hình nhận/trả |
-| FR-03 | Nhân sự | Mời nhân viên, gán một/nhiều chi nhánh, ngừng phân công, xem lịch sử thay đổi |
+| FR-03 | Nhân sự | Admin tạo trước tài khoản nhân viên, gán một/nhiều chi nhánh, ngừng phân công, xem lịch sử thay đổi |
 | FR-04 | Phân quyền | Danh mục quyền, bộ quyền mẫu, ma trận checkbox, ngoại lệ theo nhân viên/chi nhánh, nhật ký |
 | FR-05 | Danh mục | Mẫu, biến thể size/màu, ảnh, **mô tả chi tiết**, phụ kiện, đơn giá/ngày, tiền cọc, phân loại, tình trạng hiển thị |
 | FR-06 | Tài sản | Mã bộ/barcode, chi nhánh hiện tại, tình trạng vật lý, giá mua, lịch sử vòng đời |
@@ -68,7 +70,7 @@ Các tác nhân ngoài hệ thống: Google cung cấp danh tính đăng nhập;
 | FR-09 | Đơn thuê | Tạo tại quầy/online, ghi **số ngày thuê và người thuê**, báo giá, xác nhận/từ chối/hủy, gán bộ, cập nhật trạng thái |
 | FR-10 | Giao nhận | Biên bản giao, checklist phụ kiện/tình trạng, biên bản trả, bằng chứng ảnh nếu dùng |
 | FR-11 | Thanh toán | Khoản phải thu, thu tiền thuê/cọc, ghi nhận thanh toán, phụ thu, hoàn cọc, đối soát |
-| FR-12 | Kho/điều chuyển | Nhập bộ, chuyển giữa chi nhánh, kiểm kê, vệ sinh, sửa chữa, ngừng khai thác |
+| FR-12 | Kho/điều chuyển | Admin đăng ký trước unit và chi nhánh nhận; nhân viên kho chi nhánh xác nhận nhận, kiểm kê, vệ sinh, sửa chữa, điều chuyển và ngừng khai thác |
 | FR-13 | CRM | Hồ sơ khách, lịch sử thuê và tương tác, ghi chú, nhãn, phản hồi, đồng ý marketing |
 | FR-14 | Báo cáo | Đơn, doanh thu, cọc chưa tất toán, quá hạn, mức sử dụng, hư hỏng, khách quay lại |
 | FR-15 | Kiểm soát | Audit log, thông báo nghiệp vụ, sao lưu, đối soát thay đổi nhạy cảm |
@@ -181,7 +183,7 @@ Thứ tự tính: (1) lấy quyền từ các bộ quyền đang hiệu lực �
 
 ### 6.3. Đăng nhập Google
 
-Ứng dụng dùng Google Identity Services/OpenID Connect. Backend nhận ID token qua HTTPS, kiểm tra CSRF của luồng đăng nhập và xác minh chữ ký cùng các trường `aud`, `iss`, `exp`; dùng `sub` làm định danh Google, rồi tạo phiên nội bộ. Lần đăng nhập đầu của người chưa được mời tạo tài khoản Customer mặc định. Nhân viên được admin mời/gán quyền riêng; Google không tự cấp quyền Nhân viên/Admin. Liên kết tài khoản nhân viên qua lời mời có mã dùng một lần và thời hạn, sau đó lưu `sub` cho các lần đăng nhập sau. **Không chỉ dựa vào việc email trong token trùng email nhân viên** để cấp quyền, vì độ tin cậy của email bên ngoài Gmail/Workspace có thể khác nhau. Tham khảo [hướng dẫn Google xác minh ID token tại backend](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token).
+Ứng dụng dùng Google Identity Services/OpenID Connect. Backend nhận ID token qua HTTPS, kiểm tra CSRF của luồng đăng nhập và xác minh chữ ký cùng các trường `aud`, `iss`, `exp`, `email_verified`; dùng `sub` làm định danh Google, rồi tạo phiên nội bộ. Người dùng mới không có hồ sơ được tạo tài khoản Customer mặc định theo chính sách đăng ký. Với nhân viên, admin tạo trước `users.status = PENDING`, `staff_profiles` và `user_role_assignments`; Google không tự cấp quyền Nhân viên/Admin. Ở lần đăng nhập đầu, backend chỉ dùng email đã xác minh trong ID token để tìm đúng tài khoản `PENDING` theo email đã chuẩn hóa, tạo `auth_identities`, ghi `staff_profiles.activated_at`, chuyển user sang `ACTIVE` và ghi audit trong cùng transaction. Sau đó mọi lần đăng nhập nhận diện bằng `(provider, provider_subject)` tương ứng với Google `sub`, không tiếp tục dùng email làm khóa đăng nhập. Tài khoản `PENDING` bị chặn trước bước tính role/permission. Tham khảo [hướng dẫn Google xác minh ID token tại backend](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token).
 
 Với khách thuê **tại quầy** chưa có tài khoản Google, nhân viên được phép tạo hồ sơ khách nội bộ (`users` + `customer_profiles`) và gắn đơn với hồ sơ đó; `auth_identities` có thể chưa có dòng. Nếu khách đăng nhập Google sau này, việc liên kết hồ sơ cần một bước xác minh riêng, không tự ghép chỉ theo tên hoặc số điện thoại.
 
@@ -321,12 +323,10 @@ Các cột `status` có tập giá trị kiểm soát bằng `CHECK` hoặc bả
 
 | Bảng | Trường chính (kiểu gợi ý) | Khóa/ràng buộc và vai trò |
 |---|---|---|
-| `users` | `id`, `email VARCHAR(255) NULL`, `phone VARCHAR(30) NULL`, `display_name`, `status`, `last_login_at` | `display_name` bắt buộc; khách tại quầy cần số điện thoại trước khi tạo đơn, khách online cần bổ sung trước khi giao; `status` gồm ACTIVE/LOCKED/INACTIVE |
-| `auth_identities` | `id`, `user_id`, `provider`, `provider_subject`, `email_at_link_time` | FK `user_id`; `UNIQUE(provider, provider_subject)`; Google dùng `sub` |
-| `staff_profiles` | `user_id`, `employee_code`, `employment_status`, `joined_at` | PK/FK `user_id`; `employee_code` duy nhất |
-| `staff_invitations` | `id`, `email`, `token_hash`, `branch_id`, `role_id`, `expires_at`, `used_at NULL`, `created_by` | Mã mời dùng một lần, có hạn; không lưu token thô; dùng để liên kết Google `sub` an toàn |
+| `users` | `id`, `email VARCHAR(255) NULL`, `phone VARCHAR(30) NULL`, `display_name`, `status`, `last_login_at` | `display_name` bắt buộc; email được chuẩn hóa lowercase và duy nhất khi có giá trị; `status` gồm PENDING/ACTIVE/LOCKED/INACTIVE; staff do admin tạo bắt đầu ở PENDING |
+| `auth_identities` | `id`, `user_id`, `provider`, `provider_subject`, `email_at_link_time` | FK `user_id`; `UNIQUE(provider, provider_subject)` và `UNIQUE(user_id, provider)`; Google dùng `sub` |
+| `staff_profiles` | `user_id`, `employee_code`, `employment_status`, `joined_at`, `activated_at NULL`, `created_by` | PK/FK `user_id`; `employee_code` duy nhất; `activated_at` chỉ ghi sau khi claim tài khoản bằng Google thành công |
 | `branches` | `id`, `branch_code`, `name`, `address`, `phone`, `timezone`, `status` | `branch_code` duy nhất; không xóa chi nhánh có đơn/tài sản |
-| `branch_opening_hours` | `id`, `branch_id`, `weekday`, `open_time`, `close_time`, `is_closed` | FK chi nhánh; ràng buộc giờ mở < giờ đóng nếu mở |
 | `roles` | `id`, `role_code`, `name`, `actor_group`, `is_active` | `role_code` duy nhất; nhóm ADMIN/STAFF/CUSTOMER chỉ dùng định danh/giao diện |
 | `permissions` | `id`, `code`, `module`, `action`, `scope`, `description` | `code` duy nhất; danh mục hành động có thật trong hệ thống |
 | `role_permissions` | `role_id`, `permission_id` | PK kép; mỗi ô tick của bộ quyền tương ứng một bản ghi |
@@ -339,53 +339,48 @@ Các cột `status` có tập giá trị kiểm soát bằng `CHECK` hoặc bả
 | Bảng | Trường chính (kiểu gợi ý) | Khóa/ràng buộc và vai trò |
 |---|---|---|
 | `costume_categories` | `id`, `parent_id NULL`, `name`, `status` | Cây phân loại; FK tự tham chiếu |
-| `costume_models` | `id`, `model_code`, `category_id`, `name`, `short_description`, `description`, `material`, `included_accessories_json`, `status` | `model_code` duy nhất; mô tả mẫu công khai, chất liệu và phụ kiện kèm theo |
-| `costume_variants` | `id`, `variant_code`, `model_id`, `size_code`, `color_code`, `edition_label NULL`, `fit_notes`, `replacement_value_vnd`, `cleaning_buffer_minutes NULL`, `attributes_json`, `status` | `variant_code` duy nhất; các bộ vật lý tương đương dùng chung biến thể; bộ đặc biệt cần giá riêng có biến thể/mã SKU riêng dù cùng size/màu |
+| `costume_models` | `id`, `model_code`, `category_id`, `name`, `short_description`, `description`, `material`, `status` | `model_code` duy nhất; mô tả mẫu công khai và chất liệu |
+| `costume_model_accessories` | `id`, `model_id`, `name`, `default_quantity`, `replacement_value_vnd`, `is_active` | Danh mục phụ kiện kèm theo model; quantity dương; giá trị thay thế không âm; không xóa phụ kiện đã được đơn tham chiếu |
+| `costume_variants` | `id`, `variant_code`, `model_id`, `size_code`, `color_code`, `edition_label NULL`, `fit_notes`, `replacement_value_vnd`, `cleaning_buffer_minutes NULL`, `status` | `variant_code` duy nhất; các bộ vật lý tương đương dùng chung biến thể; bộ đặc biệt cần giá riêng có biến thể/mã SKU riêng dù cùng size/màu |
 | `costume_media` | `id`, `model_id`, `variant_id NULL`, `object_key`, `sort_order`, `alt_text` | Ảnh mẫu/biến thể; không lưu nhị phân trong DB |
 | `costume_units` | `id`, `unit_code`, `variant_id`, `current_branch_id`, `condition_grade`, `condition_notes`, `operational_status`, `acquired_at`, `acquisition_cost_vnd` | `unit_code` duy nhất toàn chuỗi; 1 bộ vật lý tại 1 chi nhánh hiện tại |
-| `unit_events` | `id`, `unit_id`, `event_type`, `from_branch_id NULL`, `to_branch_id NULL`, `recorded_by`, `occurred_at`, `notes` | Nhật ký nhập/chuyển/vệ sinh/sửa/thanh lý/đổi tình trạng |
+| `unit_events` | `id`, `unit_id`, `stock_transfer_id NULL`, `event_type`, `from_branch_id NULL`, `to_branch_id NULL`, `recorded_by`, `occurred_at`, `notes` | Nhật ký nhập/chuyển/vệ sinh/sửa/thanh lý/đổi tình trạng; sự kiện xuất/nhận điều chuyển liên kết về chứng từ nguồn |
 | `maintenance_jobs` | `id`, `unit_id`, `job_type`, `status`, `started_at`, `finished_at`, `cost_vnd`, `assigned_to` | Vệ sinh/sửa; khoảng thực hiện làm bộ không khả dụng |
 | `availability_blocks` | `id`, `unit_id`, `start_at`, `end_at`, `reason`, `created_by` | Khóa lịch ngoài đơn thuê; kiểm tra `start_at < end_at` |
-| `stock_transfers` | `id`, `transfer_code`, `from_branch_id`, `to_branch_id`, `status`, `requested_by`, `approved_by`, `shipped_at`, `received_at` | Nguồn ≠ đích; quy trình REQUESTED/APPROVED/IN_TRANSIT/RECEIVED/CANCELLED |
-| `stock_transfer_items` | `id`, `transfer_id`, `unit_id`, `condition_out`, `condition_in` | Mỗi bộ có một dòng; kiểm tra bộ ở nguồn trước khi xuất |
+| `stock_transfers` | `id`, `transfer_code`, `from_branch_id`, `to_branch_id`, `status`, `requested_by/at`, `approved_by/at`, `rejected_by/at`, `shipped_by/at`, `received_by/at`, `cancelled_by/at`, `rejection_reason`, `cancellation_reason`, `version` | Nguồn ≠ đích; quy trình REQUESTED → APPROVED → IN_TRANSIT → RECEIVED, hoặc kết thúc REJECTED/CANCELLED; lưu người và thời điểm từng bước; `version` chống cập nhật đè |
+| `stock_transfer_items` | `id`, `transfer_id`, `unit_id`, `condition_out NULL`, `condition_in NULL`, `notes` | Mỗi bộ có một dòng; `condition_out` bắt buộc khi xuất và `condition_in` bắt buộc khi nhận; một bộ không thuộc hai transfer active |
 | `rental_policy_versions` | `id`, `branch_id NULL`, `version_code`, `effective_from`, `effective_to`, `billing_day_mode`, `rounding_mode`, `quote_valid_hours`, `quote_expiry_outside_hours`, `approval_sla_business_hours`, `no_show_grace_minutes`, `late_grace_minutes`, `cleaning_buffer_minutes`, `refund_sla_business_days`, `cancel_rule_json`, `late_rule_json` | Có phiên bản; cách đếm/làm tròn ngày và chính sách toàn chuỗi hoặc riêng chi nhánh |
 | `pricing_rules` | `id`, `variant_id`, `branch_id NULL`, `policy_version_id`, `min_days`, `max_days`, `daily_rental_amount_vnd`, `deposit_amount_vnd`, `effective_from`, `effective_to`, `created_by`, `change_reason` | **Nguồn giá/ngày và cọc hiện hành**; Admin sửa trên giao diện bằng cách tạo phiên bản mới, không có hai quy tắc cùng ưu tiên chồng hiệu lực |
 | `promotion_rules` | `id`, `code NULL`, `name`, `discount_type`, `discount_value`, `start_at`, `end_at`, `usage_limit`, `status` | Ưu đãi tùy chọn; kiểm tra điều kiện và giới hạn trước khi áp dụng |
 | `promotion_redemptions` | `id`, `promotion_id`, `order_id`, `customer_user_id`, `discount_vnd`, `redeemed_at` | Lưu ưu đãi đã sử dụng, tránh dùng vượt hạn mức |
 
-Nếu một bộ đang có lịch thuê tương lai tại chi nhánh A, điều chuyển sang B phải kiểm tra các lịch đó. Khi nhận điều chuyển, `current_branch_id` chỉ đổi sau khi chi nhánh đích xác nhận nhận thực tế.
+Nếu một bộ đang có lịch thuê tương lai tại chi nhánh A, điều chuyển sang B phải kiểm tra các lịch đó. Phiếu `REQUESTED` còn được chỉnh; sau khi duyệt phải khóa danh sách item. Khi xuất, tất cả item hợp lệ được chuyển sang `IN_TRANSFER` trong cùng transaction nhưng vẫn giữ `current_branch_id` là chi nhánh nguồn để không giả định chi nhánh đích đã nhận. Khi nhận, ghi `condition_in`, cập nhật `current_branch_id`, chọn trạng thái `READY/CLEANING/REPAIR`, tạo `unit_events` có `stock_transfer_id` và hoàn tất phiếu trong cùng transaction.
 
 ### 10.4. Bảng đơn thuê và giao nhận
 
 | Bảng | Trường chính (kiểu gợi ý) | Khóa/ràng buộc và vai trò |
 |---|---|---|
-| `rental_orders` | `id`, `order_code`, `customer_user_id`, `pickup_branch_id`, `return_branch_id`, `channel`, `planned_start_at`, `planned_due_at`, `customer_note`, `status`, `policy_version_id`, `quote_expires_at`, `created_by`, `version` | `customer_user_id` là người chịu trách nhiệm thuê; mã đơn duy nhất; hiện tại `return_branch_id = pickup_branch_id`; `version` chống cập nhật ghi đè |
-| `rental_order_items` | `id`, `order_id`, `variant_id`, `quantity`, `billable_days`, `unit_daily_price_vnd`, `unit_deposit_vnd`, `discount_vnd`, `line_rental_total_vnd`, `pricing_rule_id` | `quantity > 0`, `billable_days > 0`; lưu số ngày, giá/ngày, tổng dòng và cọc snapshot lúc gửi đơn |
+| `rental_orders` | `id`, `order_code`, `customer_user_id`, `pickup_branch_id`, `channel`, `planned_start_at`, `planned_due_at`, `customer_note`, `status`, `policy_version_id`, `quote_expires_at`, `created_by`, `version` | `customer_user_id` là người chịu trách nhiệm thuê; mã đơn duy nhất; khách nhận và trả tại `pickup_branch_id`; `version` chống cập nhật ghi đè |
+| `rental_order_items` | `id`, `order_id`, `variant_id`, `quantity`, `billable_days`, `unit_daily_price_vnd`, `unit_deposit_vnd`, `discount_vnd`, `pricing_rule_id` | `quantity > 0`, `billable_days > 0`; lưu số ngày, giá/ngày và cọc snapshot; tổng dòng được tính khi truy vấn |
+| `rental_item_accessories` | `id`, `order_item_id`, `model_accessory_id`, `accessory_name`, `quantity_out`, `quantity_returned`, `condition_out`, `condition_in`, `unit_replacement_value_vnd`, `damage_fee_vnd`, `missing_fee_vnd` | Snapshot phụ kiện thực tế giao/trả; quantity hợp lệ; tên và giá trị thay thế bất biến sau khi xác nhận đơn |
 | `unit_allocations` | `id`, `order_item_id`, `unit_id`, `occupied_from`, `occupied_until`, `actual_handover_at NULL`, `actual_return_at NULL`, `status`, `allocated_by` | Gán bộ theo thời gian; trạng thái HELD/CONFIRMED/ACTIVE/RELEASED/COMPLETED; `ACTIVE` là bộ đã giao và chưa trả; không chồng khoảng có hiệu lực cho cùng `unit_id` |
 | `order_status_history` | `id`, `order_id`, `from_status`, `to_status`, `actor_id`, `reason`, `occurred_at` | Mọi bước chuyển trạng thái; không sửa lịch sử |
 | `handover_records` | `id`, `order_id`, `staff_user_id`, `handed_over_at`, `receiver_name`, `receiver_phone NULL`, `notes`, `acknowledged_at` | Mỗi lần giao có biên bản; nếu người nhận hộ khác khách đặt, vẫn giữ `customer_user_id` là người chịu trách nhiệm đơn |
 | `handover_items` | `id`, `handover_id`, `unit_id`, `condition_grade`, `accessories_json`, `evidence_key NULL` | Tình trạng và phụ kiện từng bộ khi giao |
-| `return_records` | `id`, `order_id`, `staff_user_id`, `returned_at`, `inspection_status`, `notes`, `financially_settled_at NULL` | Cho phép trả nhiều đợt nếu nghiệp vụ xác nhận; `PENDING_ASSESSMENT` khi cần xác minh hư hỏng |
+| `return_records` | `id`, `order_id`, `staff_user_id`, `returned_at`, `inspection_status`, `notes`, `late_fee_vnd`, `damage_fee_vnd`, `missing_fee_vnd`, `other_fee_vnd`, `deposit_deduction_vnd`, `settlement_note`, `financially_settled_at NULL` | Cho phép trả nhiều đợt; snapshot phí và phần cọc bị khấu trừ tại từng lần trả; `PENDING_ASSESSMENT` khi cần xác minh hư hỏng |
 | `return_items` | `id`, `return_id`, `unit_id`, `condition_grade`, `is_missing`, `damage_notes`, `evidence_key NULL` | Tình trạng từng bộ khi trả; liên kết bộ đã giao |
 
 `occupied_from` thường là lúc bắt đầu chuẩn bị/giao; `occupied_until` là hạn trả cộng khoảng vệ sinh dự kiến. Khi bộ được trả, vệ sinh xong sớm hoặc muộn, hệ thống điều chỉnh khoảng khóa thực tế một cách có kiểm tra xung đột. Theo A7, đơn chờ xác nhận chưa có `unit_allocations` và vì thế chưa được đảm bảo tồn.
 
-### 10.5. Bảng thanh toán và đối soát
+### 10.5. Bảng thanh toán và hoàn tiền
 
 | Bảng | Trường chính (kiểu gợi ý) | Khóa/ràng buộc và vai trò |
 |---|---|---|
-| `charge_items` | `id`, `order_id`, `order_item_id NULL`, `charge_type`, `amount_vnd`, `status`, `reason`, `approved_by NULL`, `policy_version_id` | Các khoản thuê/phụ thu/giảm giá; `amount_vnd >= 0`; giảm giá là loại riêng |
-| `payment_intents` | `id`, `order_id`, `purpose`, `method`, `provider NULL`, `requested_amount_vnd`, `status`, `idempotency_key`, `provider_reference NULL` | Yêu cầu thanh toán; `idempotency_key` duy nhất |
-| `payment_transactions` | `id`, `payment_intent_id`, `captured_amount_vnd`, `provider_transaction_id NULL`, `captured_at`, `recorded_by NULL`, `cash_session_id NULL` | Chỉ ghi khi tiền thật sự thu; mã giao dịch provider duy nhất nếu có |
-| `receiving_bank_accounts` | `id`, `branch_id NULL`, `bank_name`, `masked_account_no`, `account_holder`, `status` | Tài khoản nhận tiền của studio; thông tin đầy đủ lưu an toàn theo nhu cầu tích hợp |
-| `bank_transfer_matches` | `id`, `payment_intent_id`, `receiving_bank_account_id`, `statement_transaction_id`, `bank_reference`, `bank_received_at`, `bank_amount_vnd`, `matched_by`, `matched_at` | Đối chiếu chuyển khoản thủ công; `UNIQUE(receiving_bank_account_id, statement_transaction_id)` ngăn một dòng sao kê ghép hai đơn |
-| `deposit_applications` | `id`, `order_id`, `charge_id`, `amount_vnd`, `approved_by`, `applied_at` | Cấn trừ cọc vào khoản phải thu; có giới hạn tổng cọc |
-| `refunds` | `id`, `order_id`, `source_payment_transaction_id`, `amount_vnd`, `method`, `destination_ref NULL`, `reason`, `status`, `requested_by`, `approved_by`, `payout_reference NULL`, `completed_at NULL` | Hoàn một phần/toàn phần; tổng hoàn không vượt tiền nguồn còn hoàn được; thông tin đích được che/mã hóa |
-| `provider_webhook_events` | `id`, `provider`, `event_id`, `payload_json`, `received_at`, `processed_at NULL`, `processing_status` | `UNIQUE(provider, event_id)` để xử lý callback lặp |
-| `cash_sessions` | `id`, `branch_id`, `opened_by`, `opened_at`, `opening_amount_vnd`, `closed_by NULL`, `closed_at NULL`, `expected_amount_vnd`, `actual_amount_vnd` | Mỗi ca thu ngân có đối soát chênh lệch |
-| `receipts` | `id`, `order_id`, `receipt_code`, `issued_at`, `total_vnd`, `object_key NULL` | Biên nhận nghiệp vụ; chứng từ thuế chỉ thêm sau khi yêu cầu pháp lý được chốt |
+| `payments` | `id`, `order_id`, `purpose`, `method`, `amount_vnd`, `status`, `provider NULL`, `provider_payment_id NULL`, `idempotency_key`, `recorded_by NULL`, `paid_at NULL`, `failure_reason NULL` | Payment aggregate dùng chung cho tiền mặt, chuyển khoản thủ công và gateway; `purpose = RENTAL/DEPOSIT/EXTRA`; chỉ `SUCCEEDED` chứng minh đã nhận tiền |
+| `refunds` | `id`, `payment_id`, `amount_vnd`, `reason`, `status`, `requested_by`, `approved_by NULL`, `provider_refund_id NULL`, `completed_at NULL`, `failure_reason NULL` | Hoàn một phần/toàn phần từ payment nguồn; tổng refund `COMPLETED` không vượt payment `SUCCEEDED` |
+| `provider_webhook_events` | `id`, `payment_id NULL`, `provider`, `event_id`, `event_type`, `payload_json`, `received_at`, `processed_at NULL`, `processing_status`, `error_message NULL` | `UNIQUE(provider, event_id)` để xử lý callback lặp; xác minh chữ ký trước khi cập nhật payment/refund |
 
-`purpose` của `payment_intents`: `RENTAL`, `DEPOSIT`, `EXTRA`. Tiền cọc còn giữ tính từ giao dịch `DEPOSIT` đã thu, trừ các lần cấn trừ và hoàn thành công; không dùng một cột số dư tùy ý có thể bị sửa mà không có lịch sử.
+Tiền thuê và cọc dự kiến lấy từ snapshot của `rental_order_items`; phụ phí và phần cọc khấu trừ được snapshot trên `return_records`. Tiền cọc còn giữ được tính từ payment `DEPOSIT` đã `SUCCEEDED`, trừ tổng `deposit_deduction_vnd` và refund đã `COMPLETED`; không dùng một cột số dư tùy ý. Nếu cọc không đủ bù phí, tạo payment `EXTRA` cho phần còn thiếu.
 
 ### 10.6. Bảng CRM
 
@@ -422,10 +417,8 @@ erDiagram
     COSTUME_VARIANTS ||--o{ RENTAL_ORDER_ITEMS : requested
     RENTAL_ORDER_ITEMS ||--o{ UNIT_ALLOCATIONS : assigned
     COSTUME_UNITS ||--o{ UNIT_ALLOCATIONS : booked
-    RENTAL_ORDERS ||--o{ CHARGE_ITEMS : owes
-    RENTAL_ORDERS ||--o{ PAYMENT_INTENTS : requests
-    PAYMENT_INTENTS ||--o{ PAYMENT_TRANSACTIONS : captures
-    RENTAL_ORDERS ||--o{ REFUNDS : refunds
+    RENTAL_ORDERS ||--o{ PAYMENTS : paid_by
+    PAYMENTS ||--o{ REFUNDS : refunds
     USERS ||--o| CUSTOMER_PROFILES : profile
     USERS ||--o{ CUSTOMER_CONSENTS : consent
     USERS ||--o{ CRM_INTERACTIONS : interactions
@@ -436,15 +429,9 @@ Quan hệ chi tiết cho thanh toán và CRM:
 
 ```mermaid
 erDiagram
-    RENTAL_ORDERS ||--o{ CHARGE_ITEMS : creates
-    RENTAL_ORDERS ||--o{ PAYMENT_INTENTS : has
-    PAYMENT_INTENTS ||--o{ PAYMENT_TRANSACTIONS : captures
-    PAYMENT_INTENTS ||--o| BANK_TRANSFER_MATCHES : matched_by
-    RECEIVING_BANK_ACCOUNTS ||--o{ BANK_TRANSFER_MATCHES : receives
-    PAYMENT_TRANSACTIONS ||--o{ REFUNDS : source_for
-    CHARGE_ITEMS ||--o{ DEPOSIT_APPLICATIONS : paid_from_deposit
-    RENTAL_ORDERS ||--o{ DEPOSIT_APPLICATIONS : settles
-    CASH_SESSIONS ||--o{ PAYMENT_TRANSACTIONS : records
+    RENTAL_ORDERS ||--o{ PAYMENTS : has
+    PAYMENTS ||--o{ REFUNDS : source_for
+    PAYMENTS ||--o{ PROVIDER_WEBHOOK_EVENTS : updated_by
 
     USERS ||--o| CUSTOMER_PROFILES : has
     USERS ||--o{ CUSTOMER_CONSENTS : records
@@ -460,7 +447,7 @@ erDiagram
 
 ### 10.8. Ràng buộc, chỉ mục và giao dịch quan trọng
 
-1. `UNIQUE(provider, provider_subject)` trên `auth_identities`; email không thay Google `sub` làm khóa liên kết.
+1. Email được chuẩn hóa lowercase và duy nhất khi có giá trị; `UNIQUE(provider, provider_subject)` cùng `UNIQUE(user_id, provider)` trên `auth_identities`. Email đã xác minh chỉ dùng một lần để claim staff `PENDING`; sau khi liên kết, Google `sub` là khóa đăng nhập ổn định.
 2. `UNIQUE(unit_code)` trên `costume_units`, `UNIQUE(order_code)` trên `rental_orders`, `UNIQUE(role_code)` và `UNIQUE(permission.code)`.
 3. `CHECK(planned_start_at < planned_due_at)`, `CHECK(quantity > 0)`, `CHECK(amount_vnd >= 0)` cho các bảng phù hợp.
 4. Chỉ một gán bộ có hiệu lực được phủ một thời điểm của một bộ. Với PostgreSQL, dùng khoảng nửa mở `[bắt đầu, kết thúc)` và `EXCLUDE` làm lớp chặn cuối cùng:
@@ -490,8 +477,8 @@ CREATE UNIQUE INDEX one_active_borrower_per_unit
 PostgreSQL mô tả chính thức [range type và exclusion constraint](https://www.postgresql.org/docs/current/rangetypes.html); đoạn trên là migration minh họa sau khi các bảng đã tồn tại.
 
 5. Khi xác nhận đơn: bắt đầu transaction, chọn/khóa các bộ khả dụng, kiểm tra chi nhánh và tình trạng, thêm đủ `unit_allocations`, cập nhật trạng thái đơn, ghi lịch sử rồi commit. Nếu constraint báo xung đột, rollback và trả thông báo hết bộ; không để đơn được xác nhận thiếu bộ.
-6. `UNIQUE(provider, event_id)` trên `provider_webhook_events`, `UNIQUE(idempotency_key)` trên `payment_intents`, `UNIQUE(provider_transaction_id)` khi có giá trị. Webhook lặp phải trả kết quả an toàn mà không ghi tiền hai lần.
-7. `refunds` và `deposit_applications` dùng transaction có khóa bản ghi tiền nguồn để giới hạn tổng hoàn/cấn trừ; không dựa vào số dư frontend gửi lên.
+6. `UNIQUE(provider, event_id)` trên `provider_webhook_events`, `UNIQUE(idempotency_key)` và `UNIQUE(provider, provider_payment_id)` khi có giá trị trên `payments`. Webhook lặp phải trả kết quả an toàn mà không ghi tiền hai lần.
+7. `refunds` dùng transaction có khóa payment nguồn để giới hạn tổng hoàn; cấn cọc lấy từ phí snapshot trên `return_records`, không dựa vào số dư hoặc số tiền frontend gửi lên.
 8. Các FK tài chính và đơn dùng hành vi từ chối xóa bản ghi cha nếu còn lịch sử; bản ghi cũ có thể ẩn bằng trạng thái chứ không xóa vật lý.
 
 **Chỉ mục truy vấn:** `(pickup_branch_id, status, planned_start_at)` cho lịch đơn chi nhánh; `(customer_user_id, created_at DESC)` cho lịch sử khách; `unit_code` duy nhất và chỉ mục tìm tên/số điện thoại khách cho màn hình “Đang thuê”; `(variant_id, current_branch_id, operational_status)` cho tìm bộ; chỉ mục GiST cho khoảng gán/khóa lịch; `(order_id, status)` cho khoản thu và hoàn; `(customer_user_id, occurred_at DESC)` cho CRM; `(branch_id, occurred_at)` cho báo cáo/audit theo kỳ.
@@ -608,14 +595,12 @@ classDiagram
       +status
       +overlaps()
     }
-    class Charge {
-      +type
+    class Payment {
+      +purpose
+      +method
       +amountVnd
       +status
-    }
-    class PaymentTransaction {
-      +amountVnd
-      +capturedAt
+      +paidAt
     }
     Branch "1" --> "0..*" CostumeUnit : stores
     Branch "1" --> "0..*" RentalOrder : fulfills
@@ -627,11 +612,10 @@ classDiagram
     RentalOrderItem "1" --> "1" CostumeVariant : requests
     RentalOrderItem "1" --> "0..*" UnitAllocation : assigned
     UnitAllocation "*" --> "1" CostumeUnit : blocks calendar of
-    RentalOrder "1" --> "0..*" Charge : owes
-    RentalOrder "1" --> "0..*" PaymentTransaction : paid by
+    RentalOrder "1" --> "0..*" Payment : paid by
 ```
 
-`RentalOrder` là aggregate điều khiển chuyển trạng thái. `UnitAllocation` điều khiển việc chặn lịch một bộ. `CostumeUnit` giữ tình trạng vật lý. `Finance` giữ bằng chứng tiền đã thu/hoàn; không suy luận “đã thanh toán” từ một checkbox trên đơn.
+`RentalOrder` là aggregate điều khiển chuyển trạng thái. `UnitAllocation` điều khiển việc chặn lịch một bộ. `CostumeUnit` giữ tình trạng vật lý. Payment `SUCCEEDED` và refund `COMPLETED` là bằng chứng tiền đã thu/hoàn; không suy luận “đã thanh toán” từ một checkbox trên đơn.
 
 ### 11.3. Trình tự xác nhận đơn đồng thời
 
@@ -758,12 +742,12 @@ API tạo đơn, thanh toán, hoàn tiền và chuyển trạng thái nên nhậ
 | Mở/đóng chi nhánh, đổi giờ làm | Admin | Không cho đóng chi nhánh khi còn lịch nhận/trả chưa có phương án xử lý |
 | Thêm/ngừng nhân viên, chuyển chi nhánh | Admin/người được ủy quyền | Thu hồi phiên/quyền khi nghỉ việc; giữ lịch sử thao tác cũ |
 | Đổi giá, cọc, phí và chính sách | Admin/người có quyền giá | Có ngày hiệu lực/phiên bản; không sửa đơn cũ |
-| Nhập/kiểm kê/điều chuyển trang phục | Kho/quản lý chi nhánh | Đối chiếu mã bộ thực tế; ghi chênh lệch và duyệt |
+| Đăng ký/nhận/kiểm kê/điều chuyển trang phục | Admin và nhân viên kho chi nhánh | Admin đăng ký unit ở `INBOUND/UNINSPECTED` và chỉ định chi nhánh; nhân viên kho đúng chi nhánh đối chiếu hàng thực tế, ghi nhận `RECEIVED`, cập nhật tình trạng và chỉ đưa unit đạt yêu cầu vào `READY` |
 | Giảm giá hoặc miễn phí ngoại lệ | Người có quyền điều chỉnh | Hạn mức/duyệt theo chính sách, có lý do và audit |
 | Hoàn cọc, hoàn tiền | Thu ngân/quản lý có quyền | Kiểm tra số dư nguồn, người duyệt và đối soát |
 | Xử lý khiếu nại | Nhân viên CRM/quản lý | Có người chịu trách nhiệm, hạn xử lý, kết quả |
 
-Lịch làm việc nhân viên, nhà cung cấp và mua sắm trang phục có thể là giai đoạn sau nếu giảng viên yêu cầu phạm vi quản lý sâu hơn. Trong phiên bản này, nhân viên được gán chi nhánh và bộ vật lý được ghi nhận khi nhập; chưa thiết kế tính lương hay mua hàng.
+Lịch làm việc nhân viên, nhà cung cấp và nghiệp vụ mua hàng có thể là giai đoạn sau nếu giảng viên yêu cầu phạm vi quản lý sâu hơn. Trong phiên bản này không quản lý đơn mua hoặc nhà cung cấp: Admin chỉ đăng ký trước từng unit và chi nhánh đích; đơn vị vận chuyển nằm ngoài hệ thống; nhân viên kho chi nhánh xác nhận thực nhận và tình trạng. Chưa thiết kế tính lương hay công nợ mua hàng.
 
 ### 14.2. Dashboard và định nghĩa KPI
 
@@ -909,11 +893,11 @@ Giá hiển thị lấy từ `pricing_rules` đang hiệu lực cho biến thể
 | Trường hiển thị | Cách lưu/tính |
 |---|---|
 | Ai thuê | `rental_orders.customer_user_id` liên kết hồ sơ khách; khách tại quầy vẫn có hồ sơ nội bộ dù chưa đăng nhập Google |
-| Nhận/trả tại đâu | `pickup_branch_id = return_branch_id` trong phạm vi hiện tại |
+| Nhận/trả tại đâu | Cùng tại `pickup_branch_id` trong phạm vi hiện tại |
 | Thuê từ ngày nào đến ngày nào | `planned_start_at`, `planned_due_at` |
 | **Số ngày thuê tính tiền** | `rental_order_items.billable_days`; tính theo chính sách ngày thuê có phiên bản |
 | **Giá/ngày của từng mẫu/size** | `unit_daily_price_vnd` snapshot trên dòng đơn, không đổi theo bảng giá mới |
-| Tiền thuê từng dòng | `line_rental_total_vnd = unit_daily_price_vnd × billable_days × quantity − discount_vnd` |
+| Tiền thuê từng dòng | Tính khi truy vấn: `unit_daily_price_vnd × billable_days × quantity − discount_vnd` |
 | Tiền cọc | `unit_deposit_vnd × quantity`, tách khỏi tiền thuê |
 | Bộ cụ thể được giao | `unit_allocations.unit_id`, quét `costume_units.unit_code` |
 | Ai nhận đồ thực tế | `handover_records.receiver_name`/`receiver_phone`; nếu nhận hộ thì người chịu trách nhiệm trên đơn vẫn là `customer_user_id` |

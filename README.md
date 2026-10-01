@@ -53,7 +53,7 @@ Hệ thống được thiết kế để giải quyết các nhu cầu chính:
 - Nhân viên tạo đơn tại quầy, duyệt đơn online, chuẩn bị và giao trang phục.
 - Theo dõi từng bộ bằng mã hoặc barcode riêng trong suốt vòng đời khai thác.
 - Nhận trả, kiểm tra tình trạng, tính phụ phí và hoàn phần cọc còn lại.
-- Quản lý giá thuê theo ngày, chính sách, chi nhánh và thời điểm hiệu lực.
+- Quản lý giá thuê/cọc theo biến thể, promotion và policy có phiên bản.
 - Theo dõi khách hàng, lịch sử thuê, tương tác và khiếu nại.
 - Tổng hợp báo cáo doanh thu, cọc, quá hạn, hư hỏng và mức sử dụng.
 
@@ -95,7 +95,7 @@ Repository đang ở giai đoạn xây nền kỹ thuật.
 | API integration tests | ✅ Implemented | Supertest + Vitest cho health, errors, rate limit và security headers |
 | Code quality tooling | ✅ Implemented | ESLint, Prettier, lint-staged và Husky hooks dùng chung tại root |
 | React frontend foundation | 🟡 In progress | React, Vite, TypeScript và Tailwind CSS đã được khởi tạo |
-| PostgreSQL + Prisma | ⏳ Planned | Chưa có schema, migration hoặc database runtime |
+| PostgreSQL + Prisma | 🟡 Migration ready | Prisma schema và initial migration 32 bảng đã có; cần apply và test constraint trên PostgreSQL |
 | Authentication + authorization | ⏳ Planned | Google Login, session và quyền theo chi nhánh chưa triển khai |
 | Rental business modules | ⏳ Planned | Danh mục, tồn kho, đơn thuê, giao trả, thanh toán, CRM và báo cáo |
 
@@ -110,13 +110,15 @@ Repository đang ở giai đoạn xây nền kỹ thuật.
 - Đăng nhập bằng Google và tạo phiên nội bộ.
 - Ba nhóm tài khoản chính: Customer, Staff và Admin.
 - Staff nhận quyền thao tác bằng checkbox theo chi nhánh.
-- Hỗ trợ quyền kế thừa từ bộ quyền và ngoại lệ riêng theo nhân viên.
+- Một người có thể nhận nhiều role theo chi nhánh; quyền hiệu lực là hợp các permission thuộc các role được gán.
 - Ghi audit khi thay đổi quyền hoặc dữ liệu nhạy cảm.
 
 ### 👘 Catalog & Costume Inventory
 
 - Quản lý mẫu, size, màu, ảnh, mô tả, phụ kiện và phân loại.
 - Mỗi bộ vật lý có `unit_code` hoặc barcode riêng.
+- Admin đăng ký trước từng bộ ở trạng thái `INBOUND` và chỉ định chi nhánh nhận.
+- Nhân viên kho đúng chi nhánh kiểm tra hàng thực tế, xác nhận nhận và cập nhật sang `READY`, `CLEANING` hoặc `REPAIR`.
 - Theo dõi chi nhánh hiện tại và trạng thái sẵn sàng, đang thuê, vệ sinh, sửa chữa hoặc ngừng khai thác.
 - Quản lý nhập kho, kiểm kê, điều chuyển và lịch sử vòng đời.
 
@@ -148,7 +150,7 @@ Repository đang ở giai đoạn xây nền kỹ thuật.
 
 - Hồ sơ khách hàng và lịch sử thuê.
 - Nhật ký tương tác, ghi chú và phiếu hỗ trợ hoặc khiếu nại.
-- Nhãn, phân khúc, consent marketing và chương trình chăm sóc mở rộng.
+- Timeline tương tác, phiếu hỗ trợ/khiếu nại và lịch sử xử lý case.
 - Báo cáo đơn, doanh thu, cọc đang giữ, quá hạn, hư hỏng và khách quay lại.
 
 ### 🛡️ Platform Foundation
@@ -194,7 +196,7 @@ Repository đang ở giai đoạn xây nền kỹ thuật.
 | **Linting** | ESLint |
 | **Package Manager** | pnpm 11 |
 | **Repository** | pnpm workspace monorepo |
-| **Database** | PostgreSQL + Prisma *(planned)* |
+| **Database** | PostgreSQL 16 + Prisma 7 |
 
 </td>
 </tr>
@@ -343,6 +345,7 @@ Invoke-RestMethod http://localhost:4000/health
 | `PORT` | `4000` | Cổng HTTP của Express API |
 | `WEB_URL` | `http://localhost:5173` | Frontend origin được phép gọi API qua CORS |
 | `LOG_LEVEL` | `info` | Mức log của Pino |
+| `DATABASE_URL` | `postgresql://...` | PostgreSQL connection URL; dùng Internal URL khi API chạy trong Coolify |
 
 Backend dừng startup ngay nếu cấu hình môi trường không hợp lệ.
 
@@ -396,7 +399,7 @@ Chỉ biến có prefix `VITE_` mới được Vite đưa vào mã frontend. Kh�
 }
 ```
 
-Mỗi response có header `X-Request-Id`. Chi tiết contract nằm trong [`docs/api-response-contract.md`](docs/api-response-contract.md).
+Mỗi response có header `X-Request-Id`; contract được thể hiện bởi helper và middleware hiện có trong `apps/api/src/common`.
 
 ### Planned API Groups
 
@@ -431,9 +434,13 @@ Costume-Rental-Studio/
 │       └── src/
 ├── packages/                      # Future shared workspace packages
 ├── docs/
-│   ├── api-response-contract.md
-│   ├── journals/
-│   └── Phân tích nghiệp vụ và thiết kế hệ thống studio cho thuê trang phục.md
+│   ├── README.md                   # Chỉ mục và thứ tự ưu tiên tài liệu
+│   ├── business-rules.md          # Nghiệp vụ hiện hành
+│   ├── database-schema.dbml       # ERD 32 bảng
+│   ├── database-schema-summary.md # Tóm tắt nhóm bảng
+│   ├── database-constraints.md    # Constraint PostgreSQL
+│   ├── database-review-guide.md   # Checklist review/migration
+│   └── ci-cd.md                   # CI/CD và migration production
 ├── package.json                   # Root workspace scripts
 ├── pnpm-workspace.yaml
 └── pnpm-lock.yaml
@@ -443,20 +450,29 @@ Costume-Rental-Studio/
 
 ## 🗄 Database Design
 
-PostgreSQL + Prisma là hướng triển khai tiếp theo, hiện chưa được thêm vào source code.
+PostgreSQL + Prisma đã có schema và initial migration. Migration hiện cần được apply/test trên PostgreSQL trước khi bắt đầu repository/service nghiệp vụ.
 
-Thiết kế dữ liệu dự kiến được chia theo các nhóm:
+Tài liệu database được chia theo mục đích:
+
+- [`docs/database-schema-summary.md`](docs/database-schema-summary.md) — xem nhanh 7 nhóm và 32 bảng.
+- [`docs/database-review-guide.md`](docs/database-review-guide.md) — checklist review và migration.
+- [`docs/database-schema.dbml`](docs/database-schema.dbml) — ERD đầy đủ để import vào dbdiagram.io.
+- [`docs/database-constraints.md`](docs/database-constraints.md) — constraint SQL và chính sách `ON DELETE`.
+- [`docs/business-rules.md`](docs/business-rules.md) — flow nghiệp vụ đã chốt.
+
+Các file DBML có thể import trực tiếp vào [dbdiagram.io](https://dbdiagram.io) để xem, sắp xếp và xuất PNG/PDF.
+
+Thiết kế dữ liệu hiện tại được chia theo các nhóm:
 
 | Group | Main Data |
 |-------|-----------|
-| **Identity & Permissions** | Tài khoản, danh tính Google, phiên, vai trò, quyền và phạm vi chi nhánh |
-| **Branches & Staff** | Chi nhánh, giờ hoạt động, nhân viên và phân công |
-| **Catalog & Inventory** | Mẫu, biến thể, bộ vật lý, barcode, tình trạng và điều chuyển |
-| **Pricing & Policies** | Giá/ngày, tiền cọc, ưu đãi, phí và phiên bản chính sách |
-| **Rentals** | Báo giá, đơn thuê, dòng thuê, gán bộ, giao nhận và sự cố |
-| **Payments** | Khoản phải thu, thanh toán, cọc, cấn trừ, hoàn tiền và đối soát |
-| **CRM** | Hồ sơ khách, tương tác, consent, case và chiến dịch |
-| **Audit & Notifications** | Audit log, thông báo và outbox events |
+| **Identity & Permissions** | User, Google identity, employee, branch, role/permission và audit |
+| **Catalog & Inventory** | Category, model, variant, media, phụ kiện, unit, block và transfer |
+| **Policy & Promotions** | Policy toàn chuỗi có phiên bản và promotion |
+| **Rentals** | Order, từng unit được thuê, pickup/return và phụ kiện snapshot |
+| **Finance** | Payment, refund và provider webhook |
+| **CRM** | Customer, interaction, case và case history |
+| **Platform Events** | Transactional outbox |
 
 Database phải bảo vệ tính nhất quán khi nhiều người cùng xác nhận đơn, đặc biệt không cho một bộ vật lý bị đặt trùng khoảng thời gian.
 
@@ -475,6 +491,7 @@ Database phải bảo vệ tính nhất quán khi nhiều người cùng xác nh
 ### Costume Unit Lifecycle
 
 - Mỗi bộ vật lý có mã hoặc barcode duy nhất.
+- Bộ do Admin đăng ký trước bắt đầu ở `INBOUND/UNINSPECTED`; chi nhánh được chỉ định chỉ được tính tồn kho khả dụng sau khi nhân viên kho xác nhận nhận và kiểm tra.
 - Chỉ bộ sẵn sàng, không trùng lịch và không bị khóa bảo trì mới được cho thuê.
 - Bộ trả về phải qua kiểm tra và có thể chuyển sang vệ sinh hoặc sửa chữa.
 - Điều chuyển chi nhánh không được phá vỡ lịch thuê đã xác nhận.
@@ -589,9 +606,14 @@ pnpm build:api
 
 | Document | Description |
 |----------|-------------|
-| [`docs/Phân tích nghiệp vụ và thiết kế hệ thống studio cho thuê trang phục.md`](docs/Phân%20tích%20nghiệp%20vụ%20và%20thiết%20kế%20hệ%20thống%20studio%20cho%20thuê%20trang%20phục.md) | Phân tích nghiệp vụ, use case, business rules, database và system design |
-| [`docs/api-response-contract.md`](docs/api-response-contract.md) | Quy ước success/error response và request ID |
-| [`docs/journals/`](docs/journals/) | Nhật ký các thay đổi kỹ thuật quan trọng |
+| [`docs/README.md`](docs/README.md) | Chỉ mục và thứ tự ưu tiên tài liệu |
+| [`docs/business-rules.md`](docs/business-rules.md) | Nghiệp vụ đã chốt và state machine hiện hành |
+| [`docs/database-schema-summary.md`](docs/database-schema-summary.md) | Tóm tắt 7 nhóm và 32 bảng |
+| [`docs/database-schema.dbml`](docs/database-schema.dbml) | ERD đầy đủ |
+| [`docs/database-constraints.md`](docs/database-constraints.md) | Constraint PostgreSQL và chính sách FK |
+| [`docs/database-review-guide.md`](docs/database-review-guide.md) | Checklist review, test và migration |
+| [`docs/ci-cd.md`](docs/ci-cd.md) | CI/CD, Coolify và migration production |
+| [`docs/Phân tích nghiệp vụ và thiết kế hệ thống studio cho thuê trang phục.md`](docs/Phân%20tích%20nghiệp%20vụ%20và%20thiết%20kế%20hệ%20thống%20studio%20cho%20thuê%20trang%20phục.md) | Tài liệu phân tích lịch sử; không phải nguồn schema hiện hành |
 | [`README.md`](README.md) | Tổng quan kỹ thuật, trạng thái và cách chạy dự án |
 
 ---
