@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -10,4 +5,956 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  LOCKED
+  INACTIVE
+
+  @@map("user_status")
+}
+
+enum BranchStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("branch_status")
+}
+
+enum ActorGroup {
+  ADMIN
+  STAFF
+  CUSTOMER
+
+  @@map("actor_group")
+}
+
+enum PermissionScope {
+  OWN
+  BRANCH
+  ALL
+
+  @@map("permission_scope")
+}
+
+enum CatalogStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("catalog_status")
+}
+
+enum BillingDayMode {
+  CALENDAR_DAY
+  ROLLING_24_HOURS
+
+  @@map("billing_day_mode")
+}
+
+enum DiscountType {
+  PERCENT
+  FIXED_AMOUNT
+
+  @@map("discount_type")
+}
+
+enum UnitOperationalStatus {
+  INBOUND
+  READY
+  CLEANING
+  REPAIR
+  IN_TRANSFER
+  RETIRED
+
+  @@map("unit_operational_status")
+}
+
+enum CostumeConditionGrade {
+  UNINSPECTED
+  NEW
+  GOOD
+  FAIR
+  POOR
+  DAMAGED
+
+  @@map("costume_condition_grade")
+}
+
+enum EmploymentStatus {
+  ACTIVE
+  ON_LEAVE
+  TERMINATED
+
+  @@map("employment_status")
+}
+
+enum UnitBlockType {
+  CLEANING
+  REPAIR
+  ALTERATION
+  INSPECTION
+  INTERNAL_USE
+  MANUAL
+  OTHER
+
+  @@map("unit_block_type")
+}
+
+enum UnitBlockStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+
+  @@map("unit_block_status")
+}
+
+enum TransferStatus {
+  REQUESTED
+  APPROVED
+  IN_TRANSIT
+  RECEIVED
+  REJECTED
+  CANCELLED
+
+  @@map("transfer_status")
+}
+
+enum OrderStatus {
+  DRAFT
+  PENDING_CONFIRMATION
+  CONFIRMED
+  PREPARING
+  READY_FOR_PICKUP
+  ACTIVE
+  RETURN_INSPECTION
+  COMPLETED
+  REJECTED
+  CANCELLED
+  NO_SHOW
+
+  @@map("order_status")
+}
+
+enum AllocationStatus {
+  UNASSIGNED
+  HELD
+  CONFIRMED
+  ACTIVE
+  RELEASED
+  COMPLETED
+
+  @@map("allocation_status")
+}
+
+enum InspectionStatus {
+  PENDING_ASSESSMENT
+  PASSED
+  HAS_DAMAGE
+  HAS_MISSING_ITEM
+  COMPLETED
+
+  @@map("inspection_status")
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+
+  @@map("payment_status")
+}
+
+enum PaymentPurpose {
+  RENTAL
+  DEPOSIT
+  EXTRA
+
+  @@map("payment_purpose")
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  PAYMENT_GATEWAY
+
+  @@map("payment_method")
+}
+
+enum RefundStatus {
+  REQUESTED
+  PROCESSING
+  COMPLETED
+  REJECTED
+  FAILED
+
+  @@map("refund_status")
+}
+
+enum CrmCaseStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+
+  @@map("crm_case_status")
+}
+
+enum CrmCasePriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+
+  @@map("crm_case_priority")
+}
+
+enum CustomerInteractionType {
+  INQUIRY
+  CONSULTATION
+  COMPLAINT
+  FOLLOW_UP
+  NOTE
+
+  @@map("customer_interaction_type")
+}
+
+enum InteractionChannel {
+  IN_PERSON
+  PHONE
+  EMAIL
+  CHAT
+  SOCIAL
+
+  @@map("interaction_channel")
+}
+
+enum CrmCaseEventType {
+  CREATED
+  STATUS_CHANGED
+  OWNER_CHANGED
+
+  @@map("crm_case_event_type")
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+
+  @@map("outbox_status")
+}
+
+model User {
+  id          String     @id @default(uuid()) @db.Uuid
+  email       String?    @unique @db.VarChar(255)
+  phone       String?    @unique @db.VarChar(30)
+  displayName String     @map("display_name") @db.VarChar(255)
+  avatarUrl   String?    @map("avatar_url") @db.VarChar(500)
+  status      UserStatus
+  lastLoginAt DateTime?  @map("last_login_at") @db.Timestamptz(6)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  authIdentities        AuthIdentity[]
+  employee              Employee?             @relation("EmployeeUser")
+  employeesCreated      Employee[]            @relation("EmployeeCreatedBy")
+  roleAssignments       UserRoleAssignment[]  @relation("RoleAssignmentUser")
+  roleAssignmentsMade   UserRoleAssignment[]  @relation("RoleAssignmentAssigner")
+  auditLogs             AuditLog[]            @relation("AuditLogActor")
+  policyVersionsCreated RentalPolicyVersion[]
+  promotionsCreated     Promotion[]
+  rentalOrdersCreated   RentalOrder[]         @relation("RentalOrderCreator")
+  refundsRequested      Refund[]              @relation("RefundRequester")
+  customer              Customer?             @relation("CustomerUser")
+
+  @@map("users")
+}
+
+model AuthIdentity {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  provider        String   @db.VarChar(50)
+  providerSubject String   @map("provider_subject") @db.VarChar(255)
+  emailAtLinkTime String   @map("email_at_link_time") @db.VarChar(255)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerSubject])
+  @@unique([userId, provider])
+  @@map("auth_identities")
+}
+
+model Employee {
+  userId           String           @id @map("user_id") @db.Uuid
+  employeeCode     String           @unique @map("employee_code") @db.VarChar(50)
+  employmentStatus EmploymentStatus @default(ACTIVE) @map("employment_status")
+  joinedAt         DateTime         @map("joined_at") @db.Date
+  terminatedAt     DateTime?        @map("terminated_at") @db.Date
+  activatedAt      DateTime?        @map("activated_at") @db.Timestamptz(6)
+  createdBy        String           @map("created_by") @db.Uuid
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user                 User                  @relation("EmployeeUser", fields: [userId], references: [id], onDelete: Cascade)
+  creator              User                  @relation("EmployeeCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict)
+  unitEventsRecorded   UnitEvent[]
+  unitBlocksAssigned   UnitBlock[]           @relation("UnitBlockAssignee")
+  unitBlocksCreated    UnitBlock[]           @relation("UnitBlockCreator")
+  transfersRequested   StockTransfer[]       @relation("TransferRequester")
+  transfersApproved    StockTransfer[]       @relation("TransferApprover")
+  transfersShipped     StockTransfer[]       @relation("TransferShipper")
+  transfersReceived    StockTransfer[]       @relation("TransferReceiver")
+  transfersEnded       StockTransfer[]       @relation("TransferEnder")
+  pickupsProcessed     RentalOrder[]         @relation("RentalOrderPickupProcessor")
+  returnsProcessed     RentalOrder[]         @relation("RentalOrderReturnProcessor")
+  orderItemsAllocated  RentalOrderItem[]
+  paymentsRecorded     Payment[]
+  refundsApproved      Refund[]              @relation("RefundApprover")
+  customerInteractions CustomerInteraction[]
+  crmCasesOwned        CrmCase[]             @relation("CrmCaseOwner")
+  crmCasesCreated      CrmCase[]             @relation("CrmCaseCreator")
+  caseHistoryFromOwner CrmCaseHistory[]      @relation("CrmHistoryFromOwner")
+  caseHistoryToOwner   CrmCaseHistory[]      @relation("CrmHistoryToOwner")
+  caseHistoryActed     CrmCaseHistory[]      @relation("CrmHistoryActor")
+
+  @@map("employees")
+}
+
+model Branch {
+  id         String       @id @default(uuid()) @db.Uuid
+  branchCode String       @unique @map("branch_code") @db.VarChar(50)
+  name       String       @db.VarChar(255)
+  address    String       @db.Text
+  phone      String?      @db.VarChar(30)
+  timezone   String       @default("Asia/Ho_Chi_Minh") @db.VarChar(100)
+  status     BranchStatus @default(ACTIVE)
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  roleAssignments    UserRoleAssignment[]
+  costumeUnits       CostumeUnit[]
+  unitEventsFrom     UnitEvent[]           @relation("UnitEventFromBranch")
+  unitEventsTo       UnitEvent[]           @relation("UnitEventToBranch")
+  transfersFrom      StockTransfer[]       @relation("TransferFromBranch")
+  transfersTo        StockTransfer[]       @relation("TransferToBranch")
+  rentalOrders       RentalOrder[]
+  preferredCustomers Customer[]
+  interactions       CustomerInteraction[]
+  crmCases           CrmCase[]
+
+  @@map("branches")
+}
+
+model Role {
+  id              String               @id @default(uuid()) @db.Uuid
+  roleCode        String               @unique @map("role_code") @db.VarChar(100)
+  name            String               @db.VarChar(255)
+  actorGroup      ActorGroup           @map("actor_group")
+  isActive        Boolean              @default(true) @map("is_active")
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  rolePermissions RolePermission[]
+  assignments     UserRoleAssignment[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id              String           @id @default(uuid()) @db.Uuid
+  code            String           @unique @db.VarChar(150)
+  module          String           @db.VarChar(100)
+  action          String           @db.VarChar(100)
+  scope           PermissionScope
+  description     String?          @db.Text
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String     @map("role_id") @db.Uuid
+  permissionId String     @map("permission_id") @db.Uuid
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRoleAssignment {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  roleId     String   @map("role_id") @db.Uuid
+  branchId   String?  @map("branch_id") @db.Uuid
+  assignedBy String   @map("assigned_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user       User     @relation("RoleAssignmentUser", fields: [userId], references: [id], onDelete: Cascade)
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  branch     Branch?  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  assigner   User     @relation("RoleAssignmentAssigner", fields: [assignedBy], references: [id], onDelete: Restrict)
+
+  @@index([branchId, roleId])
+  @@map("user_role_assignments")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  actionCode  String   @map("action_code") @db.VarChar(150)
+  entityType  String   @map("entity_type") @db.VarChar(100)
+  entityId    String?  @map("entity_id") @db.Uuid
+  beforeJson  Json?    @map("before_json") @db.JsonB
+  afterJson   Json?    @map("after_json") @db.JsonB
+  occurredAt  DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  actor       User?    @relation("AuditLogActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, occurredAt])
+  @@index([actorUserId, occurredAt])
+  @@map("audit_logs")
+}
+
+model CostumeCategory {
+  id        String            @id @default(uuid()) @db.Uuid
+  parentId  String?           @map("parent_id") @db.Uuid
+  name      String            @db.VarChar(255)
+  status    CatalogStatus     @default(ACTIVE)
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  parent    CostumeCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children  CostumeCategory[] @relation("CategoryHierarchy")
+  models    CostumeModel[]
+
+  @@index([parentId])
+  @@map("costume_categories")
+}
+
+model CostumeModel {
+  id               String                  @id @default(uuid()) @db.Uuid
+  modelCode        String                  @unique @map("model_code") @db.VarChar(50)
+  categoryId       String                  @map("category_id") @db.Uuid
+  name             String                  @db.VarChar(255)
+  shortDescription String?                 @map("short_description") @db.VarChar(500)
+  description      String?                 @db.Text
+  material         String?                 @db.VarChar(255)
+  status           CatalogStatus           @default(ACTIVE)
+  createdAt        DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  category         CostumeCategory         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  accessories      CostumeModelAccessory[]
+  variants         CostumeVariant[]
+  media            CostumeMedia[]
+
+  @@index([categoryId, status])
+  @@map("costume_models")
+}
+
+model CostumeModelAccessory {
+  id                  String                @id @default(uuid()) @db.Uuid
+  modelId             String                @map("model_id") @db.Uuid
+  name                String                @db.VarChar(255)
+  defaultQuantity     Int                   @default(1) @map("default_quantity")
+  replacementValueVnd BigInt?               @map("replacement_value_vnd")
+  isActive            Boolean               @default(true) @map("is_active")
+  createdAt           DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  model               CostumeModel          @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  rentalItemSnapshots RentalItemAccessory[]
+
+  @@unique([modelId, name])
+  @@map("costume_model_accessories")
+}
+
+model CostumeVariant {
+  id                    String            @id @default(uuid()) @db.Uuid
+  variantCode           String            @unique @map("variant_code") @db.VarChar(50)
+  modelId               String            @map("model_id") @db.Uuid
+  sizeCode              String            @map("size_code") @db.VarChar(50)
+  colorCode             String            @map("color_code") @db.VarChar(50)
+  editionLabel          String?           @map("edition_label") @db.VarChar(100)
+  fitNotes              String?           @map("fit_notes") @db.Text
+  dailyRentalPriceVnd   BigInt            @map("daily_rental_price_vnd")
+  depositAmountVnd      BigInt            @map("deposit_amount_vnd")
+  replacementValueVnd   BigInt            @map("replacement_value_vnd")
+  cleaningBufferMinutes Int?              @map("cleaning_buffer_minutes")
+  status                CatalogStatus     @default(ACTIVE)
+  createdAt             DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  model                 CostumeModel      @relation(fields: [modelId], references: [id], onDelete: Restrict)
+  media                 CostumeMedia[]
+  units                 CostumeUnit[]
+  orderItems            RentalOrderItem[]
+
+  @@index([modelId, status])
+  @@map("costume_variants")
+}
+
+model CostumeMedia {
+  id        String          @id @default(uuid()) @db.Uuid
+  modelId   String?         @map("model_id") @db.Uuid
+  variantId String?         @map("variant_id") @db.Uuid
+  objectKey String          @map("object_key") @db.VarChar(500)
+  sortOrder Int             @default(0) @map("sort_order")
+  altText   String?         @map("alt_text") @db.VarChar(500)
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  model     CostumeModel?   @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  variant   CostumeVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([modelId, sortOrder])
+  @@index([variantId, sortOrder])
+  @@map("costume_media")
+}
+
+model CostumeUnit {
+  id                 String                @id @default(uuid()) @db.Uuid
+  unitCode           String                @unique @map("unit_code") @db.VarChar(50)
+  variantId          String                @map("variant_id") @db.Uuid
+  currentBranchId    String                @map("current_branch_id") @db.Uuid
+  conditionGrade     CostumeConditionGrade @default(UNINSPECTED) @map("condition_grade")
+  conditionNotes     String?               @map("condition_notes") @db.Text
+  operationalStatus  UnitOperationalStatus @default(INBOUND) @map("operational_status")
+  acquiredAt         DateTime?             @map("acquired_at") @db.Date
+  acquisitionCostVnd BigInt?               @map("acquisition_cost_vnd")
+  retiredAt          DateTime?             @map("retired_at") @db.Timestamptz(6)
+  createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  variant            CostumeVariant        @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  currentBranch      Branch                @relation(fields: [currentBranchId], references: [id], onDelete: Restrict)
+  events             UnitEvent[]
+  blocks             UnitBlock[]
+  transferItems      StockTransferItem[]
+  orderItems         RentalOrderItem[]
+
+  @@index([variantId, currentBranchId, operationalStatus])
+  @@index([currentBranchId, operationalStatus])
+  @@map("costume_units")
+}
+
+model UnitEvent {
+  id              String         @id @default(uuid()) @db.Uuid
+  unitId          String         @map("unit_id") @db.Uuid
+  stockTransferId String?        @map("stock_transfer_id") @db.Uuid
+  eventType       String         @map("event_type") @db.VarChar(50)
+  fromBranchId    String?        @map("from_branch_id") @db.Uuid
+  toBranchId      String?        @map("to_branch_id") @db.Uuid
+  recordedBy      String?        @map("recorded_by") @db.Uuid
+  occurredAt      DateTime       @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  notes           String?        @db.Text
+  unit            CostumeUnit    @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  stockTransfer   StockTransfer? @relation(fields: [stockTransferId], references: [id], onDelete: SetNull)
+  fromBranch      Branch?        @relation("UnitEventFromBranch", fields: [fromBranchId], references: [id], onDelete: SetNull)
+  toBranch        Branch?        @relation("UnitEventToBranch", fields: [toBranchId], references: [id], onDelete: SetNull)
+  recorder        Employee?      @relation(fields: [recordedBy], references: [userId], onDelete: SetNull)
+
+  @@index([unitId, occurredAt])
+  @@map("unit_events")
+}
+
+model UnitBlock {
+  id           String          @id @default(uuid()) @db.Uuid
+  unitId       String          @map("unit_id") @db.Uuid
+  blockType    UnitBlockType   @map("block_type")
+  status       UnitBlockStatus @default(PLANNED)
+  blockedFrom  DateTime        @map("blocked_from") @db.Timestamptz(6)
+  blockedUntil DateTime        @map("blocked_until") @db.Timestamptz(6)
+  assignedTo   String?         @map("assigned_to") @db.Uuid
+  costVnd      BigInt?         @map("cost_vnd")
+  reason       String          @db.Text
+  notes        String?         @db.Text
+  startedAt    DateTime?       @map("started_at") @db.Timestamptz(6)
+  finishedAt   DateTime?       @map("finished_at") @db.Timestamptz(6)
+  createdBy    String?         @map("created_by") @db.Uuid
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  unit         CostumeUnit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  assignee     Employee?       @relation("UnitBlockAssignee", fields: [assignedTo], references: [userId], onDelete: SetNull)
+  creator      Employee?       @relation("UnitBlockCreator", fields: [createdBy], references: [userId], onDelete: SetNull)
+
+  @@index([unitId, blockedFrom, blockedUntil])
+  @@index([assignedTo, status, blockedFrom])
+  @@map("unit_blocks")
+}
+
+model StockTransfer {
+  id           String              @id @default(uuid()) @db.Uuid
+  transferCode String              @unique @map("transfer_code") @db.VarChar(50)
+  fromBranchId String              @map("from_branch_id") @db.Uuid
+  toBranchId   String              @map("to_branch_id") @db.Uuid
+  status       TransferStatus      @default(REQUESTED)
+  requestNote  String?             @map("request_note") @db.Text
+  requestedBy  String              @map("requested_by") @db.Uuid
+  approvedBy   String?             @map("approved_by") @db.Uuid
+  approvedAt   DateTime?           @map("approved_at") @db.Timestamptz(6)
+  shippedBy    String?             @map("shipped_by") @db.Uuid
+  shippedAt    DateTime?           @map("shipped_at") @db.Timestamptz(6)
+  receivedBy   String?             @map("received_by") @db.Uuid
+  receivedAt   DateTime?           @map("received_at") @db.Timestamptz(6)
+  endedBy      String?             @map("ended_by") @db.Uuid
+  endedAt      DateTime?           @map("ended_at") @db.Timestamptz(6)
+  endReason    String?             @map("end_reason") @db.Text
+  version      Int                 @default(1)
+  createdAt    DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  fromBranch   Branch              @relation("TransferFromBranch", fields: [fromBranchId], references: [id], onDelete: Restrict)
+  toBranch     Branch              @relation("TransferToBranch", fields: [toBranchId], references: [id], onDelete: Restrict)
+  requester    Employee            @relation("TransferRequester", fields: [requestedBy], references: [userId], onDelete: Restrict)
+  approver     Employee?           @relation("TransferApprover", fields: [approvedBy], references: [userId], onDelete: SetNull)
+  shipper      Employee?           @relation("TransferShipper", fields: [shippedBy], references: [userId], onDelete: SetNull)
+  receiver     Employee?           @relation("TransferReceiver", fields: [receivedBy], references: [userId], onDelete: SetNull)
+  ender        Employee?           @relation("TransferEnder", fields: [endedBy], references: [userId], onDelete: SetNull)
+  items        StockTransferItem[]
+  unitEvents   UnitEvent[]
+
+  @@index([fromBranchId, status])
+  @@index([toBranchId, status])
+  @@map("stock_transfers")
+}
+
+model StockTransferItem {
+  id                        String                 @id @default(uuid()) @db.Uuid
+  transferId                String                 @map("transfer_id") @db.Uuid
+  unitId                    String                 @map("unit_id") @db.Uuid
+  conditionOut              CostumeConditionGrade? @map("condition_out")
+  conditionOutNotes         String?                @map("condition_out_notes") @db.Text
+  conditionIn               CostumeConditionGrade? @map("condition_in")
+  conditionInNotes          String?                @map("condition_in_notes") @db.Text
+  receivedOperationalStatus UnitOperationalStatus? @map("received_operational_status")
+  transfer                  StockTransfer          @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  unit                      CostumeUnit            @relation(fields: [unitId], references: [id], onDelete: Restrict)
+
+  @@unique([transferId, unitId])
+  @@index([unitId])
+  @@map("stock_transfer_items")
+}
+
+model RentalPolicyVersion {
+  id                    String         @id @default(uuid()) @db.Uuid
+  versionCode           String         @unique @map("version_code") @db.VarChar(50)
+  effectiveFrom         DateTime       @map("effective_from") @db.Timestamptz(6)
+  effectiveTo           DateTime?      @map("effective_to") @db.Timestamptz(6)
+  billingDayMode        BillingDayMode @map("billing_day_mode")
+  minRentalDays         Int            @default(1) @map("min_rental_days")
+  maxRentalDays         Int?           @map("max_rental_days")
+  quoteValidHours       Int            @map("quote_valid_hours")
+  noShowGraceMinutes    Int            @default(0) @map("no_show_grace_minutes")
+  lateGraceMinutes      Int            @default(0) @map("late_grace_minutes")
+  lateFeePercentPerDay  Decimal        @default(0) @map("late_fee_percent_per_day") @db.Decimal(5, 2)
+  freeCancelBeforeHours Int            @default(0) @map("free_cancel_before_hours")
+  lateCancelFeePercent  Decimal        @default(0) @map("late_cancel_fee_percent") @db.Decimal(5, 2)
+  refundSlaBusinessDays Int?           @map("refund_sla_business_days")
+  createdBy             String?        @map("created_by") @db.Uuid
+  changeReason          String         @map("change_reason") @db.Text
+  createdAt             DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  creator               User?          @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  orders                RentalOrder[]
+
+  @@index([effectiveFrom, effectiveTo])
+  @@map("rental_policy_versions")
+}
+
+model Promotion {
+  id                String        @id @default(uuid()) @db.Uuid
+  code              String        @unique @db.VarChar(100)
+  name              String        @db.VarChar(255)
+  discountType      DiscountType  @map("discount_type")
+  discountValue     BigInt        @map("discount_value")
+  maxDiscountVnd    BigInt?       @map("max_discount_vnd")
+  minOrderAmountVnd BigInt        @default(0) @map("min_order_amount_vnd")
+  startAt           DateTime      @map("start_at") @db.Timestamptz(6)
+  endAt             DateTime      @map("end_at") @db.Timestamptz(6)
+  totalUsageLimit   Int?          @map("total_usage_limit")
+  perCustomerLimit  Int           @default(1) @map("per_customer_limit")
+  isActive          Boolean       @default(true) @map("is_active")
+  createdBy         String?       @map("created_by") @db.Uuid
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  creator           User?         @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  orders            RentalOrder[]
+
+  @@index([isActive, startAt, endAt])
+  @@map("promotions")
+}
+
+model RentalOrder {
+  id                   String                @id @default(uuid()) @db.Uuid
+  orderCode            String                @unique @map("order_code") @db.VarChar(50)
+  customerUserId       String                @map("customer_user_id") @db.Uuid
+  pickupBranchId       String                @map("pickup_branch_id") @db.Uuid
+  channel              String                @db.VarChar(30)
+  plannedStartAt       DateTime              @map("planned_start_at") @db.Timestamptz(6)
+  plannedDueAt         DateTime              @map("planned_due_at") @db.Timestamptz(6)
+  customerNote         String?               @map("customer_note") @db.Text
+  status               OrderStatus           @default(DRAFT)
+  policyVersionId      String                @map("policy_version_id") @db.Uuid
+  promotionId          String?               @map("promotion_id") @db.Uuid
+  promotionCode        String?               @map("promotion_code") @db.VarChar(100)
+  promotionDiscountVnd BigInt                @default(0) @map("promotion_discount_vnd")
+  quoteExpiresAt       DateTime?             @map("quote_expires_at") @db.Timestamptz(6)
+  createdBy            String                @map("created_by") @db.Uuid
+  pickupProcessedBy    String?               @map("pickup_processed_by") @db.Uuid
+  pickedUpAt           DateTime?             @map("picked_up_at") @db.Timestamptz(6)
+  returnProcessedBy    String?               @map("return_processed_by") @db.Uuid
+  returnedAt           DateTime?             @map("returned_at") @db.Timestamptz(6)
+  inspectionStatus     InspectionStatus?     @map("inspection_status")
+  returnNotes          String?               @map("return_notes") @db.Text
+  lateFeeVnd           BigInt                @default(0) @map("late_fee_vnd")
+  otherFeeVnd          BigInt                @default(0) @map("other_fee_vnd")
+  depositDeductionVnd  BigInt                @default(0) @map("deposit_deduction_vnd")
+  settlementNote       String?               @map("settlement_note") @db.Text
+  financiallySettledAt DateTime?             @map("financially_settled_at") @db.Timestamptz(6)
+  version              Int                   @default(1)
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  customer             Customer              @relation(fields: [customerUserId], references: [userId], onDelete: Restrict)
+  pickupBranch         Branch                @relation(fields: [pickupBranchId], references: [id], onDelete: Restrict)
+  policyVersion        RentalPolicyVersion   @relation(fields: [policyVersionId], references: [id], onDelete: Restrict)
+  promotion            Promotion?            @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+  creator              User                  @relation("RentalOrderCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  pickupProcessor      Employee?             @relation("RentalOrderPickupProcessor", fields: [pickupProcessedBy], references: [userId], onDelete: SetNull)
+  returnProcessor      Employee?             @relation("RentalOrderReturnProcessor", fields: [returnProcessedBy], references: [userId], onDelete: SetNull)
+  items                RentalOrderItem[]
+  payments             Payment[]
+  interactions         CustomerInteraction[]
+  crmCases             CrmCase[]
+
+  @@index([pickupBranchId, status, plannedStartAt])
+  @@index([customerUserId, createdAt])
+  @@index([promotionId, status])
+  @@index([status, quoteExpiresAt])
+  @@map("rental_orders")
+}
+
+model RentalOrderItem {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  orderId              String                 @map("order_id") @db.Uuid
+  variantId            String                 @map("variant_id") @db.Uuid
+  unitId               String?                @map("unit_id") @db.Uuid
+  allocationStatus     AllocationStatus       @default(UNASSIGNED) @map("allocation_status")
+  occupiedFrom         DateTime               @map("occupied_from") @db.Timestamptz(6)
+  occupiedUntil        DateTime               @map("occupied_until") @db.Timestamptz(6)
+  allocatedBy          String?                @map("allocated_by") @db.Uuid
+  billableDays         Int                    @map("billable_days")
+  unitDailyPriceVnd    BigInt                 @map("unit_daily_price_vnd")
+  unitDepositVnd       BigInt                 @map("unit_deposit_vnd")
+  pickupConditionGrade CostumeConditionGrade? @map("pickup_condition_grade")
+  pickupEvidenceKey    String?                @map("pickup_evidence_key") @db.VarChar(500)
+  returnConditionGrade CostumeConditionGrade? @map("return_condition_grade")
+  isMissing            Boolean                @default(false) @map("is_missing")
+  damageNotes          String?                @map("damage_notes") @db.Text
+  returnEvidenceKey    String?                @map("return_evidence_key") @db.VarChar(500)
+  damageFeeVnd         BigInt                 @default(0) @map("damage_fee_vnd")
+  missingFeeVnd        BigInt                 @default(0) @map("missing_fee_vnd")
+  createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  order                RentalOrder            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant              CostumeVariant         @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  unit                 CostumeUnit?           @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  allocator            Employee?              @relation(fields: [allocatedBy], references: [userId], onDelete: SetNull)
+  accessories          RentalItemAccessory[]
+
+  @@index([orderId, allocationStatus])
+  @@map("rental_order_items")
+}
+
+model RentalItemAccessory {
+  id                      String                 @id @default(uuid()) @db.Uuid
+  orderItemId             String                 @map("order_item_id") @db.Uuid
+  modelAccessoryId        String?                @map("model_accessory_id") @db.Uuid
+  accessoryName           String                 @map("accessory_name") @db.VarChar(255)
+  quantityOut             Int                    @map("quantity_out")
+  quantityReturned        Int?                   @map("quantity_returned")
+  conditionOut            CostumeConditionGrade? @map("condition_out")
+  conditionIn             CostumeConditionGrade? @map("condition_in")
+  unitReplacementValueVnd BigInt                 @map("unit_replacement_value_vnd")
+  damageFeeVnd            BigInt                 @default(0) @map("damage_fee_vnd")
+  missingFeeVnd           BigInt                 @default(0) @map("missing_fee_vnd")
+  createdAt               DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  orderItem               RentalOrderItem        @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  modelAccessory          CostumeModelAccessory? @relation(fields: [modelAccessoryId], references: [id], onDelete: SetNull)
+
+  @@map("rental_item_accessories")
+}
+
+model Payment {
+  id                String                 @id @default(uuid()) @db.Uuid
+  orderId           String                 @map("order_id") @db.Uuid
+  purpose           PaymentPurpose
+  method            PaymentMethod
+  amountVnd         BigInt                 @map("amount_vnd")
+  status            PaymentStatus          @default(PENDING)
+  provider          String?                @db.VarChar(100)
+  providerPaymentId String?                @map("provider_payment_id") @db.VarChar(255)
+  idempotencyKey    String                 @unique @map("idempotency_key") @db.VarChar(255)
+  recordedBy        String?                @map("recorded_by") @db.Uuid
+  paidAt            DateTime?              @map("paid_at") @db.Timestamptz(6)
+  failureReason     String?                @map("failure_reason") @db.Text
+  createdAt         DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  order             RentalOrder            @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  recorder          Employee?              @relation(fields: [recordedBy], references: [userId], onDelete: Restrict)
+  refunds           Refund[]
+  webhookEvents     ProviderWebhookEvent[]
+
+  @@index([orderId, status])
+  @@map("payments")
+}
+
+model Refund {
+  id               String       @id @default(uuid()) @db.Uuid
+  paymentId        String       @map("payment_id") @db.Uuid
+  amountVnd        BigInt       @map("amount_vnd")
+  reason           String       @db.Text
+  status           RefundStatus @default(REQUESTED)
+  requestedBy      String       @map("requested_by") @db.Uuid
+  approvedBy       String?      @map("approved_by") @db.Uuid
+  providerRefundId String?      @unique @map("provider_refund_id") @db.VarChar(255)
+  completedAt      DateTime?    @map("completed_at") @db.Timestamptz(6)
+  failureReason    String?      @map("failure_reason") @db.Text
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  payment          Payment      @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  requester        User         @relation("RefundRequester", fields: [requestedBy], references: [id], onDelete: Restrict)
+  approver         Employee?    @relation("RefundApprover", fields: [approvedBy], references: [userId], onDelete: Restrict)
+
+  @@index([paymentId, status])
+  @@map("refunds")
+}
+
+model ProviderWebhookEvent {
+  id               String    @id @default(uuid()) @db.Uuid
+  paymentId        String?   @map("payment_id") @db.Uuid
+  provider         String    @db.VarChar(100)
+  eventId          String    @map("event_id") @db.VarChar(255)
+  eventType        String    @map("event_type") @db.VarChar(100)
+  payloadJson      Json      @map("payload_json") @db.JsonB
+  receivedAt       DateTime  @default(now()) @map("received_at") @db.Timestamptz(6)
+  processedAt      DateTime? @map("processed_at") @db.Timestamptz(6)
+  processingStatus String    @map("processing_status") @db.VarChar(30)
+  errorMessage     String?   @map("error_message") @db.Text
+  payment          Payment?  @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, eventId])
+  @@index([processingStatus, receivedAt])
+  @@map("provider_webhook_events")
+}
+
+model Customer {
+  userId            String                @id @map("user_id") @db.Uuid
+  customerCode      String                @unique @map("customer_code") @db.VarChar(50)
+  preferredBranchId String?               @map("preferred_branch_id") @db.Uuid
+  birthday          DateTime?             @db.Date
+  heightCm          Decimal?              @map("height_cm") @db.Decimal(5, 2)
+  weightKg          Decimal?              @map("weight_kg") @db.Decimal(5, 2)
+  chestCm           Decimal?              @map("chest_cm") @db.Decimal(5, 2)
+  waistCm           Decimal?              @map("waist_cm") @db.Decimal(5, 2)
+  hipCm             Decimal?              @map("hip_cm") @db.Decimal(5, 2)
+  internalNote      String?               @map("internal_note") @db.Text
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  user              User                  @relation("CustomerUser", fields: [userId], references: [id], onDelete: Cascade)
+  preferredBranch   Branch?               @relation(fields: [preferredBranchId], references: [id], onDelete: SetNull)
+  rentalOrders      RentalOrder[]
+  interactions      CustomerInteraction[]
+  crmCases          CrmCase[]
+
+  @@map("customers")
+}
+
+model CustomerInteraction {
+  id              String                  @id @default(uuid()) @db.Uuid
+  customerUserId  String                  @map("customer_user_id") @db.Uuid
+  branchId        String?                 @map("branch_id") @db.Uuid
+  orderId         String?                 @map("order_id") @db.Uuid
+  caseId          String?                 @map("case_id") @db.Uuid
+  staffUserId     String?                 @map("staff_user_id") @db.Uuid
+  interactionType CustomerInteractionType @map("interaction_type")
+  channel         InteractionChannel
+  summary         String                  @db.Text
+  occurredAt      DateTime                @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  customer        Customer                @relation(fields: [customerUserId], references: [userId], onDelete: Restrict)
+  branch          Branch?                 @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  order           RentalOrder?            @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  case            CrmCase?                @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  staff           Employee?               @relation(fields: [staffUserId], references: [userId], onDelete: SetNull)
+
+  @@index([customerUserId, occurredAt])
+  @@index([caseId, occurredAt])
+  @@map("customer_interactions")
+}
+
+model CrmCase {
+  id             String                @id @default(uuid()) @db.Uuid
+  caseCode       String                @unique @map("case_code") @db.VarChar(50)
+  customerUserId String                @map("customer_user_id") @db.Uuid
+  orderId        String?               @map("order_id") @db.Uuid
+  branchId       String                @map("branch_id") @db.Uuid
+  subject        String                @db.VarChar(255)
+  description    String?               @db.Text
+  caseType       String                @map("case_type") @db.VarChar(50)
+  priority       CrmCasePriority       @default(NORMAL)
+  status         CrmCaseStatus         @default(OPEN)
+  ownerUserId    String?               @map("owner_user_id") @db.Uuid
+  dueAt          DateTime?             @map("due_at") @db.Timestamptz(6)
+  resolvedAt     DateTime?             @map("resolved_at") @db.Timestamptz(6)
+  closedAt       DateTime?             @map("closed_at") @db.Timestamptz(6)
+  createdBy      String?               @map("created_by") @db.Uuid
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  customer       Customer              @relation(fields: [customerUserId], references: [userId], onDelete: Restrict)
+  order          RentalOrder?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  branch         Branch                @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  owner          Employee?             @relation("CrmCaseOwner", fields: [ownerUserId], references: [userId], onDelete: SetNull)
+  creator        Employee?             @relation("CrmCaseCreator", fields: [createdBy], references: [userId], onDelete: SetNull)
+  interactions   CustomerInteraction[]
+  history        CrmCaseHistory[]
+
+  @@index([branchId, status, dueAt])
+  @@index([ownerUserId, status, dueAt])
+  @@index([customerUserId, createdAt])
+  @@map("crm_cases")
+}
+
+model CrmCaseHistory {
+  id              String           @id @default(uuid()) @db.Uuid
+  caseId          String           @map("case_id") @db.Uuid
+  eventType       CrmCaseEventType @map("event_type")
+  fromStatus      CrmCaseStatus?   @map("from_status")
+  toStatus        CrmCaseStatus?   @map("to_status")
+  fromOwnerUserId String?          @map("from_owner_user_id") @db.Uuid
+  toOwnerUserId   String?          @map("to_owner_user_id") @db.Uuid
+  note            String?          @db.Text
+  actorUserId     String?          @map("actor_user_id") @db.Uuid
+  occurredAt      DateTime         @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  case            CrmCase          @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  fromOwner       Employee?        @relation("CrmHistoryFromOwner", fields: [fromOwnerUserId], references: [userId], onDelete: SetNull)
+  toOwner         Employee?        @relation("CrmHistoryToOwner", fields: [toOwnerUserId], references: [userId], onDelete: SetNull)
+  actor           Employee?        @relation("CrmHistoryActor", fields: [actorUserId], references: [userId], onDelete: SetNull)
+
+  @@index([caseId, occurredAt])
+  @@map("crm_case_history")
+}
+
+model OutboxEvent {
+  id            String       @id @default(uuid()) @db.Uuid
+  eventType     String       @map("event_type") @db.VarChar(150)
+  aggregateType String       @map("aggregate_type") @db.VarChar(100)
+  aggregateId   String       @map("aggregate_id") @db.Uuid
+  payloadJson   Json         @map("payload_json") @db.JsonB
+  status        OutboxStatus @default(PENDING)
+  availableAt   DateTime     @default(now()) @map("available_at") @db.Timestamptz(6)
+  processedAt   DateTime?    @map("processed_at") @db.Timestamptz(6)
+  retryCount    Int          @default(0) @map("retry_count")
+  lastError     String?      @map("last_error") @db.Text
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([status, availableAt])
+  @@map("outbox_events")
 }
