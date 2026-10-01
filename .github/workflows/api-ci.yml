@@ -1,0 +1,69 @@
+name: API CI
+
+on:
+  pull_request:
+    paths:
+      - 'apps/api/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/api-ci.yml'
+  push:
+    branches-ignore:
+      - main
+    paths:
+      - 'apps/api/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/api-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api-ci:
+    name: Lint, Typecheck, Test, Build API
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run verification suite
+        run: |
+          pnpm --filter @costume/api lint
+          pnpm --filter @costume/api typecheck
+          pnpm test:api
+          pnpm build:api
+
+      - name: Upload reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-verification-reports
+          path: |
+            apps/api/coverage
+            apps/api/test-results
+          if-no-files-found: ignore
