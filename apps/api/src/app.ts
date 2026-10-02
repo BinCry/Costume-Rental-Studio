@@ -11,6 +11,7 @@ import { errorHandler } from './common/middleware/error-handler.js';
 import { notFoundHandler } from './common/middleware/not-found-handler.js';
 import { env } from './config/env.js';
 import { logger } from './config/logger.js';
+import { prisma } from './database/prisma.js';
 
 export function createApp() {
   const app = express();
@@ -58,6 +59,26 @@ export function createApp() {
       },
       'API is healthy',
     );
+  });
+
+  app.get('/health/ready', async (request, response) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+
+      return sendSuccess(
+        response,
+        {
+          status: 'ready',
+          service: 'costume-api',
+          database: 'connected',
+        },
+        'API is ready',
+      );
+    } catch (error: unknown) {
+      request.log.warn({ err: error }, 'Database readiness check failed');
+
+      return sendError(request, response, 503, 'DATABASE_UNAVAILABLE', 'Database is not ready');
+    }
   });
 
   app.use(notFoundHandler);

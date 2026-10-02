@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { ErrorResponse } from '../src/common/http/response.js';
 
@@ -8,6 +8,14 @@ process.env.PORT = '4000';
 process.env.WEB_URL = 'http://localhost:3000';
 process.env.LOG_LEVEL = 'silent';
 process.env.DATABASE_URL = 'postgresql://postgres:postgres@localhost:5432/costume_rental_test';
+
+const queryRawMock = vi.hoisted(() => vi.fn());
+
+vi.mock('../src/database/prisma.js', () => ({
+  prisma: {
+    $queryRaw: queryRawMock,
+  },
+}));
 
 const { createApp } = await import('../src/app.js');
 const { env } = await import('../src/config/env.js');
@@ -32,6 +40,47 @@ describe('Express HTTP foundation', () => {
     expect(response.headers['content-type']).toMatch(/application\/json/);
     expect(response.headers['x-content-type-options']).toBe('nosniff');
     expect(response.headers['x-powered-by']).toBeUndefined();
+  });
+
+  it('returns readiness when the database is reachable', async () => {
+    queryRawMock.mockResolvedValueOnce([{ result: 1 }]);
+
+    const app = createApp();
+    const response = await request(app).get('/health/ready');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      success: true,
+      data: {
+        status: 'ready',
+        service: 'costume-api',
+        database: 'connected',
+      },
+      message: 'API is ready',
+    });
+    expect(queryRawMock).toHaveBeenCalledOnce();
+  });
+
+  it('returns 503 readiness without exposing database errors', async () => {
+    queryRawMock.mockRejectedValueOnce(new Error('sensitive database connection details'));
+
+    const app = createApp();
+    const response = await request(app).get('/health/ready');
+    const body = response.body as ErrorResponse;
+
+    expect(response.status).toBe(503);
+    expect(body).toEqual({
+      success: false,
+      error: {
+        code: 'DATABASE_UNAVAILABLE',
+        message: 'Database is not ready',
+      },
+      statusCode: 503,
+      timestamp: body.timestamp,
+      path: '/health/ready',
+      requestId: body.requestId,
+    });
+    expect(response.text).not.toContain('sensitive database connection details');
   });
 
   it('returns the JSON error contract for an unknown route', async () => {
