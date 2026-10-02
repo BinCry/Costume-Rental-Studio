@@ -293,6 +293,7 @@ const queue: QueueTask[] = [
 ];
 
 const pause = (ms = 430) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+let nextDemoRequest = 2048;
 const failNetwork = (scenario: DemoScenario) => {
   if (scenario === 'error')
     throw new FixtureIssue(
@@ -392,7 +393,7 @@ export const fixtureAdapter = {
       );
     if (!quote.id)
       throw new FixtureIssue('QUOTE_MISSING', 'Cần báo giá còn hiệu lực trước khi gửi.');
-    return 'RT-DEMO-2048';
+    return `RT-DEMO-${nextDemoRequest++}`;
   },
   async confirmOrder(
     orderId: string,
@@ -422,10 +423,23 @@ export const fixtureAdapter = {
         'UNIT_CONFLICT',
         'BC-001 vừa hết khả dụng. Đã giữ các lựa chọn khác; hãy tải lại bộ còn trống và chọn mã khác.',
       );
-    if (orderId !== 'RT-1024' || version !== 3 || units.length !== 2 || new Set(units).size !== 2)
+    const order = orders.find((entry) => entry.id === orderId);
+    if (
+      order?.status !== 'PENDING_CONFIRMATION' ||
+      version !== order.version ||
+      units.length !== order.items.length ||
+      new Set(units).size !== units.length ||
+      units.some(
+        (code) =>
+          !order.eligibleUnits.some(
+            (unit) =>
+              unit.code === code && unit.status === 'READY' && unit.availableAtFixturePeriod,
+          ),
+      )
+    )
       throw new FixtureIssue(
         'INVALID_FIXTURE',
-        'Lựa chọn không khớp snapshot fixture; chưa ghi thay đổi.',
+        'Lựa chọn không khớp snapshot fixture hoặc bộ không khả dụng; chưa ghi thay đổi.',
       );
   },
   async lookupBarcode(

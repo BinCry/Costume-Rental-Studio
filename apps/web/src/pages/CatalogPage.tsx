@@ -301,9 +301,17 @@ export function CatalogPage({ scenario, go }: { scenario: DemoScenario; go: Navi
                     <p className="preview-disclaimer">
                       Việc chọn mẫu chưa giữ bộ. Studio xác nhận mã bộ sau khi nhận yêu cầu.
                     </p>
-                    <Button onClick={() => go('booking', { costume: selectedItem.id })}>
-                      Bắt đầu yêu cầu thuê <Icon name="arrow" size={17} />
-                    </Button>
+                    <div className="feature-actions">
+                      <Button
+                        variant="secondary"
+                        onClick={() => go('detail', { id: selectedItem.id })}
+                      >
+                        Xem đầy đủ
+                      </Button>
+                      <Button onClick={() => go('booking', { costume: selectedItem.id })}>
+                        Bắt đầu yêu cầu thuê <Icon name="arrow" size={17} />
+                      </Button>
+                    </div>
                   </div>
                 </section>
               )}

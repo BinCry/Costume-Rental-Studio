@@ -13,6 +13,7 @@ import {
 import { money } from '../components/support';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { branches, fixtureAdapter, fixtureCatalog, fixturePeriod } from '../fixtures/adapter';
+import { studioAdapter } from '../fixtures/studio';
 import type { BookingDraft, DemoScenario, QuoteSnapshot } from '../fixtures/types';
 
 const steps = ['Trang phục', 'Lựa chọn', 'Nhận và trả', 'Báo giá', 'Người thuê', 'Xác nhận'];
@@ -41,10 +42,12 @@ export function BookingPage({
   scenario,
   go,
   costumeId,
+  onCustomerCreated,
 }: {
   scenario: DemoScenario;
   go: Navigate;
   costumeId?: string;
+  onCustomerCreated?: (code: string) => void;
 }) {
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<BookingDraft>(() => initialDraft(costumeId));
@@ -109,7 +112,9 @@ export function BookingPage({
     setBusy(true);
     setIssue('');
     try {
-      setSubmittedId(await fixtureAdapter.submitBooking(draft, quote, scenario));
+      const id = await fixtureAdapter.submitBooking(draft, quote, scenario);
+      onCustomerCreated?.(studioAdapter.recordBooking(id, draft, quote));
+      setSubmittedId(id);
     } catch (caught) {
       setIssue(caught instanceof Error ? caught.message : 'Chưa gửi được yêu cầu.');
     } finally {
@@ -129,11 +134,11 @@ export function BookingPage({
             Mã yêu cầu <strong>{submittedId}</strong>
           </p>
           <Feedback tone="warning" title="Yêu cầu chưa giữ trang phục cho đến khi studio xác nhận.">
-            Đây là phản hồi fixture, chưa lưu vào hệ thống và studio chưa nhận yêu cầu. Nơi theo dõi
-            đơn sẽ được nối khi có API.
+            Yêu cầu đã lưu trong bộ nhớ fixture để bạn xem ở “Đơn của tôi”. Studio thật chưa nhận
+            yêu cầu; cần API để lưu và xử lý trên máy chủ.
           </Feedback>
-          <Button onClick={() => go('catalog')}>
-            Xem thêm trang phục <Icon name="arrow" size={18} />
+          <Button onClick={() => go('myRentalDetail', { order: submittedId })}>
+            Theo dõi yêu cầu <Icon name="arrow" size={18} />
           </Button>
         </div>
       </div>

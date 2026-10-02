@@ -1,0 +1,375 @@
+import { useState } from 'react';
+import {
+  Button,
+  ConfirmDialog,
+  Feedback,
+  Field,
+  SelectField,
+  TextAreaField,
+  StatusLabel,
+} from '../components/ui';
+import {
+  BranchSelector,
+  InlineIssue,
+  KeyFacts,
+  PageHeading,
+  Panel,
+  SearchField,
+  StateGate,
+  Timeline,
+} from '../components/studio';
+import { useFixtureResource } from '../components/useFixtureResource';
+import { studioAdapter, type Case, type Customer } from '../fixtures/studio';
+import type { DemoScenario } from '../fixtures/types';
+
+export function CrmPage({ scenario, branch }: { scenario: DemoScenario; branch: string }) {
+  const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.customers);
+  const casesResource = useFixtureResource(scenario, studioAdapter.cases);
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState('KH-004');
+  const [caseCode, setCaseCode] = useState('CS-001');
+  const [draft, setDraft] = useState<Case>();
+  const [newCustomer, setNewCustomer] = useState<Customer>();
+  const [issue, setIssue] = useState('');
+  const [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState(false);
+  const saveCase = async (value: Case) => {
+    setBusy(true);
+    setIssue('');
+    try {
+      await studioAdapter.saveCase(value, scenario);
+      setCaseCode(value.code);
+      setDraft(undefined);
+      setNotice('Case đã được lưu trong fixture và ghi lịch sử.');
+      casesResource.retry();
+    } catch (e) {
+      setIssue(e instanceof Error ? e.message : 'Chưa thể lưu case.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <StateGate
+      loading={loading || casesResource.loading}
+      error={error ?? casesResource.error}
+      data={data}
+      retry={() => {
+        retry();
+        casesResource.retry();
+      }}
+      emptyTitle="Chưa có hồ sơ khách"
+    >
+      {(customers) => {
+        const visible = customers.filter(
+          (c) =>
+            c.preferredBranch === branch &&
+            `${c.name} ${c.phone} ${c.code}`.toLowerCase().includes(search.toLowerCase()),
+        );
+        const person = customers.find((c) => c.code === selected) ?? visible[0];
+        const related = (casesResource.data ?? []).filter((c) => c.customerCode === person?.code);
+        const current = related.find((c) => c.code === caseCode) ?? related[0];
+        const editing = draft ?? current;
+        return (
+          <div className="page">
+            <PageHeading
+              eyebrow="CRM / KHÁCH HÀNG"
+              title="Khách hàng & case"
+              description="Hồ sơ, lịch sử thuê, tương tác và xử lý case theo chi nhánh."
+              action={
+                <Button
+                  variant="secondary"
+                  onClick={() =>
+                    setNewCustomer({
+                      code: `KH-DEMO-${customers.length + 1}`,
+                      name: '',
+                      phone: '',
+                      email: '',
+                      preferredBranch: branch,
+                      history: [],
+                      interactions: [],
+                    })
+                  }
+                >
+                  + Hồ sơ khách
+                </Button>
+              }
+            />
+            <div className="crm-layout">
+              <Panel title="Hồ sơ khách">
+                <SearchField
+                  label="Tìm tên, mã, số điện thoại"
+                  value={search}
+                  onChange={setSearch}
+                />
+                <div className="feature-card-list">
+                  {visible.map((c) => (
+                    <button
+                      className={`feature-list-row selectable ${person?.code === c.code ? 'selected' : ''}`}
+                      key={c.code}
+                      onClick={() => {
+                        setSelected(c.code);
+                        setCaseCode('');
+                        setDraft(undefined);
+                      }}
+                    >
+                      <strong>{c.name}</strong>
+                      <span>{c.phone}</span>
+                      <small>{c.code}</small>
+                    </button>
+                  ))}
+                </div>
+                {!visible.length && <p className="muted">Không có khách phù hợp ở {branch}.</p>}
+              </Panel>
+              {person ? (
+                <div>
+                  <Panel title={person.name}>
+                    <KeyFacts
+                      rows={[
+                        { label: 'Mã khách', value: person.code },
+                        { label: 'Điện thoại', value: person.phone },
+                        { label: 'Email', value: person.email },
+                        { label: 'Chi nhánh ưu tiên', value: person.preferredBranch },
+                      ]}
+                    />
+                    <h3>Lịch sử thuê</h3>
+                    <Timeline items={person.history} />
+                    <h3>Tương tác</h3>
+                    <Timeline items={person.interactions} />
+                  </Panel>
+                  <Panel
+                    title="Case liên quan"
+                    action={
+                      <Button
+                        variant="quiet"
+                        onClick={() => {
+                          const value: Case = {
+                            code: `CS-DEMO-${(casesResource.data ?? []).length + 1}`,
+                            customerCode: person.code,
+                            branch,
+                            subject: '',
+                            description: '',
+                            priority: 'NORMAL',
+                            status: 'OPEN',
+                            history: [],
+                          };
+                          setDraft(value);
+                          setCaseCode(value.code);
+                        }}
+                      >
+                        + Tạo case
+                      </Button>
+                    }
+                  >
+                    <div className="feature-card-list">
+                      {related.map((c) => (
+                        <button
+                          className={`feature-list-row selectable ${current?.code === c.code ? 'selected' : ''}`}
+                          key={c.code}
+                          onClick={() => {
+                            setCaseCode(c.code);
+                            setDraft(undefined);
+                          }}
+                        >
+                          <strong>
+                            {c.code} · {c.subject}
+                          </strong>
+                          <span>
+                            {c.status} · {c.priority}
+                          </span>
+                          <small>{c.owner ?? 'Chưa phân công'}</small>
+                        </button>
+                      ))}
+                    </div>
+                    {!related.length && <p className="muted">Chưa có case.</p>}
+                  </Panel>
+                </div>
+              ) : (
+                <Panel title="Hồ sơ khách">
+                  <p className="muted">Chọn khách ở cột bên trái.</p>
+                </Panel>
+              )}
+              <div>
+                {editing ? (
+                  <Panel title={editing.code}>
+                    <StatusLabel
+                      text={editing.status}
+                      tone={
+                        editing.status === 'CLOSED'
+                          ? 'success'
+                          : editing.priority === 'HIGH'
+                            ? 'warning'
+                            : 'info'
+                      }
+                    />
+                    <div className="stack-form">
+                      <Field
+                        label="Tiêu đề case"
+                        value={editing.subject}
+                        onChange={(e) => setDraft({ ...editing, subject: e.target.value })}
+                      />
+                      <TextAreaField
+                        label="Mô tả / cập nhật"
+                        value={editing.description}
+                        onChange={(e) => setDraft({ ...editing, description: e.target.value })}
+                      />
+                      <SelectField
+                        label="Ưu tiên"
+                        value={editing.priority}
+                        onChange={(e) =>
+                          setDraft({ ...editing, priority: e.target.value as Case['priority'] })
+                        }
+                      >
+                        {['LOW', 'NORMAL', 'HIGH', 'URGENT'].map((x) => (
+                          <option key={x}>{x}</option>
+                        ))}
+                      </SelectField>
+                      <SelectField
+                        label="Người phụ trách"
+                        value={editing.owner ?? ''}
+                        onChange={(e) =>
+                          setDraft({
+                            ...editing,
+                            owner: e.target.value || undefined,
+                            history: [
+                              `03/10 · Chuyển case cho ${e.target.value || 'chưa phân công'}`,
+                              ...editing.history,
+                            ],
+                          })
+                        }
+                      >
+                        <option value="">Chưa phân công</option>
+                        <option>Hà Nguyễn</option>
+                        <option>Thu Lê</option>
+                      </SelectField>
+                      <BranchSelector
+                        value={editing.branch}
+                        onChange={(v) =>
+                          setDraft({
+                            ...editing,
+                            branch: v,
+                            history: [`03/10 · Chuyển case sang ${v}`, ...editing.history],
+                          })
+                        }
+                      />
+                      <SelectField
+                        label="Trạng thái"
+                        value={editing.status}
+                        onChange={(e) =>
+                          setDraft({
+                            ...editing,
+                            status: e.target.value as Case['status'],
+                            history: [`03/10 · Cập nhật ${e.target.value}`, ...editing.history],
+                          })
+                        }
+                      >
+                        {['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'].map((x) => (
+                          <option key={x}>{x}</option>
+                        ))}
+                      </SelectField>
+                      <div className="feature-actions">
+                        <Button
+                          loading={busy}
+                          onClick={() => {
+                            if (!editing.subject.trim()) {
+                              setIssue('Nhập tiêu đề case.');
+                              return;
+                            }
+                            void saveCase({
+                              ...editing,
+                              history: editing.history.length
+                                ? editing.history
+                                : ['03/10 · Tạo case'],
+                            });
+                          }}
+                        >
+                          Lưu case
+                        </Button>
+                        {editing.status === 'OPEN' && (
+                          <Button
+                            variant="secondary"
+                            onClick={() =>
+                              void saveCase({
+                                ...editing,
+                                owner: 'Hà Nguyễn',
+                                status: 'IN_PROGRESS',
+                                history: ['03/10 · Hà Nguyễn nhận case', ...editing.history],
+                              })
+                            }
+                          >
+                            Nhận xử lý
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    <h3>Lịch sử case</h3>
+                    <Timeline items={editing.history} />
+                  </Panel>
+                ) : (
+                  <Panel title="Chi tiết case">
+                    <p className="muted">Chọn case hoặc tạo case mới cho khách đang xem.</p>
+                  </Panel>
+                )}
+                <InlineIssue text={issue} conflict={scenario === 'version'} />
+                {notice && (
+                  <Feedback tone="success" title="Đã lưu">
+                    {notice}
+                  </Feedback>
+                )}
+              </div>
+            </div>
+            {newCustomer && (
+              <ConfirmDialog
+                title="Tạo hồ sơ khách"
+                confirmText="Lưu hồ sơ"
+                onClose={() => setNewCustomer(undefined)}
+                onConfirm={() => {
+                  void (async () => {
+                    if (
+                      !newCustomer.name.trim() ||
+                      !/^0[0-9 ]{8,12}$/.test(newCustomer.phone.trim())
+                    ) {
+                      setIssue('Nhập họ tên và số điện thoại hợp lệ.');
+                      return;
+                    }
+                    setBusy(true);
+                    setIssue('');
+                    try {
+                      await studioAdapter.saveCustomer(newCustomer, scenario);
+                      setSelected(newCustomer.code);
+                      setNewCustomer(undefined);
+                      retry();
+                    } catch (e) {
+                      setIssue(e instanceof Error ? e.message : 'Không lưu được khách.');
+                    } finally {
+                      setBusy(false);
+                    }
+                  })();
+                }}
+                loading={busy}
+              >
+                <div className="stack-form">
+                  <Field
+                    label="Họ tên"
+                    value={newCustomer.name}
+                    onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
+                  />
+                  <Field
+                    label="Số điện thoại"
+                    value={newCustomer.phone}
+                    onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
+                  />
+                  <Field
+                    label="Email"
+                    value={newCustomer.email}
+                    onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
+                  />
+                  <InlineIssue text={issue} />
+                </div>
+              </ConfirmDialog>
+            )}
+          </div>
+        );
+      }}
+    </StateGate>
+  );
+}

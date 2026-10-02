@@ -16,6 +16,7 @@ import {
 import { orderStatus } from '../components/support';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { branches, fixtureAdapter } from '../fixtures/adapter';
+import { studioAdapter } from '../fixtures/studio';
 import type { DemoScenario, Order, OrderStatus } from '../fixtures/types';
 
 const loadOrders = (scenario: DemoScenario) => fixtureAdapter.listOrders(scenario);
@@ -32,11 +33,13 @@ export function OrdersPage({
   go,
   initialOrderId,
   initialFilter,
+  canManage = true,
 }: {
   scenario: DemoScenario;
   go: Navigate;
   initialOrderId?: string;
   initialFilter?: string;
+  canManage?: boolean;
 }) {
   const [branch, setBranch] = useState(branches[0]);
   const [selectedId, setSelectedId] = useState(initialOrderId ?? 'RT-1024');
@@ -88,7 +91,7 @@ export function OrdersPage({
     setNotice('');
     setLocalConfirmed(false);
     setLocalCancelled(false);
-    window.history.replaceState(null, '', `#orders?order=${encodeURIComponent(id)}`);
+    window.history.pushState(null, '', `/van-hanh/don-thue/${encodeURIComponent(id)}`);
   };
   const toggleUnit = (code: string) =>
     setSelectedUnits((current) =>
@@ -100,6 +103,7 @@ export function OrdersPage({
     setNotice('');
     try {
       await fixtureAdapter.confirmOrder(order.id, order.version, selectedUnits, scenario);
+      studioAdapter.reflectConfirmation(order.id, selectedUnits);
       setLocalConfirmed(true);
       setDialog(null);
       setNotice(
@@ -118,16 +122,32 @@ export function OrdersPage({
       setBusy(false);
     }
   };
-  const previewDecision = () => {
+  const previewDecision = async () => {
     if (!reason.trim()) {
       setNotice('Cần nhập lý do trước khi từ chối hoặc hủy.');
       setDialog(null);
       return;
     }
-    setNotice(
-      `Đã ghi lý do “${reason.trim()}” vào bản xem trước. Chưa có fixture xử lý ${dialog === 'reject' ? 'từ chối' : 'hủy'} và chưa thay đổi đơn.`,
-    );
-    setDialog(null);
+    if (!order || (dialog !== 'reject' && dialog !== 'cancel')) return;
+    setBusy(true);
+    try {
+      await studioAdapter.decideOrder(
+        order.id,
+        dialog === 'reject' ? 'REJECTED' : 'CANCELLED',
+        reason.trim(),
+        scenario,
+      );
+      setNotice(
+        `Đã ${dialog === 'reject' ? 'từ chối' : 'hủy'} đơn trong fixture; lý do hiển thị cho khách.`,
+      );
+      setDialog(null);
+      retry();
+    } catch (caught) {
+      setNotice(caught instanceof Error ? caught.message : 'Không cập nhật được đơn.');
+      setDialog(null);
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <div className="page staff-page orders-page">
@@ -394,6 +414,7 @@ export function OrdersPage({
                               aria-label={`Chọn bộ ${unit.code}`}
                               checked={selectedUnits.includes(unit.code)}
                               disabled={
+                                !canManage ||
                                 unit.status !== 'READY' ||
                                 !unit.availableAtFixturePeriod ||
                                 unavailableUnits.includes(unit.code) ||
@@ -449,52 +470,55 @@ export function OrdersPage({
                         BC-018 và BC-019 không thể gán. Chọn bộ READY khác hoặc một kỳ thuê khác.
                       </Feedback>
                     )}
-                    <div className="detail-actions">
-                      <Button
-                        onClick={() => setDialog('confirm')}
-                        disabled={
-                          selectedUnits.length !== order.items.length || scenario === 'permission'
-                        }
-                      >
-                        Xác nhận và gán {order.items.length} bộ
-                      </Button>
-                      <Button
-                        variant="quiet"
-                        disabled={scenario === 'permission'}
-                        onClick={() => {
-                          setReason('');
-                          setDialog('reject');
-                        }}
-                      >
-                        Từ chối
-                      </Button>
-                      <Button
-                        variant="quiet"
-                        disabled={scenario === 'permission'}
-                        onClick={() => {
-                          setReason('');
-                          setDialog('cancel');
-                        }}
-                      >
-                        Hủy đơn
-                      </Button>
-                    </div>
+                    {canManage && (
+                      <div className="detail-actions">
+                        <Button
+                          onClick={() => setDialog('confirm')}
+                          disabled={
+                            selectedUnits.length !== order.items.length || scenario === 'permission'
+                          }
+                        >
+                          Xác nhận và gán {order.items.length} bộ
+                        </Button>
+                        <Button
+                          variant="quiet"
+                          disabled={scenario === 'permission'}
+                          onClick={() => {
+                            setReason('');
+                            setDialog('reject');
+                          }}
+                        >
+                          Từ chối
+                        </Button>
+                        <Button
+                          variant="quiet"
+                          disabled={scenario === 'permission'}
+                          onClick={() => {
+                            setReason('');
+                            setDialog('cancel');
+                          }}
+                        >
+                          Hủy đơn
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
-                {order.status === 'READY_FOR_PICKUP' && (
+                {canManage && order.status === 'READY_FOR_PICKUP' && (
                   <div className="detail-actions">
                     <Button onClick={() => go('handover', { order: order.id })}>
                       Mở luồng giao đồ <Icon name="arrow" size={18} />
                     </Button>
                   </div>
                 )}
-                {(order.status === 'ACTIVE' || order.status === 'RETURN_INSPECTION') && (
-                  <div className="detail-actions">
-                    <Button onClick={() => go('return', { order: order.id })}>
-                      Mở luồng nhận trả <Icon name="arrow" size={18} />
-                    </Button>
-                  </div>
-                )}
+                {canManage &&
+                  (order.status === 'ACTIVE' || order.status === 'RETURN_INSPECTION') && (
+                    <div className="detail-actions">
+                      <Button onClick={() => go('return', { order: order.id })}>
+                        Mở luồng nhận trả <Icon name="arrow" size={18} />
+                      </Button>
+                    </div>
+                  )}
                 <div className="detail-section history">
                   <h3>Lịch sử và ghi chú</h3>
                   <p>{order.note}</p>
@@ -535,7 +559,9 @@ export function OrdersPage({
         <ConfirmDialog
           title={dialog === 'reject' ? 'Từ chối yêu cầu' : 'Hủy đơn'}
           confirmText="Lưu lý do vào bản xem trước"
-          onConfirm={previewDecision}
+          onConfirm={() => {
+            void previewDecision();
+          }}
           onClose={() => setDialog(null)}
           danger
         >
