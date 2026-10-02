@@ -253,7 +253,7 @@ Users
 - pnpm `11.1.2`
 - PowerShell hoặc terminal tương thích
 
-PostgreSQL và Docker chưa bắt buộc ở giai đoạn HTTP/frontend foundation hiện tại.
+PostgreSQL cần thiết khi chạy migration, seed hoặc các tính năng có truy cập database; Docker là tùy chọn.
 
 ### Installation
 
@@ -280,6 +280,17 @@ Nếu frontend gọi API qua biến môi trường, tạo `apps/web/.env`:
 ```dotenv
 VITE_API_URL=http://localhost:4000
 ```
+
+### Prepare the Local Database
+
+Sau khi cấu hình `DATABASE_URL` và tạo database PostgreSQL, apply migration rồi nạp dữ liệu mẫu:
+
+```powershell
+pnpm --filter @costume/api db:migrate
+pnpm db:seed
+```
+
+Ở môi trường development, `pnpm db:seed` mặc định chạy profile `demo`: tạo dữ liệu nền và bộ dữ liệu nghiệp vụ mẫu. Seed dùng `upsert`, nên có thể chạy lại để đồng bộ dữ liệu mà không tạo bản ghi seed trùng lặp. Xem dữ liệu bằng `pnpm --filter @costume/api db:studio`.
 
 ### Run Locally
 
@@ -330,6 +341,8 @@ Invoke-RestMethod http://localhost:4000/health
 | `pnpm test` | Chạy test của các workspace có script `test` |
 | `pnpm test:api` | Chạy Vitest cho API |
 | `pnpm typecheck` | Typecheck các workspace có script `typecheck` |
+| `pnpm db:seed` | Generate Prisma Client rồi seed database theo `SEED_PROFILE` |
+| `pnpm --filter @costume/api db:studio` | Mở Prisma Studio cho database trong `DATABASE_URL` |
 | `pnpm --filter @costume/web lint` | Chạy ESLint cho frontend |
 | `pnpm --filter @costume/api start` | Chạy production build của API |
 
@@ -346,8 +359,13 @@ Invoke-RestMethod http://localhost:4000/health
 | `WEB_URL` | `http://localhost:5173` | Frontend origin được phép gọi API qua CORS |
 | `LOG_LEVEL` | `info` | Mức log của Pino |
 | `DATABASE_URL` | `postgresql://...` | PostgreSQL connection URL; dùng Internal URL khi API chạy trong Coolify |
+| `SEED_PROFILE` | `demo` | Profile seed: `core` chỉ nạp dữ liệu nền; `demo` nạp thêm dữ liệu phát triển. Mặc định là `demo`, riêng `NODE_ENV=production` mặc định là `core` |
+| `SEED_ANCHOR_DATE` | `2026-10-02` | Ngày mốc tùy chọn cho các thời điểm tương đối trong demo seed; nếu bỏ trống sẽ dùng ngày hiện tại theo múi giờ Việt Nam |
+| `ALLOW_PRODUCTION_DEMO_SEED` | `false` | Chỉ đặt chính xác `true` khi chủ động cho phép chạy profile `demo` với `NODE_ENV=production` |
 
 Backend dừng startup ngay nếu cấu hình môi trường không hợp lệ.
+
+Không chạy demo seed trên database production thật. Khi `NODE_ENV=production`, seed chỉ chạy profile `core` theo mặc định và sẽ từ chối `SEED_PROFILE=demo` trừ khi có `ALLOW_PRODUCTION_DEMO_SEED=true`; cơ chế mở khóa này chỉ dành cho môi trường production-like dùng để thử nghiệm.
 
 ### Frontend — `apps/web/.env`
 
