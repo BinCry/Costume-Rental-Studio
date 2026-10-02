@@ -20,6 +20,7 @@ Khi có khác biệt giữa các tài liệu, dùng thứ tự ưu tiên sau:
 | `database-review-guide.md` | Checklist review schema, migration và dữ liệu |
 | `business-rules.md` | Actor, flow thuê, kho, thanh toán và CRM đã chốt |
 | `Kế hoạch thiết kế và triển khai giao diện.md` | Hiện trạng code, các điểm cần chốt, sơ đồ màn hình, luồng UX và thứ tự làm UI |
+| `Quy chuẩn thiết kế giao diện và năm màn hình lõi.md` | Token hình ảnh, trạng thái nhiều chiều, đặc tả 5 màn hình đầu, trạng thái lỗi/xung đột và tiêu chí nghiệm thu |
 | `ci-cd.md` | CI, publish Docker image, deploy Coolify và migration production |
 
 File `Phân tích nghiệp vụ và thiết kế hệ thống studio cho thuê trang phục.md` là tài liệu phân tích lịch sử. Một số phương án trong đó đã được rút gọn và không còn phản ánh schema cuối cùng; không dùng file đó làm nguồn để viết migration hoặc API.

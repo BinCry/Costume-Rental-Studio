@@ -6,6 +6,8 @@
 
 **Trạng thái:** kế hoạch để nhóm thống nhất trước khi triển khai UI nghiệp vụ.
 
+Quy chuẩn token, trạng thái tổng hợp, tình huống lỗi và wireframe cho năm màn hình đầu nằm ở [Quy chuẩn thiết kế giao diện và năm màn hình lõi](Quy%20chuẩn%20thiết%20kế%20giao%20diện%20và%20năm%20màn%20hình%20lõi.md).
+
 ## 1. Căn cứ và hiện trạng
 
 Nguồn nghiệp vụ hiện hành là [`business-rules.md`](business-rules.md). Khi thiết kế dữ liệu hoặc API, đối chiếu tiếp `apps/api/prisma/schema.prisma` và migration như thứ tự nguồn chuẩn trong [`README.md`](README.md). Tài liệu phân tích dài trước đây là tài liệu lịch sử; các đề xuất chưa vào schema không được mô tả như chức năng đã có.
@@ -32,15 +34,15 @@ Nguồn nghiệp vụ hiện hành là [`business-rules.md`](business-rules.md).
 | CRM | MVP có hồ sơ, tương tác và case; chưa có consent, campaign, tag, loyalty trong schema | Thiết kế màn hình hồ sơ và case trước; marketing/tích điểm để giai đoạn mở rộng |
 | Đang thuê | Bộ đang thuê suy ra từ order item có phân bổ `ACTIVE`, không phải trạng thái `costume_units` riêng | Màn hình “Đang thuê” phải nối đơn, khách, chi nhánh, bộ và hạn trả; tìm theo mã bộ/mã đơn/khách |
 
-### Những điểm cần thống nhất trước khi làm UI chức năng
+### Quyết định đã chốt và điểm còn cần xử lý trước khi làm UI chức năng
 
 1. **Độ chi tiết của checkbox quyền:** seed hiện có quyền `read/manage` theo module. Quyền này chưa tách “duyệt đơn”, “giao đồ”, “thu tiền”, “duyệt hoàn cọc”, “sửa giá”. Nếu bài toán yêu cầu tick độc lập từng hành động, cần mở rộng danh mục permission và kiểm tra quyền tại API trước khi hoàn thiện ma trận UI. Đề xuất tối thiểu: `rentals.confirm.branch`, `rentals.handover.branch`, `rentals.return.branch`, `payments.collect.branch`, `refunds.approve.branch`, `catalog.pricing.manage.all`.
-2. **Ngoại lệ quyền từng nhân viên:** tài liệu lịch sử đề xuất `ALLOW/DENY` cá nhân; schema hiện **không có** bảng override. Giai đoạn đầu dùng nhiều role tùy chỉnh và gán theo chi nhánh. Chỉ thiết kế nút tick riêng cho từng nhân viên nếu nhóm quyết định thêm mô hình dữ liệu/API.
+2. **Đã chốt quyền theo role + chi nhánh:** tài liệu lịch sử đề xuất `ALLOW/DENY` cá nhân nhưng schema hiện **không có** bảng override. MVP dùng checkbox trên role và gán role theo chi nhánh; không thiết kế nút tick ngoại lệ từng nhân viên.
 3. **Thay đổi giá:** schema hiện lưu giá trực tiếp trên biến thể, không có `pricing_rules` theo chi nhánh/ngày hiệu lực. Đề xuất MVP sửa giá biến thể qua màn hình quản trị, bắt buộc lý do và audit, giữ snapshot trên đơn; bộ đặc biệt dùng biến thể/edition riêng. Nếu cần đặt lịch giá hoặc giá từng chi nhánh, chốt schema mới trước khi thiết kế phần đó.
 4. **Liên kết Google cho nhân viên:** quy tắc hiện hành tạo tài khoản `PENDING` trước rồi liên kết khi Google xác minh email và `sub`. API phải quyết định chính xác điều kiện liên kết và chống tự nhận quyền nhân viên; UI chỉ hiển thị các trạng thái chờ kích hoạt/khóa/không có quyền.
 5. **Chuyển khoản và người nhận hộ:** `payments` chưa có trường mã tham chiếu chuyển khoản riêng; `rental_orders` chưa có người nhận hộ. Nếu studio cần hai thông tin này trên biên nhận, bổ sung dữ liệu/API trước khi đưa vào form chính thức.
 
-Các điểm 1–3 ảnh hưởng trực tiếp cấu trúc màn hình quản trị. Nhóm vẫn có thể dựng layout, navigation và prototype luồng thuê trong khi chờ chốt.
+Điểm 1 và 3 ảnh hưởng trực tiếp cấu trúc màn hình quản trị. Nhóm vẫn có thể dựng layout, navigation và prototype luồng thuê trong khi chờ xử lý chúng.
 
 ## 3. Kiến trúc thông tin và màn hình
 
@@ -50,11 +52,11 @@ Một ứng dụng web có hai khu vực: **Khách hàng** ưu tiên di động,
 |---|---|---|---|
 | UI-01 | Công khai: danh mục | Tìm mẫu, lọc loại/size/màu/chi nhánh, chọn khoảng thuê; thẻ ảnh, giá/ngày, cọc, trạng thái khả dụng theo kỳ | P0 |
 | UI-02 | Công khai: chi tiết trang phục | Ảnh, mô tả, chất liệu, size/fit, phụ kiện, biến thể, giá/ngày, cọc, điều kiện thuê, CTA kiểm tra lịch | P0 |
-| UI-03 | Khách: gửi yêu cầu thuê | Chọn chi nhánh, thời điểm nhận/trả, biến thể và số bộ, xem số ngày/tiền thuê/cọc, thông tin liên hệ, gửi yêu cầu | P0 |
+| UI-03 | Khách: gửi yêu cầu thuê | Luồng từng bước trên mobile: trang phục → biến thể/số bộ → chi nhánh/kỳ thuê → báo giá → liên hệ → xác nhận yêu cầu chưa giữ bộ | P0 |
 | UI-04 | Khách: đơn của tôi | Danh sách/trạng thái, chi tiết giá và biên nhận; hủy chỉ khi trạng thái/chính sách cho phép | P0 |
 | UI-05 | Chung: đăng nhập Google | Đăng nhập, hoàn thiện thông tin liên hệ, trạng thái tài khoản chờ/khoá, chuyển tới khu vực đúng quyền | P0 |
-| UI-06 | Nhân viên: tổng quan chi nhánh | Việc cần làm hôm nay: đơn chờ duyệt, sắp giao, sắp trả/quá hạn, bộ cần vệ sinh/sửa, giao dịch cần xử lý | P0 |
-| UI-07 | Nhân viên: danh sách và chi tiết đơn | Bộ lọc trạng thái/khoảng ngày, duyệt/từ chối, gán barcode khi xác nhận, lịch sử xử lý và thông tin khách | P0 |
+| UI-06 | Nhân viên: bảng việc chi nhánh | Hàng đợi ưu tiên theo hạn xử lý: đơn chờ duyệt, sắp giao, sắp trả/quá hạn, bộ cần vệ sinh/sửa, giao dịch cần xử lý | P0 |
+| UI-07 | Nhân viên: không gian xử lý đơn | Bố cục master-detail, lọc/hàng đợi bên trái, chi tiết và gán barcode/xác nhận ở panel; có lịch sử và thông tin khách | P0 |
 | UI-08 | Nhân viên: tạo đơn tại quầy | Tìm/tạo hồ sơ khách, chọn biến thể và kỳ thuê, báo giá, tạo đơn và xác nhận theo quyền | P0 |
 | UI-09 | Nhân viên: giao đồ và thu tiền | Checklist tình trạng/phụ kiện từng bộ, quét/nhập mã bộ, ghi tiền thuê và cọc bằng tiền mặt/chuyển khoản, xác nhận giao | P0 |
 | UI-10 | Nhân viên: đang thuê | Bảng từng bộ đang ở khách nào, mã đơn, chi nhánh, hạn trả, quá hạn; tìm barcode/số điện thoại | P0 |
@@ -62,7 +64,7 @@ Một ứng dụng web có hai khu vực: **Khách hàng** ưu tiên di động,
 | UI-12 | Kho: bộ trang phục | Danh sách barcode và trạng thái, nhận `INBOUND`, xem lịch sử, block vệ sinh/sửa, kiểm tra khả dụng | P1 |
 | UI-13 | Admin: mẫu, biến thể và giá | Tạo/sửa mô tả, ảnh, size/màu/edition, giá/ngày/cọc; cảnh báo thay giá không sửa đơn cũ | P1 |
 | UI-14 | Admin: nhân viên và chi nhánh | Mời/tạo nhân viên chờ kích hoạt, gán role theo chi nhánh, khóa/ngừng phân công, quản lý chi nhánh | P1 |
-| UI-15 | Admin: ma trận quyền | Nhóm permission theo module/scope, checkbox cho role, xem trước quyền hiệu lực, xác nhận và audit | P1 |
+| UI-15 | Admin: quyền theo vai trò | Chọn từng role, tick permission theo nhóm chức năng/scope có thật, xem trước quyền hiệu lực theo chi nhánh, xác nhận và audit | P1 |
 | UI-16 | CRM: khách hàng và case | Hồ sơ, lịch sử thuê, timeline tương tác, tạo/nhận/chuyển/đóng case theo chi nhánh | P1 |
 | UI-17 | Admin: chính sách/báo cáo | Xem phiên bản chính sách, cấu hình bản mới theo quyền; báo cáo đơn, doanh thu thuê, cọc đang giữ, quá hạn | P2 |
 | UI-18 | Kho: điều chuyển chi nhánh | Yêu cầu, duyệt, xuất, nhận và kiểm tra từng bộ theo workflow hiện hành | P2 |
@@ -104,13 +106,13 @@ Route gợi ý: `/`, `/trang-phuc/:ma-mau`, `/dat-thue`, `/don-cua-toi`, `/don-c
 
 ### 4.3. Phân quyền và chi nhánh
 
-- Màn hình ma trận có hàng là quyền, cột là role; nhóm theo module và hiển thị `OWN/BRANCH/ALL` bằng chữ. Checkbox chỉ sửa `role_permissions`, không tạo ngoại lệ cá nhân khi schema chưa hỗ trợ.
+- Màn hình quyền chọn **một role tại một thời điểm**, rồi tick các quyền được nhóm theo module; hiển thị scope cố định của từng mã quyền (`OWN/BRANCH/ALL`). Checkbox chỉ sửa `role_permissions`, không tạo ngoại lệ cá nhân. Nếu backend bổ sung nhiều mã scope cho cùng hành động, UI mới cho chọn giữa các scope hợp lệ.
 - Màn hình nhân viên chọn chi nhánh rồi gán role; xem trước quyền hiệu lực tại chi nhánh đó. Chuyển chi nhánh trong header phải làm mới dữ liệu và menu.
 - Nút bị ẩn/khóa theo quyền để dễ dùng; API vẫn là nơi quyết định cho phép. Khi mất quyền giữa phiên, chuyển đến trạng thái “Không có quyền” thay vì để thao tác thất bại mơ hồ.
 
 ## 5. Hướng thiết kế hình ảnh và component
 
-**Đề xuất tạm thời:** khu khách hàng mang cảm giác thời trang gọn và dễ xem ảnh; khu vận hành ưu tiên mật độ thông tin, bộ lọc và hành động rõ ràng. Dùng nền sáng trung tính (`#FAFAF9`), chữ tối (`#1C1917`), điểm nhấn vàng nâu (`#A16207`) cho thương hiệu; màu trạng thái theo ý nghĩa nghiệp vụ, luôn kèm chữ. Giữ bảng điều hành phẳng, ít hiệu ứng kính/blur để đọc dữ liệu và thao tác nhanh. Chốt màu/logo/ảnh thật với nhóm trước khi khóa design tokens.
+**Hướng đã chốt:** trẻ trung, hiện đại, tối giản có điểm nhấn; nền sáng nhiều khoảng trắng, ảnh trang phục lớn, card bo vừa phải, chữ hiện đại. Khu khách hàng thiên về fashion/lifestyle; khu nội bộ là bảng việc gọn, dễ xử lý, không theo mẫu admin dashboard khô cứng. Accent hồng berry `#C0265B` là mã thử nghiệm trên nền trung tính sáng; màu chính thức cần thử với logo/ảnh thật. Token, typography, composite status và component được quy định trong [UI design contract](Quy%20chuẩn%20thiết%20kế%20giao%20diện%20và%20năm%20màn%20hình%20lõi.md).
 
 - **Điều hướng:** khách dùng header gọn và bước đặt rõ tiến độ; nội bộ dùng sidebar theo quyền, bộ chọn chi nhánh và vùng công việc. Breadcrumb ở màn hình chi tiết.
 - **Thành phần dùng lại:** thẻ trang phục, bộ lọc lịch/chi nhánh, báo giá, badge trạng thái đơn/bộ/giao dịch, bảng có lọc/sắp xếp/phân trang, biểu mẫu tiền VND, modal xác nhận, checklist giao trả, timeline, ma trận quyền.
@@ -153,8 +155,8 @@ Fixture frontend chỉ phục vụ prototype, có tên/ảnh giả và không ch
 
 | Đợt | Công việc | Đầu ra kiểm tra được | Phụ thuộc |
 |---|---|---|---|
-| 0. Chốt phạm vi | Giải quyết các điểm lệch tại mục 2, chọn hình ảnh/màu tạm, xác nhận màn P0 và API contract | Danh sách quyết định, sơ đồ luồng, dữ liệu mẫu 3 vai trò/2 chi nhánh | BA + backend + UI |
-| 1. Nền UI | Router, shell khách/nội bộ, design tokens, component chung, trạng thái lỗi/không quyền, fixture | Prototype điều hướng được trên desktop/mobile; không có nút giả vờ ghi dữ liệu thật | Không cần API nghiệp vụ |
+| 0. Chốt phạm vi | Giải quyết các điểm lệch tại mục 2, xác nhận màn P0 và API contract, chọn ảnh demo đúng ngữ cảnh | Danh sách quyết định, sơ đồ luồng, dữ liệu mẫu 3 vai trò/2 chi nhánh | BA + backend + UI |
+| 1. Nền UI | Router, shell khách/nội bộ, token và component theo UI design contract, trạng thái lỗi/không quyền, fixture | Prototype điều hướng được trên desktop/mobile; không có nút giả vờ ghi dữ liệu thật | Không cần API nghiệp vụ |
 | 2. Lát cắt đặt và duyệt | UI-01 đến UI-08; danh mục → báo giá → yêu cầu → hàng đợi → gán bộ | Demo trọn luồng với fixture; sau đó nối API catalog/auth/rental | API và permission tương ứng |
 | 3. Lát cắt giao trả tiền | UI-09 đến UI-11; giao/thu → đang thuê → trả/kiểm → hoàn | Mỗi khoản tiền, từng bộ và trạng thái quyết toán xem được; xử lý được lỗi/xung đột | API handover, finance, refund |
 | 4. Quản trị và CRM | UI-12 đến UI-16, sau đó UI-17/UI-18 | Nhân viên chỉ thấy dữ liệu/quyền chi nhánh; admin sửa role/giá có audit; CRM MVP chạy | API inventory, RBAC, catalog, CRM, reports |
@@ -163,10 +165,9 @@ Fixture frontend chỉ phục vụ prototype, có tên/ảnh giả và không ch
 
 ## 8. Câu hỏi cần chủ studio/nhóm xác nhận
 
-1. Logo, màu thương hiệu và ảnh trang phục thật đã có chưa? Nếu chưa, dùng bộ màu tạm ở mục 5 cho prototype.
-2. Cô yêu cầu tick quyền ở mức **role** hay từng **nhân viên** và từng thao tác cụ thể? Đề xuất chốt role + chi nhánh cho MVP, đồng thời tách permission theo hành động nhạy cảm.
-3. Studio có cần giá khác theo chi nhánh hoặc đặt lịch đổi giá không? Nếu chưa, dùng giá theo biến thể toàn chuỗi như schema hiện tại.
-4. Khi thu chuyển khoản, có cần mã giao dịch/người đối soát hoặc tải ảnh chứng từ? Nếu có, bổ sung dữ liệu/API trước khi chốt form thu tiền.
-5. Khách có được nhờ người khác nhận/trả trang phục không? Nếu có, bổ sung thông tin người nhận thực tế và quy trình xác minh.
+1. Logo và ảnh trang phục thật đã có chưa? Nếu chưa, dùng ảnh demo có nhãn và accent tạm đã đề xuất.
+2. Studio có cần giá khác theo chi nhánh hoặc đặt lịch đổi giá không? Nếu chưa, dùng giá theo biến thể toàn chuỗi như schema hiện tại.
+3. Khi thu chuyển khoản, có cần mã giao dịch/người đối soát hoặc tải ảnh chứng từ? Nếu có, bổ sung dữ liệu/API trước khi chốt form thu tiền.
+4. Khách có được nhờ người khác nhận/trả trang phục không? Nếu có, bổ sung thông tin người nhận thực tế và quy trình xác minh.
 
 Các câu hỏi này không cản việc dựng design system, navigation và wireframe. Chúng phải được chốt trước khi tích hợp form nghiệp vụ tương ứng.
