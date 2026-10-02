@@ -14,6 +14,7 @@
     "dev:api": "pnpm --filter @costume/api dev",
     "build:api": "pnpm --filter @costume/api build",
     "test:api": "pnpm --filter @costume/api test",
+    "db:seed": "pnpm --filter @costume/api db:seed",
     "prepare": "husky"
   },
   "license": "ISC",
