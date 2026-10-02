@@ -1,0 +1,378 @@
+import { useState } from 'react';
+import type { Navigate } from '../App';
+import {
+  Button,
+  EmptyState,
+  Feedback,
+  Field,
+  Icon,
+  SelectField,
+  SkeletonGrid,
+  StatusLabel,
+} from '../components/ui';
+import { money } from '../components/support';
+import { useFixtureResource } from '../components/useFixtureResource';
+import { branches, fixtureAdapter, fixturePeriod } from '../fixtures/adapter';
+import type { CatalogItem, DemoScenario } from '../fixtures/types';
+
+const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
+
+function CostumeCard({
+  item,
+  periodSelected,
+  fixtureAvailabilityKnown,
+  conflict,
+  onView,
+}: {
+  item: CatalogItem;
+  periodSelected: boolean;
+  fixtureAvailabilityKnown: boolean;
+  conflict: boolean;
+  onView: () => void;
+}) {
+  const availability =
+    periodSelected && fixtureAvailabilityKnown
+      ? item.availableAtFixturePeriod && !conflict
+        ? 'Còn theo kỳ chọn'
+        : 'Không còn theo kỳ chọn'
+      : undefined;
+  return (
+    <article className="costume-card">
+      <div
+        className={`costume-media costume-${item.imagePosition}`}
+        role="img"
+        aria-label={
+          item.imagePosition === 'missing'
+            ? `Chưa có ảnh minh họa của ${item.name}`
+            : `Ảnh minh họa mẫu ${item.name}`
+        }
+      >
+        {item.imagePosition === 'missing' && (
+          <span className="media-placeholder">
+            <Icon name="spark" size={30} /> Chưa có ảnh
+          </span>
+        )}
+        <span className="media-caption">Ảnh minh họa</span>
+      </div>
+      <div className="costume-body">
+        <div className="costume-top">
+          <div>
+            <p className="eyebrow">{item.category}</p>
+            <h3>{item.name}</h3>
+          </div>
+          <Icon name="arrow" size={19} />
+        </div>
+        <p className="costume-description">{item.description}</p>
+        <p className="costume-variant">
+          {item.sizes.join(', ')} <span>·</span> {item.colors.join(', ')}
+        </p>
+        <div className="costume-price">
+          <span>
+            Từ <strong>{money(item.priceFrom)}</strong>/ngày
+          </span>
+          <small>Cọc từ {money(item.depositFrom)}</small>
+        </div>
+        {availability && (
+          <StatusLabel
+            text={availability}
+            tone={availability.startsWith('Còn') ? 'success' : 'warning'}
+          />
+        )}
+        {periodSelected && !fixtureAvailabilityKnown && (
+          <StatusLabel text="Chưa có dữ liệu khả dụng cho kỳ này" tone="neutral" />
+        )}
+        <Button variant="secondary" className="card-button" onClick={onView}>
+          Xem chi tiết <Icon name="arrow" size={17} />
+        </Button>
+      </div>
+    </article>
+  );
+}
+
+export function CatalogPage({ scenario, go }: { scenario: DemoScenario; go: Navigate }) {
+  const [branch, setBranch] = useState(branches[0]);
+  const [pickup, setPickup] = useState('');
+  const [returnAt, setReturnAt] = useState('');
+  const [category, setCategory] = useState('Tất cả');
+  const [size, setSize] = useState('Tất cả');
+  const [color, setColor] = useState('Tất cả');
+  const [search, setSearch] = useState('');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<CatalogItem | null>(null);
+  const { loading, data, error, retry } = useFixtureResource(scenario, loadCatalog);
+  const periodSelected = !!pickup && !!returnAt;
+  const fixtureAvailabilityKnown =
+    pickup === fixturePeriod.pickup &&
+    returnAt === fixturePeriod.returnAt &&
+    branch === branches[0];
+  const filtered = (data ?? []).filter(
+    (item) =>
+      (category === 'Tất cả' || item.category === category) &&
+      (size === 'Tất cả' || item.sizes.includes(size)) &&
+      (color === 'Tất cả' || item.colors.includes(color)) &&
+      item.name.toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi')),
+  );
+  const reset = () => {
+    setCategory('Tất cả');
+    setSize('Tất cả');
+    setColor('Tất cả');
+    setSearch('');
+  };
+  return (
+    <div className="page catalog-page">
+      <section className="catalog-hero">
+        <div className="hero-copy">
+          <span className="hero-kicker">
+            <Icon name="spark" size={15} /> THE LOOK IS YOURS
+          </span>
+          <h1>
+            Trang phục đẹp.
+            <br />
+            <em>Khoảnh khắc của bạn.</em>
+          </h1>
+          <p>
+            Chọn mẫu yêu thích, xem giá tham khảo và gửi yêu cầu thuê. Studio sẽ kiểm tra lịch và
+            xác nhận từng bộ cho bạn.
+          </p>
+          <a className="button button-primary" href="#bo-suu-tap">
+            Khám phá bộ sưu tập <Icon name="arrow" size={18} />
+          </a>
+        </div>
+        <div
+          className="hero-image"
+          role="img"
+          aria-label="Ảnh minh họa ba phong cách trang phục: áo dài, suit và đầm"
+        >
+          <span>Ảnh minh họa</span>
+        </div>
+      </section>
+      <section className="availability-bar" aria-label="Chi nhánh và thời gian thuê">
+        <div className="availability-title">
+          <Icon name="calendar" size={21} />
+          <span>
+            Chọn lịch của bạn<small>Khả dụng chỉ hiển thị sau khi chọn kỳ thuê</small>
+          </span>
+        </div>
+        <SelectField
+          label="Chi nhánh"
+          value={branch}
+          onChange={(event) => setBranch(event.target.value)}
+        >
+          {branches.map((entry) => (
+            <option key={entry}>{entry}</option>
+          ))}
+        </SelectField>
+        <Field
+          label="Nhận đồ"
+          type="datetime-local"
+          value={pickup}
+          onChange={(event) => setPickup(event.target.value)}
+        />
+        <Field
+          label="Trả đồ"
+          type="datetime-local"
+          value={returnAt}
+          onChange={(event) => setReturnAt(event.target.value)}
+        />
+        <button
+          type="button"
+          className="sample-date"
+          onClick={() => {
+            setBranch(branches[0]);
+            setPickup(fixturePeriod.pickup);
+            setReturnAt(fixturePeriod.returnAt);
+          }}
+        >
+          Dùng kỳ thuê mẫu
+        </button>
+      </section>
+      <section id="bo-suu-tap" className="catalog-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">CHỌN ĐÚNG PHONG CÁCH</p>
+            <h2>Bộ sưu tập cho mọi dịp</h2>
+            <p>Mỗi bộ được theo dõi riêng khi studio xác nhận đơn.</p>
+          </div>
+          <div className="catalog-count">
+            {loading ? 'Đang tải...' : `${filtered.length} mẫu trang phục`}
+          </div>
+        </div>
+        <div className="catalog-layout">
+          <aside
+            className={`catalog-filters ${filterOpen ? 'open' : ''}`}
+            aria-label="Bộ lọc trang phục"
+          >
+            <div className="filter-heading">
+              <h3>Bộ lọc</h3>
+              <button className="text-button" onClick={reset}>
+                Xóa lọc
+              </button>
+            </div>
+            <Field
+              label="Tìm trang phục"
+              placeholder="Tên mẫu bạn thích"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+            <SelectField
+              label="Loại trang phục"
+              value={category}
+              onChange={(event) => setCategory(event.target.value)}
+            >
+              {['Tất cả', 'Áo dài', 'Suit', 'Đầm'].map((entry) => (
+                <option key={entry}>{entry}</option>
+              ))}
+            </SelectField>
+            <SelectField
+              label="Kích cỡ"
+              value={size}
+              onChange={(event) => setSize(event.target.value)}
+            >
+              {['Tất cả', 'S', 'M', 'L'].map((entry) => (
+                <option key={entry}>{entry}</option>
+              ))}
+            </SelectField>
+            <SelectField
+              label="Màu sắc"
+              value={color}
+              onChange={(event) => setColor(event.target.value)}
+            >
+              {['Tất cả', 'Hồng phấn', 'Kem', 'Đỏ berry', 'Trắng'].map((entry) => (
+                <option key={entry}>{entry}</option>
+              ))}
+            </SelectField>
+            <p className="filter-note">
+              Giá “từ” là mức tham khảo theo biến thể. Báo giá cuối cần được studio xác nhận.
+            </p>
+          </aside>
+          <div className="catalog-results">
+            <div className="result-toolbar">
+              <div className="active-chips">
+                <span className="chip">
+                  <Icon name="pin" size={15} />
+                  {branch}
+                </span>
+                {periodSelected && (
+                  <span className="chip">
+                    <Icon name="calendar" size={15} />
+                    {pickup.slice(0, 10)} → {returnAt.slice(0, 10)}
+                  </span>
+                )}
+              </div>
+              <Button
+                variant="secondary"
+                className="filter-toggle"
+                onClick={() => setFilterOpen(!filterOpen)}
+              >
+                <Icon name="filter" size={18} /> Bộ lọc
+              </Button>
+            </div>
+            {selectedItem &&
+              !loading &&
+              !error &&
+              data?.some((entry) => entry.id === selectedItem.id) && (
+                <section className="catalog-preview" aria-label={`Chi tiết ${selectedItem.name}`}>
+                  <div
+                    className={`catalog-preview-image costume-${selectedItem.imagePosition}`}
+                    role="img"
+                    aria-label={`Ảnh minh họa ${selectedItem.name}`}
+                  />
+                  <div className="catalog-preview-copy">
+                    <div className="preview-top">
+                      <p className="eyebrow">XEM NHANH TRANG PHỤC</p>
+                      <button
+                        className="icon-button"
+                        aria-label="Đóng chi tiết trang phục"
+                        onClick={() => setSelectedItem(null)}
+                      >
+                        <Icon name="close" />
+                      </button>
+                    </div>
+                    <h3>{selectedItem.name}</h3>
+                    <p>{selectedItem.description}</p>
+                    <p>
+                      <strong>Size:</strong> {selectedItem.sizes.join(', ')} · <strong>Màu:</strong>{' '}
+                      {selectedItem.colors.join(', ')}
+                    </p>
+                    <p>
+                      <strong>Giá tham khảo:</strong> từ {money(selectedItem.priceFrom)}/ngày ·{' '}
+                      <strong>Cọc:</strong> từ {money(selectedItem.depositFrom)}
+                    </p>
+                    <p className="preview-disclaimer">
+                      Việc chọn mẫu chưa giữ bộ. Studio xác nhận mã bộ sau khi nhận yêu cầu.
+                    </p>
+                    <Button onClick={() => go('booking', { costume: selectedItem.id })}>
+                      Bắt đầu yêu cầu thuê <Icon name="arrow" size={17} />
+                    </Button>
+                  </div>
+                </section>
+              )}
+            {scenario === 'conflict' && periodSelected && (
+              <Feedback
+                tone="warning"
+                title="Không còn bộ phù hợp ở chi nhánh này trong thời gian đã chọn"
+              >
+                Hãy đổi ngày, chi nhánh, size hoặc xóa bộ lọc. Lựa chọn khác vẫn được giữ.
+              </Feedback>
+            )}
+            {error && (
+              <Feedback
+                tone="danger"
+                title="Không tải được bộ sưu tập"
+                action={
+                  <Button variant="secondary" onClick={retry}>
+                    Thử lại
+                  </Button>
+                }
+              >
+                {error}
+              </Feedback>
+            )}
+            {loading ? (
+              <SkeletonGrid />
+            ) : !error && filtered.length === 0 ? (
+              <EmptyState
+                title={
+                  periodSelected
+                    ? 'Không có trang phục phù hợp tại chi nhánh và thời gian này'
+                    : 'Chưa có mẫu phù hợp bộ lọc'
+                }
+              >
+                Hãy đổi ngày, xóa bộ lọc hoặc chọn chi nhánh khác.
+                <div className="empty-actions">
+                  <Button variant="secondary" onClick={reset}>
+                    Xóa bộ lọc
+                  </Button>
+                  <Button
+                    variant="quiet"
+                    onClick={() => {
+                      setPickup('');
+                      setReturnAt('');
+                    }}
+                  >
+                    Đổi ngày
+                  </Button>
+                </div>
+              </EmptyState>
+            ) : (
+              !error && (
+                <div className="catalog-grid">
+                  {filtered.map((item) => (
+                    <CostumeCard
+                      key={item.id}
+                      item={item}
+                      periodSelected={periodSelected}
+                      fixtureAvailabilityKnown={fixtureAvailabilityKnown}
+                      conflict={scenario === 'conflict'}
+                      onView={() => setSelectedItem(item)}
+                    />
+                  ))}
+                </div>
+              )
+            )}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}

@@ -1,0 +1,575 @@
+import { useState } from 'react';
+import type { Navigate } from '../App';
+import {
+  Button,
+  EmptyState,
+  Feedback,
+  Field,
+  Icon,
+  MoneyBreakdown,
+  SelectField,
+  StatusLabel,
+  TextAreaField,
+} from '../components/ui';
+import { money, orderStatus } from '../components/support';
+import { useFixtureResource } from '../components/useFixtureResource';
+import { branches, fixtureAdapter, returnSnapshots } from '../fixtures/adapter';
+import type { DemoScenario, Order } from '../fixtures/types';
+
+const loadOrders = (scenario: DemoScenario) => fixtureAdapter.listOrders(scenario);
+
+export function OrderDetailShell({
+  scenario,
+  mode,
+  go,
+  initialOrderId,
+}: {
+  scenario: DemoScenario;
+  mode: 'handover' | 'return';
+  go: Navigate;
+  initialOrderId: string;
+}) {
+  const [branch, setBranch] = useState(branches[0]);
+  const [orderId, setOrderId] = useState(initialOrderId);
+  const [barcode, setBarcode] = useState('');
+  const [matchedCode, setMatchedCode] = useState('');
+  const [matchedCodes, setMatchedCodes] = useState<string[]>([]);
+  const [scanIssue, setScanIssue] = useState('');
+  const [scanBusy, setScanBusy] = useState(false);
+  const [checks, setChecks] = useState<Record<string, boolean>>({});
+  const [method, setMethod] = useState<'CASH' | 'BANK_TRANSFER'>('CASH');
+  const [rentPreview, setRentPreview] = useState(false);
+  const [depositPreview, setDepositPreview] = useState(false);
+  const [note, setNote] = useState('');
+  const [result, setResult] = useState('');
+  const { loading, data, error, retry } = useFixtureResource(scenario, loadOrders);
+  const eligible = (data ?? []).filter(
+    (entry) =>
+      entry.branch === branch &&
+      (mode === 'handover'
+        ? entry.status === 'READY_FOR_PICKUP'
+        : ['ACTIVE', 'RETURN_INSPECTION'].includes(entry.status)),
+  );
+  const order: Order | undefined =
+    scenario === 'refundFailed' && mode === 'return'
+      ? (eligible.find((entry) => entry.id === 'RT-1033') ?? eligible[0])
+      : (eligible.find((entry) => entry.id === orderId) ?? eligible[0]);
+  const rental = order?.money.find((line) => line.label === 'Tiền thuê');
+  const deposit = order?.money.find((line) => line.label === 'Tiền cọc');
+  const settlement = order ? returnSnapshots[order.id] : undefined;
+  const requiresChecks = order
+    ? order.items.flatMap((item) => [`${item.id}-condition`, `${item.id}-accessories`])
+    : [];
+  const allChecked = requiresChecks.length > 0 && requiresChecks.every((key) => checks[key]);
+  const onOrderChange = (id: string) => {
+    setOrderId(id);
+    setBarcode('');
+    setMatchedCode('');
+    setMatchedCodes([]);
+    setChecks({});
+    setRentPreview(false);
+    setDepositPreview(false);
+    setScanIssue('');
+    setResult('');
+  };
+  const lookup = async () => {
+    setScanBusy(true);
+    setScanIssue('');
+    setMatchedCode('');
+    try {
+      const hit = await fixtureAdapter.lookupBarcode(barcode, branch, scenario);
+      if (hit.order.id !== order?.id) {
+        setScanIssue(
+          `Mã ${barcode.toUpperCase()} thuộc đơn ${hit.order.id}, không khớp đơn ${order?.id}. Chưa ghi nhận giao/trả.`,
+        );
+      } else {
+        const code = hit.order.items[hit.itemIndex].unitCode ?? '';
+        setMatchedCode(code);
+        setMatchedCodes((current) => (current.includes(code) ? current : [...current, code]));
+      }
+    } catch (caught) {
+      setScanIssue(caught instanceof Error ? caught.message : 'Chưa tra cứu được mã bộ.');
+    } finally {
+      setScanBusy(false);
+    }
+  };
+  const restricted =
+    ['permission', 'version', 'cancelled', 'conflict', 'unitBlocked'].includes(scenario) ||
+    (mode === 'return' && scenario === 'refundFailed');
+  const effectiveMethod = scenario === 'bankPending' ? 'BANK_TRANSFER' : method;
+  const allScanned =
+    !!order && order.items.every((item) => !!item.unitCode && matchedCodes.includes(item.unitCode));
+  const previewHandover = () => {
+    if (
+      !order ||
+      !allScanned ||
+      !allChecked ||
+      !rentPreview ||
+      !depositPreview ||
+      effectiveMethod !== 'CASH' ||
+      restricted
+    )
+      return;
+    setResult(
+      'Checklist và tiền mặt đã đủ trong bản xem trước. Chỉ backend mới có thể xác nhận giao, thu tiền và chuyển đơn sang Đang thuê. Chưa có thay đổi nào được lưu.',
+    );
+  };
+  const previewReturn = () => {
+    if (!order || !allScanned || !allChecked || restricted) return;
+    setResult(
+      order.status === 'ACTIVE'
+        ? 'Đã xem trước kết quả kiểm tra. Backend cần ghi nhận trả để chuyển đơn sang Đang kiểm tra đồ trả; chưa hoàn cọc.'
+        : 'Đã xem trước quyết toán. Backend cần xác nhận cấn trừ, hoàn cọc và điều kiện hoàn tất; bản demo chưa ghi giao dịch.',
+    );
+  };
+  return (
+    <div className="page staff-page task-page">
+      <div className="staff-page-heading">
+        <div>
+          <p className="eyebrow">
+            {mode === 'handover' ? 'UI-09 · GIAO TRANG PHỤC' : 'UI-11 · NHẬN TRẢ TRANG PHỤC'}
+          </p>
+          <h1>{mode === 'handover' ? 'Giao trang phục' : 'Nhận trả trang phục'}</h1>
+          <p>
+            {mode === 'handover'
+              ? 'Đối chiếu từng bộ và từng khoản thu trước khi giao.'
+              : 'Kiểm từng bộ, đối chiếu phí và quyết toán cọc.'}
+          </p>
+        </div>
+        <Button variant="secondary" onClick={() => go('orders', { order: order?.id ?? orderId })}>
+          <Icon name="arrow" size={17} /> Về đơn thuê
+        </Button>
+      </div>
+      <div className="task-toolbar">
+        <SelectField
+          label="Chi nhánh thao tác"
+          value={branch}
+          onChange={(event) => {
+            setBranch(event.target.value);
+            onOrderChange('');
+          }}
+        >
+          {branches.map((entry) => (
+            <option key={entry}>{entry}</option>
+          ))}
+        </SelectField>
+        <SelectField
+          label="Đơn đang xử lý"
+          value={order?.id ?? ''}
+          onChange={(event) => onOrderChange(event.target.value)}
+        >
+          {eligible.length === 0 && <option value="">Không có đơn</option>}
+          {eligible.map((entry) => (
+            <option key={entry.id} value={entry.id}>
+              {entry.id} · {entry.customer}
+            </option>
+          ))}
+        </SelectField>
+      </div>
+      {scenario === 'permission' && (
+        <Feedback tone="danger" title="Bạn không còn quyền xử lý đơn tại chi nhánh này">
+          Không gửi thao tác cũ. Chuyển chi nhánh có quyền hoặc về tổng quan.
+        </Feedback>
+      )}
+      {scenario === 'cancelled' && (
+        <Feedback tone="danger" title="Đơn đã hủy trong lúc bạn thao tác">
+          Mở lịch sử đơn và về hàng đợi; không giao hoặc nhận trả theo dữ liệu cũ.
+        </Feedback>
+      )}
+      {scenario === 'version' && (
+        <Feedback tone="warning" title="Đơn đã thay đổi từ lúc bạn mở">
+          Kiểm tra phiên bản và trạng thái mới trước khi tiếp tục. Checklist chưa gửi vẫn được giữ.
+        </Feedback>
+      )}
+      {scenario === 'conflict' && (
+        <Feedback tone="warning" title="Bộ vừa thay đổi khả dụng">
+          Mã bộ cần được kiểm tra lại trên đơn; không tự thay bộ và không ghi giao/trả.
+        </Feedback>
+      )}
+      {scenario === 'unitBlocked' && (
+        <Feedback tone="warning" title="Bộ đang vệ sinh hoặc sửa chữa">
+          Bộ chưa sẵn sàng cho giao/nhận tiếp theo. Báo quản lý hoặc chọn bộ/kỳ khác trên đơn.
+        </Feedback>
+      )}
+      {error && (
+        <Feedback
+          tone="danger"
+          title="Không tải được đơn"
+          action={
+            <Button variant="secondary" onClick={retry}>
+              Thử lại
+            </Button>
+          }
+        >
+          {error}
+        </Feedback>
+      )}
+      {loading && (
+        <div className="task-skeleton">
+          <div className="shimmer" />
+          <div className="shimmer" />
+        </div>
+      )}
+      {!loading && !error && !order && (
+        <EmptyState
+          title={
+            mode === 'handover'
+              ? 'Chưa có đơn sẵn sàng giao tại chi nhánh này'
+              : 'Chưa có đơn cần nhận trả tại chi nhánh này'
+          }
+          action={
+            <Button variant="secondary" onClick={() => go('orders')}>
+              Mở danh sách đơn
+            </Button>
+          }
+        />
+      )}
+      {!loading && !error && order && (
+        <div className="task-layout">
+          <div className="task-main">
+            <section className="task-order-card">
+              <div className="task-order-top">
+                <div>
+                  <p className="eyebrow">ĐƠN ĐANG MỞ · {order.id}</p>
+                  <h2>{order.customer}</h2>
+                  <p>
+                    {order.phone} · {order.branch}
+                  </p>
+                </div>
+                <StatusLabel
+                  text={orderStatus[order.status].text}
+                  tone={orderStatus[order.status].tone}
+                />
+              </div>
+              <div className="task-order-meta">
+                <span>
+                  <Icon name="calendar" size={17} /> Nhận: {order.pickup}
+                </span>
+                <span>
+                  <Icon name="clock" size={17} /> Hẹn trả: {order.returnAt}
+                </span>
+              </div>
+            </section>
+            <section className="task-card">
+              <div className="task-card-heading">
+                <span className="round-step">01</span>
+                <div>
+                  <p className="eyebrow">TRA CỨU BỘ VẬT LÝ</p>
+                  <h2>Quét hoặc nhập barcode</h2>
+                </div>
+              </div>
+              <p className="section-help">
+                Quét chỉ tra cứu; không tự ghi nhận giao hoặc trả. Mã phải khớp đơn và chi nhánh
+                đang mở.
+              </p>
+              <div className="scan-form">
+                <Field
+                  label="Barcode bộ trang phục"
+                  placeholder={mode === 'handover' ? 'Ví dụ: BC-028' : 'Ví dụ: BC-031'}
+                  value={barcode}
+                  onChange={(event) => {
+                    setBarcode(event.target.value);
+                    setScanIssue('');
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      void lookup();
+                    }
+                  }}
+                />
+                <Button
+                  onClick={() => {
+                    void lookup();
+                  }}
+                  loading={scanBusy}
+                >
+                  <Icon name="scan" size={18} /> Tra cứu
+                </Button>
+              </div>
+              {scanIssue && (
+                <Feedback
+                  tone="danger"
+                  title={
+                    scenario === 'barcodeOtherBranch'
+                      ? 'Mã thuộc chi nhánh khác'
+                      : 'Chưa tìm thấy bộ phù hợp'
+                  }
+                >
+                  {scanIssue}
+                </Feedback>
+              )}
+              {matchedCode && (
+                <Feedback tone="success" title={`${matchedCode} khớp đơn ${order.id}`}>
+                  <span>
+                    {order.items.find((item) => item.unitCode === matchedCode)?.costume} ·{' '}
+                    {order.items.find((item) => item.unitCode === matchedCode)?.variant} ·{' '}
+                    {order.customer} · hạn trả {order.returnAt}
+                  </span>
+                </Feedback>
+              )}
+              <div className="expected-units">
+                <span>Mã cần đối chiếu:</span>
+                {order.items.map((item) => (
+                  <span
+                    className={
+                      'barcode-chip' +
+                      (matchedCodes.includes(item.unitCode ?? '') ? ' scanned' : '')
+                    }
+                    key={item.id}
+                  >
+                    {matchedCodes.includes(item.unitCode ?? '') ? '✓ ' : ''}
+                    {item.unitCode ?? 'Chưa gán mã'}
+                  </span>
+                ))}
+              </div>
+            </section>
+            <section className="task-card">
+              <div className="task-card-heading">
+                <span className="round-step">02</span>
+                <div>
+                  <p className="eyebrow">
+                    {mode === 'handover' ? 'TRƯỚC KHI GIAO' : 'KHI NHẬN TRẢ'}
+                  </p>
+                  <h2>{mode === 'handover' ? 'Tình trạng và phụ kiện' : 'Kiểm tra từng bộ'}</h2>
+                </div>
+              </div>
+              {order.items.map((item) => (
+                <div className="check-unit" key={item.id}>
+                  <div className="check-unit-head">
+                    <strong>
+                      {item.costume} · {item.variant}
+                    </strong>
+                    <span>{item.unitCode}</span>
+                  </div>
+                  <label className="check-row">
+                    <input
+                      type="checkbox"
+                      checked={!!checks[`${item.id}-condition`]}
+                      onChange={(event) =>
+                        setChecks((current) => ({
+                          ...current,
+                          [`${item.id}-condition`]: event.target.checked,
+                        }))
+                      }
+                    />
+                    <span>
+                      {mode === 'handover'
+                        ? 'Đã kiểm tra tình trạng xuất của bộ'
+                        : 'Đã ghi nhận tình trạng bộ khi trả'}
+                    </span>
+                  </label>
+                  <label className="check-row">
+                    <input
+                      type="checkbox"
+                      checked={!!checks[`${item.id}-accessories`]}
+                      onChange={(event) =>
+                        setChecks((current) => ({
+                          ...current,
+                          [`${item.id}-accessories`]: event.target.checked,
+                        }))
+                      }
+                    />
+                    <span>
+                      {mode === 'handover'
+                        ? 'Đã đối chiếu phụ kiện thực giao'
+                        : 'Đã đối chiếu phụ kiện thiếu/hỏng'}
+                    </span>
+                  </label>
+                </div>
+              ))}
+              <TextAreaField
+                label="Ghi chú tình trạng / lý do phí"
+                rows={3}
+                placeholder="Ghi lại điều cần xử lý; nội dung chỉ tồn tại trong phiên demo"
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+              />
+              <p className="section-help">
+                Ảnh bằng chứng cần dịch vụ lưu trữ và quyền truy cập; prototype chưa tải ảnh lên.
+              </p>
+            </section>
+            <section className="task-card">
+              <div className="task-card-heading">
+                <span className="round-step">03</span>
+                <div>
+                  <p className="eyebrow">{mode === 'handover' ? 'THU TẠI QUẦY' : 'QUYẾT TOÁN'}</p>
+                  <h2>
+                    {mode === 'handover' ? 'Tiền thuê và tiền cọc' : 'Phí, cấn trừ và hoàn cọc'}
+                  </h2>
+                </div>
+              </div>
+              {mode === 'handover' ? (
+                <>
+                  <SelectField
+                    label="Phương thức thu (bản xem trước)"
+                    value={effectiveMethod}
+                    disabled={scenario === 'bankPending'}
+                    onChange={(event) => {
+                      setMethod(event.target.value as 'CASH' | 'BANK_TRANSFER');
+                      setRentPreview(false);
+                      setDepositPreview(false);
+                    }}
+                  >
+                    <option value="CASH">Tiền mặt</option>
+                    <option value="BANK_TRANSFER">Chuyển khoản</option>
+                  </SelectField>
+                  <div className="collection-table">
+                    <div className="collection-head">
+                      <span>Khoản</span>
+                      <span>Cần thu</span>
+                      <span>Đã thu (demo)</span>
+                      <span>Còn thiếu</span>
+                    </div>
+                    <div>
+                      <strong>Tiền thuê</strong>
+                      <span>{money(rental?.amount ?? 0)}</span>
+                      <span>
+                        {effectiveMethod === 'CASH' && rentPreview
+                          ? money(rental?.amount ?? 0)
+                          : money(0)}
+                      </span>
+                      <span>
+                        {effectiveMethod === 'CASH' && rentPreview
+                          ? money(0)
+                          : money(rental?.amount ?? 0)}
+                      </span>
+                    </div>
+                    <div>
+                      <strong>Tiền cọc</strong>
+                      <span>{money(deposit?.amount ?? 0)}</span>
+                      <span>
+                        {effectiveMethod === 'CASH' && depositPreview
+                          ? money(deposit?.amount ?? 0)
+                          : money(0)}
+                      </span>
+                      <span>
+                        {effectiveMethod === 'CASH' && depositPreview
+                          ? money(0)
+                          : money(deposit?.amount ?? 0)}
+                      </span>
+                    </div>
+                  </div>
+                  {effectiveMethod === 'CASH' ? (
+                    <div className="cash-checks">
+                      <label className="check-row">
+                        <input
+                          type="checkbox"
+                          checked={rentPreview}
+                          onChange={(event) => setRentPreview(event.target.checked)}
+                        />
+                        <span>Xem trước: đã nhận tiền thuê bằng tiền mặt</span>
+                      </label>
+                      <label className="check-row">
+                        <input
+                          type="checkbox"
+                          checked={depositPreview}
+                          onChange={(event) => setDepositPreview(event.target.checked)}
+                        />
+                        <span>Xem trước: đã nhận tiền cọc bằng tiền mặt</span>
+                      </label>
+                    </div>
+                  ) : (
+                    <Feedback tone="warning" title="Chuyển khoản chưa đối soát">
+                      Chưa xác nhận tiền đã nhận. Kiểm tra giao dịch và chỉ ghi nhận sau đối soát;
+                      bản demo không kết nối ngân hàng.
+                    </Feedback>
+                  )}
+                  {scenario === 'bankPending' && (
+                    <Feedback tone="warning" title="Giao dịch đang chờ xác minh">
+                      Không đánh dấu Đã thu hoặc giao bộ cho đến khi đối soát xong.
+                    </Feedback>
+                  )}
+                </>
+              ) : (
+                settlement && (
+                  <>
+                    <div className="settlement-table">
+                      <div>
+                        <span>Cọc đang giữ</span>
+                        <strong>{money(settlement.heldDeposit)}</strong>
+                      </div>
+                      <div>
+                        <span>Phí trễ / hỏng / thiếu</span>
+                        <strong>
+                          {money(settlement.lateFee)} / {money(settlement.damageFee)} /{' '}
+                          {money(settlement.missingFee)}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Cấn trừ</span>
+                        <strong>{money(settlement.offset)}</strong>
+                      </div>
+                      <div>
+                        <span>Đã hoàn</span>
+                        <strong>{money(settlement.refunded)}</strong>
+                      </div>
+                      <div className="settlement-total">
+                        <span>Còn dự kiến hoàn</span>
+                        <strong>{money(settlement.remainingRefund)}</strong>
+                      </div>
+                    </div>
+                    <p className="section-help">
+                      Đây là snapshot fixture. Phí và số hoàn thực tế phải do backend quyết toán;
+                      giao diện không tự tính.
+                    </p>
+                    {scenario === 'refundFailed' && (
+                      <Feedback tone="danger" title="Hoàn cọc chưa thành công">
+                        Giao dịch RF-DEMO-01 chưa hoàn tất. Giữ nguyên lịch sử refund; xem lý do và
+                        thử lại theo quyền sau khi kiểm tra, tránh hoàn trùng.
+                      </Feedback>
+                    )}
+                  </>
+                )
+              )}
+              {result && (
+                <Feedback tone="success" title="Đã kiểm tra điều kiện trong phiên demo">
+                  {result}
+                </Feedback>
+              )}
+              <div className="task-final">
+                <Button
+                  onClick={mode === 'handover' ? previewHandover : previewReturn}
+                  disabled={
+                    !allScanned ||
+                    !allChecked ||
+                    restricted ||
+                    (mode === 'handover' &&
+                      (!rentPreview || !depositPreview || effectiveMethod === 'BANK_TRANSFER'))
+                  }
+                >
+                  {mode === 'handover'
+                    ? 'Kiểm tra điều kiện giao'
+                    : order.status === 'ACTIVE'
+                      ? 'Xem trước chuyển sang kiểm tra'
+                      : 'Xem trước quyết toán'}
+                </Button>
+                <p>
+                  {mode === 'handover'
+                    ? 'Chỉ backend có thể xác nhận thu tiền và chuyển đơn sang Đang thuê.'
+                    : 'Cọc chỉ hoàn sau kiểm tra và quyết toán được xác nhận.'}
+                </p>
+              </div>
+            </section>
+          </div>
+          <aside className="task-side">
+            <MoneyBreakdown lines={order.money} title="Trạng thái tiền của đơn" />
+            <div className="task-side-note">
+              <p className="eyebrow">TRẠNG THÁI NHIỀU CHIỀU</p>
+              <p>
+                <strong>Đơn:</strong> {orderStatus[order.status].text}
+              </p>
+              <p>
+                <strong>Bộ:</strong>{' '}
+                {order.items.map((item) => `${item.unitCode} · ${item.unitStatus}`).join(', ')}
+              </p>
+              <p>
+                <strong>Cọc:</strong> {deposit?.status}
+              </p>
+            </div>
+          </aside>
+        </div>
+      )}
+    </div>
+  );
+}
