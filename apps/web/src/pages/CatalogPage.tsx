@@ -28,10 +28,16 @@ function HeroCarousel() {
   const [position, setPosition] = useState(2);
   const [transitionEnabled, setTransitionEnabled] = useState(true);
   const [paused, setPaused] = useState(false);
+  const [manuallyPlaying, setManuallyPlaying] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [compact, setCompact] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches,
+  );
+  const [tablet, setTablet] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      window.matchMedia('(min-width: 768px) and (max-width: 1023px)').matches,
   );
   const [reducedMotion, setReducedMotion] = useState(
     () =>
@@ -40,6 +46,11 @@ function HeroCarousel() {
   );
   const resetFrame = useRef<number | undefined>(undefined);
   const activeLook = heroLooks[(position - 2) % heroLooks.length];
+  const trackOffset = compact
+    ? -((position + 1) * 100) / 9
+    : tablet
+      ? 4.54545 - ((position + 1) * 100) / 9
+      : -(position * 100) / 9;
   const resetLoop = useCallback(() => {
     setTransitionEnabled(false);
     setPosition(2);
@@ -67,18 +78,28 @@ function HeroCarousel() {
   }, [resetLoop]);
 
   useEffect(() => {
-    if (paused || hovered || focused || reducedMotion || compact) return;
+    const medium = window.matchMedia('(min-width: 768px) and (max-width: 1023px)');
+    const update = () => {
+      setTablet(medium.matches);
+      resetLoop();
+    };
+    medium.addEventListener('change', update);
+    return () => medium.removeEventListener('change', update);
+  }, [resetLoop]);
+
+  useEffect(() => {
+    if (paused || reducedMotion || ((hovered || focused) && !manuallyPlaying)) return;
     const timer = window.setInterval(() => {
       if (!document.hidden) setPosition((current) => current + 1);
     }, 4800);
     return () => window.clearInterval(timer);
-  }, [paused, hovered, focused, reducedMotion, compact]);
+  }, [paused, hovered, focused, reducedMotion, manuallyPlaying]);
 
   useEffect(() => {
-    if (position !== 5 || compact) return;
-    const fallback = window.setTimeout(resetLoop, 1350);
+    if (position !== 5) return;
+    const fallback = window.setTimeout(resetLoop, 1100);
     return () => window.clearTimeout(fallback);
-  }, [position, compact, resetLoop]);
+  }, [position, resetLoop]);
 
   useEffect(
     () => () => {
@@ -101,36 +122,45 @@ function HeroCarousel() {
     <div
       className="hero-image"
       role="group"
-      aria-roledescription={compact ? undefined : 'carousel'}
-      aria-label={
-        compact ? 'Ảnh minh họa phong cách trang phục' : 'Ba phong cách trang phục minh họa'
-      }
+      aria-roledescription="carousel"
+      aria-label={`Ba phong cách trang phục minh họa, nổi bật: ${activeLook.label}`}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseLeave={() => {
+        setHovered(false);
+        if (!focused) setManuallyPlaying(false);
+      }}
       onFocusCapture={() => setFocused(true)}
       onBlurCapture={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setFocused(false);
+          if (!hovered) setManuallyPlaying(false);
+        }
       }}
     >
       <div
         className="hero-carousel-track"
         style={{
-          transform: `translate3d(-${(position * 100) / 9}%, 0, 0)`,
+          transform: `translate3d(${trackOffset}%, 0, 0)`,
           transition: transitionEnabled ? undefined : 'none',
         }}
         onTransitionEnd={finishSlide}
-        aria-hidden="true"
+        aria-live="off"
       >
         {Array.from({ length: 9 }, (_, index) => {
           const look = heroLooks[index % heroLooks.length];
           return (
             <div
-              className={`hero-slide hero-slide--${look.code} ${index === position + 1 ? 'is-active' : ''}`}
+              className={`hero-slide hero-slide--${look.code} ${index === position + 1 ? 'is-active' : index === position ? 'is-prev' : index === position + 2 ? 'is-next' : ''}`}
               key={`${look.code}-${index}`}
+              aria-hidden={index !== position + 1}
             >
               <div className="hero-slide-visual">
                 <div className="hero-slide-photo">
-                  <img src="/images/lookbook-minh-hoa.png" alt="" draggable="false" />
+                  <img
+                    src="/images/lookbook-minh-hoa.png"
+                    alt={`Ảnh minh họa trang phục ${look.label}`}
+                    draggable="false"
+                  />
                 </div>
               </div>
             </div>
@@ -138,20 +168,28 @@ function HeroCarousel() {
         })}
       </div>
       <div className="hero-carousel-controls">
-        <span aria-hidden="true">
-          {activeLook.label} · 0{((position - 2) % 3) + 1}/03
-        </span>
-        <button
-          type="button"
-          onClick={() => setPaused((current) => !current)}
-          aria-label={
-            paused ? 'Tiếp tục trình chiếu trang phục' : 'Tạm dừng trình chiếu trang phục'
-          }
-          aria-pressed={paused}
-          title={paused ? 'Tiếp tục' : 'Tạm dừng'}
-        >
-          {paused ? '▶' : 'Ⅱ'}
-        </button>
+        <div className="hero-carousel-indicator" aria-hidden="true">
+          {heroLooks.map((look, index) => (
+            <span className={look.code === activeLook.code ? 'is-active' : ''} key={index} />
+          ))}
+        </div>
+        {!reducedMotion && (
+          <button
+            className="hero-carousel-pause"
+            type="button"
+            onClick={() => {
+              setManuallyPlaying(paused);
+              setPaused(!paused);
+            }}
+            aria-label={
+              paused ? 'Tiếp tục trình chiếu trang phục' : 'Tạm dừng trình chiếu trang phục'
+            }
+            aria-pressed={paused}
+            title={paused ? 'Tiếp tục' : 'Tạm dừng'}
+          >
+            {paused ? '▶' : 'Ⅱ'}
+          </button>
+        )}
       </div>
     </div>
   );
