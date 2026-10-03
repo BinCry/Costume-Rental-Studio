@@ -23,9 +23,10 @@ Khi có khác biệt giữa các tài liệu, dùng thứ tự ưu tiên sau:
 | `Quy chuẩn thiết kế giao diện và năm màn hình lõi.md` | Token hình ảnh, trạng thái nhiều chiều, đặc tả 5 màn hình đầu, trạng thái lỗi/xung đột và tiêu chí nghiệm thu |
 | `Hướng dẫn trình diễn giao diện toàn hệ thống.md` | Các route, cách chạy, kịch bản fixture và phụ thuộc API của 18 màn hình |
 | `Đánh giá và tối ưu trải nghiệm mười luồng chính.md` | Ma sát, thay đổi trước/sau, kiểm tra UX và phụ thuộc API của 10 hành trình |
+| `Đối chiếu luồng UI UX theo báo cáo rà soát nghiệp vụ.md` | Mức bao phủ UI/fixture của 40 tình huống, các hành trình mới và phần chờ API/quyết định |
 | `Báo cáo rà soát nghiệp vụ toàn diện studio cho thuê trang phục.docx` | Đánh giá nghiệp vụ đa chi nhánh, ngoại lệ vận hành và 40 kịch bản nghiệm thu; các thay đổi trong báo cáo là đề xuất cần chốt trước khi triển khai |
 | `ci-cd.md` | CI, publish Docker image, deploy Coolify và migration production |
 
 File `Phân tích nghiệp vụ và thiết kế hệ thống studio cho thuê trang phục.md` là tài liệu phân tích lịch sử. Một số phương án trong đó đã được rút gọn và không còn phản ánh schema cuối cùng; không dùng file đó làm nguồn để viết migration hoặc API.
 
-Báo cáo rà soát nghiệp vụ là tài liệu đối chiếu, không tự thay thế nguồn chuẩn ở trên. Đặc biệt, ghi chú về SePay và cách hoàn cọc trong báo cáo chưa phải quyết định đã chốt; cần xác nhận phương thức đối soát, hoàn tiền và phạm vi MVP trước khi sửa quy tắc thanh toán.
+Báo cáo rà soát nghiệp vụ là tài liệu đối chiếu, không tự thay thế nguồn chuẩn ở trên. Với SePay và hoàn cọc, giao diện hiện chỉ hiển thị trạng thái và điểm cần chốt theo lựa chọn của nhóm ngày 03/10/2026; phương thức hoàn, đối soát và phạm vi MVP vẫn cần quyết định trước khi sửa quy tắc thanh toán.

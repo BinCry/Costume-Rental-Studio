@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { Navigate } from '../App';
 import { Button, Feedback, Field, SelectField, StatusLabel } from '../components/ui';
 import { money } from '../components/support';
@@ -16,7 +16,7 @@ import {
 } from '../components/studio';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { fixtureAdapter, fixtureCatalog, fixturePeriod } from '../fixtures/adapter';
-import { studioAdapter, type ActiveUnit } from '../fixtures/studio';
+import { studioAdapter, type ActiveUnit, type Unit } from '../fixtures/studio';
 import type { DemoScenario, QuoteSnapshot } from '../fixtures/types';
 
 export function CounterRentalPage({
@@ -42,17 +42,25 @@ export function CounterRentalPage({
   const [pickup, setPickup] = useState(fixturePeriod.pickup);
   const [due, setDue] = useState(fixturePeriod.returnAt);
   const [quote, setQuote] = useState<QuoteSnapshot>();
+  const [eligibleUnits, setEligibleUnits] = useState<Unit[]>([]);
+  const [selectedUnit, setSelectedUnit] = useState('');
   const [issue, setIssue] = useState('');
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState('');
+  const [createdMode, setCreatedMode] = useState<'pending' | 'confirmed'>('pending');
+  const submittingRef = useRef(false);
   const item = fixtureCatalog.find((c) => c.id === costume);
-  const clearQuote = () => setQuote(undefined);
+  const clearQuote = () => {
+    setQuote(undefined);
+    setEligibleUnits([]);
+    setSelectedUnit('');
+  };
   const getQuote = async () => {
     setBusy(true);
     setIssue('');
     try {
-      setQuote(
-        await fixtureAdapter.getQuote(
+      const [nextQuote, units] = await Promise.all([
+        fixtureAdapter.getQuote(
           {
             costumeId: costume,
             variant,
@@ -66,14 +74,25 @@ export function CounterRentalPage({
           },
           scenario,
         ),
+        studioAdapter.units(scenario),
+      ]);
+      setQuote(nextQuote);
+      setEligibleUnits(
+        units.filter(
+          (unit) =>
+            unit.branch === rentalBranch && unit.model === item?.name && unit.variant === variant,
+        ),
       );
+      setSelectedUnit('');
     } catch (e) {
+      clearQuote();
       setIssue(e instanceof Error ? e.message : 'Không tải được báo giá.');
     } finally {
       setBusy(false);
     }
   };
-  const create = async (name: string, phone: string) => {
+  const create = async (name: string, phone: string, confirmNow: boolean) => {
+    if (submittingRef.current || created) return;
     if (!quote) {
       setIssue('Tải báo giá trước khi tạo yêu cầu.');
       return;
@@ -82,24 +101,29 @@ export function CounterRentalPage({
       setIssue('Chọn hoặc tạo hồ sơ khách hợp lệ.');
       return;
     }
+    if (
+      creating &&
+      data?.some((customer) => customer.phone.replaceAll(' ', '') === phone.replaceAll(' ', ''))
+    ) {
+      setIssue(
+        'Số điện thoại đã có hồ sơ. Chọn hồ sơ hiện có và xác minh khách tại quầy trước khi tiếp tục.',
+      );
+      return;
+    }
+    if (
+      confirmNow &&
+      (!canConfirm ||
+        !eligibleUnits.some(
+          (unit) => unit.barcode === selectedUnit && unit.status === 'READY' && unit.available,
+        ))
+    ) {
+      setIssue('Chọn một bộ READY còn khả dụng trước khi xác nhận.');
+      return;
+    }
+    submittingRef.current = true;
     setBusy(true);
     setIssue('');
     try {
-      if (creating) {
-        await studioAdapter.saveCustomer(
-          {
-            code: `KH-DEMO-${(data?.length ?? 0) + 1}`,
-            name,
-            phone,
-            email: '',
-            preferredBranch: rentalBranch,
-            history: [],
-            interactions: ['03/10 · Tạo tại quầy'],
-          },
-          scenario,
-        );
-        retry();
-      }
       const id = await fixtureAdapter.submitBooking(
         {
           costumeId: costume,
@@ -131,9 +155,23 @@ export function CounterRentalPage({
         quote,
       );
       setCreated(id);
+      setCreatedMode('pending');
+      if (creating) retry();
+      if (confirmNow) {
+        try {
+          await fixtureAdapter.confirmOrder(id, 1, [selectedUnit], scenario);
+          studioAdapter.reflectConfirmation(id, [selectedUnit]);
+          setCreatedMode('confirmed');
+        } catch (caught) {
+          setIssue(
+            `${caught instanceof Error ? caught.message : 'Chưa xác nhận được bộ.'} Yêu cầu ${id} đã tạo và đang chờ xử lý; mở đơn để kiểm tra, không gửi lại yêu cầu.`,
+          );
+        }
+      }
     } catch (e) {
       setIssue(e instanceof Error ? e.message : 'Không thể tạo yêu cầu.');
     } finally {
+      submittingRef.current = false;
       setBusy(false);
     }
   };
@@ -156,8 +194,8 @@ export function CounterRentalPage({
           <div className="page">
             <PageHeading
               eyebrow="VẬN HÀNH / TẠI QUẦY"
-              title="Tạo yêu cầu thuê"
-              description="Luồng tại quầy dùng cùng báo giá và quy tắc xác nhận với yêu cầu online."
+              title="Tạo đơn thuê tại quầy"
+              description="Chọn khách và kỳ thuê, xem báo giá, rồi tạo yêu cầu hoặc gán bộ ngay khi có quyền."
             />
             <div className="feature-two-column">
               <div>
@@ -277,9 +315,9 @@ export function CounterRentalPage({
                       }}
                     />
                   </div>
-                  <Feedback title="Chưa giữ bộ">
-                    Tạo yêu cầu tại quầy chưa tự gán bộ. Nhân viên có quyền xử lý sẽ kiểm tra từng
-                    barcode trước khi xác nhận.
+                  <Feedback title="Chỉ giữ bộ sau khi xác nhận">
+                    Báo giá và yêu cầu chưa tự giữ bộ. Chọn barcode READY rồi xác nhận để cập nhật
+                    fixture; tiền thuê và cọc vẫn chỉ được thu ở bước giao đồ.
                   </Feedback>
                   <Button variant="secondary" loading={busy} onClick={() => void getQuote()}>
                     Kiểm tra khả dụng & báo giá
@@ -307,32 +345,83 @@ export function CounterRentalPage({
                       <p className="muted">
                         Báo giá fixture hết hạn: {quote.expiresAt}. Cọc không phải doanh thu.
                       </p>
+                      {canConfirm && (
+                        <SelectField
+                          label="Bộ sẽ gán khi xác nhận"
+                          value={selectedUnit}
+                          onChange={(event) => setSelectedUnit(event.target.value)}
+                        >
+                          <option value="">Chọn barcode khả dụng</option>
+                          {eligibleUnits.map((unit) => (
+                            <option
+                              key={unit.barcode}
+                              value={unit.barcode}
+                              disabled={unit.status !== 'READY' || !unit.available}
+                            >
+                              {unit.barcode} ·{' '}
+                              {unit.status === 'READY' && unit.available
+                                ? 'Sẵn sàng'
+                                : unit.status === 'CLEANING'
+                                  ? 'Đang vệ sinh'
+                                  : unit.status === 'REPAIR'
+                                    ? 'Đang sửa chữa'
+                                    : 'Không khả dụng'}
+                            </option>
+                          ))}
+                        </SelectField>
+                      )}
+                      {canConfirm && eligibleUnits.length === 0 && (
+                        <Feedback tone="warning" title="Chưa có bộ phù hợp trong fixture">
+                          Có thể tạo yêu cầu chờ xử lý, hoặc đổi mẫu, biến thể và kỳ thuê.
+                        </Feedback>
+                      )}
                     </>
                   ) : (
                     <p className="muted">Chọn khách, trang phục và thời gian rồi tải báo giá.</p>
                   )}
                   {created ? (
-                    <Feedback tone="success" title={`Đã tạo ${created}`}>
-                      Yêu cầu đang chờ xác nhận; chưa giữ bộ.{' '}
-                      {canConfirm
-                        ? 'Mở không gian đơn để chọn từng bộ và xác nhận.'
-                        : 'Vai trò hiện tại chưa có quyền xác nhận.'}
+                    <Feedback
+                      tone="success"
+                      title={`${createdMode === 'confirmed' ? 'Đã xác nhận' : 'Đã tạo'} ${created}`}
+                    >
+                      {createdMode === 'confirmed'
+                        ? `Đã gán ${selectedUnit} trong fixture. Kiểm bộ và phụ kiện trên chi tiết đơn trước khi giao; tiền thuê và cọc chưa thu.`
+                        : 'Yêu cầu đang chờ xác nhận, chưa giữ bộ. Mở chi tiết đơn để tiếp tục.'}
                     </Feedback>
                   ) : (
-                    <Button
-                      disabled={!quote || (!creating && !customer) || busy}
-                      loading={busy}
-                      onClick={() =>
-                        void create(
-                          creating ? newName : (customer?.name ?? ''),
-                          creating ? newPhone : (customer?.phone ?? ''),
-                        )
-                      }
-                    >
-                      Tạo yêu cầu tại quầy
-                    </Button>
+                    <div className="counter-actions">
+                      {canConfirm && (
+                        <Button
+                          disabled={!quote || !selectedUnit || (!creating && !customer) || busy}
+                          loading={busy}
+                          onClick={() =>
+                            void create(
+                              creating ? newName : (customer?.name ?? ''),
+                              creating ? newPhone : (customer?.phone ?? ''),
+                              true,
+                            )
+                          }
+                        >
+                          Tạo và xác nhận · {selectedUnit || 'chọn bộ'}
+                        </Button>
+                      )}
+                      <Button
+                        variant={canConfirm ? 'secondary' : 'primary'}
+                        disabled={!quote || (!creating && !customer) || busy}
+                        loading={busy}
+                        onClick={() =>
+                          void create(
+                            creating ? newName : (customer?.name ?? ''),
+                            creating ? newPhone : (customer?.phone ?? ''),
+                            false,
+                          )
+                        }
+                      >
+                        Chỉ tạo yêu cầu chờ
+                      </Button>
+                    </div>
                   )}
-                  {created && canConfirm && (
+                  {created && (
                     <Button variant="secondary" onClick={() => go('orders', { order: created })}>
                       Xem đơn vừa tạo
                     </Button>
@@ -484,6 +573,12 @@ export function ActiveRentalsPage({
                     />
                     <Button onClick={() => go('return', { order: selected.orderId })}>
                       Mở nhận trả
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => go('orders', { order: selected.orderId })}
+                    >
+                      Xem đơn và yêu cầu gia hạn
                     </Button>
                   </Panel>
                 ) : (

@@ -2392,6 +2392,22 @@ small {
   display: grid;
   gap: 14px;
 }
+.counter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.counter-actions .button {
+  flex: 1 1 210px;
+}
+.order-change-panel > .field,
+.order-change-panel > .feedback {
+  margin-top: 14px;
+}
+.check-unit > .field {
+  max-width: 420px;
+  margin-top: 12px;
+}
 .key-facts {
   display: grid;
   gap: 0;

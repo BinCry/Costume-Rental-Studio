@@ -587,8 +587,14 @@ export function BranchesPage({ scenario }: { scenario: DemoScenario }) {
       emptyTitle="Chưa có chi nhánh"
     >
       {(items) => {
-        const current = items.find((x) => x.code === selected) ?? items[0];
+        const existingBranch = items.find((x) => x.code === selected);
+        const current = existingBranch ?? items[0];
         const branch = editing?.code === selected ? editing : current;
+        const obligations = existingBranch
+          ? studioAdapter.branchObligations(existingBranch.name)
+          : { orders: 0, units: 0, transfers: 0 };
+        const hasObligations = obligations.orders + obligations.units + obligations.transfers > 0;
+        const closingExisting = existingBranch?.status === 'ACTIVE' && branch.status === 'INACTIVE';
         return (
           <div className="page">
             <PageHeading
@@ -662,7 +668,20 @@ export function BranchesPage({ scenario }: { scenario: DemoScenario }) {
                     <option value="ACTIVE">Đang hoạt động</option>
                     <option value="INACTIVE">Ngừng hoạt động</option>
                   </SelectField>
+                  {closingExisting && (
+                    <Feedback
+                      tone={hasObligations ? 'warning' : 'info'}
+                      title="Kiểm tra trước khi ngừng chi nhánh"
+                    >
+                      Trong fixture: {obligations.orders} đơn đang xử lý · {obligations.units} bộ
+                      còn tại chi nhánh · {obligations.transfers} phiếu điều chuyển mở.
+                      {hasObligations
+                        ? ' Cần xử lý các nghĩa vụ này trước khi lưu trạng thái ngừng hoạt động.'
+                        : ' Fixture không còn các nghĩa vụ trên. Backend vẫn phải kiểm tra khoản thu/hoàn và hồ sơ hỗ trợ trước khi chốt.'}
+                    </Feedback>
+                  )}
                   <Button
+                    disabled={closingExisting && hasObligations}
                     loading={busy}
                     onClick={() => {
                       void (async () => {

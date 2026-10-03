@@ -202,6 +202,18 @@ let units: Unit[] = [
     history: ['02/10 · Nhập kho'],
   },
   {
+    barcode: 'BC-014',
+    variantCode: 'AO-DAI-LINA-M',
+    model: 'Áo dài Lina',
+    variant: 'M / Hồng phấn',
+    branch: 'Chi nhánh Quận 1',
+    status: 'READY',
+    condition: 'GOOD',
+    available: true,
+    blocks: [],
+    history: ['02/10 · Kiểm và sẵn sàng cho thuê'],
+  },
+  {
     barcode: 'BC-018',
     variantCode: 'AO-DAI-LINA-M',
     model: 'Áo dài Lina',
@@ -547,7 +559,7 @@ const transfers: Transfer[] = [
     from: 'Chi nhánh Quận 1',
     to: 'Chi nhánh Thủ Đức',
     status: 'REQUESTED',
-    units: [{ barcode: 'BC-012' }],
+    units: [{ barcode: 'BC-012' }, { barcode: 'BC-014' }],
     note: 'Bổ sung size M cho Thủ Đức',
     version: 1,
     history: ['03/10 · Hà Nguyễn tạo yêu cầu'],
@@ -835,6 +847,26 @@ const syncCatalog = (model: CostumeDetail) => {
       availableAtFixturePeriod: false,
     });
 };
+const branchObligations = (name: string) => ({
+  orders: fixtureOrders.filter(
+    (order) =>
+      order.branch === name &&
+      [
+        'PENDING_CONFIRMATION',
+        'CONFIRMED',
+        'PREPARING',
+        'READY_FOR_PICKUP',
+        'ACTIVE',
+        'RETURN_INSPECTION',
+      ].includes(order.status),
+  ).length,
+  units: units.filter((unit) => unit.branch === name && unit.status !== 'RETIRED').length,
+  transfers: transfers.filter(
+    (transfer) =>
+      (transfer.from === name || transfer.to === name) &&
+      ['REQUESTED', 'APPROVED', 'IN_TRANSIT'].includes(transfer.status),
+  ).length,
+});
 
 export const studioAdapter = {
   recordBooking(id: string, draft: BookingDraft, quote: QuoteSnapshot) {
@@ -943,6 +975,42 @@ export const studioAdapter = {
       customerOrder.history.unshift('03/10 · Studio đã xác nhận và gán bộ');
     }
   },
+  markReadyForPickup(id: string, scenario: DemoScenario) {
+    return mutate(scenario, () => {
+      const order = fixtureOrders.find((value) => value.id === id);
+      if (!order || !['CONFIRMED', 'PREPARING'].includes(order.status))
+        throw new FixtureIssue(
+          'INVALID_STATUS',
+          'Đơn không ở trạng thái có thể chuẩn bị giao. Tải lại chi tiết đơn.',
+        );
+      if (
+        order.items.some(
+          (item) =>
+            !item.unitCode ||
+            !units.some(
+              (unit) =>
+                unit.barcode === item.unitCode &&
+                unit.branch === order.branch &&
+                unit.status === 'READY',
+            ),
+        )
+      )
+        throw new FixtureIssue(
+          'UNIT_BLOCKED',
+          'Có bộ chưa READY hoặc không còn ở chi nhánh. Kiểm tra từng barcode trước khi giao.',
+        );
+      order.status = 'READY_FOR_PICKUP';
+      order.version += 1;
+      order.items = order.items.map((item) => ({ ...item, unitStatus: 'Sẵn sàng' }));
+      order.history.unshift('03/10 · Đã kiểm bộ và phụ kiện; sẵn sàng giao (fixture)');
+      const customerOrder = customerOrders.find((value) => value.id === id);
+      if (customerOrder) {
+        customerOrder.status = 'READY_FOR_PICKUP';
+        customerOrder.history.unshift('03/10 · Studio đã chuẩn bị xong, sẵn sàng nhận');
+      }
+      return order;
+    });
+  },
   decideOrder(
     id: string,
     action: 'REJECTED' | 'CANCELLED',
@@ -972,6 +1040,7 @@ export const studioAdapter = {
   customers: (scenario: DemoScenario) => list(customers, scenario),
   employees: (scenario: DemoScenario) => list(employees, scenario),
   branches: (scenario: DemoScenario) => list(branches, scenario),
+  branchObligations,
   roles: (scenario: DemoScenario) => list(roles, scenario),
   transfers: (scenario: DemoScenario) => list(transfers, scenario),
   cases: (scenario: DemoScenario) => list(cases, scenario),
@@ -1044,6 +1113,14 @@ export const studioAdapter = {
   saveBranch: (branch: Branch, scenario: DemoScenario) =>
     mutate(scenario, () => {
       const index = branches.findIndex((b) => b.code === branch.code);
+      if (index >= 0 && branches[index].status === 'ACTIVE' && branch.status === 'INACTIVE') {
+        const obligations = branchObligations(branches[index].name);
+        if (obligations.orders || obligations.units || obligations.transfers)
+          throw new FixtureIssue(
+            'BRANCH_OBLIGATIONS',
+            `Chi nhánh còn ${obligations.orders} đơn đang xử lý, ${obligations.units} bộ vật lý và ${obligations.transfers} phiếu điều chuyển mở. Xử lý nghĩa vụ trước khi ngừng hoạt động.`,
+          );
+      }
       if (index < 0) branches.push(branch);
       else branches[index] = branch;
       return branch;
@@ -1120,31 +1197,51 @@ export const studioAdapter = {
         );
       }
       if (next === 'RECEIVED') {
+        const outstanding = transfer.units.filter((item) => !item.received);
+        const accepted = checked.filter((item) => item.in);
         if (
-          checked.length !== transfer.units.length ||
-          transfer.units.some((item) => !checked.find((c) => c.barcode === item.barcode && c.in))
+          !accepted.length ||
+          accepted.length !== new Set(accepted.map((item) => item.barcode)).size ||
+          accepted.some((item) => !outstanding.some((unit) => unit.barcode === item.barcode))
         )
           throw new FixtureIssue(
             'CHECK_REQUIRED',
-            'Phải kiểm tình trạng từng bộ trước khi hoàn tất nhận.',
+            'Chọn ít nhất một bộ chưa nhận và ghi tình trạng nhận hợp lệ.',
           );
-        transfer.units = transfer.units.map((item) => ({
-          ...item,
-          received: 'Đã nhận',
-          in: checked.find((c) => c.barcode === item.barcode)?.in,
-        }));
+        for (const item of accepted) {
+          const unit = units.find((value) => value.barcode === item.barcode);
+          if (unit?.branch !== transfer.from || unit.status !== 'IN_TRANSFER')
+            throw new FixtureIssue(
+              'UNIT_CONFLICT',
+              `${item.barcode} không còn ở trạng thái đang vận chuyển. Tải lại phiếu.`,
+            );
+        }
+        transfer.units = transfer.units.map((item) => {
+          const received = accepted.find((value) => value.barcode === item.barcode);
+          return received ? { ...item, received: 'Đã nhận', in: received.in } : item;
+        });
         units = units.map((unit) =>
-          transfer.units.some((item) => item.barcode === unit.barcode)
+          accepted.some((item) => item.barcode === unit.barcode)
             ? {
                 ...unit,
                 branch: transfer.to,
-                status: 'READY',
-                available: true,
-                condition: checked.find((c) => c.barcode === unit.barcode)?.in ?? unit.condition,
+                status:
+                  accepted.find((item) => item.barcode === unit.barcode)?.in === 'GOOD'
+                    ? 'READY'
+                    : 'INBOUND',
+                available: accepted.find((item) => item.barcode === unit.barcode)?.in === 'GOOD',
+                condition:
+                  accepted.find((item) => item.barcode === unit.barcode)?.in ?? unit.condition,
                 history: [`03/10 · Nhận theo ${code} tại ${transfer.to}`, ...unit.history],
               }
             : unit,
         );
+        transfer.status = transfer.units.every((item) => item.received) ? 'RECEIVED' : 'IN_TRANSIT';
+        transfer.version += 1;
+        transfer.history.unshift(
+          `03/10 · Đã nhận ${transfer.units.filter((item) => item.received).length}/${transfer.units.length} bộ`,
+        );
+        return transfer;
       }
       transfer.status = next;
       if (next === 'REJECTED' || next === 'CANCELLED')

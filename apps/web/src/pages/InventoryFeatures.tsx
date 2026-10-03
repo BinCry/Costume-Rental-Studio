@@ -287,14 +287,19 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
     setIssue('');
     setNotice('');
     try {
-      await studioAdapter.advanceTransfer(
+      const result = await studioAdapter.advanceTransfer(
         transfer.code,
         next,
         Object.entries(checks).map(([barcode, grade]) => ({ barcode, in: grade })),
         reason,
         scenario,
       );
-      setNotice(`Phiếu ${transfer.code} đã chuyển sang ${transferStatus[next]}.`);
+      setNotice(
+        next === 'RECEIVED'
+          ? `Đã nhận ${result.units.filter((item) => item.received).length}/${result.units.length} bộ. ${result.status === 'RECEIVED' ? 'Phiếu đã nhận đủ.' : 'Các bộ còn lại vẫn đang vận chuyển.'}`
+          : `Phiếu ${transfer.code} đã chuyển sang ${transferStatus[next]}.`,
+      );
+      setChecks({});
       retry();
     } catch (e) {
       setIssue(e instanceof Error ? e.message : 'Không đổi được trạng thái.');
@@ -404,6 +409,10 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
                     rows={[
                       { label: 'Từ', value: current.from },
                       { label: 'Đến', value: current.to },
+                      {
+                        label: 'Đã nhận',
+                        value: `${current.units.filter((item) => item.received).length}/${current.units.length} bộ`,
+                      },
                       { label: 'Ghi chú', value: current.note },
                       { label: 'Phiên bản', value: current.version },
                     ]}
@@ -416,7 +425,7 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
                         Tình trạng xuất: {u.out ? (conditionLabels[u.out] ?? u.out) : 'Chưa xuất'} ·
                         Nhận: {u.received ?? 'Chưa nhận'}
                       </span>
-                      {current.status === 'IN_TRANSIT' ? (
+                      {current.status === 'IN_TRANSIT' && !u.received ? (
                         <SelectField
                           label={`Tình trạng nhận ${u.barcode}`}
                           value={checks[u.barcode] ?? ''}
@@ -447,10 +456,13 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
                     )}
                     {current.status === 'IN_TRANSIT' && (
                       <Button
-                        disabled={busy || current.units.some((u) => !checks[u.barcode])}
+                        disabled={
+                          busy || !current.units.some((u) => !u.received && checks[u.barcode])
+                        }
                         onClick={() => void advance(current, 'RECEIVED')}
                       >
-                        Xác nhận đã nhận từng bộ
+                        Xác nhận nhận{' '}
+                        {current.units.filter((u) => !u.received && checks[u.barcode]).length} bộ
                       </Button>
                     )}
                   </div>

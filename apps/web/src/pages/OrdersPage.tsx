@@ -15,7 +15,7 @@ import {
 } from '../components/ui';
 import { orderStatus } from '../components/support';
 import { useFixtureResource } from '../components/useFixtureResource';
-import { branches, fixtureAdapter } from '../fixtures/adapter';
+import { branches, fixtureAdapter, fixtureCatalog } from '../fixtures/adapter';
 import { studioAdapter } from '../fixtures/studio';
 import type { DemoScenario, Order, OrderStatus } from '../fixtures/types';
 
@@ -56,6 +56,11 @@ export function OrdersPage({
   const [reason, setReason] = useState('');
   const [localConfirmed, setLocalConfirmed] = useState(false);
   const [localCancelled, setLocalCancelled] = useState(false);
+  const [proposedDue, setProposedDue] = useState('');
+  const [proposedVariant, setProposedVariant] = useState('');
+  const [changeNote, setChangeNote] = useState('');
+  const [preparedCodes, setPreparedCodes] = useState<string[]>([]);
+  const [accessoryCodes, setAccessoryCodes] = useState<string[]>([]);
   const { loading, data, error, retry } = useFixtureResource(scenario, loadOrders);
   const detailBackRef = useRef<HTMLButtonElement>(null);
   const detailRef = useRef<HTMLElement>(null);
@@ -101,7 +106,10 @@ export function OrdersPage({
           status: 'CANCELLED',
           history: [...rawOrder.history, 'Phiên demo · Khách vừa hủy khi nhân viên đang duyệt'],
         }
-      : rawOrder && localConfirmed && rawOrder.id === 'RT-1024'
+      : rawOrder &&
+          localConfirmed &&
+          rawOrder.status === 'PENDING_CONFIRMATION' &&
+          rawOrder.id === 'RT-1024'
         ? {
             ...rawOrder,
             status: 'CONFIRMED',
@@ -113,6 +121,22 @@ export function OrdersPage({
             history: [...rawOrder.history, 'Phiên demo · Đã chọn bộ và xem trước xác nhận'],
           }
         : rawOrder;
+  const firstItem = order?.items[0];
+  const relatedCostume = fixtureCatalog.find((item) => item.name === firstItem?.costume);
+  const variantChoices =
+    relatedCostume?.sizes.map((size) => `${size} / ${relatedCostume.colors[0]}`) ?? [];
+  const currentDue = order?.returnAt.match(/(\d{2})\/(\d{2})\/(\d{4})\s*·\s*(\d{2}):(\d{2})/);
+  const dueValue = currentDue
+    ? `${currentDue[3]}-${currentDue[2]}-${currentDue[1]}T${currentDue[4]}:${currentDue[5]}`
+    : '';
+  const extensionValid = !!proposedDue && !!dueValue && proposedDue > dueValue;
+  const variantValid = !!proposedVariant && proposedVariant !== firstItem?.variant;
+  const assignedCodes =
+    order?.items.map((item) => item.unitCode).filter((code): code is string => !!code) ?? [];
+  const preparationComplete =
+    !!order &&
+    assignedCodes.length === order.items.length &&
+    assignedCodes.every((code) => preparedCodes.includes(code) && accessoryCodes.includes(code));
   const chooseOrder = (id: string) => {
     setSelectedId(id);
     setMobileDetail(true);
@@ -120,6 +144,11 @@ export function OrdersPage({
     setNotice('');
     setLocalConfirmed(false);
     setLocalCancelled(false);
+    setProposedDue('');
+    setProposedVariant('');
+    setChangeNote('');
+    setPreparedCodes([]);
+    setAccessoryCodes([]);
     window.history.pushState(null, '', `/van-hanh/don-thue/${encodeURIComponent(id)}`);
   };
   const toggleUnit = (code: string) =>
@@ -174,6 +203,24 @@ export function OrdersPage({
     } catch (caught) {
       setNotice(caught instanceof Error ? caught.message : 'Không cập nhật được đơn.');
       setDialog(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const markPrepared = async () => {
+    if (!order || !preparationComplete || busy) return;
+    setBusy(true);
+    setNotice('');
+    try {
+      await studioAdapter.markReadyForPickup(order.id, scenario);
+      setNotice(
+        'Đã kiểm đủ bộ và phụ kiện trong fixture; đơn sẵn sàng giao. Tiền thuê và cọc vẫn chưa thu.',
+      );
+      retry();
+    } catch (caught) {
+      setNotice(
+        caught instanceof Error ? caught.message : 'Chưa chuyển được đơn sang sẵn sàng giao.',
+      );
     } finally {
       setBusy(false);
     }
@@ -570,12 +617,134 @@ export function OrdersPage({
                     </Button>
                   </div>
                 )}
+                {canManage && ['CONFIRMED', 'PREPARING'].includes(order.status) && (
+                  <div className="detail-section order-preparation" id="order-preparation">
+                    <h3>Chuẩn bị từng bộ để giao</h3>
+                    <p>
+                      Kiểm đúng barcode và phụ kiện thực tế. Chỉ sau khi hoàn tất, đơn mới chuyển
+                      sang Sẵn sàng giao trong fixture.
+                    </p>
+                    {order.items.map((item) => (
+                      <div className="check-unit" key={item.id}>
+                        <div className="check-unit-head">
+                          <strong>
+                            {item.costume} · {item.variant}
+                          </strong>
+                          <span>{item.unitCode ?? 'Chưa gán bộ'}</span>
+                        </div>
+                        <label className="check-row">
+                          <input
+                            type="checkbox"
+                            aria-label={`Đã kiểm bộ sạch và đúng barcode ${item.unitCode ?? item.costume}`}
+                            disabled={!item.unitCode || busy}
+                            checked={!!item.unitCode && preparedCodes.includes(item.unitCode)}
+                            onChange={(event) =>
+                              setPreparedCodes((current) =>
+                                event.target.checked
+                                  ? [...current, item.unitCode!]
+                                  : current.filter((code) => code !== item.unitCode),
+                              )
+                            }
+                          />
+                          <span>Đã kiểm bộ sạch và đúng barcode</span>
+                        </label>
+                        <label className="check-row">
+                          <input
+                            type="checkbox"
+                            aria-label={`Đã đủ phụ kiện đi kèm ${item.unitCode ?? item.costume}`}
+                            disabled={!item.unitCode || busy}
+                            checked={!!item.unitCode && accessoryCodes.includes(item.unitCode)}
+                            onChange={(event) =>
+                              setAccessoryCodes((current) =>
+                                event.target.checked
+                                  ? [...current, item.unitCode!]
+                                  : current.filter((code) => code !== item.unitCode),
+                              )
+                            }
+                          />
+                          <span>Đã đủ phụ kiện đi kèm</span>
+                        </label>
+                      </div>
+                    ))}
+                    <Button
+                      disabled={!preparationComplete || busy || scenario === 'permission'}
+                      loading={busy}
+                      onClick={() => void markPrepared()}
+                    >
+                      Đánh dấu sẵn sàng giao
+                    </Button>
+                    {!preparationComplete && (
+                      <p role="status">Hoàn tất hai mục kiểm cho mỗi barcode để tiếp tục.</p>
+                    )}
+                  </div>
+                )}
                 {canManage &&
                   (order.status === 'ACTIVE' || order.status === 'RETURN_INSPECTION') && (
                     <div className="detail-actions">
                       <Button onClick={() => go('return', { order: order.id })}>
                         Mở luồng nhận trả <Icon name="arrow" size={18} />
                       </Button>
+                    </div>
+                  )}
+                {canManage && order.status === 'ACTIVE' && (
+                  <div className="detail-section order-change-panel" id="order-change">
+                    <h3>Yêu cầu gia hạn</h3>
+                    <p>
+                      Hạn hiện tại: <strong>{order.returnAt}</strong>. Giữ nguyên đơn và bộ đang ở
+                      khách trong lúc kiểm tra yêu cầu.
+                    </p>
+                    <Field
+                      label="Hạn trả khách muốn đổi sang"
+                      type="datetime-local"
+                      value={proposedDue}
+                      onChange={(event) => setProposedDue(event.target.value)}
+                    />
+                    <TextAreaField
+                      label="Ghi chú trao đổi với khách"
+                      rows={2}
+                      value={changeNote}
+                      onChange={(event) => setChangeNote(event.target.value)}
+                    />
+                    {proposedDue && !extensionValid && (
+                      <Feedback tone="warning" title="Chọn hạn mới sau hạn hiện tại">
+                        Hạn trả của đơn chưa thay đổi. Kiểm tra lại ngày giờ khách yêu cầu.
+                      </Feedback>
+                    )}
+                    {extensionValid && (
+                      <Feedback tone="info" title="Cần kiểm tra trước khi gia hạn">
+                        Yêu cầu đến {proposedDue.replace('T', ' · ')} đang là bản nháp trên màn
+                        hình. Backend cần kiểm tra lịch của từng barcode, tính báo giá mới và thu
+                        phần phát sinh nếu có; chưa cập nhật hạn trả.
+                      </Feedback>
+                    )}
+                  </div>
+                )}
+                {canManage &&
+                  ['CONFIRMED', 'PREPARING', 'READY_FOR_PICKUP'].includes(order.status) && (
+                    <div className="detail-section order-change-panel" id="order-change">
+                      <h3>Khách muốn đổi size trước khi nhận</h3>
+                      <p>
+                        Biến thể đang giữ: <strong>{firstItem?.variant}</strong>. Mã bộ hiện tại chỉ
+                        được thay sau khi kiểm tra lịch và báo giá lại.
+                      </p>
+                      <SelectField
+                        label="Biến thể khách muốn đổi sang"
+                        value={proposedVariant}
+                        onChange={(event) => setProposedVariant(event.target.value)}
+                      >
+                        <option value="">Chọn biến thể cần kiểm tra</option>
+                        {variantChoices
+                          .filter((value) => value !== firstItem?.variant)
+                          .map((value) => (
+                            <option key={value}>{value}</option>
+                          ))}
+                      </SelectField>
+                      {variantValid && (
+                        <Feedback tone="info" title="Chưa đổi bộ hoặc giá của đơn">
+                          Cần kiểm tra bộ đúng size tại {order.branch}, xung đột lịch và chênh lệch
+                          giá/cọc trước khi xác nhận. Đây là lựa chọn xem trước, chưa được lưu.
+                        </Feedback>
+                      )}
                     </div>
                   )}
                 <div className="detail-section history">

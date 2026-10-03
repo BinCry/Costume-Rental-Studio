@@ -39,6 +39,9 @@ export function OrderDetailShell({
   const [scanIssue, setScanIssue] = useState('');
   const [scanBusy, setScanBusy] = useState(false);
   const [checks, setChecks] = useState<Record<string, boolean>>({});
+  const [returnConditions, setReturnConditions] = useState<
+    Record<string, 'PASSED' | 'PENDING_ASSESSMENT'>
+  >({});
   const [method, setMethod] = useState<'CASH' | 'BANK_TRANSFER'>('CASH');
   const [rentPreview, setRentPreview] = useState(false);
   const [depositPreview, setDepositPreview] = useState(false);
@@ -64,15 +67,24 @@ export function OrderDetailShell({
         `${item.id}-accessories`,
       ])
     : [];
-  const allChecked = requiresChecks.length > 0 && requiresChecks.every((key) => checks[key]);
+  const allChecked =
+    requiresChecks.length > 0 &&
+    requiresChecks.every((key) => checks[key]) &&
+    (mode === 'handover' || scannedItems.every((item) => !!returnConditions[item.id]));
+  const needsAssessment =
+    mode === 'return' &&
+    scannedItems.some((item) => returnConditions[item.id] === 'PENDING_ASSESSMENT');
+  const needsAssessmentNote = needsAssessment && !note.trim();
   const onOrderChange = (id: string) => {
     setOrderId(id);
     setBarcode('');
     setMatchedCode('');
     setMatchedCodes([]);
     setChecks({});
+    setReturnConditions({});
     setRentPreview(false);
     setDepositPreview(false);
+    setNote('');
     setScanIssue('');
     setResult(null);
     if (id)
@@ -119,6 +131,7 @@ export function OrderDetailShell({
     order?.version,
     matchedCodes,
     checks,
+    returnConditions,
     effectiveMethod,
     rentPreview,
     depositPreview,
@@ -141,10 +154,11 @@ export function OrderDetailShell({
     });
   };
   const previewReturn = () => {
-    if (!order || !scannedEnough || !allChecked || restricted) return;
+    if (!order || !scannedEnough || !allChecked || needsAssessmentNote || restricted) return;
     setResult({
-      text:
-        order.status === 'ACTIVE'
+      text: needsAssessment
+        ? `Đã xem trước nhận ${scannedItems.length}/${order.items.length} bộ có vấn đề cần đánh giá. Ghi chú được giữ trong phiên demo; cọc vẫn đang giữ, chưa tính phí hoặc hoàn tiền. Backend cần tạo biên bản PENDING_ASSESSMENT và phân công xử lý.`
+        : order.status === 'ACTIVE'
           ? scannedItems.length < order.items.length
             ? `Đã xem trước nhận ${scannedItems.length}/${order.items.length} bộ. Bộ chưa quét vẫn ở khách; chưa quyết toán hoặc hoàn cọc. Backend cần xác nhận trạng thái từng dòng.`
             : 'Đã xem trước kết quả kiểm tra. Backend cần ghi nhận trả để chuyển đơn sang Đang kiểm tra đồ trả; chưa hoàn cọc.'
@@ -427,15 +441,41 @@ export function OrderDetailShell({
                         : 'Đã đối chiếu phụ kiện thiếu/hỏng'}
                     </span>
                   </label>
+                  {mode === 'return' && matchedCodes.includes(item.unitCode ?? '') && (
+                    <SelectField
+                      label={`Kết quả kiểm ${item.unitCode ?? item.costume}`}
+                      value={returnConditions[item.id] ?? ''}
+                      onChange={(event) =>
+                        setReturnConditions((current) => ({
+                          ...current,
+                          [item.id]: event.target.value as 'PASSED' | 'PENDING_ASSESSMENT',
+                        }))
+                      }
+                    >
+                      <option value="">Chọn kết quả sau khi kiểm</option>
+                      <option value="PASSED">Đạt · không thấy vấn đề</option>
+                      <option value="PENDING_ASSESSMENT">Cần đánh giá hư hỏng hoặc thiếu</option>
+                    </SelectField>
+                  )}
                 </div>
               ))}
               <TextAreaField
-                label="Ghi chú tình trạng / lý do phí"
+                label={
+                  needsAssessment
+                    ? 'Mô tả vấn đề cần đánh giá (bắt buộc)'
+                    : 'Ghi chú tình trạng / lý do phí'
+                }
                 rows={3}
                 placeholder="Ghi lại điều cần xử lý; nội dung chỉ tồn tại trong phiên demo"
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
               />
+              {needsAssessment && (
+                <Feedback tone="warning" title="Chờ đánh giá, tiếp tục giữ cọc">
+                  Ghi rõ dấu hiệu và bộ liên quan. Chưa chốt phí, cấn trừ hoặc hoàn cọc từ lựa chọn
+                  này; cần biên bản và người xử lý ở backend.
+                </Feedback>
+              )}
               <p className="section-help">
                 Ảnh bằng chứng cần dịch vụ lưu trữ và quyền truy cập; prototype chưa tải ảnh lên.
               </p>
@@ -536,7 +576,8 @@ export function OrderDetailShell({
                   )}
                 </>
               ) : (
-                settlement && (
+                settlement &&
+                !needsAssessment && (
                   <>
                     <div className="settlement-table">
                       <div>
@@ -576,6 +617,19 @@ export function OrderDetailShell({
                   </>
                 )
               )}
+              {mode === 'return' && !settlement && (
+                <Feedback title="Chưa có snapshot quyết toán">
+                  {scannedItems.length < (order?.items.length ?? 0)
+                    ? 'Đơn còn bộ ở khách. Giữ cọc và theo dõi từng bộ đến khi backend xác nhận nhận đủ hoặc xử lý bộ thiếu.'
+                    : 'Cần backend trả số phí, cấn trừ và khoản còn hoàn từ chứng từ trước khi quyết toán.'}
+                </Feedback>
+              )}
+              {mode === 'return' && (
+                <p className="section-help">
+                  Phương thức hoàn cọc qua SePay chưa chốt. Chỉ hiển thị trạng thái giao dịch thực
+                  tế; không suy ra đã hoàn từ số dự kiến hoàn.
+                </p>
+              )}
               {result?.signature === previewSignature && !restricted && (
                 <Feedback tone="success" title="Đã kiểm tra điều kiện trong phiên demo">
                   {result.text}
@@ -587,6 +641,7 @@ export function OrderDetailShell({
                   disabled={
                     !scannedEnough ||
                     !allChecked ||
+                    needsAssessmentNote ||
                     restricted ||
                     (mode === 'handover' &&
                       (!rentPreview || !depositPreview || effectiveMethod === 'BANK_TRANSFER'))
@@ -606,7 +661,12 @@ export function OrderDetailShell({
                   </p>
                 )}
                 {scannedEnough && !allChecked && (
-                  <p role="status">Đánh dấu tình trạng và phụ kiện cho các bộ đã quét.</p>
+                  <p role="status">
+                    Đánh dấu tình trạng, phụ kiện và chọn kết quả kiểm cho các bộ đã quét.
+                  </p>
+                )}
+                {needsAssessmentNote && (
+                  <p role="status">Mô tả vấn đề cần đánh giá trước khi xem kết quả nhận trả.</p>
                 )}
                 {mode === 'handover' &&
                   scannedEnough &&
