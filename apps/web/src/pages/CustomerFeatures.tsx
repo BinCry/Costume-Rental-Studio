@@ -23,7 +23,7 @@ import {
   Timeline,
 } from '../components/studio';
 import { useFixtureResource } from '../components/useFixtureResource';
-import { fixturePeriod } from '../fixtures/adapter';
+import { branches, fixturePeriod } from '../fixtures/adapter';
 import { studioAdapter, type CustomerOrder } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
 
@@ -31,17 +31,31 @@ export function CostumeDetailPage({
   id,
   scenario,
   go,
+  initialContext,
 }: {
   id: string;
   scenario: DemoScenario;
   go: Navigate;
+  initialContext: URLSearchParams;
 }) {
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.details);
-  const [variantCode, setVariantCode] = useState('');
-  const [branch, setBranch] = useState('Chi nhánh Quận 1');
-  const [pickup, setPickup] = useState(fixturePeriod.pickup);
-  const [due, setDue] = useState(fixturePeriod.returnAt);
+  const requestedPickup = initialContext.get('pickup');
+  const requestedReturn = initialContext.get('returnAt');
+  const requestedBranch = initialContext.get('branch');
+  const [variantCode, setVariantCode] = useState(initialContext.get('variantCode') ?? '');
+  const [branch, setBranch] = useState(
+    requestedBranch && branches.includes(requestedBranch) ? requestedBranch : branches[0],
+  );
+  const [pickup, setPickup] = useState(
+    requestedPickup?.trim() ? requestedPickup : fixturePeriod.pickup,
+  );
+  const [due, setDue] = useState(
+    requestedReturn?.trim() ? requestedReturn : fixturePeriod.returnAt,
+  );
   const [photo, setPhoto] = useState(0);
+  const catalogContext = Object.fromEntries(
+    [...initialContext.entries()].filter(([key]) => key !== 'id'),
+  );
   return (
     <StateGate
       loading={loading}
@@ -56,7 +70,7 @@ export function CostumeDetailPage({
           return (
             <div className="page">
               <EmptyState title="Không tìm thấy mẫu trang phục">
-                <Button onClick={() => go('catalog')}>Về bộ sưu tập</Button>
+                <Button onClick={() => go('catalog', catalogContext)}>Về bộ sưu tập</Button>
               </EmptyState>
             </div>
           );
@@ -69,7 +83,10 @@ export function CostumeDetailPage({
         const available = known && item.id !== 'dam-rouge' && scenario !== 'conflict';
         return (
           <div className="page">
-            <button className="text-link" onClick={() => go('catalog')}>
+            <button
+              className="text-link"
+              onClick={() => go('catalog', { ...catalogContext, branch, pickup, returnAt: due })}
+            >
               ← Bộ sưu tập
             </button>
             <div className="costume-detail-grid">
@@ -151,7 +168,17 @@ export function CostumeDetailPage({
                   </Feedback>
                 </Panel>
                 <div className="feature-actions">
-                  <Button onClick={() => go('booking', { costume: item.id })}>
+                  <Button
+                    onClick={() =>
+                      go('booking', {
+                        costume: item.id,
+                        variant: `${variant.size} / ${variant.color}`,
+                        branch,
+                        pickup,
+                        returnAt: due,
+                      })
+                    }
+                  >
                     Bắt đầu đặt thuê
                   </Button>
                 </div>

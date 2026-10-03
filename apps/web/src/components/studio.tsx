@@ -4,6 +4,12 @@ import { money } from './support';
 import type { DemoScenario, Tone } from '../fixtures/types';
 import type { Permission, Unit } from '../fixtures/studio';
 import { studioAdapter } from '../fixtures/studio';
+import {
+  blockStatusLabels,
+  blockTypeLabels,
+  conditionLabels,
+  unitStatusLabels,
+} from './statusLabels';
 
 export function PageHeading({
   eyebrow,
@@ -159,13 +165,15 @@ export function BranchSelector({
   value,
   onChange,
   all = false,
+  label = 'Chi nhánh',
 }: {
   value: string;
   onChange: (value: string) => void;
   all?: boolean;
+  label?: string;
 }) {
   return (
-    <SelectField label="Chi nhánh" value={value} onChange={(e) => onChange(e.target.value)}>
+    <SelectField label={label} value={value} onChange={(e) => onChange(e.target.value)}>
       {all && <option value="">Tất cả chi nhánh</option>}
       <option>Chi nhánh Quận 1</option>
       <option>Chi nhánh Thủ Đức</option>
@@ -223,10 +231,14 @@ export function BarcodeLookup({
   branch,
   scenario,
   onFound,
+  onError,
+  autoFocus = false,
 }: {
   branch: string;
   scenario: DemoScenario;
   onFound: (unit: Unit) => void;
+  onError?: () => void;
+  autoFocus?: boolean;
 }) {
   const [code, setCode] = useState('');
   const [issue, setIssue] = useState('');
@@ -237,6 +249,7 @@ export function BarcodeLookup({
     try {
       onFound(await studioAdapter.barcode(code, branch, scenario));
     } catch (error) {
+      onError?.();
       setIssue(error instanceof Error ? error.message : 'Không tìm thấy mã.');
     } finally {
       setBusy(false);
@@ -257,6 +270,7 @@ export function BarcodeLookup({
           onChange={(e) => setCode(e.target.value.toUpperCase())}
           placeholder="Ví dụ: BC-031"
           autoComplete="off"
+          autoFocus={autoFocus}
         />
         <Button loading={busy} type="submit">
           Tra mã
@@ -276,12 +290,12 @@ export function UnitDetailPanel({ unit, action }: { unit: Unit; action?: ReactNo
         rows={[
           { label: 'Biến thể', value: unit.variant },
           { label: 'Chi nhánh', value: unit.branch },
-          { label: 'Vận hành', value: unit.status },
+          { label: 'Vận hành', value: unitStatusLabels[unit.status] },
           {
             label: 'Khả dụng trong kỳ mẫu',
             value: unit.available ? 'Có thể kiểm tra tiếp' : 'Không khả dụng',
           },
-          { label: 'Tình trạng', value: unit.condition },
+          { label: 'Tình trạng', value: conditionLabels[unit.condition] ?? unit.condition },
         ]}
       />
       <h3>Block đang có</h3>
@@ -289,7 +303,7 @@ export function UnitDetailPanel({ unit, action }: { unit: Unit; action?: ReactNo
         unit.blocks.map((block, index) => (
           <div className="feature-list-row" key={index}>
             <strong>
-              {block.type} · {block.status}
+              {blockTypeLabels[block.type]} · {blockStatusLabels[block.status]}
             </strong>
             <span>
               {block.from} → {block.until}
@@ -310,14 +324,42 @@ export function PermissionGroup({
   permissions,
   selected,
   onToggle,
+  onSelectAll,
+  onClear,
+  filtered = false,
 }: {
   title: string;
   permissions: Permission[];
   selected: string[];
   onToggle: (code: string) => void;
+  onSelectAll?: () => void;
+  onClear?: () => void;
+  filtered?: boolean;
 }) {
   return (
-    <Panel title={title}>
+    <Panel
+      title={title}
+      action={
+        permissions.length && onSelectAll && onClear ? (
+          <div className="permission-group-actions">
+            <button
+              type="button"
+              disabled={permissions.every((permission) => selected.includes(permission.code))}
+              onClick={onSelectAll}
+            >
+              {filtered ? 'Chọn các quyền hiện ra' : 'Chọn cả nhóm'}
+            </button>
+            <button
+              type="button"
+              disabled={permissions.every((permission) => !selected.includes(permission.code))}
+              onClick={onClear}
+            >
+              {filtered ? 'Bỏ các quyền hiện ra' : 'Bỏ cả nhóm'}
+            </button>
+          </div>
+        ) : undefined
+      }
+    >
       {!permissions.length && (
         <p className="muted">
           Chưa có mã quyền riêng trong seed. Giao/nhận trả hiện nằm trong rentals.manage.branch; cần

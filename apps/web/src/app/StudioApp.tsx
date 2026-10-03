@@ -116,6 +116,11 @@ export default function StudioApp() {
   const effectivePermissions = fixtureRoles.find((item) => item.code === role)?.permissions ?? [];
   const canOpen = (screen: Screen) => {
     if (!assigned) return false;
+    if (screen === 'handover' || screen === 'return')
+      return (
+        (role === 'ADMIN' || role === 'SALES_STAFF') &&
+        effectivePermissions.includes('rentals.manage.branch')
+      );
     const item = staffNav.find((value) => value.screen === screen);
     if (!item?.roles.includes(role)) return false;
     if (screen === 'policies') return role === 'ADMIN';
@@ -213,50 +218,62 @@ export default function StudioApp() {
         <div className="demo-controls">
           <div className="demo-controls-inner">
             <span>Kiểm tra UI fixture</span>
-            <label htmlFor="demo-scenario">Tình huống</label>
-            <select
-              id="demo-scenario"
-              value={scenario}
-              onChange={(e) => setScenario(e.target.value as DemoScenario)}
-            >
-              {scenarios.map((x) => (
-                <option value={x.value} key={x.value}>
-                  {x.label}
-                </option>
-              ))}
-            </select>
-            <label htmlFor="demo-role">Vai trò</label>
-            <select
-              id="demo-role"
-              value={role}
-              onChange={(e) => setRole(e.target.value as DemoRole)}
-            >
-              <option value="ADMIN">Quản trị</option>
-              <option value="SALES_STAFF">Nhân viên bán hàng</option>
-              <option value="INVENTORY_STAFF">Nhân viên kho</option>
-              <option value="CUSTOMER">Khách</option>
-            </select>
-            <label htmlFor="demo-branch">Chi nhánh</label>
-            <select id="demo-branch" value={branch} onChange={(e) => setBranch(e.target.value)}>
-              <option>Chi nhánh Quận 1</option>
-              <option>Chi nhánh Thủ Đức</option>
-            </select>
-            <label htmlFor="demo-customer">Khách mẫu</label>
-            <select
-              id="demo-customer"
-              value={customerCode}
-              onChange={(e) => setCustomerCode(e.target.value)}
-            >
-              {fixtureCustomers.map((customer) => (
-                <option value={customer.code} key={customer.code}>
-                  {customer.name}
-                </option>
-              ))}
-            </select>
+            <div className="demo-control demo-control--scenario">
+              <label htmlFor="demo-scenario">Tình huống</label>
+              <select
+                id="demo-scenario"
+                value={scenario}
+                onChange={(e) => setScenario(e.target.value as DemoScenario)}
+              >
+                {scenarios.map((x) => (
+                  <option value={x.value} key={x.value}>
+                    {x.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="demo-control demo-control--role">
+              <label htmlFor="demo-role">Vai trò</label>
+              <select
+                id="demo-role"
+                value={role}
+                onChange={(e) => setRole(e.target.value as DemoRole)}
+              >
+                <option value="ADMIN">Quản trị</option>
+                <option value="SALES_STAFF">Nhân viên bán hàng</option>
+                <option value="INVENTORY_STAFF">Nhân viên kho</option>
+                <option value="CUSTOMER">Khách</option>
+              </select>
+            </div>
+            <div className="demo-control demo-control--branch">
+              <label htmlFor="demo-branch">Chi nhánh</label>
+              <select id="demo-branch" value={branch} onChange={(e) => setBranch(e.target.value)}>
+                <option>Chi nhánh Quận 1</option>
+                <option>Chi nhánh Thủ Đức</option>
+              </select>
+            </div>
+            <div className="demo-control demo-control--customer">
+              <label htmlFor="demo-customer">Khách mẫu</label>
+              <select
+                id="demo-customer"
+                value={customerCode}
+                onChange={(e) => setCustomerCode(e.target.value)}
+              >
+                {fixtureCustomers.map((customer) => (
+                  <option value={customer.code} key={customer.code}>
+                    {customer.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       )}
-      <main id="main-content" className="main-content" key={`${route.screen}:${branch}`}>
+      <main
+        id="main-content"
+        className="main-content"
+        key={`${route.screen}:${branch}:${p.get('order') ?? ''}`}
+      >
         {protectedArea ? (
           <div className="page">
             <div className="feedback feedback-danger" role="alert">
@@ -273,15 +290,23 @@ export default function StudioApp() {
           </div>
         ) : (
           <>
-            {route.screen === 'catalog' && <CatalogPage scenario={scenario} go={go} />}
+            {route.screen === 'catalog' && (
+              <CatalogPage scenario={scenario} go={go} initialContext={p} />
+            )}
             {route.screen === 'detail' && (
-              <CostumeDetailPage id={p.get('id') ?? ''} scenario={scenario} go={go} />
+              <CostumeDetailPage
+                id={p.get('id') ?? ''}
+                scenario={scenario}
+                go={go}
+                initialContext={p}
+              />
             )}
             {route.screen === 'booking' && (
               <BookingPage
                 scenario={scenario}
                 go={go}
                 costumeId={p.get('costume') ?? undefined}
+                initialContext={p}
                 onCustomerCreated={setCustomerCode}
               />
             )}
@@ -304,9 +329,10 @@ export default function StudioApp() {
               <OrdersPage
                 scenario={scenario}
                 go={go}
-                canManage={role === 'ADMIN' || role === 'SALES_STAFF'}
+                canManage={effectivePermissions.includes('rentals.manage.branch')}
                 initialOrderId={p.get('order') ?? undefined}
                 initialFilter={p.get('filter') ?? undefined}
+                initialBranch={branch}
               />
             )}
             {route.screen === 'handover' && (
@@ -315,6 +341,7 @@ export default function StudioApp() {
                 mode="handover"
                 go={go}
                 initialOrderId={p.get('order') ?? 'RT-1028'}
+                initialBranch={branch}
               />
             )}
             {route.screen === 'return' && (
@@ -323,6 +350,7 @@ export default function StudioApp() {
                 mode="return"
                 go={go}
                 initialOrderId={p.get('order') ?? 'RT-1031'}
+                initialBranch={branch}
               />
             )}
             {route.screen === 'counter' && (
@@ -330,7 +358,7 @@ export default function StudioApp() {
                 scenario={scenario}
                 go={go}
                 branch={branch}
-                canConfirm={role === 'ADMIN' || role === 'SALES_STAFF'}
+                canConfirm={effectivePermissions.includes('rentals.manage.branch')}
               />
             )}
             {route.screen === 'active' && (
@@ -341,11 +369,17 @@ export default function StudioApp() {
                 scenario={scenario}
                 go={go}
                 branch={branch}
-                canManage={role !== 'SALES_STAFF'}
+                canManage={effectivePermissions.includes('inventory.manage.branch')}
               />
             )}
             {route.screen === 'transfers' && <TransfersPage scenario={scenario} branch={branch} />}
-            {route.screen === 'crm' && <CrmPage scenario={scenario} branch={branch} />}
+            {route.screen === 'crm' && (
+              <CrmPage
+                scenario={scenario}
+                branch={branch}
+                canManage={effectivePermissions.includes('crm.manage.branch')}
+              />
+            )}
             {route.screen === 'adminCatalog' && <CatalogAdminPage scenario={scenario} />}
             {route.screen === 'employees' && <EmployeesPage scenario={scenario} />}
             {route.screen === 'roles' && <RolesPage scenario={scenario} />}

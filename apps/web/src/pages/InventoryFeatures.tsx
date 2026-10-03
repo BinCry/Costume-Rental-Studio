@@ -14,6 +14,7 @@ import {
   Timeline,
   UnitDetailPanel,
 } from '../components/studio';
+import { blockTypeLabels, conditionLabels, unitStatusLabels } from '../components/statusLabels';
 import { useFixtureResource } from '../components/useFixtureResource';
 import {
   studioAdapter,
@@ -24,14 +25,6 @@ import {
 } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
 
-const unitStatus: Record<Unit['status'], string> = {
-  INBOUND: 'Chờ nhập',
-  READY: 'Sẵn sàng',
-  CLEANING: 'Đang vệ sinh',
-  REPAIR: 'Đang sửa',
-  IN_TRANSFER: 'Đang điều chuyển',
-  RETIRED: 'Ngừng sử dụng',
-};
 const transferStatus: Record<TransferStatus, string> = {
   REQUESTED: 'Chờ duyệt',
   APPROVED: 'Đã duyệt',
@@ -61,6 +54,7 @@ export function InventoryPage({
   const [until, setUntil] = useState('2026-10-04T18:00');
   const [reason, setReason] = useState('');
   const [issue, setIssue] = useState('');
+  const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const addBlock = async () => {
     if (!selected || !reason.trim() || until <= from) {
@@ -69,6 +63,7 @@ export function InventoryPage({
     }
     setBusy(true);
     setIssue('');
+    setNotice('');
     try {
       setSelected(
         await studioAdapter.addBlock(
@@ -79,6 +74,9 @@ export function InventoryPage({
       );
       retry();
       setReason('');
+      setNotice(
+        `Đã tạo block ${blockTypeLabels[blockType]} cho ${selected.barcode} trong fixture.`,
+      );
     } catch (e) {
       setIssue(e instanceof Error ? e.message : 'Không tạo được block.');
     } finally {
@@ -117,7 +115,12 @@ export function InventoryPage({
             <div className="feature-two-column">
               <div>
                 <Panel title="Tra cứu bộ">
-                  <BarcodeLookup branch={branch} scenario={scenario} onFound={setSelected} />
+                  <BarcodeLookup
+                    branch={branch}
+                    scenario={scenario}
+                    onFound={setSelected}
+                    onError={() => setSelected(undefined)}
+                  />
                   <FilterBar>
                     <SearchField label="Tìm barcode hoặc mẫu" value={search} onChange={setSearch} />
                     <SelectField
@@ -126,7 +129,7 @@ export function InventoryPage({
                       onChange={(e) => setFilter(e.target.value)}
                     >
                       <option>Tất cả</option>
-                      {Object.entries(unitStatus).map(([code, label]) => (
+                      {Object.entries(unitStatusLabels).map(([code, label]) => (
                         <option value={code} key={code}>
                           {label}
                         </option>
@@ -162,7 +165,7 @@ export function InventoryPage({
                             <td>{u.branch}</td>
                             <td>
                               <StatusLabel
-                                text={unitStatus[u.status]}
+                                text={unitStatusLabels[u.status]}
                                 tone={
                                   u.status === 'READY'
                                     ? 'success'
@@ -227,6 +230,11 @@ export function InventoryPage({
                           text={issue}
                           conflict={scenario === 'conflict' || scenario === 'version'}
                         />
+                        {notice && (
+                          <Feedback tone="success" title="Đã lưu block">
+                            {notice}
+                          </Feedback>
+                        )}
                       </Panel>
                     )}
                   </>
@@ -256,13 +264,17 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
   const [checks, setChecks] = useState<Record<string, string>>({});
   const [reason, setReason] = useState('');
   const [issue, setIssue] = useState('');
+  const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const save = async (value: Transfer) => {
     setBusy(true);
     setIssue('');
+    setNotice('');
     try {
       const result = await studioAdapter.saveTransfer(value, scenario);
       setSelected(result.code);
+      setNote('');
+      setNotice(`Đã tạo ${result.code}; chờ duyệt trước khi xuất bộ.`);
       retry();
     } catch (e) {
       setIssue(e instanceof Error ? e.message : 'Không lưu được phiếu.');
@@ -273,6 +285,7 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
   const advance = async (transfer: Transfer, next: TransferStatus) => {
     setBusy(true);
     setIssue('');
+    setNotice('');
     try {
       await studioAdapter.advanceTransfer(
         transfer.code,
@@ -281,6 +294,7 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
         reason,
         scenario,
       );
+      setNotice(`Phiếu ${transfer.code} đã chuyển sang ${transferStatus[next]}.`);
       retry();
     } catch (e) {
       setIssue(e instanceof Error ? e.message : 'Không đổi được trạng thái.');
@@ -310,13 +324,14 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
                 <Panel title="Tạo yêu cầu">
                   <div className="feature-filters">
                     <BranchSelector
+                      label="Chi nhánh xuất"
                       value={from}
                       onChange={(v) => {
                         setFrom(v);
                         setTo(v === 'Chi nhánh Quận 1' ? 'Chi nhánh Thủ Đức' : 'Chi nhánh Quận 1');
                       }}
                     />
-                    <BranchSelector value={to} onChange={setTo} />
+                    <BranchSelector label="Chi nhánh nhận" value={to} onChange={setTo} />
                     <Field
                       label="Barcode bộ sẵn sàng"
                       value={unitCode}
@@ -358,6 +373,7 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
                         onClick={() => {
                           setSelected(t.code);
                           setChecks({});
+                          setNotice('');
                         }}
                       >
                         <strong>
@@ -397,7 +413,8 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
                     <div className="feature-list-row" key={u.barcode}>
                       <strong>{u.barcode}</strong>
                       <span>
-                        Tình trạng xuất: {u.out ?? 'Chưa xuất'} · Nhận: {u.received ?? 'Chưa nhận'}
+                        Tình trạng xuất: {u.out ? (conditionLabels[u.out] ?? u.out) : 'Chưa xuất'} ·
+                        Nhận: {u.received ?? 'Chưa nhận'}
                       </span>
                       {current.status === 'IN_TRANSIT' ? (
                         <SelectField
@@ -411,7 +428,9 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
                           <option value="DAMAGED">Hư hỏng</option>
                         </SelectField>
                       ) : (
-                        <small>Tình trạng nhận: {u.in ?? '—'}</small>
+                        <small>
+                          Tình trạng nhận: {u.in ? (conditionLabels[u.in] ?? u.in) : '—'}
+                        </small>
                       )}
                     </div>
                   ))}
@@ -474,6 +493,11 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
                   text={issue}
                   conflict={scenario === 'conflict' || scenario === 'version'}
                 />
+                {notice && (
+                  <Feedback tone="success" title="Đã cập nhật phiếu">
+                    {notice}
+                  </Feedback>
+                )}
                 {scenario === 'unitBlocked' && (
                   <Feedback tone="warning" title="Bộ bị block">
                     Bộ đang vệ sinh hoặc sửa chữa không được xuất.

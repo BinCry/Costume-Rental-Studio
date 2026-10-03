@@ -29,12 +29,23 @@ const baseDraft: BookingDraft = {
   phone: '',
   note: '',
 };
-const initialDraft = (costumeId?: string): BookingDraft => {
+const initialDraft = (costumeId?: string, context?: URLSearchParams): BookingDraft => {
   const selected = fixtureCatalog.find((entry) => entry.id === costumeId);
+  const variants = selected?.sizes.map((size) => `${size} / ${selected.colors[0]}`) ?? [];
+  const requestedVariant = context?.get('variant') ?? '';
+  const requestedBranch = context?.get('branch');
+  const requestedPickup = context?.get('pickup');
+  const requestedReturn = context?.get('returnAt');
   return {
     ...baseDraft,
     costumeId: costumeId ?? baseDraft.costumeId,
-    variant: selected ? `${selected.sizes[0]} / ${selected.colors[0]}` : baseDraft.variant,
+    variant: variants.includes(requestedVariant)
+      ? requestedVariant
+      : (variants[0] ?? baseDraft.variant),
+    branch:
+      requestedBranch && branches.includes(requestedBranch) ? requestedBranch : baseDraft.branch,
+    pickup: requestedPickup?.trim() ? requestedPickup : baseDraft.pickup,
+    returnAt: requestedReturn?.trim() ? requestedReturn : baseDraft.returnAt,
   };
 };
 
@@ -42,15 +53,25 @@ export function BookingPage({
   scenario,
   go,
   costumeId,
+  initialContext,
   onCustomerCreated,
 }: {
   scenario: DemoScenario;
   go: Navigate;
   costumeId?: string;
+  initialContext: URLSearchParams;
   onCustomerCreated?: (code: string) => void;
 }) {
-  const [step, setStep] = useState(0);
-  const [draft, setDraft] = useState<BookingDraft>(() => initialDraft(costumeId));
+  const [step, setStep] = useState(() => {
+    const selected = fixtureCatalog.find((entry) => entry.id === costumeId);
+    if (!selected) return 0;
+    return selected.sizes.some(
+      (size) => `${size} / ${selected.colors[0]}` === initialContext.get('variant'),
+    )
+      ? 2
+      : 1;
+  });
+  const [draft, setDraft] = useState<BookingDraft>(() => initialDraft(costumeId, initialContext));
   const [quote, setQuote] = useState<QuoteSnapshot>();
   const [issue, setIssue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -88,6 +109,11 @@ export function BookingPage({
       return;
     }
     setIssue('');
+    if (step === 2) {
+      setStep(3);
+      void loadQuote();
+      return;
+    }
     setStep((current) => Math.min(current + 1, 5));
   };
   const loadQuote = async () => {
@@ -166,6 +192,7 @@ export function BookingPage({
             }}
             disabled={index > step}
             aria-current={index === step ? 'step' : undefined}
+            aria-label={`Bước ${index + 1}: ${label}`}
           >
             <span>{index < step ? <Icon name="check" size={15} /> : index + 1}</span>
             <small>{label}</small>
@@ -281,12 +308,18 @@ export function BookingPage({
                       type="datetime-local"
                       value={draft.pickup}
                       onChange={(event) => update('pickup', event.target.value)}
+                      error={issue && !draft.pickup ? 'Chọn thời điểm nhận đồ.' : undefined}
                     />
                     <Field
                       label="Trả đồ"
                       type="datetime-local"
                       value={draft.returnAt}
                       onChange={(event) => update('returnAt', event.target.value)}
+                      error={
+                        issue && (!draft.returnAt || draft.returnAt <= draft.pickup)
+                          ? 'Thời điểm trả phải sau thời điểm nhận.'
+                          : undefined
+                      }
                     />
                   </div>
                   <p className="inline-note">
@@ -372,6 +405,7 @@ export function BookingPage({
                     autoComplete="name"
                     value={draft.name}
                     onChange={(event) => update('name', event.target.value)}
+                    error={issue && !draft.name.trim() ? 'Nhập tên người thuê.' : undefined}
                   />
                   <Field
                     label="Số điện thoại"
@@ -380,6 +414,11 @@ export function BookingPage({
                     autoComplete="tel"
                     value={draft.phone}
                     onChange={(event) => update('phone', event.target.value)}
+                    error={
+                      issue && !/^0[0-9 ]{8,12}$/.test(draft.phone.trim())
+                        ? 'Nhập số điện thoại hợp lệ.'
+                        : undefined
+                    }
                   />
                   <TextAreaField
                     label="Ghi chú cho studio (không bắt buộc)"

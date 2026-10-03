@@ -1,5 +1,13 @@
 import { useState } from 'react';
-import { Button, Feedback, Field, SelectField, TextAreaField, StatusLabel } from '../components/ui';
+import {
+  Button,
+  ConfirmDialog,
+  Feedback,
+  Field,
+  SelectField,
+  TextAreaField,
+  StatusLabel,
+} from '../components/ui';
 import { money } from '../components/support';
 import {
   BranchSelector,
@@ -27,6 +35,21 @@ import type { DemoScenario } from '../fixtures/types';
 
 const issueText = (error: unknown) =>
   error instanceof Error ? error.message : 'Thao tác chưa hoàn tất.';
+const accountLabels: Record<Employee['accountStatus'], string> = {
+  PENDING: 'Chờ kích hoạt',
+  ACTIVE: 'Đang hoạt động',
+  LOCKED: 'Bị khóa',
+  INACTIVE: 'Ngừng sử dụng',
+};
+const employmentLabels: Record<Employee['employmentStatus'], string> = {
+  ACTIVE: 'Đang làm việc',
+  ON_LEAVE: 'Tạm nghỉ',
+  TERMINATED: 'Đã nghỉ',
+};
+const staffRoleLabels: Record<string, string> = {
+  SALES_STAFF: 'Nhân viên bán hàng',
+  INVENTORY_STAFF: 'Nhân viên kho',
+};
 
 export function CatalogAdminPage({ scenario }: { scenario: DemoScenario }) {
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.details);
@@ -309,6 +332,7 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
   const [search, setSearch] = useState('');
   const [assignmentBranch, setAssignmentBranch] = useState('Chi nhánh Quận 1');
   const [assignmentRole, setAssignmentRole] = useState('SALES_STAFF');
+  const [pendingEmployee, setPendingEmployee] = useState('');
   const save = async () => {
     if (!editing?.name.trim() || !editing.email.includes('@')) {
       setIssue('Nhập tên và email hợp lệ.');
@@ -319,6 +343,7 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
     try {
       await studioAdapter.saveEmployee(editing, scenario);
       setNotice('Đã lưu nhân viên và phân công trong fixture.');
+      setEditing(undefined);
       retry();
     } catch (e) {
       setIssue(issueText(e));
@@ -346,6 +371,7 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
               action={
                 <Button
                   variant="secondary"
+                  disabled={!!editing}
                   onClick={() => {
                     const code = `NV-DEMO-${items.length + 1}`;
                     setSelected(code);
@@ -376,6 +402,10 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
                         className={`feature-list-row selectable ${person.code === x.code ? 'selected' : ''}`}
                         key={x.code}
                         onClick={() => {
+                          if (editing && selected !== x.code) {
+                            setPendingEmployee(x.code);
+                            return;
+                          }
                           setSelected(x.code);
                           setEditing(undefined);
                         }}
@@ -385,7 +415,8 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
                         </strong>
                         <span>{x.email}</span>
                         <small>
-                          Tài khoản: {x.accountStatus} · Việc làm: {x.employmentStatus}
+                          Tài khoản: {accountLabels[x.accountStatus]} · Việc làm:{' '}
+                          {employmentLabels[x.employmentStatus]}
                         </small>
                       </button>
                     ))}
@@ -414,8 +445,10 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
                         })
                       }
                     >
-                      {['PENDING', 'ACTIVE', 'LOCKED', 'INACTIVE'].map((x) => (
-                        <option key={x}>{x}</option>
+                      {(['PENDING', 'ACTIVE', 'LOCKED', 'INACTIVE'] as const).map((x) => (
+                        <option value={x} key={x}>
+                          {accountLabels[x]}
+                        </option>
                       ))}
                     </SelectField>
                     <SelectField
@@ -428,8 +461,10 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
                         })
                       }
                     >
-                      {['ACTIVE', 'ON_LEAVE', 'TERMINATED'].map((x) => (
-                        <option key={x}>{x}</option>
+                      {(['ACTIVE', 'ON_LEAVE', 'TERMINATED'] as const).map((x) => (
+                        <option value={x} key={x}>
+                          {employmentLabels[x]}
+                        </option>
                       ))}
                     </SelectField>
                   </div>
@@ -437,7 +472,7 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
                   {person.assignments.map((a, i) => (
                     <div className="feature-list-row" key={i}>
                       <strong>{a.branch}</strong>
-                      <span>{a.roleCode}</span>
+                      <span>{staffRoleLabels[a.roleCode] ?? a.roleCode}</span>
                       <Button
                         variant="quiet"
                         onClick={() =>
@@ -452,7 +487,11 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
                     </div>
                   ))}
                   <div className="feature-filters">
-                    <BranchSelector value={assignmentBranch} onChange={setAssignmentBranch} />
+                    <BranchSelector
+                      label="Chi nhánh phân công"
+                      value={assignmentBranch}
+                      onChange={setAssignmentBranch}
+                    />
                     <SelectField
                       label="Thêm role tại chi nhánh"
                       value={assignmentRole}
@@ -464,28 +503,45 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
                   </div>
                   <Button
                     variant="secondary"
+                    disabled={person.assignments.some(
+                      (entry) =>
+                        entry.branch === assignmentBranch && entry.roleCode === assignmentRole,
+                    )}
                     onClick={() =>
                       setEditing({
                         ...person,
                         assignments: [
-                          ...person.assignments.filter(
-                            (entry) => entry.branch !== assignmentBranch,
-                          ),
+                          ...person.assignments,
                           { branch: assignmentBranch, roleCode: assignmentRole },
                         ],
                       })
                     }
                   >
-                    + Gán role mẫu
+                    {person.assignments.some(
+                      (entry) =>
+                        entry.branch === assignmentBranch && entry.roleCode === assignmentRole,
+                    )
+                      ? 'Vai trò đã được gán'
+                      : '+ Gán role mẫu'}
                   </Button>
                   <p className="muted small-note">
                     Quyền thực tế được backend tính từ các role của nhân viên ở chi nhánh đang chọn.
                   </p>
                   <div className="feature-actions">
-                    <Button loading={busy} onClick={() => void save()}>
+                    <Button disabled={!editing} loading={busy} onClick={() => void save()}>
                       Lưu hồ sơ & phân công
                     </Button>
+                    {editing && (
+                      <Button variant="secondary" onClick={() => setEditing(undefined)}>
+                        Bỏ thay đổi
+                      </Button>
+                    )}
                   </div>
+                  {editing && (
+                    <p className="field-hint" role="status">
+                      Có thay đổi chưa lưu trong hồ sơ này.
+                    </p>
+                  )}
                 </Panel>
                 <InlineIssue text={issue} />
                 {notice && (
@@ -495,6 +551,20 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
                 )}
               </div>
             </div>
+            {pendingEmployee && (
+              <ConfirmDialog
+                title="Chưa lưu thay đổi nhân viên"
+                confirmText="Bỏ thay đổi và mở hồ sơ khác"
+                onClose={() => setPendingEmployee('')}
+                onConfirm={() => {
+                  setSelected(pendingEmployee);
+                  setEditing(undefined);
+                  setPendingEmployee('');
+                }}
+              >
+                <p>Thông tin và phân công đang sửa sẽ mất. Bạn có thể quay lại để lưu trước.</p>
+              </ConfirmDialog>
+            )}
           </div>
         );
       }}
@@ -633,6 +703,8 @@ export function RolesPage({ scenario }: { scenario: DemoScenario }) {
   const [issue, setIssue] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [pendingRole, setPendingRole] = useState('');
+  const [permissionSearch, setPermissionSearch] = useState('');
   return (
     <StateGate
       loading={loading}
@@ -644,6 +716,11 @@ export function RolesPage({ scenario }: { scenario: DemoScenario }) {
       {(roles) => {
         const role = roles.find((r) => r.code === selected) ?? roles[0];
         const checked = draft ?? role.permissions;
+        const changed =
+          checked.length !== role.permissions.length ||
+          checked.some((code) => !role.permissions.includes(code));
+        const addedPermissions = checked.filter((code) => !role.permissions.includes(code));
+        const removedPermissions = role.permissions.filter((code) => !checked.includes(code));
         const groups = ['Đơn thuê', 'Giao / trả', 'Thanh toán', 'Kho', 'CRM', 'Quản trị'];
         return (
           <div className="page">
@@ -652,7 +729,7 @@ export function RolesPage({ scenario }: { scenario: DemoScenario }) {
               title="Quyền theo vai trò"
               description="Chọn một vai trò, tick mã quyền có sẵn. Scope thuộc định nghĩa quyền và không đổi tại màn hình này."
             />
-            <div className="role-layout">
+            <div className={`role-layout ${changed ? 'has-unsaved-role' : ''}`}>
               <Panel title="Vai trò">
                 <div className="feature-card-list">
                   {roles.map((r) => (
@@ -660,6 +737,10 @@ export function RolesPage({ scenario }: { scenario: DemoScenario }) {
                       className={`feature-list-row selectable ${role.code === r.code ? 'selected' : ''}`}
                       key={r.code}
                       onClick={() => {
+                        if (changed && r.code !== role.code) {
+                          setPendingRole(r.code);
+                          return;
+                        }
                         setSelected(r.code);
                         setDraft(undefined);
                         setIssue('');
@@ -687,53 +768,117 @@ export function RolesPage({ scenario }: { scenario: DemoScenario }) {
                       { label: 'Đã chọn', value: `${checked.length} mã quyền` },
                     ]}
                   />
+                  <SearchField
+                    label="Tìm quyền theo tên hoặc mã"
+                    value={permissionSearch}
+                    onChange={setPermissionSearch}
+                  />
                 </Panel>
                 <div className="permission-groups">
-                  {groups.map((group) => (
-                    <PermissionGroup
-                      title={group}
-                      key={group}
-                      permissions={permissions.filter((p) => p.group === group)}
-                      selected={checked}
-                      onToggle={(code) =>
-                        setDraft(
-                          checked.includes(code)
-                            ? checked.filter((x) => x !== code)
-                            : [...checked, code],
-                        )
-                      }
-                    />
-                  ))}
-                </div>
-                <div className="feature-actions">
-                  <Button
-                    disabled={!draft || busy}
-                    loading={busy}
-                    onClick={() => {
-                      void (async () => {
-                        setBusy(true);
-                        setIssue('');
-                        try {
-                          await studioAdapter.saveRole({ ...role, permissions: checked }, scenario);
-                          setDraft(undefined);
-                          setNotice(
-                            'Đã lưu quyền vào fixture. API sau này phải kiểm quyền mỗi thao tác.',
-                          );
-                          retry();
-                        } catch (e) {
-                          setIssue(issueText(e));
-                        } finally {
-                          setBusy(false);
+                  {groups.map((group) => {
+                    const matching = permissions.filter(
+                      (p) =>
+                        p.group === group &&
+                        `${p.label} ${p.code} ${p.description}`
+                          .toLocaleLowerCase('vi')
+                          .includes(permissionSearch.toLocaleLowerCase('vi')),
+                    );
+                    return permissionSearch && !matching.length ? null : (
+                      <PermissionGroup
+                        title={group}
+                        key={group}
+                        permissions={matching}
+                        selected={checked}
+                        filtered={Boolean(permissionSearch)}
+                        onToggle={(code) =>
+                          setDraft(
+                            checked.includes(code)
+                              ? checked.filter((x) => x !== code)
+                              : [...checked, code],
+                          )
                         }
-                      })();
-                    }}
-                  >
-                    Lưu quyền vai trò
-                  </Button>
-                  <Button variant="secondary" disabled={!draft} onClick={() => setDraft(undefined)}>
-                    Bỏ thay đổi
-                  </Button>
+                        onSelectAll={() =>
+                          setDraft([...new Set([...checked, ...matching.map((item) => item.code)])])
+                        }
+                        onClear={() =>
+                          setDraft(
+                            checked.filter((code) => !matching.some((item) => item.code === code)),
+                          )
+                        }
+                      />
+                    );
+                  })}
                 </div>
+                {permissionSearch &&
+                  !permissions.some((p) =>
+                    `${p.label} ${p.code} ${p.description}`
+                      .toLocaleLowerCase('vi')
+                      .includes(permissionSearch.toLocaleLowerCase('vi')),
+                  ) && <p className="muted">Không có quyền khớp từ khóa.</p>}
+                {role.group === 'ADMIN' && changed && !checked.includes('rbac.manage.all') && (
+                  <Feedback tone="warning" title="Vai trò quản trị sắp mất quyền sửa phân quyền">
+                    Backend cần bảo vệ quản trị viên cuối cùng trước khi cho phép lưu thay đổi này.
+                  </Feedback>
+                )}
+                {changed && (
+                  <Panel title="Xem trước thay đổi quyền">
+                    <p className="muted">
+                      {addedPermissions.length} quyền được thêm · {removedPermissions.length} quyền
+                      được bỏ.
+                    </p>
+                    {addedPermissions.map((code) => (
+                      <p className="permission-change" key={`add-${code}`}>
+                        <strong>Thêm</strong>{' '}
+                        {permissions.find((item) => item.code === code)?.label ?? code}
+                        <code>{code}</code>
+                      </p>
+                    ))}
+                    {removedPermissions.map((code) => (
+                      <p className="permission-change" key={`remove-${code}`}>
+                        <strong>Bỏ</strong>{' '}
+                        {permissions.find((item) => item.code === code)?.label ?? code}
+                        <code>{code}</code>
+                      </p>
+                    ))}
+                  </Panel>
+                )}
+                {changed && (
+                  <div className="feature-actions role-save-bar" role="status">
+                    <span>
+                      Chưa lưu: +{addedPermissions.length} / −{removedPermissions.length} quyền
+                    </span>
+                    <Button
+                      disabled={busy}
+                      loading={busy}
+                      onClick={() => {
+                        void (async () => {
+                          setBusy(true);
+                          setIssue('');
+                          try {
+                            await studioAdapter.saveRole(
+                              { ...role, permissions: checked },
+                              scenario,
+                            );
+                            setDraft(undefined);
+                            setNotice(
+                              'Đã lưu quyền vào fixture. API sau này phải kiểm quyền mỗi thao tác.',
+                            );
+                            retry();
+                          } catch (e) {
+                            setIssue(issueText(e));
+                          } finally {
+                            setBusy(false);
+                          }
+                        })();
+                      }}
+                    >
+                      Lưu quyền vai trò
+                    </Button>
+                    <Button variant="secondary" onClick={() => setDraft(undefined)}>
+                      Bỏ thay đổi
+                    </Button>
+                  </div>
+                )}
                 <InlineIssue text={issue} conflict={scenario === 'version'} />
                 {notice && (
                   <Feedback tone="success" title="Đã lưu">
@@ -742,6 +887,20 @@ export function RolesPage({ scenario }: { scenario: DemoScenario }) {
                 )}
               </div>
             </div>
+            {pendingRole && (
+              <ConfirmDialog
+                title="Chưa lưu quyền vai trò"
+                confirmText="Bỏ thay đổi và mở vai trò khác"
+                onClose={() => setPendingRole('')}
+                onConfirm={() => {
+                  setSelected(pendingRole);
+                  setDraft(undefined);
+                  setPendingRole('');
+                }}
+              >
+                <p>Các checkbox vừa thay đổi sẽ mất. Bạn có thể quay lại để lưu trước.</p>
+              </ConfirmDialog>
+            )}
           </div>
         );
       }}

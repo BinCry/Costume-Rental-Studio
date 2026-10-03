@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Navigate } from '../App';
 import {
   Button,
@@ -89,17 +89,41 @@ function CostumeCard({
   );
 }
 
-export function CatalogPage({ scenario, go }: { scenario: DemoScenario; go: Navigate }) {
-  const [branch, setBranch] = useState(branches[0]);
-  const [pickup, setPickup] = useState('');
-  const [returnAt, setReturnAt] = useState('');
-  const [category, setCategory] = useState('Tất cả');
-  const [size, setSize] = useState('Tất cả');
-  const [color, setColor] = useState('Tất cả');
-  const [search, setSearch] = useState('');
+export function CatalogPage({
+  scenario,
+  go,
+  initialContext,
+}: {
+  scenario: DemoScenario;
+  go: Navigate;
+  initialContext: URLSearchParams;
+}) {
+  const requestedBranch = initialContext.get('branch');
+  const [branch, setBranch] = useState(() =>
+    requestedBranch && branches.includes(requestedBranch) ? requestedBranch : branches[0],
+  );
+  const [pickup, setPickup] = useState(initialContext.get('pickup') ?? '');
+  const [returnAt, setReturnAt] = useState(initialContext.get('returnAt') ?? '');
+  const [category, setCategory] = useState(initialContext.get('category') ?? 'Tất cả');
+  const [size, setSize] = useState(initialContext.get('size') ?? 'Tất cả');
+  const [color, setColor] = useState(initialContext.get('color') ?? 'Tất cả');
+  const [search, setSearch] = useState(initialContext.get('search') ?? '');
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<CatalogItem | null>(null);
   const { loading, data, error, retry } = useFixtureResource(scenario, loadCatalog);
+  const context = { branch, pickup, returnAt, category, size, color, search };
+  useEffect(() => {
+    if (window.location.pathname !== '/') return;
+    const params = new URLSearchParams();
+    if (branch !== branches[0]) params.set('branch', branch);
+    if (pickup) params.set('pickup', pickup);
+    if (returnAt) params.set('returnAt', returnAt);
+    if (category !== 'Tất cả') params.set('category', category);
+    if (size !== 'Tất cả') params.set('size', size);
+    if (color !== 'Tất cả') params.set('color', color);
+    if (search) params.set('search', search);
+    window.history.replaceState(null, '', `/${params.toString() ? `?${params}` : ''}`);
+  }, [branch, pickup, returnAt, category, size, color, search]);
   const periodSelected = !!pickup && !!returnAt;
   const fixtureAvailabilityKnown =
     pickup === fixturePeriod.pickup &&
@@ -304,11 +328,13 @@ export function CatalogPage({ scenario, go }: { scenario: DemoScenario; go: Navi
                     <div className="feature-actions">
                       <Button
                         variant="secondary"
-                        onClick={() => go('detail', { id: selectedItem.id })}
+                        onClick={() => go('detail', { id: selectedItem.id, ...context })}
                       >
                         Xem đầy đủ
                       </Button>
-                      <Button onClick={() => go('booking', { costume: selectedItem.id })}>
+                      <Button
+                        onClick={() => go('booking', { costume: selectedItem.id, ...context })}
+                      >
                         Bắt đầu yêu cầu thuê <Icon name="arrow" size={17} />
                       </Button>
                     </div>

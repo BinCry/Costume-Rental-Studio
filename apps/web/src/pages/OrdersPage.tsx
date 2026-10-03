@@ -33,15 +33,17 @@ export function OrdersPage({
   go,
   initialOrderId,
   initialFilter,
+  initialBranch,
   canManage = true,
 }: {
   scenario: DemoScenario;
   go: Navigate;
   initialOrderId?: string;
   initialFilter?: string;
+  initialBranch: string;
   canManage?: boolean;
 }) {
-  const [branch, setBranch] = useState(branches[0]);
+  const [branch, setBranch] = useState(initialBranch);
   const [selectedId, setSelectedId] = useState(initialOrderId ?? 'RT-1024');
   const [group, setGroup] = useState(initialFilter ?? 'Tất cả');
   const [search, setSearch] = useState('');
@@ -64,7 +66,8 @@ export function OrdersPage({
         .toLocaleLowerCase('vi')
         .includes(search.toLocaleLowerCase('vi')),
   );
-  const rawOrder = scoped.find((entry) => entry.id === selectedId) ?? visible[0];
+  const rawOrder =
+    scoped.find((entry) => entry.id === selectedId) ?? (initialOrderId ? undefined : visible[0]);
   const order: Order | undefined =
     rawOrder && localCancelled && scenario === 'cancelled' && rawOrder.id === 'RT-1024'
       ? {
@@ -92,6 +95,7 @@ export function OrdersPage({
     setLocalConfirmed(false);
     setLocalCancelled(false);
     window.history.pushState(null, '', `/van-hanh/don-thue/${encodeURIComponent(id)}`);
+    if (window.innerWidth < 768) window.scrollTo({ top: 0, behavior: 'instant' });
   };
   const toggleUnit = (code: string) =>
     setSelectedUnits((current) =>
@@ -194,8 +198,8 @@ export function OrdersPage({
       </div>
       {notice && (
         <Feedback
-          tone={notice.includes('Đã xem trước') ? 'success' : 'warning'}
-          title={notice.includes('Đã xem trước') ? 'Xem trước hoàn tất' : 'Cần kiểm tra lại'}
+          tone={notice.startsWith('Đã ') ? 'success' : 'warning'}
+          title={notice.startsWith('Đã ') ? 'Thao tác fixture hoàn tất' : 'Cần kiểm tra lại'}
           action={
             notice.includes('Đơn đã thay đổi') ? (
               <Button variant="secondary" onClick={retry}>
@@ -314,6 +318,11 @@ export function OrdersPage({
                   <div>
                     <p className="eyebrow">CHI TIẾT ĐƠN · PHIÊN BẢN {order.version}</p>
                     <h2>{order.id}</h2>
+                    {canManage && order.status === 'PENDING_CONFIRMATION' && (
+                      <a className="text-link" href="#unit-selection">
+                        Đến phần chọn bộ và xác nhận ↓
+                      </a>
+                    )}
                   </div>
                   <StatusLabel
                     text={orderStatus[order.status].text}
@@ -379,7 +388,7 @@ export function OrdersPage({
                   }
                 />
                 {order.status === 'PENDING_CONFIRMATION' && (
-                  <div className="detail-section unit-selection">
+                  <div className="detail-section unit-selection" id="unit-selection">
                     <div className="section-row">
                       <div>
                         <h3>Chọn bộ khả dụng</h3>

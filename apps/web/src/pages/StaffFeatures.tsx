@@ -146,10 +146,12 @@ export function CounterRentalPage({
       emptyTitle="Chưa có hồ sơ khách"
     >
       {(customers) => {
-        const customer = customers.find((c) => c.code === customerCode);
         const matches = customers.filter((c) =>
           `${c.name} ${c.phone} ${c.code}`.toLowerCase().includes(customerSearch.toLowerCase()),
         );
+        const customer =
+          matches.find((c) => c.code === customerCode) ??
+          (matches.length === 1 ? matches[0] : undefined);
         return (
           <div className="page">
             <PageHeading
@@ -193,9 +195,10 @@ export function CounterRentalPage({
                       />
                       <SelectField
                         label="Chọn khách"
-                        value={customerCode}
+                        value={customer?.code ?? ''}
                         onChange={(e) => setCustomerCode(e.target.value)}
                       >
+                        {!customer && <option value="">Chọn đúng khách trong kết quả</option>}
                         {matches.map((c) => (
                           <option value={c.code} key={c.code}>
                             {c.name} · {c.phone}
@@ -205,6 +208,13 @@ export function CounterRentalPage({
                       {customer && (
                         <p className="muted">
                           {customer.code} · {customer.preferredBranch}
+                        </p>
+                      )}
+                      {!customer && customerSearch && (
+                        <p className="field-hint" role="status">
+                          {matches.length
+                            ? 'Chọn một khách trong kết quả trước khi tạo yêu cầu.'
+                            : 'Không tìm thấy khách; có thể tạo hồ sơ mới.'}
                         </p>
                       )}
                     </>
@@ -243,6 +253,7 @@ export function CounterRentalPage({
                       ))}
                     </SelectField>
                     <BranchSelector
+                      label="Chi nhánh nhận và trả"
                       value={rentalBranch}
                       onChange={(v) => {
                         setRentalBranch(v);
@@ -349,16 +360,11 @@ export function ActiveRentalsPage({
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<ActiveUnit>();
   const [issue, setIssue] = useState('');
-  const lookup = async (code: string) => {
+  const openActiveUnit = (code: string) => {
     setIssue('');
-    try {
-      await studioAdapter.barcode(code, branch, scenario);
-      const unit = data?.find((x) => x.barcode === code.toUpperCase());
-      if (!unit) throw new Error('Barcode tồn tại nhưng không thuộc bộ đang thuê ACTIVE.');
-      setSelected(unit);
-    } catch (e) {
-      setIssue(e instanceof Error ? e.message : 'Không tìm thấy barcode.');
-    }
+    const unit = data?.find((x) => x.barcode === code.toUpperCase() && x.branch === branch);
+    if (unit) setSelected(unit);
+    else setIssue('Barcode tồn tại nhưng không thuộc bộ đang thuê ACTIVE tại chi nhánh này.');
   };
   return (
     <StateGate
@@ -389,7 +395,9 @@ export function ActiveRentalsPage({
                   <BarcodeLookup
                     branch={branch}
                     scenario={scenario}
-                    onFound={(unit) => void lookup(unit.barcode)}
+                    onFound={(unit) => openActiveUnit(unit.barcode)}
+                    onError={() => setSelected(undefined)}
+                    autoFocus
                   />
                   <FilterBar>
                     <SearchField

@@ -22,7 +22,28 @@ import { useFixtureResource } from '../components/useFixtureResource';
 import { studioAdapter, type Case, type Customer } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
 
-export function CrmPage({ scenario, branch }: { scenario: DemoScenario; branch: string }) {
+const caseStatusLabels: Record<Case['status'], string> = {
+  OPEN: 'Mới mở',
+  IN_PROGRESS: 'Đang xử lý',
+  RESOLVED: 'Đã giải quyết',
+  CLOSED: 'Đã đóng',
+};
+const priorityLabels: Record<Case['priority'], string> = {
+  LOW: 'Thấp',
+  NORMAL: 'Bình thường',
+  HIGH: 'Cao',
+  URGENT: 'Khẩn',
+};
+
+export function CrmPage({
+  scenario,
+  branch,
+  canManage,
+}: {
+  scenario: DemoScenario;
+  branch: string;
+  canManage: boolean;
+}) {
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.customers);
   const casesResource = useFixtureResource(scenario, studioAdapter.cases);
   const [search, setSearch] = useState('');
@@ -33,11 +54,39 @@ export function CrmPage({ scenario, branch }: { scenario: DemoScenario; branch: 
   const [issue, setIssue] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [pendingView, setPendingView] = useState<
+    { kind: 'customer' | 'case' | 'newCase'; code: string } | undefined
+  >();
+  const switchView = (kind: 'customer' | 'case' | 'newCase', code: string) => {
+    if (draft) {
+      setPendingView({ kind, code });
+      return;
+    }
+    if (kind === 'customer') {
+      setSelected(code);
+      setCaseCode('');
+    } else if (kind === 'case') setCaseCode(code);
+    setIssue('');
+    setNotice('');
+  };
   const saveCase = async (value: Case) => {
+    if (!canManage) return;
+    if (!value.subject.trim()) {
+      setIssue('Nhập tiêu đề case trước khi lưu hoặc nhận xử lý.');
+      return;
+    }
     setBusy(true);
     setIssue('');
     try {
-      await studioAdapter.saveCase(value, scenario);
+      const previous = casesResource.data?.find((item) => item.code === value.code);
+      const history = previous
+        ? value.history[0] === previous.history[0]
+          ? ['03/10 · Cập nhật case', ...value.history]
+          : value.history
+        : value.history.length
+          ? value.history
+          : ['03/10 · Tạo case'];
+      await studioAdapter.saveCase({ ...value, history }, scenario);
       setCaseCode(value.code);
       setDraft(undefined);
       setNotice('Case đã được lưu trong fixture và ghi lịch sử.');
@@ -65,7 +114,7 @@ export function CrmPage({ scenario, branch }: { scenario: DemoScenario; branch: 
             c.preferredBranch === branch &&
             `${c.name} ${c.phone} ${c.code}`.toLowerCase().includes(search.toLowerCase()),
         );
-        const person = customers.find((c) => c.code === selected) ?? visible[0];
+        const person = visible.find((c) => c.code === selected) ?? visible[0];
         const related = (casesResource.data ?? []).filter((c) => c.customerCode === person?.code);
         const current = related.find((c) => c.code === caseCode) ?? related[0];
         const editing = draft ?? current;
@@ -76,24 +125,31 @@ export function CrmPage({ scenario, branch }: { scenario: DemoScenario; branch: 
               title="Khách hàng & case"
               description="Hồ sơ, lịch sử thuê, tương tác và xử lý case theo chi nhánh."
               action={
-                <Button
-                  variant="secondary"
-                  onClick={() =>
-                    setNewCustomer({
-                      code: `KH-DEMO-${customers.length + 1}`,
-                      name: '',
-                      phone: '',
-                      email: '',
-                      preferredBranch: branch,
-                      history: [],
-                      interactions: [],
-                    })
-                  }
-                >
-                  + Hồ sơ khách
-                </Button>
+                canManage ? (
+                  <Button
+                    variant="secondary"
+                    onClick={() =>
+                      setNewCustomer({
+                        code: `KH-DEMO-${customers.length + 1}`,
+                        name: '',
+                        phone: '',
+                        email: '',
+                        preferredBranch: branch,
+                        history: [],
+                        interactions: [],
+                      })
+                    }
+                  >
+                    + Hồ sơ khách
+                  </Button>
+                ) : undefined
               }
             />
+            {!canManage && (
+              <Feedback title="Chỉ xem hồ sơ và case">
+                Vai trò hiện tại chưa có mã quyền cập nhật CRM tại chi nhánh này.
+              </Feedback>
+            )}
             <div className="crm-layout">
               <Panel title="Hồ sơ khách">
                 <SearchField
@@ -106,11 +162,7 @@ export function CrmPage({ scenario, branch }: { scenario: DemoScenario; branch: 
                     <button
                       className={`feature-list-row selectable ${person?.code === c.code ? 'selected' : ''}`}
                       key={c.code}
-                      onClick={() => {
-                        setSelected(c.code);
-                        setCaseCode('');
-                        setDraft(undefined);
-                      }}
+                      onClick={() => switchView('customer', c.code)}
                     >
                       <strong>{c.name}</strong>
                       <span>{c.phone}</span>
@@ -139,25 +191,31 @@ export function CrmPage({ scenario, branch }: { scenario: DemoScenario; branch: 
                   <Panel
                     title="Case liên quan"
                     action={
-                      <Button
-                        variant="quiet"
-                        onClick={() => {
-                          const value: Case = {
-                            code: `CS-DEMO-${(casesResource.data ?? []).length + 1}`,
-                            customerCode: person.code,
-                            branch,
-                            subject: '',
-                            description: '',
-                            priority: 'NORMAL',
-                            status: 'OPEN',
-                            history: [],
-                          };
-                          setDraft(value);
-                          setCaseCode(value.code);
-                        }}
-                      >
-                        + Tạo case
-                      </Button>
+                      canManage ? (
+                        <Button
+                          variant="quiet"
+                          onClick={() => {
+                            if (draft) {
+                              setPendingView({ kind: 'newCase', code: person.code });
+                              return;
+                            }
+                            const value: Case = {
+                              code: `CS-DEMO-${(casesResource.data ?? []).length + 1}`,
+                              customerCode: person.code,
+                              branch,
+                              subject: '',
+                              description: '',
+                              priority: 'NORMAL',
+                              status: 'OPEN',
+                              history: [],
+                            };
+                            setDraft(value);
+                            setCaseCode(value.code);
+                          }}
+                        >
+                          + Tạo case
+                        </Button>
+                      ) : undefined
                     }
                   >
                     <div className="feature-card-list">
@@ -165,16 +223,13 @@ export function CrmPage({ scenario, branch }: { scenario: DemoScenario; branch: 
                         <button
                           className={`feature-list-row selectable ${current?.code === c.code ? 'selected' : ''}`}
                           key={c.code}
-                          onClick={() => {
-                            setCaseCode(c.code);
-                            setDraft(undefined);
-                          }}
+                          onClick={() => switchView('case', c.code)}
                         >
                           <strong>
                             {c.code} · {c.subject}
                           </strong>
                           <span>
-                            {c.status} · {c.priority}
+                            {caseStatusLabels[c.status]} · {priorityLabels[c.priority]}
                           </span>
                           <small>{c.owner ?? 'Chưa phân công'}</small>
                         </button>
@@ -192,7 +247,7 @@ export function CrmPage({ scenario, branch }: { scenario: DemoScenario; branch: 
                 {editing ? (
                   <Panel title={editing.code}>
                     <StatusLabel
-                      text={editing.status}
+                      text={caseStatusLabels[editing.status]}
                       tone={
                         editing.status === 'CLOSED'
                           ? 'success'
@@ -201,7 +256,7 @@ export function CrmPage({ scenario, branch }: { scenario: DemoScenario; branch: 
                             : 'info'
                       }
                     />
-                    <div className="stack-form">
+                    <fieldset className="fieldset-reset stack-form" disabled={!canManage}>
                       <Field
                         label="Tiêu đề case"
                         value={editing.subject}
@@ -219,8 +274,10 @@ export function CrmPage({ scenario, branch }: { scenario: DemoScenario; branch: 
                           setDraft({ ...editing, priority: e.target.value as Case['priority'] })
                         }
                       >
-                        {['LOW', 'NORMAL', 'HIGH', 'URGENT'].map((x) => (
-                          <option key={x}>{x}</option>
+                        {(['LOW', 'NORMAL', 'HIGH', 'URGENT'] as const).map((x) => (
+                          <option value={x} key={x}>
+                            {priorityLabels[x]}
+                          </option>
                         ))}
                       </SelectField>
                       <SelectField
@@ -242,6 +299,7 @@ export function CrmPage({ scenario, branch }: { scenario: DemoScenario; branch: 
                         <option>Thu Lê</option>
                       </SelectField>
                       <BranchSelector
+                        label="Chi nhánh xử lý case"
                         value={editing.branch}
                         onChange={(v) =>
                           setDraft({
@@ -262,8 +320,10 @@ export function CrmPage({ scenario, branch }: { scenario: DemoScenario; branch: 
                           })
                         }
                       >
-                        {['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'].map((x) => (
-                          <option key={x}>{x}</option>
+                        {(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'] as const).map((x) => (
+                          <option value={x} key={x}>
+                            {caseStatusLabels[x]}
+                          </option>
                         ))}
                       </SelectField>
                       <div className="feature-actions">
@@ -299,8 +359,18 @@ export function CrmPage({ scenario, branch }: { scenario: DemoScenario; branch: 
                             Nhận xử lý
                           </Button>
                         )}
+                        {draft && (
+                          <Button variant="quiet" onClick={() => setDraft(undefined)}>
+                            Bỏ thay đổi
+                          </Button>
+                        )}
                       </div>
-                    </div>
+                      {draft && (
+                        <p className="field-hint" role="status">
+                          Case có thay đổi chưa lưu.
+                        </p>
+                      )}
+                    </fieldset>
                     <h3>Lịch sử case</h3>
                     <Timeline items={editing.history} />
                   </Panel>
@@ -365,6 +435,38 @@ export function CrmPage({ scenario, branch }: { scenario: DemoScenario; branch: 
                   />
                   <InlineIssue text={issue} />
                 </div>
+              </ConfirmDialog>
+            )}
+            {pendingView && (
+              <ConfirmDialog
+                title="Case có thay đổi chưa lưu"
+                confirmText="Bỏ thay đổi và tiếp tục"
+                onClose={() => setPendingView(undefined)}
+                onConfirm={() => {
+                  const next = pendingView;
+                  setDraft(undefined);
+                  setPendingView(undefined);
+                  if (next.kind === 'customer') {
+                    setSelected(next.code);
+                    setCaseCode('');
+                  } else if (next.kind === 'case') setCaseCode(next.code);
+                  else {
+                    const value: Case = {
+                      code: `CS-DEMO-${(casesResource.data ?? []).length + 1}`,
+                      customerCode: next.code,
+                      branch,
+                      subject: '',
+                      description: '',
+                      priority: 'NORMAL',
+                      status: 'OPEN',
+                      history: [],
+                    };
+                    setCaseCode(value.code);
+                    setDraft(value);
+                  }
+                }}
+              >
+                <p>Nội dung case đang nhập sẽ mất. Bạn có thể quay lại để lưu trước.</p>
               </ConfirmDialog>
             )}
           </div>

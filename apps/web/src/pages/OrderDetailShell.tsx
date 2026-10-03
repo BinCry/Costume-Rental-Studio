@@ -23,13 +23,15 @@ export function OrderDetailShell({
   mode,
   go,
   initialOrderId,
+  initialBranch,
 }: {
   scenario: DemoScenario;
   mode: 'handover' | 'return';
   go: Navigate;
   initialOrderId: string;
+  initialBranch: string;
 }) {
-  const [branch, setBranch] = useState(branches[0]);
+  const [branch, setBranch] = useState(initialBranch);
   const [orderId, setOrderId] = useState(initialOrderId);
   const [barcode, setBarcode] = useState('');
   const [matchedCode, setMatchedCode] = useState('');
@@ -50,15 +52,17 @@ export function OrderDetailShell({
         ? entry.status === 'READY_FOR_PICKUP'
         : ['ACTIVE', 'RETURN_INSPECTION'].includes(entry.status)),
   );
-  const order: Order | undefined =
-    scenario === 'refundFailed' && mode === 'return'
-      ? (eligible.find((entry) => entry.id === 'RT-1033') ?? eligible[0])
-      : (eligible.find((entry) => entry.id === orderId) ?? eligible[0]);
+  const order: Order | undefined = eligible.find((entry) => entry.id === orderId);
   const rental = order?.money.find((line) => line.label === 'Tiền thuê');
   const deposit = order?.money.find((line) => line.label === 'Tiền cọc');
   const settlement = order ? returnSnapshots[order.id] : undefined;
+  const scannedItems =
+    order?.items.filter((item) => !!item.unitCode && matchedCodes.includes(item.unitCode)) ?? [];
   const requiresChecks = order
-    ? order.items.flatMap((item) => [`${item.id}-condition`, `${item.id}-accessories`])
+    ? (mode === 'return' ? scannedItems : order.items).flatMap((item) => [
+        `${item.id}-condition`,
+        `${item.id}-accessories`,
+      ])
     : [];
   const allChecked = requiresChecks.length > 0 && requiresChecks.every((key) => checks[key]);
   const onOrderChange = (id: string) => {
@@ -71,11 +75,18 @@ export function OrderDetailShell({
     setDepositPreview(false);
     setScanIssue('');
     setResult('');
+    if (id)
+      window.history.replaceState(
+        null,
+        '',
+        `/van-hanh/don-thue/${encodeURIComponent(id)}/${mode === 'handover' ? 'giao' : 'tra'}`,
+      );
   };
   const lookup = async () => {
     setScanBusy(true);
     setScanIssue('');
     setMatchedCode('');
+    setResult('');
     try {
       const hit = await fixtureAdapter.lookupBarcode(barcode, branch, scenario);
       if (hit.order.id !== order?.id) {
@@ -95,10 +106,11 @@ export function OrderDetailShell({
   };
   const restricted =
     ['permission', 'version', 'cancelled', 'conflict', 'unitBlocked'].includes(scenario) ||
-    (mode === 'return' && scenario === 'refundFailed');
+    (mode === 'return' && scenario === 'refundFailed' && order?.id === 'RT-1033');
   const effectiveMethod = scenario === 'bankPending' ? 'BANK_TRANSFER' : method;
   const allScanned =
     !!order && order.items.every((item) => !!item.unitCode && matchedCodes.includes(item.unitCode));
+  const scannedEnough = mode === 'handover' ? allScanned : scannedItems.length > 0;
   const previewHandover = () => {
     if (
       !order ||
@@ -115,10 +127,12 @@ export function OrderDetailShell({
     );
   };
   const previewReturn = () => {
-    if (!order || !allScanned || !allChecked || restricted) return;
+    if (!order || !scannedEnough || !allChecked || restricted) return;
     setResult(
       order.status === 'ACTIVE'
-        ? 'Đã xem trước kết quả kiểm tra. Backend cần ghi nhận trả để chuyển đơn sang Đang kiểm tra đồ trả; chưa hoàn cọc.'
+        ? scannedItems.length < order.items.length
+          ? `Đã xem trước nhận ${scannedItems.length}/${order.items.length} bộ. Bộ chưa quét vẫn ở khách; chưa quyết toán hoặc hoàn cọc. Backend cần xác nhận trạng thái từng dòng.`
+          : 'Đã xem trước kết quả kiểm tra. Backend cần ghi nhận trả để chuyển đơn sang Đang kiểm tra đồ trả; chưa hoàn cọc.'
         : 'Đã xem trước quyết toán. Backend cần xác nhận cấn trừ, hoàn cọc và điều kiện hoàn tất; bản demo chưa ghi giao dịch.',
     );
   };
@@ -158,7 +172,7 @@ export function OrderDetailShell({
           value={order?.id ?? ''}
           onChange={(event) => onOrderChange(event.target.value)}
         >
-          {eligible.length === 0 && <option value="">Không có đơn</option>}
+          <option value="">{eligible.length === 0 ? 'Không có đơn' : 'Chọn đơn'}</option>
           {eligible.map((entry) => (
             <option key={entry.id} value={entry.id}>
               {entry.id} · {entry.customer}
@@ -166,6 +180,15 @@ export function OrderDetailShell({
           ))}
         </SelectField>
       </div>
+      {order && (
+        <nav className="task-jump-nav" aria-label="Các bước xử lý đơn">
+          <a href="#task-scan">
+            1. Quét mã · {matchedCodes.length}/{order.items.length}
+          </a>
+          <a href="#task-check">2. Kiểm tình trạng</a>
+          <a href="#task-money">3. {mode === 'handover' ? 'Thu tiền' : 'Quyết toán'}</a>
+        </nav>
+      )}
       {scenario === 'permission' && (
         <Feedback tone="danger" title="Bạn không còn quyền xử lý đơn tại chi nhánh này">
           Không gửi thao tác cũ. Chuyển chi nhánh có quyền hoặc về tổng quan.
@@ -213,9 +236,11 @@ export function OrderDetailShell({
       {!loading && !error && !order && (
         <EmptyState
           title={
-            mode === 'handover'
-              ? 'Chưa có đơn sẵn sàng giao tại chi nhánh này'
-              : 'Chưa có đơn cần nhận trả tại chi nhánh này'
+            orderId
+              ? `Không tìm thấy đơn ${orderId} phù hợp tại ${branch}`
+              : mode === 'handover'
+                ? 'Chưa có đơn sẵn sàng giao tại chi nhánh này'
+                : 'Chưa có đơn cần nhận trả tại chi nhánh này'
           }
           action={
             <Button variant="secondary" onClick={() => go('orders')}>
@@ -250,7 +275,7 @@ export function OrderDetailShell({
                 </span>
               </div>
             </section>
-            <section className="task-card">
+            <section className="task-card" id="task-scan">
               <div className="task-card-heading">
                 <span className="round-step">01</span>
                 <div>
@@ -323,8 +348,14 @@ export function OrderDetailShell({
                   </span>
                 ))}
               </div>
+              {mode === 'return' && order.items.length > 1 && (
+                <p className="section-help" role="status">
+                  Đã quét {scannedItems.length}/{order.items.length} bộ. Bộ chưa quét vẫn ở khách;
+                  cọc chỉ được quyết toán khi backend xác nhận điều kiện trả.
+                </p>
+              )}
             </section>
-            <section className="task-card">
+            <section className="task-card" id="task-check">
               <div className="task-card-heading">
                 <span className="round-step">02</span>
                 <div>
@@ -345,7 +376,9 @@ export function OrderDetailShell({
                   <label className="check-row">
                     <input
                       type="checkbox"
+                      aria-label={`${mode === 'handover' ? 'Kiểm tra tình trạng xuất' : 'Ghi tình trạng trả'} ${item.unitCode ?? item.costume}`}
                       checked={!!checks[`${item.id}-condition`]}
+                      disabled={!matchedCodes.includes(item.unitCode ?? '')}
                       onChange={(event) =>
                         setChecks((current) => ({
                           ...current,
@@ -362,7 +395,9 @@ export function OrderDetailShell({
                   <label className="check-row">
                     <input
                       type="checkbox"
+                      aria-label={`Đối chiếu phụ kiện ${item.unitCode ?? item.costume}`}
                       checked={!!checks[`${item.id}-accessories`]}
+                      disabled={!matchedCodes.includes(item.unitCode ?? '')}
                       onChange={(event) =>
                         setChecks((current) => ({
                           ...current,
@@ -389,7 +424,7 @@ export function OrderDetailShell({
                 Ảnh bằng chứng cần dịch vụ lưu trữ và quyền truy cập; prototype chưa tải ảnh lên.
               </p>
             </section>
-            <section className="task-card">
+            <section className="task-card" id="task-money">
               <div className="task-card-heading">
                 <span className="round-step">03</span>
                 <div>
@@ -418,7 +453,7 @@ export function OrderDetailShell({
                     <div className="collection-head">
                       <span>Khoản</span>
                       <span>Cần thu</span>
-                      <span>Đã thu (demo)</span>
+                      <span>Đánh dấu nhận (demo)</span>
                       <span>Còn thiếu</span>
                     </div>
                     <div>
@@ -452,6 +487,9 @@ export function OrderDetailShell({
                   </div>
                   {effectiveMethod === 'CASH' ? (
                     <div className="cash-checks">
+                      <p className="section-help">
+                        Chỉ xem trước việc đối chiếu tiền mặt; chưa ghi giao dịch hoặc giao bộ.
+                      </p>
                       <label className="check-row">
                         <input
                           type="checkbox"
@@ -531,7 +569,7 @@ export function OrderDetailShell({
                 <Button
                   onClick={mode === 'handover' ? previewHandover : previewReturn}
                   disabled={
-                    !allScanned ||
+                    !scannedEnough ||
                     !allChecked ||
                     restricted ||
                     (mode === 'handover' &&
@@ -541,9 +579,28 @@ export function OrderDetailShell({
                   {mode === 'handover'
                     ? 'Kiểm tra điều kiện giao'
                     : order.status === 'ACTIVE'
-                      ? 'Xem trước chuyển sang kiểm tra'
+                      ? `Xem trước nhận ${scannedItems.length}/${order.items.length} bộ`
                       : 'Xem trước quyết toán'}
                 </Button>
+                {!scannedEnough && (
+                  <p role="status">
+                    {mode === 'handover'
+                      ? 'Quét đủ các mã bộ của đơn trước khi kiểm tra.'
+                      : 'Quét ít nhất một mã bộ của đơn trước khi kiểm tra.'}
+                  </p>
+                )}
+                {scannedEnough && !allChecked && (
+                  <p role="status">Đánh dấu tình trạng và phụ kiện cho các bộ đã quét.</p>
+                )}
+                {mode === 'handover' &&
+                  scannedEnough &&
+                  allChecked &&
+                  effectiveMethod === 'CASH' &&
+                  (!rentPreview || !depositPreview) && (
+                    <p role="status">
+                      Đối chiếu riêng tiền thuê và tiền cọc trước khi xem điều kiện giao.
+                    </p>
+                  )}
                 <p>
                   {mode === 'handover'
                     ? 'Chỉ backend có thể xác nhận thu tiền và chuyển đơn sang Đang thuê.'

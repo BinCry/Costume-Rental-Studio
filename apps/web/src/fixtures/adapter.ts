@@ -208,6 +208,41 @@ const orders: Order[] = [
     note: 'Kiểm tra vết bẩn ở tà áo.',
     eligibleUnits: [],
   },
+  {
+    id: 'RT-1035',
+    status: 'ACTIVE',
+    version: 4,
+    customer: 'Đỗ Nhi',
+    phone: '0900 000 135',
+    branch: branches[0],
+    pickup: '02/10/2026 · 10:00',
+    returnAt: '04/10/2026 · 10:00',
+    dayPolicy: 'Chu kỳ 24 giờ · policy fixture',
+    items: [
+      {
+        id: '01',
+        costume: 'Áo dài Lina',
+        variant: 'M / Hồng phấn',
+        unitCode: 'BC-035',
+        unitStatus: 'Đang ở khách',
+      },
+      {
+        id: '02',
+        costume: 'Áo dài Lina',
+        variant: 'M / Hồng phấn',
+        unitCode: 'BC-036',
+        unitStatus: 'Đang ở khách',
+      },
+    ],
+    money: [
+      { label: 'Tiền thuê', amount: 1280000, status: 'Đã thu', tone: 'success' },
+      { label: 'Tiền cọc', amount: 1000000, status: 'Đang giữ', tone: 'info' },
+      { label: 'Phụ phí / hoàn', amount: 0, status: 'Chưa phát sinh', tone: 'neutral' },
+    ],
+    history: ['02/10 · Đã giao BC-035 và BC-036', '02/10 · Đã thu thuê và cọc'],
+    note: 'Fixture để kiểm tra luồng trả từng bộ; chưa quyết toán.',
+    eligibleUnits: [],
+  },
 ];
 
 const queue: QueueTask[] = [
@@ -502,10 +537,10 @@ export const returnSnapshots: Record<
   'RT-1033': {
     heldDeposit: 500000,
     lateFee: 0,
-    damageFee: 0,
+    damageFee: 120000,
     missingFee: 0,
-    offset: 0,
+    offset: 120000,
     refunded: 0,
-    remainingRefund: 500000,
+    remainingRefund: 380000,
   },
 };

@@ -277,6 +277,18 @@ let units: Unit[] = [
     blocks: [],
     history: ['01/10 · Nhận trả, chờ kiểm tra'],
   },
+  ...['BC-035', 'BC-036'].map((barcode): Unit => ({
+    barcode,
+    variantCode: 'AO-DAI-LINA-M',
+    model: 'Áo dài Lina',
+    variant: 'M / Hồng phấn',
+    branch: 'Chi nhánh Quận 1',
+    status: 'READY',
+    condition: 'GOOD',
+    available: false,
+    blocks: [],
+    history: [`02/10 · Đã giao cho RT-1035 (${barcode})`],
+  })),
   {
     barcode: 'BC-205',
     variantCode: 'AO-DAI-MAY-M',
@@ -350,6 +362,15 @@ const customers: Customer[] = [
     preferredBranch: 'Chi nhánh Quận 1',
     history: ['RT-1033 · Đang kiểm tra đồ trả'],
     interactions: ['01/10 · Nhận trả, hẹn quyết toán cọc'],
+  },
+  {
+    code: 'KH-005',
+    name: 'Đỗ Nhi',
+    phone: '0900 000 135',
+    email: 'nhi@example.test',
+    preferredBranch: 'Chi nhánh Quận 1',
+    history: ['RT-1035 · Đang thuê 2 bộ'],
+    interactions: ['02/10 · Đã nhận hai bộ Áo dài Lina'],
   },
 ];
 const branches: Branch[] = [
@@ -703,6 +724,26 @@ const customerOrders: CustomerOrder[] = [
     refundStatus: 'Chờ quyết toán',
     returnStatus: 'Đang kiểm tra',
     history: ['29/09 · Đã giao BC-033', '01/10 · Đã nhận trả'],
+    canCancel: false,
+  },
+  {
+    id: 'RT-1035',
+    customerCode: 'KH-005',
+    status: 'ACTIVE',
+    branch: 'Chi nhánh Quận 1',
+    pickup: '02/10/2026 · 10:00',
+    due: '04/10/2026 · 10:00',
+    costume: 'Áo dài Lina · 2 bộ',
+    variant: 'M / Hồng phấn',
+    rental: 1280000,
+    deposit: 1000000,
+    extra: 0,
+    refund: 0,
+    rentalStatus: 'Đã thu',
+    depositStatus: 'Đang giữ',
+    refundStatus: 'Chưa phát sinh',
+    returnStatus: 'Chưa trả',
+    history: ['02/10 · Đã giao BC-035 và BC-036', '02/10 · Đã thu thuê và cọc'],
     canCancel: false,
   },
 ];
@@ -1109,7 +1150,15 @@ export const studioAdapter = {
       if (next === 'REJECTED' || next === 'CANCELLED')
         transfer.history.unshift(`03/10 · Lý do: ${reason}`);
       transfer.version += 1;
-      transfer.history.unshift(`03/10 · ${next}`);
+      const actionLabels: Record<TransferStatus, string> = {
+        REQUESTED: 'Tạo yêu cầu',
+        APPROVED: 'Đã duyệt',
+        IN_TRANSIT: 'Đã xuất kho',
+        RECEIVED: 'Đã nhận đủ',
+        REJECTED: 'Đã từ chối',
+        CANCELLED: 'Đã hủy',
+      };
+      transfer.history.unshift(`03/10 · ${actionLabels[next]}`);
       return transfer;
     }),
   saveCase: (value: Case, scenario: DemoScenario) =>
