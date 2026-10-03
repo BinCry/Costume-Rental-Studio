@@ -433,6 +433,14 @@ export function AccountPage({
     'CUSTOMER',
   );
   const [issue, setIssue] = useState('');
+  const demoStateLabels = {
+    entry: 'Chưa đăng nhập',
+    PENDING: 'Chờ kích hoạt',
+    LOCKED: 'Đã khóa',
+    INACTIVE: 'Ngừng hoạt động',
+    unauthorized: 'Không có quyền',
+    ready: 'Đã hoàn thiện hồ sơ',
+  } as const;
   return (
     <div className="page account-page">
       <PageHeading
@@ -523,8 +531,9 @@ export function AccountPage({
                   key={value}
                   className={state === value ? 'active' : ''}
                   onClick={() => setState(value)}
+                  aria-pressed={state === value}
                 >
-                  {value}
+                  {demoStateLabels[value]}
                 </button>
               ),
             )}

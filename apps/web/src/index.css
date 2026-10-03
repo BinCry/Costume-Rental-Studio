@@ -2408,6 +2408,23 @@ small {
   max-width: 420px;
   margin-top: 12px;
 }
+.return-review {
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  font-size: 14px;
+}
+.return-review ul {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+.return-review p {
+  margin: 8px 0 0;
+}
 .key-facts {
   display: grid;
   gap: 0;

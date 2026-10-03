@@ -46,6 +46,7 @@ export function CrmPage({
 }) {
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.customers);
   const casesResource = useFixtureResource(scenario, studioAdapter.cases);
+  const employeesResource = useFixtureResource(scenario, studioAdapter.employees);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState('KH-004');
   const [caseCode, setCaseCode] = useState('CS-001');
@@ -75,6 +76,21 @@ export function CrmPage({
       setIssue('Nhập tiêu đề case trước khi lưu hoặc nhận xử lý.');
       return;
     }
+    if (
+      value.owner &&
+      !employeesResource.data?.some(
+        (employee) =>
+          employee.name === value.owner &&
+          employee.employmentStatus === 'ACTIVE' &&
+          employee.accountStatus === 'ACTIVE' &&
+          employee.assignments.some((assignment) => assignment.branch === value.branch),
+      )
+    ) {
+      setIssue(
+        'Người phụ trách chưa hoạt động tại chi nhánh xử lý. Chọn nhân viên đang hoạt động hoặc để chưa phân công.',
+      );
+      return;
+    }
     setBusy(true);
     setIssue('');
     try {
@@ -99,12 +115,13 @@ export function CrmPage({
   };
   return (
     <StateGate
-      loading={loading || casesResource.loading}
-      error={error ?? casesResource.error}
+      loading={loading || casesResource.loading || employeesResource.loading}
+      error={error ?? casesResource.error ?? employeesResource.error}
       data={data}
       retry={() => {
         retry();
         casesResource.retry();
+        employeesResource.retry();
       }}
       emptyTitle="Chưa có hồ sơ khách"
     >
@@ -118,6 +135,14 @@ export function CrmPage({
         const related = (casesResource.data ?? []).filter((c) => c.customerCode === person?.code);
         const current = related.find((c) => c.code === caseCode) ?? related[0];
         const editing = draft ?? current;
+        const eligibleOwners = (employeesResource.data ?? []).filter(
+          (employee) =>
+            employee.employmentStatus === 'ACTIVE' &&
+            employee.accountStatus === 'ACTIVE' &&
+            employee.assignments.some((assignment) => assignment.branch === editing?.branch),
+        );
+        const ownerUnavailable =
+          !!editing?.owner && !eligibleOwners.some((employee) => employee.name === editing.owner);
         return (
           <div className="page">
             <PageHeading
@@ -281,9 +306,10 @@ export function CrmPage({
                         ))}
                       </SelectField>
                       <SelectField
-                        label="Người phụ trách"
+                        label="Người phụ trách tại chi nhánh"
                         value={editing.owner ?? ''}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          setIssue('');
                           setDraft({
                             ...editing,
                             owner: e.target.value || undefined,
@@ -291,23 +317,38 @@ export function CrmPage({
                               `03/10 · Chuyển case cho ${e.target.value || 'chưa phân công'}`,
                               ...editing.history,
                             ],
-                          })
-                        }
+                          });
+                        }}
                       >
                         <option value="">Chưa phân công</option>
-                        <option>Hà Nguyễn</option>
-                        <option>Thu Lê</option>
+                        {ownerUnavailable && (
+                          <option value={editing.owner} disabled>
+                            {editing.owner} · không còn hiệu lực tại chi nhánh
+                          </option>
+                        )}
+                        {eligibleOwners.map((employee) => (
+                          <option key={employee.code} value={employee.name}>
+                            {employee.name}
+                          </option>
+                        ))}
                       </SelectField>
+                      {ownerUnavailable && (
+                        <Feedback tone="warning" title="Cần phân công lại case">
+                          Người phụ trách hiện tại không còn tài khoản hoặc phân công đang hoạt động
+                          tại {editing.branch}. Lịch sử cũ vẫn được giữ.
+                        </Feedback>
+                      )}
                       <BranchSelector
                         label="Chi nhánh xử lý case"
                         value={editing.branch}
-                        onChange={(v) =>
+                        onChange={(v) => {
+                          setIssue('');
                           setDraft({
                             ...editing,
                             branch: v,
                             history: [`03/10 · Chuyển case sang ${v}`, ...editing.history],
-                          })
-                        }
+                          });
+                        }}
                       />
                       <SelectField
                         label="Trạng thái"
@@ -347,16 +388,19 @@ export function CrmPage({
                         {editing.status === 'OPEN' && (
                           <Button
                             variant="secondary"
+                            disabled={!editing.owner || ownerUnavailable || busy}
                             onClick={() =>
                               void saveCase({
                                 ...editing,
-                                owner: 'Hà Nguyễn',
                                 status: 'IN_PROGRESS',
-                                history: ['03/10 · Hà Nguyễn nhận case', ...editing.history],
+                                history: [
+                                  `03/10 · ${editing.owner} bắt đầu xử lý case`,
+                                  ...editing.history,
+                                ],
                               })
                             }
                           >
-                            Nhận xử lý
+                            Bắt đầu xử lý
                           </Button>
                         )}
                         {draft && (
@@ -399,6 +443,18 @@ export function CrmPage({
                       !/^0[0-9 ]{8,12}$/.test(newCustomer.phone.trim())
                     ) {
                       setIssue('Nhập họ tên và số điện thoại hợp lệ.');
+                      return;
+                    }
+                    if (
+                      customers.some(
+                        (customer) =>
+                          customer.phone.replaceAll(' ', '') ===
+                          newCustomer.phone.replaceAll(' ', ''),
+                      )
+                    ) {
+                      setIssue(
+                        'Số điện thoại đã có hồ sơ. Kiểm tra khách hiện có trước khi tạo hồ sơ khác.',
+                      );
                       return;
                     }
                     setBusy(true);

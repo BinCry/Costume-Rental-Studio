@@ -35,3 +35,12 @@ Ngày kiểm tra: 03/10/2026. Phạm vi: frontend prototype dùng fixture, chưa
 - Trạng thái còn đồ ở catalog hiện theo mẫu; API cần cung cấp khả dụng theo biến thể, chi nhánh và kỳ thuê để khách hiểu đúng trước khi gửi yêu cầu. Fixture có thể cho gửi một biến thể mà nhân viên không tìm được bộ đủ điều kiện.
 - Xác nhận đơn, khóa bộ, đối soát chuyển khoản, ghi nhận thu tiền và hoàn cọc hiện chỉ là xem trước. Backend cần kiểm tra phiên bản đơn, quyền theo vai trò và chi nhánh, tính khả dụng và giao dịch tiền trước khi đổi trạng thái thật.
 - Quy tắc tính “một ngày thuê” là chính sách cần cấu hình và trả về trong báo giá. Giao diện không tự tính lại phí hoặc tiền hoàn.
+
+## Bổ sung kiểm tra UI fixture ngày 03/10/2026
+
+- Rà soát 21 tuyến giao diện ở 375 px và 1440 px, gồm khu khách, khu vận hành, quản trị và chi tiết đơn. Không tuyến nào tràn ngang. Chi tiết đơn khách được kiểm bằng đơn RT-1024 thuộc khách mẫu KH-001; đơn không thuộc khách hiển thị lối quay về danh sách.
+- Tạo đơn tại quầy: báo giá tách thuê/cọc, chỉ cho chọn barcode READY; sau khi tạo và xác nhận, biểu mẫu bị khóa để tránh sửa nhầm hoặc gửi lặp, có lối xem đơn và tạo đơn khác. Giai đoạn đang gửi cũng khóa các trường đầu vào.
+- Trả một phần: quét BC-035 của RT-1035, chọn chờ đánh giá, đối chiếu phụ kiện và nhập mô tả bắt buộc. Bản xem trước nêu rõ 1/2 bộ đã kiểm, BC-036 còn ở khách và cọc tiếp tục được giữ. Checklist tình trạng trùng lặp đã bỏ; kết quả kiểm từng bộ là trường chính.
+- CRM: danh sách người phụ trách lấy từ nhân viên có tài khoản và phân công đang hoạt động tại chi nhánh của case. Đổi case sang Thủ Đức khiến người phụ trách Quận 1 hiện cảnh báo; lưu bị chặn cho đến khi chọn người phù hợp hoặc bỏ phân công. Trạng thái lỗi tải có nút thử lại; trạng thái trống có thông báo rõ.
+- Tài khoản hiển thị nhãn trạng thái quyền bằng tiếng Việt. Đặt thuê và tạo đơn tại quầy bỏ qua kết quả báo giá cũ nếu lựa chọn đã đổi trong lúc tải; hành động gửi được khóa chống kích hoạt lặp trong cùng phiên.
+- Không thấy lỗi console trong lần duyệt các tuyến. TypeScript, ESLint, Prettier và Vite build đều đạt. Trình duyệt trong phiên không cấp ảnh chụp màn hình, nên lượt này xác minh cấu trúc truy cập, trạng thái tương tác và tràn ngang; cần kiểm tra trực quan lại khi có công cụ chụp ảnh hoạt động.

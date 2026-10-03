@@ -76,6 +76,8 @@ export function BookingPage({
   const [issue, setIssue] = useState('');
   const [busy, setBusy] = useState(false);
   const [submittedId, setSubmittedId] = useState('');
+  const quoteRequestRef = useRef(0);
+  const submittingRef = useRef(false);
   const panelRef = useRef<HTMLElement>(null);
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
   const successHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -100,8 +102,11 @@ export function BookingPage({
   const choices = item ? item.sizes.map((size) => `${size} / ${item.colors[0]}`) : [];
   const update = <K extends keyof BookingDraft>(key: K, value: BookingDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
-    if (['costumeId', 'variant', 'quantity', 'branch', 'pickup', 'returnAt'].includes(key))
+    if (['costumeId', 'variant', 'quantity', 'branch', 'pickup', 'returnAt'].includes(key)) {
+      quoteRequestRef.current += 1;
       setQuote(undefined);
+      if (!submittingRef.current) setBusy(false);
+    }
     setIssue('');
   };
   const canContinue = () => {
@@ -136,24 +141,29 @@ export function BookingPage({
     setStep((current) => Math.min(current + 1, 5));
   };
   const loadQuote = async () => {
+    const requestId = ++quoteRequestRef.current;
     setBusy(true);
     setIssue('');
     try {
       const result = await fixtureAdapter.getQuote(draft, scenario);
-      setQuote(result);
+      if (requestId === quoteRequestRef.current) setQuote(result);
     } catch (caught) {
-      setQuote(undefined);
-      setIssue(caught instanceof Error ? caught.message : 'Chưa tải được báo giá.');
+      if (requestId === quoteRequestRef.current) {
+        setQuote(undefined);
+        setIssue(caught instanceof Error ? caught.message : 'Chưa tải được báo giá.');
+      }
     } finally {
-      setBusy(false);
+      if (requestId === quoteRequestRef.current) setBusy(false);
     }
   };
   const submit = async () => {
+    if (submittingRef.current || submittedId) return;
     const message = canContinue();
     if (message || !quote) {
       setIssue(message || 'Cần báo giá hợp lệ.');
       return;
     }
+    submittingRef.current = true;
     setBusy(true);
     setIssue('');
     try {
@@ -163,6 +173,7 @@ export function BookingPage({
     } catch (caught) {
       setIssue(caught instanceof Error ? caught.message : 'Chưa gửi được yêu cầu.');
     } finally {
+      submittingRef.current = false;
       setBusy(false);
     }
   };

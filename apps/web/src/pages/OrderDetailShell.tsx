@@ -62,10 +62,11 @@ export function OrderDetailShell({
   const scannedItems =
     order?.items.filter((item) => !!item.unitCode && matchedCodes.includes(item.unitCode)) ?? [];
   const requiresChecks = order
-    ? (mode === 'return' ? scannedItems : order.items).flatMap((item) => [
-        `${item.id}-condition`,
-        `${item.id}-accessories`,
-      ])
+    ? (mode === 'return' ? scannedItems : order.items).flatMap((item) =>
+        mode === 'return'
+          ? [`${item.id}-accessories`]
+          : [`${item.id}-condition`, `${item.id}-accessories`],
+      )
     : [];
   const allChecked =
     requiresChecks.length > 0 &&
@@ -403,25 +404,23 @@ export function OrderDetailShell({
                     </strong>
                     <span>{item.unitCode}</span>
                   </div>
-                  <label className="check-row">
-                    <input
-                      type="checkbox"
-                      aria-label={`${mode === 'handover' ? 'Kiểm tra tình trạng xuất' : 'Ghi tình trạng trả'} ${item.unitCode ?? item.costume}`}
-                      checked={!!checks[`${item.id}-condition`]}
-                      disabled={!matchedCodes.includes(item.unitCode ?? '')}
-                      onChange={(event) =>
-                        setChecks((current) => ({
-                          ...current,
-                          [`${item.id}-condition`]: event.target.checked,
-                        }))
-                      }
-                    />
-                    <span>
-                      {mode === 'handover'
-                        ? 'Đã kiểm tra tình trạng xuất của bộ'
-                        : 'Đã ghi nhận tình trạng bộ khi trả'}
-                    </span>
-                  </label>
+                  {mode === 'handover' && (
+                    <label className="check-row">
+                      <input
+                        type="checkbox"
+                        aria-label={`Kiểm tra tình trạng xuất ${item.unitCode ?? item.costume}`}
+                        checked={!!checks[`${item.id}-condition`]}
+                        disabled={!matchedCodes.includes(item.unitCode ?? '')}
+                        onChange={(event) =>
+                          setChecks((current) => ({
+                            ...current,
+                            [`${item.id}-condition`]: event.target.checked,
+                          }))
+                        }
+                      />
+                      <span>Đã kiểm tra tình trạng xuất của bộ</span>
+                    </label>
+                  )}
                   <label className="check-row">
                     <input
                       type="checkbox"
@@ -466,6 +465,7 @@ export function OrderDetailShell({
                     : 'Ghi chú tình trạng / lý do phí'
                 }
                 rows={3}
+                required={needsAssessment}
                 placeholder="Ghi lại điều cần xử lý; nội dung chỉ tồn tại trong phiên demo"
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
@@ -635,6 +635,33 @@ export function OrderDetailShell({
                   {result.text}
                 </Feedback>
               )}
+              {mode === 'return' && result?.signature === previewSignature && !restricted && (
+                <div
+                  className="return-review"
+                  aria-label="Tóm tắt các bộ đã kiểm trong bản xem trước"
+                >
+                  <strong>
+                    Đã kiểm {scannedItems.length}/{order.items.length} bộ
+                  </strong>
+                  <ul>
+                    {scannedItems.map((item) => (
+                      <li key={item.id}>
+                        {item.unitCode} ·{' '}
+                        {returnConditions[item.id] === 'PASSED' ? 'Đạt' : 'Chờ đánh giá'}
+                      </li>
+                    ))}
+                  </ul>
+                  {scannedItems.length < order.items.length && (
+                    <p>
+                      Còn ở khách:{' '}
+                      {order.items
+                        .filter((item) => !matchedCodes.includes(item.unitCode ?? ''))
+                        .map((item) => item.unitCode)
+                        .join(', ')}
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="task-final">
                 <Button
                   onClick={mode === 'handover' ? previewHandover : previewReturn}
@@ -662,7 +689,9 @@ export function OrderDetailShell({
                 )}
                 {scannedEnough && !allChecked && (
                   <p role="status">
-                    Đánh dấu tình trạng, phụ kiện và chọn kết quả kiểm cho các bộ đã quét.
+                    {mode === 'return'
+                      ? 'Đối chiếu phụ kiện và chọn kết quả kiểm cho các bộ đã quét.'
+                      : 'Đánh dấu tình trạng và phụ kiện cho mọi bộ của đơn.'}
                   </p>
                 )}
                 {needsAssessmentNote && (

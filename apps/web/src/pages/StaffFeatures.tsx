@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Navigate } from '../App';
 import { Button, Feedback, Field, SelectField, StatusLabel } from '../components/ui';
 import { money } from '../components/support';
@@ -49,13 +49,29 @@ export function CounterRentalPage({
   const [created, setCreated] = useState('');
   const [createdMode, setCreatedMode] = useState<'pending' | 'confirmed'>('pending');
   const submittingRef = useRef(false);
+  const quoteRequestRef = useRef(0);
+  const issueRef = useRef<HTMLDivElement>(null);
+  const createdRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!issue) return;
+    issueRef.current?.focus();
+    issueRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [issue]);
+  useEffect(() => {
+    if (!created) return;
+    createdRef.current?.focus();
+    createdRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [created]);
   const item = fixtureCatalog.find((c) => c.id === costume);
   const clearQuote = () => {
+    quoteRequestRef.current += 1;
     setQuote(undefined);
     setEligibleUnits([]);
     setSelectedUnit('');
+    if (!submittingRef.current) setBusy(false);
   };
   const getQuote = async () => {
+    const requestId = ++quoteRequestRef.current;
     setBusy(true);
     setIssue('');
     try {
@@ -76,19 +92,23 @@ export function CounterRentalPage({
         ),
         studioAdapter.units(scenario),
       ]);
-      setQuote(nextQuote);
-      setEligibleUnits(
-        units.filter(
-          (unit) =>
-            unit.branch === rentalBranch && unit.model === item?.name && unit.variant === variant,
-        ),
-      );
-      setSelectedUnit('');
+      if (requestId === quoteRequestRef.current) {
+        setQuote(nextQuote);
+        setEligibleUnits(
+          units.filter(
+            (unit) =>
+              unit.branch === rentalBranch && unit.model === item?.name && unit.variant === variant,
+          ),
+        );
+        setSelectedUnit('');
+      }
     } catch (e) {
-      clearQuote();
-      setIssue(e instanceof Error ? e.message : 'Không tải được báo giá.');
+      if (requestId === quoteRequestRef.current) {
+        clearQuote();
+        setIssue(e instanceof Error ? e.message : 'Không tải được báo giá.');
+      }
     } finally {
-      setBusy(false);
+      if (requestId === quoteRequestRef.current) setBusy(false);
     }
   };
   const create = async (name: string, phone: string, confirmNow: boolean) => {
@@ -199,134 +219,143 @@ export function CounterRentalPage({
             />
             <div className="feature-two-column">
               <div>
-                <Panel
-                  title="1. Khách thuê"
-                  action={
-                    <Button variant="quiet" onClick={() => setCreating(!creating)}>
-                      {creating ? 'Chọn khách có sẵn' : '+ Tạo hồ sơ'}
-                    </Button>
-                  }
+                <fieldset
+                  className="fieldset-reset"
+                  disabled={!!created || (busy && submittingRef.current)}
                 >
-                  {creating ? (
-                    <div className="stack-form">
-                      <Field
-                        label="Họ tên"
-                        value={newName}
-                        onChange={(e) => setNewName(e.target.value)}
-                      />
-                      <Field
-                        label="Số điện thoại"
-                        value={newPhone}
-                        onChange={(e) => setNewPhone(e.target.value)}
-                      />
-                      <p className="muted">
-                        Hồ sơ mới chỉ được ghi trong fixture sau khi tạo; chưa liên kết tài khoản
-                        Google.
-                      </p>
-                    </div>
-                  ) : (
-                    <>
-                      <SearchField
-                        label="Tìm tên, số điện thoại hoặc mã khách"
-                        value={customerSearch}
-                        onChange={setCustomerSearch}
-                      />
+                  <Panel
+                    title="1. Khách thuê"
+                    action={
+                      <Button variant="quiet" onClick={() => setCreating(!creating)}>
+                        {creating ? 'Chọn khách có sẵn' : '+ Tạo hồ sơ'}
+                      </Button>
+                    }
+                  >
+                    {creating ? (
+                      <div className="stack-form">
+                        <Field
+                          label="Họ tên"
+                          value={newName}
+                          onChange={(e) => setNewName(e.target.value)}
+                        />
+                        <Field
+                          label="Số điện thoại"
+                          value={newPhone}
+                          onChange={(e) => setNewPhone(e.target.value)}
+                        />
+                        <p className="muted">
+                          Hồ sơ mới chỉ được ghi trong fixture sau khi tạo; chưa liên kết tài khoản
+                          Google.
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <SearchField
+                          label="Tìm tên, số điện thoại hoặc mã khách"
+                          value={customerSearch}
+                          onChange={setCustomerSearch}
+                        />
+                        <SelectField
+                          label="Chọn khách"
+                          value={customer?.code ?? ''}
+                          onChange={(e) => setCustomerCode(e.target.value)}
+                        >
+                          {!customer && <option value="">Chọn đúng khách trong kết quả</option>}
+                          {matches.map((c) => (
+                            <option value={c.code} key={c.code}>
+                              {c.name} · {c.phone}
+                            </option>
+                          ))}
+                        </SelectField>
+                        {customer && (
+                          <p className="muted">
+                            {customer.code} · {customer.preferredBranch}
+                          </p>
+                        )}
+                        {!customer && customerSearch && (
+                          <p className="field-hint" role="status">
+                            {matches.length
+                              ? 'Chọn một khách trong kết quả trước khi tạo yêu cầu.'
+                              : 'Không tìm thấy khách; có thể tạo hồ sơ mới.'}
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </Panel>
+                  <Panel title="2. Trang phục và thời gian">
+                    <div className="feature-filters">
                       <SelectField
-                        label="Chọn khách"
-                        value={customer?.code ?? ''}
-                        onChange={(e) => setCustomerCode(e.target.value)}
+                        label="Mẫu trang phục"
+                        value={costume}
+                        onChange={(e) => {
+                          const next = fixtureCatalog.find((c) => c.id === e.target.value);
+                          setCostume(e.target.value);
+                          setVariant(next ? `${next.sizes[0]} / ${next.colors[0]}` : '');
+                          clearQuote();
+                        }}
                       >
-                        {!customer && <option value="">Chọn đúng khách trong kết quả</option>}
-                        {matches.map((c) => (
-                          <option value={c.code} key={c.code}>
-                            {c.name} · {c.phone}
+                        {fixtureCatalog.map((c) => (
+                          <option value={c.id} key={c.id}>
+                            {c.name}
                           </option>
                         ))}
                       </SelectField>
-                      {customer && (
-                        <p className="muted">
-                          {customer.code} · {customer.preferredBranch}
-                        </p>
-                      )}
-                      {!customer && customerSearch && (
-                        <p className="field-hint" role="status">
-                          {matches.length
-                            ? 'Chọn một khách trong kết quả trước khi tạo yêu cầu.'
-                            : 'Không tìm thấy khách; có thể tạo hồ sơ mới.'}
-                        </p>
-                      )}
-                    </>
-                  )}
-                </Panel>
-                <Panel title="2. Trang phục và thời gian">
-                  <div className="feature-filters">
-                    <SelectField
-                      label="Mẫu trang phục"
-                      value={costume}
-                      onChange={(e) => {
-                        const next = fixtureCatalog.find((c) => c.id === e.target.value);
-                        setCostume(e.target.value);
-                        setVariant(next ? `${next.sizes[0]} / ${next.colors[0]}` : '');
-                        clearQuote();
-                      }}
-                    >
-                      {fixtureCatalog.map((c) => (
-                        <option value={c.id} key={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </SelectField>
-                    <SelectField
-                      label="Biến thể"
-                      value={variant}
-                      onChange={(e) => {
-                        setVariant(e.target.value);
-                        clearQuote();
-                      }}
-                    >
-                      {item?.sizes.map((size) => (
-                        <option key={size}>
-                          {size} / {item.colors[0]}
-                        </option>
-                      ))}
-                    </SelectField>
-                    <BranchSelector
-                      label="Chi nhánh nhận và trả"
-                      value={rentalBranch}
-                      onChange={(v) => {
-                        setRentalBranch(v);
-                        clearQuote();
-                      }}
-                    />
-                    <DateTimeField
-                      label="Nhận"
-                      value={pickup}
-                      onChange={(v) => {
-                        setPickup(v);
-                        clearQuote();
-                      }}
-                    />
-                    <DateTimeField
-                      label="Trả"
-                      value={due}
-                      onChange={(v) => {
-                        setDue(v);
-                        clearQuote();
-                      }}
+                      <SelectField
+                        label="Biến thể"
+                        value={variant}
+                        onChange={(e) => {
+                          setVariant(e.target.value);
+                          clearQuote();
+                        }}
+                      >
+                        {item?.sizes.map((size) => (
+                          <option key={size}>
+                            {size} / {item.colors[0]}
+                          </option>
+                        ))}
+                      </SelectField>
+                      <BranchSelector
+                        label="Chi nhánh nhận và trả"
+                        value={rentalBranch}
+                        onChange={(v) => {
+                          setRentalBranch(v);
+                          clearQuote();
+                        }}
+                      />
+                      <DateTimeField
+                        label="Nhận"
+                        value={pickup}
+                        onChange={(v) => {
+                          setPickup(v);
+                          clearQuote();
+                        }}
+                      />
+                      <DateTimeField
+                        label="Trả"
+                        value={due}
+                        onChange={(v) => {
+                          setDue(v);
+                          clearQuote();
+                        }}
+                      />
+                    </div>
+                    <Feedback title="Chỉ giữ bộ sau khi xác nhận">
+                      Báo giá và yêu cầu chưa tự giữ bộ. Chọn barcode READY rồi xác nhận để cập nhật
+                      fixture; tiền thuê và cọc vẫn chỉ được thu ở bước giao đồ.
+                    </Feedback>
+                    <Button variant="secondary" loading={busy} onClick={() => void getQuote()}>
+                      Kiểm tra khả dụng & báo giá
+                    </Button>
+                  </Panel>
+                </fieldset>
+                {issue && (
+                  <div ref={issueRef} tabIndex={-1}>
+                    <InlineIssue
+                      text={issue}
+                      conflict={scenario === 'conflict' || scenario === 'version'}
                     />
                   </div>
-                  <Feedback title="Chỉ giữ bộ sau khi xác nhận">
-                    Báo giá và yêu cầu chưa tự giữ bộ. Chọn barcode READY rồi xác nhận để cập nhật
-                    fixture; tiền thuê và cọc vẫn chỉ được thu ở bước giao đồ.
-                  </Feedback>
-                  <Button variant="secondary" loading={busy} onClick={() => void getQuote()}>
-                    Kiểm tra khả dụng & báo giá
-                  </Button>
-                </Panel>
-                <InlineIssue
-                  text={issue}
-                  conflict={scenario === 'conflict' || scenario === 'version'}
-                />
+                )}
               </div>
               <div>
                 <Panel title="3. Báo giá & xác nhận">
@@ -349,6 +378,7 @@ export function CounterRentalPage({
                         <SelectField
                           label="Bộ sẽ gán khi xác nhận"
                           value={selectedUnit}
+                          disabled={!!created || busy}
                           onChange={(event) => setSelectedUnit(event.target.value)}
                         >
                           <option value="">Chọn barcode khả dụng</option>
@@ -380,14 +410,16 @@ export function CounterRentalPage({
                     <p className="muted">Chọn khách, trang phục và thời gian rồi tải báo giá.</p>
                   )}
                   {created ? (
-                    <Feedback
-                      tone="success"
-                      title={`${createdMode === 'confirmed' ? 'Đã xác nhận' : 'Đã tạo'} ${created}`}
-                    >
-                      {createdMode === 'confirmed'
-                        ? `Đã gán ${selectedUnit} trong fixture. Kiểm bộ và phụ kiện trên chi tiết đơn trước khi giao; tiền thuê và cọc chưa thu.`
-                        : 'Yêu cầu đang chờ xác nhận, chưa giữ bộ. Mở chi tiết đơn để tiếp tục.'}
-                    </Feedback>
+                    <div ref={createdRef} tabIndex={-1}>
+                      <Feedback
+                        tone="success"
+                        title={`${createdMode === 'confirmed' ? 'Đã xác nhận' : 'Đã tạo'} ${created}`}
+                      >
+                        {createdMode === 'confirmed'
+                          ? `Đã gán ${selectedUnit} trong fixture. Kiểm bộ và phụ kiện trên chi tiết đơn trước khi giao; tiền thuê và cọc chưa thu.`
+                          : 'Yêu cầu đang chờ xác nhận, chưa giữ bộ. Mở chi tiết đơn để tiếp tục.'}
+                      </Feedback>
+                    </div>
                   ) : (
                     <div className="counter-actions">
                       {canConfirm && (
@@ -422,9 +454,25 @@ export function CounterRentalPage({
                     </div>
                   )}
                   {created && (
-                    <Button variant="secondary" onClick={() => go('orders', { order: created })}>
-                      Xem đơn vừa tạo
-                    </Button>
+                    <div className="counter-actions">
+                      <Button variant="secondary" onClick={() => go('orders', { order: created })}>
+                        Xem đơn vừa tạo
+                      </Button>
+                      <Button
+                        variant="quiet"
+                        onClick={() => {
+                          setCreated('');
+                          setCreatedMode('pending');
+                          setIssue('');
+                          setCreating(false);
+                          setNewName('');
+                          setNewPhone('');
+                          clearQuote();
+                        }}
+                      >
+                        Tạo đơn khác
+                      </Button>
+                    </div>
                   )}
                 </Panel>
               </div>
