@@ -84,6 +84,8 @@ export default function StudioApp() {
   const [demoControlsOpen, setDemoControlsOpen] = useState(false);
   const [, setAccessRevision] = useState(0);
   const mainRef = useRef<HTMLElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const sectionNavRef = useRef<HTMLElement>(null);
   const previousRouteRef = useRef(route);
   useEffect(() => {
     if (previousRouteRef.current === route) return;
@@ -103,6 +105,11 @@ export default function StudioApp() {
     window.addEventListener('fixture-access-updated', refresh);
     return () => window.removeEventListener('fixture-access-updated', refresh);
   }, []);
+  useEffect(() => {
+    sectionNavRef.current
+      ?.querySelector<HTMLElement>('a.active')
+      ?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }, [route.screen, role, branch]);
   const go: Navigate = (screen, params) => {
     window.history.pushState(null, '', pathFor(screen, params));
     setRoute(readRoute());
@@ -172,12 +179,18 @@ export default function StudioApp() {
             id="main-navigation"
             className={`top-nav ${menuOpen ? 'open' : ''}`}
             aria-label="Điều hướng chính"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                setMenuOpen(false);
+                menuButtonRef.current?.focus();
+              }
+            }}
           >
-            {nav.slice(0, 4).map((item) => (
+            {nav.map((item, index) => (
               <a
                 key={item.screen}
                 href={pathFor(item.screen)}
-                className={route.screen === item.screen ? 'active' : ''}
+                className={`${route.screen === item.screen ? 'active' : ''} ${index >= 4 ? 'mobile-extra-nav' : ''}`.trim()}
                 onClick={(e) => {
                   e.preventDefault();
                   go(item.screen);
@@ -209,8 +222,9 @@ export default function StudioApp() {
               {staff ? 'Xem khu khách' : 'Khu vận hành'} <Icon name="arrow" size={16} />
             </a>
             <button
+              ref={menuButtonRef}
               className="icon-button mobile-menu"
-              aria-label="Mở điều hướng"
+              aria-label={menuOpen ? 'Đóng điều hướng' : 'Mở điều hướng'}
               aria-expanded={menuOpen}
               aria-controls="main-navigation"
               onClick={() => setMenuOpen(!menuOpen)}
@@ -221,7 +235,7 @@ export default function StudioApp() {
         </div>
       </header>
       {staff && (
-        <nav className="section-nav" aria-label="Khu vận hành và quản trị">
+        <nav ref={sectionNavRef} className="section-nav" aria-label="Khu vận hành và quản trị">
           {nav.map((item) => (
             <a
               key={item.screen}

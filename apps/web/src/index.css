@@ -226,6 +226,9 @@ small {
   color: var(--brand-primary);
   background: var(--brand-tint);
 }
+.top-nav .mobile-extra-nav {
+  display: none;
+}
 .top-nav .mobile-area-switch {
   display: none;
 }
@@ -3140,6 +3143,7 @@ small {
   }
   .brand {
     font-size: 17px;
+    min-height: 44px;
   }
   .brand-mark {
     width: 31px;
@@ -3162,6 +3166,8 @@ small {
     padding: 8px;
     flex-direction: column;
     align-items: stretch;
+    max-height: calc(100dvh - 128px);
+    overflow-y: auto;
   }
   .top-nav.open {
     display: flex;
@@ -3169,6 +3175,13 @@ small {
   .top-nav a {
     width: 100%;
     padding: 0 12px;
+  }
+  .top-nav .mobile-extra-nav {
+    display: flex;
+  }
+  .section-nav a,
+  .text-link {
+    min-height: 44px;
   }
   .top-nav a svg {
     display: block;

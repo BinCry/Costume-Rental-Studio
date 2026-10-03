@@ -16,6 +16,7 @@ import {
 } from '../components/studio';
 import { blockTypeLabels, conditionLabels, unitStatusLabels } from '../components/statusLabels';
 import { useFixtureResource } from '../components/useFixtureResource';
+import { useMobileDetailReveal } from '../components/useMobileDetailReveal';
 import {
   studioAdapter,
   type Transfer,
@@ -56,6 +57,7 @@ export function InventoryPage({
   const [issue, setIssue] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const { detailRef, revealDetail } = useMobileDetailReveal<HTMLDivElement>();
   const addBlock = async () => {
     if (!selected || !reason.trim() || until <= from) {
       setIssue('Nhập lý do và khoảng block hợp lệ.');
@@ -118,7 +120,10 @@ export function InventoryPage({
                   <BarcodeLookup
                     branch={branch}
                     scenario={scenario}
-                    onFound={setSelected}
+                    onFound={(unit) => {
+                      setSelected(unit);
+                      revealDetail();
+                    }}
                     onError={() => setSelected(undefined)}
                   />
                   <FilterBar>
@@ -154,7 +159,13 @@ export function InventoryPage({
                         {visible.map((u) => (
                           <tr key={u.barcode}>
                             <td>
-                              <button className="text-link" onClick={() => setSelected(u)}>
+                              <button
+                                className="text-link"
+                                onClick={() => {
+                                  setSelected(u);
+                                  revealDetail();
+                                }}
+                              >
                                 {u.barcode}
                               </button>
                             </td>
@@ -185,7 +196,7 @@ export function InventoryPage({
                   {!visible.length && <p className="muted">Không có bộ phù hợp bộ lọc.</p>}
                 </Panel>
               </div>
-              <div>
+              <div ref={detailRef} tabIndex={-1} role="region" aria-label="Chi tiết bộ đang chọn">
                 {selected ? (
                   <>
                     <UnitDetailPanel unit={selected} />
@@ -266,6 +277,7 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
   const [issue, setIssue] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const { detailRef, revealDetail } = useMobileDetailReveal<HTMLDivElement>();
   const save = async (value: Transfer) => {
     setBusy(true);
     setIssue('');
@@ -273,6 +285,7 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
     try {
       const result = await studioAdapter.saveTransfer(value, scenario);
       setSelected(result.code);
+      revealDetail();
       setNote('');
       setNotice(`Đã tạo ${result.code}; chờ duyệt trước khi xuất bộ.`);
       retry();
@@ -379,6 +392,7 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
                           setSelected(t.code);
                           setChecks({});
                           setNotice('');
+                          revealDetail();
                         }}
                       >
                         <strong>
@@ -393,7 +407,12 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
                   </div>
                 </Panel>
               </div>
-              <div>
+              <div
+                ref={detailRef}
+                tabIndex={-1}
+                role="region"
+                aria-label="Chi tiết phiếu điều chuyển đang chọn"
+              >
                 <Panel title={current.code}>
                   <StatusLabel
                     text={transferStatus[current.status]}

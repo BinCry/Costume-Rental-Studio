@@ -206,7 +206,7 @@ function CostumeCard({
   periodSelected: boolean;
   fixtureAvailabilityKnown: boolean;
   conflict: boolean;
-  onView: () => void;
+  onView: (trigger: HTMLButtonElement) => void;
 }) {
   const availability =
     periodSelected && fixtureAvailabilityKnown
@@ -259,7 +259,11 @@ function CostumeCard({
         {periodSelected && !fixtureAvailabilityKnown && (
           <StatusLabel text="Chưa có dữ liệu khả dụng cho kỳ này" tone="neutral" />
         )}
-        <Button variant="secondary" className="card-button" onClick={onView}>
+        <Button
+          variant="secondary"
+          className="card-button"
+          onClick={(event) => onView(event.currentTarget)}
+        >
           Xem chi tiết <Icon name="arrow" size={17} />
         </Button>
       </div>
@@ -288,6 +292,8 @@ export function CatalogPage({
   const [search, setSearch] = useState(initialContext.get('search') ?? '');
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<CatalogItem | null>(null);
+  const previewRef = useRef<HTMLElement>(null);
+  const previewTriggerRef = useRef<HTMLButtonElement>(null);
   const { loading, data, error, retry } = useFixtureResource(scenario, loadCatalog);
   const context = { branch, pickup, returnAt, category, size, color, search };
   useEffect(() => {
@@ -319,6 +325,21 @@ export function CatalogPage({
     setSize('Tất cả');
     setColor('Tất cả');
     setSearch('');
+  };
+  const openPreview = (item: CatalogItem, trigger: HTMLButtonElement) => {
+    previewTriggerRef.current = trigger;
+    setSelectedItem(item);
+    window.requestAnimationFrame(() => {
+      previewRef.current?.focus({ preventScroll: true });
+      previewRef.current?.scrollIntoView({ block: 'start', behavior: 'instant' });
+    });
+  };
+  const closePreview = () => {
+    setSelectedItem(null);
+    window.requestAnimationFrame(() => {
+      previewTriggerRef.current?.focus({ preventScroll: true });
+      previewTriggerRef.current?.scrollIntoView({ block: 'center', behavior: 'instant' });
+    });
   };
   return (
     <div className="page catalog-page">
@@ -467,7 +488,12 @@ export function CatalogPage({
               !loading &&
               !error &&
               data?.some((entry) => entry.id === selectedItem.id) && (
-                <section className="catalog-preview" aria-label={`Chi tiết ${selectedItem.name}`}>
+                <section
+                  ref={previewRef}
+                  className="catalog-preview"
+                  aria-label={`Chi tiết ${selectedItem.name}`}
+                  tabIndex={-1}
+                >
                   <div
                     className={`catalog-preview-image costume-${selectedItem.imagePosition}`}
                     role="img"
@@ -479,7 +505,7 @@ export function CatalogPage({
                       <button
                         className="icon-button"
                         aria-label="Đóng chi tiết trang phục"
-                        onClick={() => setSelectedItem(null)}
+                        onClick={closePreview}
                       >
                         <Icon name="close" />
                       </button>
@@ -570,7 +596,7 @@ export function CatalogPage({
                       periodSelected={periodSelected}
                       fixtureAvailabilityKnown={fixtureAvailabilityKnown}
                       conflict={scenario === 'conflict'}
-                      onView={() => setSelectedItem(item)}
+                      onView={(trigger) => openPreview(item, trigger)}
                     />
                   ))}
                 </div>

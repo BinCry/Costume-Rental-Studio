@@ -15,6 +15,7 @@ import {
   StateGate,
 } from '../components/studio';
 import { useFixtureResource } from '../components/useFixtureResource';
+import { useMobileDetailReveal } from '../components/useMobileDetailReveal';
 import { fixtureAdapter, fixtureCatalog, fixturePeriod } from '../fixtures/adapter';
 import { studioAdapter, type ActiveUnit, type Unit } from '../fixtures/studio';
 import type { DemoScenario, QuoteSnapshot } from '../fixtures/types';
@@ -52,6 +53,8 @@ export function CounterRentalPage({
   const quoteRequestRef = useRef(0);
   const issueRef = useRef<HTMLDivElement>(null);
   const createdRef = useRef<HTMLDivElement>(null);
+  const { detailRef: quotePanelRef, revealDetail: revealQuote } =
+    useMobileDetailReveal<HTMLDivElement>();
   useEffect(() => {
     if (!issue) return;
     issueRef.current?.focus();
@@ -101,6 +104,7 @@ export function CounterRentalPage({
           ),
         );
         setSelectedUnit('');
+        revealQuote();
       }
     } catch (e) {
       if (requestId === quoteRequestRef.current) {
@@ -357,7 +361,12 @@ export function CounterRentalPage({
                   </div>
                 )}
               </div>
-              <div>
+              <div
+                ref={quotePanelRef}
+                tabIndex={-1}
+                role="region"
+                aria-label="Báo giá và xác nhận đơn tại quầy"
+              >
                 <Panel title="3. Báo giá & xác nhận">
                   {quote ? (
                     <>
@@ -497,11 +506,19 @@ export function ActiveRentalsPage({
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<ActiveUnit>();
   const [issue, setIssue] = useState('');
+  const { detailRef, revealDetail } = useMobileDetailReveal<HTMLDivElement>();
+  const selectUnit = (unit: ActiveUnit) => {
+    setSelected(unit);
+    revealDetail();
+  };
   const openActiveUnit = (code: string) => {
     setIssue('');
     const unit = data?.find((x) => x.barcode === code.toUpperCase() && x.branch === branch);
-    if (unit) setSelected(unit);
-    else setIssue('Barcode tồn tại nhưng không thuộc bộ đang thuê ACTIVE tại chi nhánh này.');
+    if (unit) selectUnit(unit);
+    else {
+      setSelected(undefined);
+      setIssue('Barcode tồn tại nhưng không thuộc bộ đang thuê ACTIVE tại chi nhánh này.');
+    }
   };
   return (
     <StateGate
@@ -561,9 +578,15 @@ export function ActiveRentalsPage({
                       </thead>
                       <tbody>
                         {filtered.map((row) => (
-                          <tr key={row.barcode} onClick={() => setSelected(row)}>
+                          <tr key={row.barcode} onClick={() => selectUnit(row)}>
                             <td>
-                              <button className="text-link" onClick={() => setSelected(row)}>
+                              <button
+                                className="text-link"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  selectUnit(row);
+                                }}
+                              >
                                 {row.barcode}
                               </button>
                             </td>
@@ -599,7 +622,12 @@ export function ActiveRentalsPage({
                   conflict={scenario === 'barcodeOtherBranch' || scenario === 'unitBlocked'}
                 />
               </div>
-              <div>
+              <div
+                ref={detailRef}
+                tabIndex={-1}
+                role="region"
+                aria-label="Chi tiết bộ đang thuê được chọn"
+              >
                 {selected ? (
                   <Panel title={`${selected.barcode} · ${selected.costume}`}>
                     <StatusLabel

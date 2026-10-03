@@ -22,6 +22,7 @@ import {
   Timeline,
 } from '../components/studio';
 import { useFixtureResource } from '../components/useFixtureResource';
+import { useMobileDetailReveal } from '../components/useMobileDetailReveal';
 import {
   permissions,
   studioAdapter,
@@ -333,6 +334,7 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
   const [assignmentBranch, setAssignmentBranch] = useState('Chi nhánh Quận 1');
   const [assignmentRole, setAssignmentRole] = useState('SALES_STAFF');
   const [pendingEmployee, setPendingEmployee] = useState('');
+  const { detailRef, revealDetail } = useMobileDetailReveal<HTMLDivElement>();
   const save = async () => {
     if (!editing?.name.trim() || !editing.email.includes('@')) {
       setIssue('Nhập tên và email hợp lệ.');
@@ -383,6 +385,7 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
                       employmentStatus: 'ACTIVE',
                       assignments: [],
                     });
+                    revealDetail();
                   }}
                 >
                   + Tạo nhân viên chờ kích hoạt
@@ -408,6 +411,7 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
                           }
                           setSelected(x.code);
                           setEditing(undefined);
+                          revealDetail();
                         }}
                       >
                         <strong>
@@ -422,7 +426,12 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
                     ))}
                 </div>
               </Panel>
-              <div>
+              <div
+                ref={detailRef}
+                tabIndex={-1}
+                role="region"
+                aria-label="Hồ sơ nhân viên đang chọn"
+              >
                 <Panel title={`Hồ sơ ${person.code}`}>
                   <div className="feature-filters">
                     <Field
@@ -560,6 +569,7 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
                   setSelected(pendingEmployee);
                   setEditing(undefined);
                   setPendingEmployee('');
+                  revealDetail();
                 }}
               >
                 <p>Thông tin và phân công đang sửa sẽ mất. Bạn có thể quay lại để lưu trước.</p>
@@ -724,6 +734,7 @@ export function RolesPage({ scenario }: { scenario: DemoScenario }) {
   const [busy, setBusy] = useState(false);
   const [pendingRole, setPendingRole] = useState('');
   const [permissionSearch, setPermissionSearch] = useState('');
+  const { detailRef, revealDetail } = useMobileDetailReveal<HTMLDivElement>();
   return (
     <StateGate
       loading={loading}
@@ -763,6 +774,7 @@ export function RolesPage({ scenario }: { scenario: DemoScenario }) {
                         setSelected(r.code);
                         setDraft(undefined);
                         setIssue('');
+                        revealDetail();
                       }}
                     >
                       <strong>{r.name}</strong>
@@ -774,10 +786,15 @@ export function RolesPage({ scenario }: { scenario: DemoScenario }) {
                   ))}
                 </div>
               </Panel>
-              <div>
+              <div
+                ref={detailRef}
+                tabIndex={-1}
+                role="region"
+                aria-label="Quyền của vai trò đang chọn"
+              >
                 <Panel title={role.name}>
                   <p className="muted">
-                    Checkbox cập nhật `role_permissions` của vai trò này. Nhân viên nhận role theo
+                    Quyền được chọn áp dụng cho vai trò này. Phân công vai trò cho nhân viên theo
                     chi nhánh ở màn hình nhân sự.
                   </p>
                   <KeyFacts
@@ -915,6 +932,7 @@ export function RolesPage({ scenario }: { scenario: DemoScenario }) {
                   setSelected(pendingRole);
                   setDraft(undefined);
                   setPendingRole('');
+                  revealDetail();
                 }}
               >
                 <p>Các checkbox vừa thay đổi sẽ mất. Bạn có thể quay lại để lưu trước.</p>

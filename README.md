@@ -85,7 +85,7 @@ Browse Costumes
 
 ## 🚧 Current Status
 
-Repository đang ở giai đoạn xây nền kỹ thuật.
+Repository đã có nền kỹ thuật và bản frontend trình diễn toàn luồng bằng fixture. Nghiệp vụ thật vẫn chờ tích hợp API.
 
 | Area | Status | Notes |
 |------|--------|-------|
@@ -94,10 +94,10 @@ Repository đang ở giai đoạn xây nền kỹ thuật.
 | API response contract | ✅ Implemented | Success/error envelope, `AppError`, timestamp và request ID |
 | API integration tests | ✅ Implemented | Supertest + Vitest cho health, errors, rate limit và security headers |
 | Code quality tooling | ✅ Implemented | ESLint, Prettier, lint-staged và Husky hooks dùng chung tại root |
-| React frontend foundation | 🟡 In progress | React, Vite, TypeScript và Tailwind CSS đã được khởi tạo |
+| React frontend foundation | ✅ Fixture UI audited | Các màn khách, vận hành và quản trị đã được kiểm toán theo mười hành trình; chưa nối API |
 | PostgreSQL + Prisma | 🟡 Migration ready | Prisma schema và initial migration 32 bảng đã có; cần apply và test constraint trên PostgreSQL |
 | Authentication + authorization | ⏳ Planned | Google Login, session và quyền theo chi nhánh chưa triển khai |
-| Rental business modules | ⏳ Planned | Danh mục, tồn kho, đơn thuê, giao trả, thanh toán, CRM và báo cáo |
+| Rental business modules | 🟡 Fixture UI only | Danh mục, tồn kho, đơn thuê, giao trả, thanh toán, CRM và báo cáo đang dùng adapter fixture; giao dịch thật chưa triển khai |
 
 > Các tính năng nghiệp vụ bên dưới mô tả phạm vi đã phân tích. Chúng không đồng nghĩa tất cả đã có trong source code hiện tại.
 
@@ -625,6 +625,7 @@ pnpm build:api
 | Document | Description |
 |----------|-------------|
 | [`docs/README.md`](docs/README.md) | Chỉ mục và thứ tự ưu tiên tài liệu |
+| [`docs/Báo cáo kiểm toán hoàn chỉnh giai đoạn UI UX.md`](docs/B%C3%A1o%20c%C3%A1o%20ki%E1%BB%83m%20to%C3%A1n%20ho%C3%A0n%20ch%E1%BB%89nh%20giai%20%C4%91o%E1%BA%A1n%20UI%20UX.md) | Kết quả nghiệm thu frontend fixture và các việc chờ API |
 | [`docs/business-rules.md`](docs/business-rules.md) | Nghiệp vụ đã chốt và state machine hiện hành |
 | [`docs/database-schema-summary.md`](docs/database-schema-summary.md) | Tóm tắt 7 nhóm và 32 bảng |
 | [`docs/database-schema.dbml`](docs/database-schema.dbml) | ERD đầy đủ |

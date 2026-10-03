@@ -19,6 +19,7 @@ import {
   Timeline,
 } from '../components/studio';
 import { useFixtureResource } from '../components/useFixtureResource';
+import { useMobileDetailReveal } from '../components/useMobileDetailReveal';
 import { studioAdapter, type Case, type Customer } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
 
@@ -58,6 +59,10 @@ export function CrmPage({
   const [pendingView, setPendingView] = useState<
     { kind: 'customer' | 'case' | 'newCase'; code: string } | undefined
   >();
+  const { detailRef: customerDetailRef, revealDetail: revealCustomer } =
+    useMobileDetailReveal<HTMLDivElement>();
+  const { detailRef: caseDetailRef, revealDetail: revealCase } =
+    useMobileDetailReveal<HTMLDivElement>();
   const switchView = (kind: 'customer' | 'case' | 'newCase', code: string) => {
     if (draft) {
       setPendingView({ kind, code });
@@ -66,7 +71,11 @@ export function CrmPage({
     if (kind === 'customer') {
       setSelected(code);
       setCaseCode('');
-    } else if (kind === 'case') setCaseCode(code);
+      revealCustomer();
+    } else if (kind === 'case') {
+      setCaseCode(code);
+      revealCase();
+    }
     setIssue('');
     setNotice('');
   };
@@ -198,7 +207,12 @@ export function CrmPage({
                 {!visible.length && <p className="muted">Không có khách phù hợp ở {branch}.</p>}
               </Panel>
               {person ? (
-                <div>
+                <div
+                  ref={customerDetailRef}
+                  tabIndex={-1}
+                  role="region"
+                  aria-label="Hồ sơ khách đang chọn"
+                >
                   <Panel title={person.name}>
                     <KeyFacts
                       rows={[
@@ -236,6 +250,7 @@ export function CrmPage({
                             };
                             setDraft(value);
                             setCaseCode(value.code);
+                            revealCase();
                           }}
                         >
                           + Tạo case
@@ -268,7 +283,12 @@ export function CrmPage({
                   <p className="muted">Chọn khách ở cột bên trái.</p>
                 </Panel>
               )}
-              <div>
+              <div
+                ref={caseDetailRef}
+                tabIndex={-1}
+                role="region"
+                aria-label="Chi tiết case đang chọn"
+              >
                 {editing ? (
                   <Panel title={editing.code}>
                     <StatusLabel
@@ -505,8 +525,11 @@ export function CrmPage({
                   if (next.kind === 'customer') {
                     setSelected(next.code);
                     setCaseCode('');
-                  } else if (next.kind === 'case') setCaseCode(next.code);
-                  else {
+                    revealCustomer();
+                  } else if (next.kind === 'case') {
+                    setCaseCode(next.code);
+                    revealCase();
+                  } else {
                     const value: Case = {
                       code: `CS-DEMO-${(casesResource.data ?? []).length + 1}`,
                       customerCode: next.code,
@@ -519,6 +542,7 @@ export function CrmPage({
                     };
                     setCaseCode(value.code);
                     setDraft(value);
+                    revealCase();
                   }
                 }}
               >

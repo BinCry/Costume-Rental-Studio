@@ -23,6 +23,7 @@ Khi có khác biệt giữa các tài liệu, dùng thứ tự ưu tiên sau:
 | `Quy chuẩn thiết kế giao diện và năm màn hình lõi.md` | Token hình ảnh, trạng thái nhiều chiều, đặc tả 5 màn hình đầu, trạng thái lỗi/xung đột và tiêu chí nghiệm thu |
 | `Hướng dẫn trình diễn giao diện toàn hệ thống.md` | Các route, cách chạy, kịch bản fixture và phụ thuộc API của 18 màn hình |
 | `Đánh giá và tối ưu trải nghiệm mười luồng chính.md` | Ma sát, thay đổi trước/sau, kiểm tra UX và phụ thuộc API của 10 hành trình |
+| `Báo cáo kiểm toán hoàn chỉnh giai đoạn UI UX.md` | Kết quả nghiệm thu UI/UX cuối giai đoạn fixture: 10 hành trình, trạng thái phục hồi, responsive, accessibility và việc còn chờ API |
 | `Đối chiếu luồng UI UX theo báo cáo rà soát nghiệp vụ.md` | Mức bao phủ UI/fixture của 40 tình huống, các hành trình mới và phần chờ API/quyết định |
 | `Báo cáo rà soát nghiệp vụ toàn diện studio cho thuê trang phục.docx` | Đánh giá nghiệp vụ đa chi nhánh, ngoại lệ vận hành và 40 kịch bản nghiệm thu; các thay đổi trong báo cáo là đề xuất cần chốt trước khi triển khai |
 | `ci-cd.md` | CI, publish Docker image, deploy Coolify và migration production |
