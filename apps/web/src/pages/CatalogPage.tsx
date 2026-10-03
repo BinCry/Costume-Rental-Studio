@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type TransitionEvent } from 'react';
 import type { Navigate } from '../App';
 import {
   Button,
@@ -16,6 +16,146 @@ import { branches, fixtureAdapter, fixturePeriod } from '../fixtures/adapter';
 import type { CatalogItem, DemoScenario } from '../fixtures/types';
 
 const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
+
+const heroLooks = [
+  { code: 'ao-dai', label: 'Áo dài' },
+  { code: 'suit', label: 'Suit' },
+  { code: 'dam', label: 'Đầm' },
+] as const;
+
+function HeroCarousel() {
+  // Lặp ba bộ ảnh để lượt cuối trượt về bộ đầu mà không giật khung hình.
+  const [position, setPosition] = useState(2);
+  const [transitionEnabled, setTransitionEnabled] = useState(true);
+  const [paused, setPaused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [compact, setCompact] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches,
+  );
+  const [reducedMotion, setReducedMotion] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  );
+  const resetFrame = useRef<number | undefined>(undefined);
+  const activeLook = heroLooks[(position - 2) % heroLooks.length];
+  const resetLoop = useCallback(() => {
+    setTransitionEnabled(false);
+    setPosition(2);
+    if (resetFrame.current !== undefined) window.cancelAnimationFrame(resetFrame.current);
+    resetFrame.current = window.requestAnimationFrame(() => {
+      resetFrame.current = window.requestAnimationFrame(() => setTransitionEnabled(true));
+    });
+  }, []);
+
+  useEffect(() => {
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReducedMotion(preference.matches);
+    preference.addEventListener('change', update);
+    return () => preference.removeEventListener('change', update);
+  }, []);
+
+  useEffect(() => {
+    const narrow = window.matchMedia('(max-width: 767px)');
+    const update = () => {
+      setCompact(narrow.matches);
+      if (narrow.matches) resetLoop();
+    };
+    narrow.addEventListener('change', update);
+    return () => narrow.removeEventListener('change', update);
+  }, [resetLoop]);
+
+  useEffect(() => {
+    if (paused || hovered || focused || reducedMotion || compact) return;
+    const timer = window.setInterval(() => {
+      if (!document.hidden) setPosition((current) => current + 1);
+    }, 4800);
+    return () => window.clearInterval(timer);
+  }, [paused, hovered, focused, reducedMotion, compact]);
+
+  useEffect(() => {
+    if (position !== 5 || compact) return;
+    const fallback = window.setTimeout(resetLoop, 1350);
+    return () => window.clearTimeout(fallback);
+  }, [position, compact, resetLoop]);
+
+  useEffect(
+    () => () => {
+      if (resetFrame.current !== undefined) window.cancelAnimationFrame(resetFrame.current);
+    },
+    [],
+  );
+
+  const finishSlide = (event: TransitionEvent<HTMLDivElement>) => {
+    if (
+      event.target !== event.currentTarget ||
+      event.propertyName !== 'transform' ||
+      position !== 5
+    )
+      return;
+    resetLoop();
+  };
+
+  return (
+    <div
+      className="hero-image"
+      role="group"
+      aria-roledescription={compact ? undefined : 'carousel'}
+      aria-label={
+        compact ? 'Ảnh minh họa phong cách trang phục' : 'Ba phong cách trang phục minh họa'
+      }
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocusCapture={() => setFocused(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
+      }}
+    >
+      <div
+        className="hero-carousel-track"
+        style={{
+          transform: `translate3d(-${(position * 100) / 9}%, 0, 0)`,
+          transition: transitionEnabled ? undefined : 'none',
+        }}
+        onTransitionEnd={finishSlide}
+        aria-hidden="true"
+      >
+        {Array.from({ length: 9 }, (_, index) => {
+          const look = heroLooks[index % heroLooks.length];
+          return (
+            <div
+              className={`hero-slide hero-slide--${look.code} ${index === position + 1 ? 'is-active' : ''}`}
+              key={`${look.code}-${index}`}
+            >
+              <div className="hero-slide-visual">
+                <div className="hero-slide-photo">
+                  <img src="/images/lookbook-minh-hoa.png" alt="" draggable="false" />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="hero-carousel-controls">
+        <span aria-hidden="true">
+          {activeLook.label} · 0{((position - 2) % 3) + 1}/03
+        </span>
+        <button
+          type="button"
+          onClick={() => setPaused((current) => !current)}
+          aria-label={
+            paused ? 'Tiếp tục trình chiếu trang phục' : 'Tạm dừng trình chiếu trang phục'
+          }
+          aria-pressed={paused}
+          title={paused ? 'Tiếp tục' : 'Tạm dừng'}
+        >
+          {paused ? '▶' : 'Ⅱ'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function CostumeCard({
   item,
@@ -162,13 +302,7 @@ export function CatalogPage({
             Khám phá bộ sưu tập <Icon name="arrow" size={18} />
           </a>
         </div>
-        <div
-          className="hero-image"
-          role="img"
-          aria-label="Ảnh minh họa ba phong cách trang phục: áo dài, suit và đầm"
-        >
-          <span>Ảnh minh họa</span>
-        </div>
+        <HeroCarousel />
       </section>
       <section className="availability-bar" aria-label="Chi nhánh và thời gian thuê">
         <div className="availability-title">
