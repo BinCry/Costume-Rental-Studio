@@ -226,6 +226,9 @@ small {
   color: var(--brand-primary);
   background: var(--brand-tint);
 }
+.top-nav .mobile-area-switch {
+  display: none;
+}
 .header-actions {
   margin-left: auto;
   display: flex;
@@ -1114,6 +1117,7 @@ small {
   border: 0;
   background: none;
   display: flex;
+  min-height: 44px;
   align-items: center;
   gap: 8px;
   color: #71717a;
@@ -1676,6 +1680,13 @@ small {
 }
 .order-detail {
   padding: 24px;
+}
+.order-detail,
+.order-list-row,
+.booking-step-heading,
+.notice-focus-target,
+.unit-selection {
+  scroll-margin-top: 16px;
 }
 .back-to-list {
   display: none;
@@ -3099,6 +3110,14 @@ small {
   }
   .top-nav a svg {
     display: block;
+  }
+  .top-nav .mobile-area-switch {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+    color: var(--brand-primary);
   }
   .area-switch {
     display: none;

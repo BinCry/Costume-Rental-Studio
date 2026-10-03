@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Navigate } from '../App';
 import { DataTable } from '../components/DataTable';
 import {
@@ -57,6 +57,32 @@ export function OrdersPage({
   const [localConfirmed, setLocalConfirmed] = useState(false);
   const [localCancelled, setLocalCancelled] = useState(false);
   const { loading, data, error, retry } = useFixtureResource(scenario, loadOrders);
+  const detailBackRef = useRef<HTMLButtonElement>(null);
+  const detailRef = useRef<HTMLElement>(null);
+  const selectedRowRef = useRef<HTMLButtonElement>(null);
+  const noticeRef = useRef<HTMLDivElement>(null);
+  const unitSelectionRef = useRef<HTMLDivElement>(null);
+  const previousMobileViewRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (window.innerWidth >= 768 || loading || error) return;
+    if (previousMobileViewRef.current === null && !mobileDetail) {
+      previousMobileViewRef.current = false;
+      return;
+    }
+    if (previousMobileViewRef.current === mobileDetail) return;
+    previousMobileViewRef.current = mobileDetail;
+    const target = mobileDetail ? detailBackRef.current : selectedRowRef.current;
+    target?.focus({ preventScroll: true });
+    (mobileDetail ? detailRef.current : target)?.scrollIntoView({
+      block: 'start',
+      behavior: 'instant',
+    });
+  }, [mobileDetail, loading, error]);
+  useEffect(() => {
+    if (!notice) return;
+    noticeRef.current?.focus();
+    noticeRef.current?.scrollIntoView({ block: 'start', behavior: 'instant' });
+  }, [notice]);
   const scoped = (data ?? []).filter((order) => order.branch === branch);
   const visible = scoped.filter(
     (order) =>
@@ -95,7 +121,6 @@ export function OrdersPage({
     setLocalConfirmed(false);
     setLocalCancelled(false);
     window.history.pushState(null, '', `/van-hanh/don-thue/${encodeURIComponent(id)}`);
-    if (window.innerWidth < 768) window.scrollTo({ top: 0, behavior: 'instant' });
   };
   const toggleUnit = (code: string) =>
     setSelectedUnits((current) =>
@@ -197,19 +222,34 @@ export function OrdersPage({
         </SelectField>
       </div>
       {notice && (
-        <Feedback
-          tone={notice.startsWith('Đã ') ? 'success' : 'warning'}
-          title={notice.startsWith('Đã ') ? 'Thao tác fixture hoàn tất' : 'Cần kiểm tra lại'}
-          action={
-            notice.includes('Đơn đã thay đổi') ? (
-              <Button variant="secondary" onClick={retry}>
-                Làm mới đơn
-              </Button>
-            ) : undefined
-          }
-        >
-          {notice}
-        </Feedback>
+        <div ref={noticeRef} tabIndex={-1} className="notice-focus-target">
+          <Feedback
+            tone={notice.startsWith('Đã ') ? 'success' : 'warning'}
+            title={notice.startsWith('Đã ') ? 'Thao tác fixture hoàn tất' : 'Cần kiểm tra lại'}
+            action={
+              notice.includes('Đơn đã thay đổi') ? (
+                <Button variant="secondary" onClick={retry}>
+                  Làm mới đơn
+                </Button>
+              ) : notice.includes('vừa hết khả dụng') ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    unitSelectionRef.current?.focus();
+                    unitSelectionRef.current?.scrollIntoView({
+                      block: 'start',
+                      behavior: 'instant',
+                    });
+                  }}
+                >
+                  Xem bộ còn trống
+                </Button>
+              ) : undefined
+            }
+          >
+            {notice}
+          </Feedback>
+        </div>
       )}
       {scenario === 'permission' && (
         <Feedback tone="danger" title="Bạn không còn quyền xử lý đơn tại chi nhánh này">
@@ -293,6 +333,7 @@ export function OrdersPage({
                 <button
                   key={entry.id}
                   className={`order-list-row ${selectedId === entry.id ? 'selected' : ''}`}
+                  ref={selectedId === entry.id ? selectedRowRef : undefined}
                   onClick={() => chooseOrder(entry.id)}
                 >
                   <div>
@@ -308,8 +349,12 @@ export function OrdersPage({
               ))
             )}
           </section>
-          <section className="order-detail" aria-label="Chi tiết đơn đang chọn">
-            <button className="back-to-list" onClick={() => setMobileDetail(false)}>
+          <section ref={detailRef} className="order-detail" aria-label="Chi tiết đơn đang chọn">
+            <button
+              ref={detailBackRef}
+              className="back-to-list"
+              onClick={() => setMobileDetail(false)}
+            >
               <Icon name="arrow" size={17} /> Quay lại danh sách
             </button>
             {order ? (
@@ -388,7 +433,12 @@ export function OrdersPage({
                   }
                 />
                 {order.status === 'PENDING_CONFIRMATION' && (
-                  <div className="detail-section unit-selection" id="unit-selection">
+                  <div
+                    className="detail-section unit-selection"
+                    id="unit-selection"
+                    ref={unitSelectionRef}
+                    tabIndex={-1}
+                  >
                     <div className="section-row">
                       <div>
                         <h3>Chọn bộ khả dụng</h3>

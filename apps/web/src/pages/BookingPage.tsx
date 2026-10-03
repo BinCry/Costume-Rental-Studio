@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Navigate } from '../App';
 import {
   Button,
@@ -76,6 +76,25 @@ export function BookingPage({
   const [issue, setIssue] = useState('');
   const [busy, setBusy] = useState(false);
   const [submittedId, setSubmittedId] = useState('');
+  const panelRef = useRef<HTMLElement>(null);
+  const stepHeadingRef = useRef<HTMLHeadingElement>(null);
+  const successHeadingRef = useRef<HTMLHeadingElement>(null);
+  const issueRef = useRef<HTMLDivElement>(null);
+  const previousStepRef = useRef(step);
+  useEffect(() => {
+    if (previousStepRef.current === step) return;
+    previousStepRef.current = step;
+    stepHeadingRef.current?.focus();
+    stepHeadingRef.current?.scrollIntoView({ block: 'start', behavior: 'instant' });
+  }, [step]);
+  useEffect(() => {
+    if (!issue) return;
+    const invalidField = panelRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]');
+    (invalidField ?? issueRef.current)?.focus();
+  }, [issue]);
+  useEffect(() => {
+    if (submittedId) successHeadingRef.current?.focus();
+  }, [submittedId]);
   const { loading, data, error, retry } = useFixtureResource(scenario, loadCatalog);
   const item = fixtureCatalog.find((entry) => entry.id === draft.costumeId);
   const choices = item ? item.sizes.map((size) => `${size} / ${item.colors[0]}`) : [];
@@ -155,7 +174,9 @@ export function BookingPage({
             <Icon name="check" size={32} />
           </span>
           <p className="eyebrow">YÊU CẦU ĐÃ GỬI · FIXTURE</p>
-          <h1>Yêu cầu demo đã được tạo</h1>
+          <h1 tabIndex={-1} ref={successHeadingRef}>
+            Yêu cầu demo đã được tạo
+          </h1>
           <p className="success-code">
             Mã yêu cầu <strong>{submittedId}</strong>
           </p>
@@ -200,12 +221,14 @@ export function BookingPage({
         ))}
       </div>
       <div className="booking-layout">
-        <section className="booking-panel">
+        <section className="booking-panel" ref={panelRef}>
           <div className="panel-intro">
             <span className="step-number">0{step + 1}</span>
             <div>
               <p className="eyebrow">BƯỚC {step + 1} / 6</p>
-              <h2>{steps[step]}</h2>
+              <h2 ref={stepHeadingRef} tabIndex={-1} className="booking-step-heading">
+                {steps[step]}
+              </h2>
             </div>
           </div>
           {error && (
@@ -474,9 +497,11 @@ export function BookingPage({
             </>
           )}
           {issue && (
-            <Feedback tone="danger" title="Chưa thể tiếp tục">
-              {issue}
-            </Feedback>
+            <div ref={issueRef} tabIndex={-1}>
+              <Feedback tone="danger" title="Chưa thể tiếp tục">
+                {issue}
+              </Feedback>
+            </div>
           )}
           <div className="step-actions">
             <Button

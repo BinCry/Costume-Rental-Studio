@@ -43,7 +43,7 @@ export function OrderDetailShell({
   const [rentPreview, setRentPreview] = useState(false);
   const [depositPreview, setDepositPreview] = useState(false);
   const [note, setNote] = useState('');
-  const [result, setResult] = useState('');
+  const [result, setResult] = useState<{ text: string; signature: string } | null>(null);
   const { loading, data, error, retry } = useFixtureResource(scenario, loadOrders);
   const eligible = (data ?? []).filter(
     (entry) =>
@@ -74,7 +74,7 @@ export function OrderDetailShell({
     setRentPreview(false);
     setDepositPreview(false);
     setScanIssue('');
-    setResult('');
+    setResult(null);
     if (id)
       window.history.replaceState(
         null,
@@ -86,7 +86,7 @@ export function OrderDetailShell({
     setScanBusy(true);
     setScanIssue('');
     setMatchedCode('');
-    setResult('');
+    setResult(null);
     try {
       const hit = await fixtureAdapter.lookupBarcode(barcode, branch, scenario);
       if (hit.order.id !== order?.id) {
@@ -111,6 +111,19 @@ export function OrderDetailShell({
   const allScanned =
     !!order && order.items.every((item) => !!item.unitCode && matchedCodes.includes(item.unitCode));
   const scannedEnough = mode === 'handover' ? allScanned : scannedItems.length > 0;
+  const previewSignature = JSON.stringify([
+    scenario,
+    mode,
+    branch,
+    order?.id,
+    order?.version,
+    matchedCodes,
+    checks,
+    effectiveMethod,
+    rentPreview,
+    depositPreview,
+    note,
+  ]);
   const previewHandover = () => {
     if (
       !order ||
@@ -122,19 +135,22 @@ export function OrderDetailShell({
       restricted
     )
       return;
-    setResult(
-      'Checklist và tiền mặt đã đủ trong bản xem trước. Chỉ backend mới có thể xác nhận giao, thu tiền và chuyển đơn sang Đang thuê. Chưa có thay đổi nào được lưu.',
-    );
+    setResult({
+      text: 'Checklist và tiền mặt đã đủ trong bản xem trước. Chỉ backend mới có thể xác nhận giao, thu tiền và chuyển đơn sang Đang thuê. Chưa có thay đổi nào được lưu.',
+      signature: previewSignature,
+    });
   };
   const previewReturn = () => {
     if (!order || !scannedEnough || !allChecked || restricted) return;
-    setResult(
-      order.status === 'ACTIVE'
-        ? scannedItems.length < order.items.length
-          ? `Đã xem trước nhận ${scannedItems.length}/${order.items.length} bộ. Bộ chưa quét vẫn ở khách; chưa quyết toán hoặc hoàn cọc. Backend cần xác nhận trạng thái từng dòng.`
-          : 'Đã xem trước kết quả kiểm tra. Backend cần ghi nhận trả để chuyển đơn sang Đang kiểm tra đồ trả; chưa hoàn cọc.'
-        : 'Đã xem trước quyết toán. Backend cần xác nhận cấn trừ, hoàn cọc và điều kiện hoàn tất; bản demo chưa ghi giao dịch.',
-    );
+    setResult({
+      text:
+        order.status === 'ACTIVE'
+          ? scannedItems.length < order.items.length
+            ? `Đã xem trước nhận ${scannedItems.length}/${order.items.length} bộ. Bộ chưa quét vẫn ở khách; chưa quyết toán hoặc hoàn cọc. Backend cần xác nhận trạng thái từng dòng.`
+            : 'Đã xem trước kết quả kiểm tra. Backend cần ghi nhận trả để chuyển đơn sang Đang kiểm tra đồ trả; chưa hoàn cọc.'
+          : 'Đã xem trước quyết toán. Backend cần xác nhận cấn trừ, hoàn cọc và điều kiện hoàn tất; bản demo chưa ghi giao dịch.',
+      signature: previewSignature,
+    });
   };
   return (
     <div className="page staff-page task-page">
@@ -560,9 +576,9 @@ export function OrderDetailShell({
                   </>
                 )
               )}
-              {result && (
+              {result?.signature === previewSignature && !restricted && (
                 <Feedback tone="success" title="Đã kiểm tra điều kiện trong phiên demo">
-                  {result}
+                  {result.text}
                 </Feedback>
               )}
               <div className="task-final">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/ui';
 import type { DemoScenario } from '../fixtures/types';
 import { fixtureCustomers, fixtureEmployees, fixtureRoles } from '../fixtures/studio';
@@ -82,6 +82,13 @@ export default function StudioApp() {
   const [customerCode, setCustomerCode] = useState('KH-001');
   const [menuOpen, setMenuOpen] = useState(false);
   const [, setAccessRevision] = useState(0);
+  const mainRef = useRef<HTMLElement>(null);
+  const previousRouteRef = useRef(route);
+  useEffect(() => {
+    if (previousRouteRef.current === route) return;
+    previousRouteRef.current = route;
+    mainRef.current?.focus({ preventScroll: true });
+  }, [route]);
   useEffect(() => {
     const onPop = () => {
       setRoute(readRoute());
@@ -160,7 +167,11 @@ export default function StudioApp() {
               <small>TRANG PHỤC</small>
             </span>
           </a>
-          <nav className={`top-nav ${menuOpen ? 'open' : ''}`} aria-label="Điều hướng chính">
+          <nav
+            id="main-navigation"
+            className={`top-nav ${menuOpen ? 'open' : ''}`}
+            aria-label="Điều hướng chính"
+          >
             {nav.slice(0, 4).map((item) => (
               <a
                 key={item.screen}
@@ -174,6 +185,16 @@ export default function StudioApp() {
                 {item.label}
               </a>
             ))}
+            <a
+              className="mobile-area-switch"
+              href={staff ? '/' : '/van-hanh/tong-quan'}
+              onClick={(e) => {
+                e.preventDefault();
+                go(staff ? 'catalog' : 'dashboard');
+              }}
+            >
+              {staff ? 'Xem khu khách' : 'Khu vận hành'} <Icon name="arrow" size={16} />
+            </a>
           </nav>
           <div className="header-actions">
             <a
@@ -190,6 +211,7 @@ export default function StudioApp() {
               className="icon-button mobile-menu"
               aria-label="Mở điều hướng"
               aria-expanded={menuOpen}
+              aria-controls="main-navigation"
               onClick={() => setMenuOpen(!menuOpen)}
             >
               <Icon name="menu" />
@@ -272,6 +294,8 @@ export default function StudioApp() {
       <main
         id="main-content"
         className="main-content"
+        ref={mainRef}
+        tabIndex={-1}
         key={`${route.screen}:${branch}:${p.get('order') ?? ''}`}
       >
         {protectedArea ? (
