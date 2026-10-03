@@ -81,6 +81,7 @@ export default function StudioApp() {
   const [branch, setBranch] = useState('Chi nhánh Quận 1');
   const [customerCode, setCustomerCode] = useState('KH-001');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [demoControlsOpen, setDemoControlsOpen] = useState(false);
   const [, setAccessRevision] = useState(0);
   const mainRef = useRef<HTMLElement>(null);
   const previousRouteRef = useRef(route);
@@ -239,54 +240,69 @@ export default function StudioApp() {
       {import.meta.env.DEV && (
         <div className="demo-controls">
           <div className="demo-controls-inner">
-            <span>Kiểm tra UI fixture</span>
-            <div className="demo-control demo-control--scenario">
-              <label htmlFor="demo-scenario">Tình huống</label>
-              <select
-                id="demo-scenario"
-                value={scenario}
-                onChange={(e) => setScenario(e.target.value as DemoScenario)}
-              >
-                {scenarios.map((x) => (
-                  <option value={x.value} key={x.value}>
-                    {x.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="demo-control demo-control--role">
-              <label htmlFor="demo-role">Vai trò</label>
-              <select
-                id="demo-role"
-                value={role}
-                onChange={(e) => setRole(e.target.value as DemoRole)}
-              >
-                <option value="ADMIN">Quản trị</option>
-                <option value="SALES_STAFF">Nhân viên bán hàng</option>
-                <option value="INVENTORY_STAFF">Nhân viên kho</option>
-                <option value="CUSTOMER">Khách</option>
-              </select>
-            </div>
-            <div className="demo-control demo-control--branch">
-              <label htmlFor="demo-branch">Chi nhánh</label>
-              <select id="demo-branch" value={branch} onChange={(e) => setBranch(e.target.value)}>
-                <option>Chi nhánh Quận 1</option>
-                <option>Chi nhánh Thủ Đức</option>
-              </select>
-            </div>
-            <div className="demo-control demo-control--customer">
-              <label htmlFor="demo-customer">Khách mẫu</label>
-              <select
-                id="demo-customer"
-                value={customerCode}
-                onChange={(e) => setCustomerCode(e.target.value)}
-              >
-                {fixtureCustomers.map((customer) => (
-                  <option value={customer.code} key={customer.code}>
-                    {customer.name}
-                  </option>
-                ))}
-              </select>
+            <span className="demo-controls-title">Kiểm tra UI fixture</span>
+            <button
+              type="button"
+              className="demo-controls-toggle"
+              aria-expanded={demoControlsOpen}
+              aria-controls="demo-control-fields"
+              onClick={() => setDemoControlsOpen((open) => !open)}
+            >
+              Kiểm tra UI fixture
+              <span aria-hidden="true">{demoControlsOpen ? '−' : '+'}</span>
+            </button>
+            <div
+              id="demo-control-fields"
+              className={`demo-control-fields ${demoControlsOpen ? 'open' : ''}`}
+            >
+              <div className="demo-control demo-control--scenario">
+                <label htmlFor="demo-scenario">Tình huống</label>
+                <select
+                  id="demo-scenario"
+                  value={scenario}
+                  onChange={(e) => setScenario(e.target.value as DemoScenario)}
+                >
+                  {scenarios.map((x) => (
+                    <option value={x.value} key={x.value}>
+                      {x.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="demo-control demo-control--role">
+                <label htmlFor="demo-role">Vai trò</label>
+                <select
+                  id="demo-role"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as DemoRole)}
+                >
+                  <option value="ADMIN">Quản trị</option>
+                  <option value="SALES_STAFF">Nhân viên bán hàng</option>
+                  <option value="INVENTORY_STAFF">Nhân viên kho</option>
+                  <option value="CUSTOMER">Khách</option>
+                </select>
+              </div>
+              <div className="demo-control demo-control--branch">
+                <label htmlFor="demo-branch">Chi nhánh</label>
+                <select id="demo-branch" value={branch} onChange={(e) => setBranch(e.target.value)}>
+                  <option>Chi nhánh Quận 1</option>
+                  <option>Chi nhánh Thủ Đức</option>
+                </select>
+              </div>
+              <div className="demo-control demo-control--customer">
+                <label htmlFor="demo-customer">Khách mẫu</label>
+                <select
+                  id="demo-customer"
+                  value={customerCode}
+                  onChange={(e) => setCustomerCode(e.target.value)}
+                >
+                  {fixtureCustomers.map((customer) => (
+                    <option value={customer.code} key={customer.code}>
+                      {customer.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
         </div>

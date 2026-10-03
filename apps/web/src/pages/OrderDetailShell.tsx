@@ -522,13 +522,18 @@ export function OrderDetailShell({
                     </div>
                     <div>
                       <strong>Tiền thuê</strong>
-                      <span>{money(rental?.amount ?? 0)}</span>
                       <span>
+                        <span className="collection-mobile-label">Cần thu</span>
+                        {money(rental?.amount ?? 0)}
+                      </span>
+                      <span>
+                        <span className="collection-mobile-label">Đã đánh dấu nhận</span>
                         {effectiveMethod === 'CASH' && rentPreview
                           ? money(rental?.amount ?? 0)
                           : money(0)}
                       </span>
                       <span>
+                        <span className="collection-mobile-label">Còn thiếu</span>
                         {effectiveMethod === 'CASH' && rentPreview
                           ? money(0)
                           : money(rental?.amount ?? 0)}
@@ -536,13 +541,18 @@ export function OrderDetailShell({
                     </div>
                     <div>
                       <strong>Tiền cọc</strong>
-                      <span>{money(deposit?.amount ?? 0)}</span>
                       <span>
+                        <span className="collection-mobile-label">Cần thu</span>
+                        {money(deposit?.amount ?? 0)}
+                      </span>
+                      <span>
+                        <span className="collection-mobile-label">Đã đánh dấu nhận</span>
                         {effectiveMethod === 'CASH' && depositPreview
                           ? money(deposit?.amount ?? 0)
                           : money(0)}
                       </span>
                       <span>
+                        <span className="collection-mobile-label">Còn thiếu</span>
                         {effectiveMethod === 'CASH' && depositPreview
                           ? money(0)
                           : money(deposit?.amount ?? 0)}
