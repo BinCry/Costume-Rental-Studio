@@ -61,6 +61,7 @@ export function OrderDetailShell({
   const settlement = order ? returnSnapshots[order.id] : undefined;
   const scannedItems =
     order?.items.filter((item) => !!item.unitCode && matchedCodes.includes(item.unitCode)) ?? [];
+  const allReturnItemsScanned = !!order && scannedItems.length === order.items.length;
   const requiresChecks = order
     ? (mode === 'return' ? scannedItems : order.items).flatMap((item) =>
         mode === 'return'
@@ -76,6 +77,13 @@ export function OrderDetailShell({
     mode === 'return' &&
     scannedItems.some((item) => returnConditions[item.id] === 'PENDING_ASSESSMENT');
   const needsAssessmentNote = needsAssessment && !note.trim();
+  const snapshotConditionMismatch =
+    mode === 'return' &&
+    !!settlement &&
+    allReturnItemsScanned &&
+    allChecked &&
+    scannedItems.every((item) => returnConditions[item.id] === 'PASSED') &&
+    (settlement.damageFee > 0 || settlement.missingFee > 0);
   const onOrderChange = (id: string) => {
     setOrderId(id);
     setBarcode('');
@@ -577,6 +585,8 @@ export function OrderDetailShell({
                 </>
               ) : (
                 settlement &&
+                allReturnItemsScanned &&
+                allChecked &&
                 !needsAssessment && (
                   <>
                     <div className="settlement-table">
@@ -608,6 +618,12 @@ export function OrderDetailShell({
                       Đây là snapshot fixture. Phí và số hoàn thực tế phải do backend quyết toán;
                       giao diện không tự tính.
                     </p>
+                    {snapshotConditionMismatch && (
+                      <Feedback tone="warning" title="Kết quả kiểm khác snapshot phí">
+                        Bộ được chọn là Đạt nhưng snapshot vẫn có phí hỏng hoặc thiếu. Đối chiếu
+                        chứng từ trước khi quyết toán; giao diện không tự sửa số tiền.
+                      </Feedback>
+                    )}
                     {scenario === 'refundFailed' && (
                       <Feedback tone="danger" title="Hoàn cọc chưa thành công">
                         Giao dịch RF-DEMO-01 chưa hoàn tất. Giữ nguyên lịch sử refund; xem lý do và
@@ -617,13 +633,27 @@ export function OrderDetailShell({
                   </>
                 )
               )}
-              {mode === 'return' && !settlement && (
-                <Feedback title="Chưa có snapshot quyết toán">
-                  {scannedItems.length < (order?.items.length ?? 0)
-                    ? 'Đơn còn bộ ở khách. Giữ cọc và theo dõi từng bộ đến khi backend xác nhận nhận đủ hoặc xử lý bộ thiếu.'
-                    : 'Cần backend trả số phí, cấn trừ và khoản còn hoàn từ chứng từ trước khi quyết toán.'}
-                </Feedback>
-              )}
+              {mode === 'return' &&
+                !needsAssessment &&
+                (!settlement || !allReturnItemsScanned || !allChecked) && (
+                  <Feedback
+                    title={
+                      !allReturnItemsScanned
+                        ? 'Chưa đối chiếu đủ barcode để xem quyết toán'
+                        : !allChecked
+                          ? 'Chưa hoàn tất kiểm từng bộ'
+                          : 'Chưa có snapshot quyết toán'
+                    }
+                  >
+                    {!allReturnItemsScanned
+                      ? scannedItems.length === 0
+                        ? 'Chưa quét bộ nào trong phiên này. Đối chiếu barcode trước khi xem số quyết toán; cọc vẫn đang giữ.'
+                        : 'Còn barcode chưa quét trong phiên này. Theo dõi tình trạng từng bộ và tiếp tục giữ cọc; chưa dùng số dự kiến hoàn để chốt tiền.'
+                      : !allChecked
+                        ? 'Đối chiếu phụ kiện và chọn kết quả kiểm cho từng bộ đã quét trước khi xem số tiền.'
+                        : 'Cần backend trả số phí, cấn trừ và khoản còn hoàn từ chứng từ trước khi quyết toán.'}
+                  </Feedback>
+                )}
               {mode === 'return' && (
                 <p className="section-help">
                   Phương thức hoàn cọc qua SePay chưa chốt. Chỉ hiển thị trạng thái giao dịch thực

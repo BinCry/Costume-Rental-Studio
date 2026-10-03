@@ -44,3 +44,10 @@ Ngày kiểm tra: 03/10/2026. Phạm vi: frontend prototype dùng fixture, chưa
 - CRM: danh sách người phụ trách lấy từ nhân viên có tài khoản và phân công đang hoạt động tại chi nhánh của case. Đổi case sang Thủ Đức khiến người phụ trách Quận 1 hiện cảnh báo; lưu bị chặn cho đến khi chọn người phù hợp hoặc bỏ phân công. Trạng thái lỗi tải có nút thử lại; trạng thái trống có thông báo rõ.
 - Tài khoản hiển thị nhãn trạng thái quyền bằng tiếng Việt. Đặt thuê và tạo đơn tại quầy bỏ qua kết quả báo giá cũ nếu lựa chọn đã đổi trong lúc tải; hành động gửi được khóa chống kích hoạt lặp trong cùng phiên.
 - Không thấy lỗi console trong lần duyệt các tuyến. TypeScript, ESLint, Prettier và Vite build đều đạt. Trình duyệt trong phiên không cấp ảnh chụp màn hình, nên lượt này xác minh cấu trúc truy cập, trạng thái tương tác và tràn ngang; cần kiểm tra trực quan lại khi có công cụ chụp ảnh hoạt động.
+
+## Bổ sung rà soát thao tác và tiền cọc
+
+- Quét các nút và liên kết của 21 tuyến ở 375 px: chỉ cặp hành động chọn/bỏ cả nhóm quyền có vùng nhấn thấp hơn 40 px. Đã tăng lên 44 px và xác minh lại trên màn vai trò, không gây tràn ngang.
+- Form hoàn thiện hồ sơ mẫu đưa focus tới ô tên khi mở; khi gửi thiếu dữ liệu, lỗi nằm cạnh từng trường và focus tới trường sai đầu tiên. Sau khi hoàn tất, focus tới thông báo kết quả. Đây vẫn là mô phỏng Google sign-in, không tạo phiên đăng nhập thật.
+- Ở màn trả, bảng phí/cọc snapshot chỉ xuất hiện sau khi quét và kiểm đủ barcode trong phiên. Nếu chưa quét, chưa kiểm hoặc mới quét một phần, màn nêu đúng bước còn thiếu và không suy đoán rằng bộ đã ở khách hay đã nhận về chỉ từ trạng thái quét.
+- Với RT-1033, fixture có phí hỏng 120.000 đ trong snapshot. Khi người kiểm chọn “Đạt”, màn cảnh báo kết quả kiểm khác snapshot và yêu cầu đối chiếu chứng từ; không tự sửa phí hoặc số hoàn. Đã đi thử các trạng thái trước quét, sau quét và sau kiểm trong trình duyệt.

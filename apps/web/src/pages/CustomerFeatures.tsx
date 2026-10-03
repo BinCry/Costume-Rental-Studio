@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Navigate } from '../App';
 import {
   Button,
@@ -432,7 +432,16 @@ export function AccountPage({
   const [role, setRole] = useState<'CUSTOMER' | 'SALES_STAFF' | 'INVENTORY_STAFF' | 'ADMIN'>(
     'CUSTOMER',
   );
-  const [issue, setIssue] = useState('');
+  const [attempted, setAttempted] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
+  const successRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (state === 'profile') profileRef.current?.querySelector('input')?.focus();
+    if (state === 'ready') successRef.current?.focus();
+  }, [state]);
+  useEffect(() => {
+    if (attempted) profileRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [attempted]);
   const demoStateLabels = {
     entry: 'Chưa đăng nhập',
     PENDING: 'Chờ kích hoạt',
@@ -462,24 +471,30 @@ export function AccountPage({
             </Button>
           </div>
           {state === 'profile' && (
-            <div className="stack-form">
+            <div className="stack-form" ref={profileRef}>
               <Field
                 label="Họ tên liên hệ"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                error={attempted && !name.trim() ? 'Nhập họ tên liên hệ.' : undefined}
               />
               <Field
                 label="Số điện thoại"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
+                error={
+                  attempted && !/^0[0-9 ]{8,12}$/.test(phone.trim())
+                    ? 'Nhập số điện thoại hợp lệ.'
+                    : undefined
+                }
               />
               <Button
                 onClick={() => {
-                  if (!name.trim() || !/^0[0-9 ]{8,12}$/.test(phone)) {
-                    setIssue('Nhập họ tên và số điện thoại hợp lệ.');
+                  setAttempted(true);
+                  if (!name.trim() || !/^0[0-9 ]{8,12}$/.test(phone.trim())) {
                     return;
                   }
-                  setIssue('');
+                  setAttempted(false);
                   setState('ready');
                 }}
               >
@@ -488,10 +503,12 @@ export function AccountPage({
             </div>
           )}
           {state === 'ready' && (
-            <Feedback tone="success" title="Hồ sơ mẫu đã hoàn thiện">
-              Tài khoản thực tế chỉ được kích hoạt sau khi backend xác minh Google và quyền hiệu
-              lực.
-            </Feedback>
+            <div ref={successRef} tabIndex={-1}>
+              <Feedback tone="success" title="Hồ sơ mẫu đã hoàn thiện">
+                Tài khoản thực tế chỉ được kích hoạt sau khi backend xác minh Google và quyền hiệu
+                lực.
+              </Feedback>
+            </div>
           )}
           {state === 'PENDING' && (
             <Feedback tone="warning" title="Chờ kích hoạt">
@@ -511,7 +528,6 @@ export function AccountPage({
               Vai trò hiện tại không được truy cập khu vực này.
             </Feedback>
           )}
-          <InlineIssue text={issue} />
         </Panel>
         <Panel title="Xem thử trạng thái quyền">
           <SelectField

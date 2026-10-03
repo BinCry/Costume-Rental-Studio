@@ -2342,13 +2342,17 @@ small {
   flex-wrap: wrap;
 }
 .permission-group-actions button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
   border: 0;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--brand-primary);
   cursor: pointer;
   font: inherit;
   font-weight: 600;
-  padding: 4px;
+  padding: 8px 10px;
 }
 .permission-group-actions button:disabled {
   color: var(--text-secondary);
