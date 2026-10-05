@@ -625,6 +625,8 @@ pnpm build:api
 | Document | Description |
 |----------|-------------|
 | [`docs/README.md`](docs/README.md) | Chỉ mục và thứ tự ưu tiên tài liệu |
+| [`docs/Hiến chương dự án studio cho thuê trang phục.md`](docs/Hi%E1%BA%BFn%20ch%C6%B0%C6%A1ng%20d%E1%BB%B1%20%C3%A1n%20studio%20cho%20thu%C3%AA%20trang%20ph%E1%BB%A5c.md) | Hiến chương dự án, phạm vi và mốc thực hiện |
+| [`docs/WBS và lịch dự án studio cho thuê trang phục.md`](docs/WBS%20v%C3%A0%20l%E1%BB%8Bch%20d%E1%BB%B1%20%C3%A1n%20studio%20cho%20thu%C3%AA%20trang%20ph%E1%BB%A5c.md) | WBS có quan hệ phụ thuộc và Gantt ngày bắt đầu/kết thúc |
 | [`docs/Báo cáo kiểm toán hoàn chỉnh giai đoạn UI UX.md`](docs/B%C3%A1o%20c%C3%A1o%20ki%E1%BB%83m%20to%C3%A1n%20ho%C3%A0n%20ch%E1%BB%89nh%20giai%20%C4%91o%E1%BA%A1n%20UI%20UX.md) | Kết quả nghiệm thu frontend fixture và các việc chờ API |
 | [`docs/business-rules.md`](docs/business-rules.md) | Nghiệp vụ đã chốt và state machine hiện hành |
 | [`docs/database-schema-summary.md`](docs/database-schema-summary.md) | Tóm tắt 7 nhóm và 32 bảng |
