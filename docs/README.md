@@ -19,8 +19,6 @@ Khi có khác biệt giữa các tài liệu, dùng thứ tự ưu tiên sau:
 | `database-constraints.md` | `CHECK`, FK, `ON DELETE`, unique và exclusion constraint |
 | `database-review-guide.md` | Checklist review schema, migration và dữ liệu |
 | `business-rules.md` | Actor, flow thuê, kho, thanh toán và CRM đã chốt |
-| `Hiến chương dự án studio cho thuê trang phục.md` | Phạm vi, sản phẩm bàn giao, công nghệ FE/BE, mốc 2026 và tiêu chí nghiệm thu |
-| `WBS và lịch dự án studio cho thuê trang phục.md` | Epic/task, dependency, ngày bắt đầu/kết thúc và Gantt tháng 9–12; nội dung chuẩn bị đồng bộ Jira |
 | `Kế hoạch thiết kế và triển khai giao diện.md` | Hiện trạng code, các điểm cần chốt, sơ đồ màn hình, luồng UX và thứ tự làm UI |
 | `Quy chuẩn thiết kế giao diện và năm màn hình lõi.md` | Token hình ảnh, trạng thái nhiều chiều, đặc tả 5 màn hình đầu, trạng thái lỗi/xung đột và tiêu chí nghiệm thu |
 | `Hướng dẫn trình diễn giao diện toàn hệ thống.md` | Các route, cách chạy, kịch bản fixture và phụ thuộc API của 18 màn hình |
