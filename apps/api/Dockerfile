@@ -12,6 +12,8 @@ RUN pnpm install --frozen-lockfile
 
 COPY apps/api ./apps/api
 
+RUN DATABASE_URL=postgresql://postgres:postgres@localhost:5432/build \
+    pnpm --filter @costume/api db:generate
 RUN pnpm --filter @costume/api build
 RUN pnpm --filter @costume/api deploy --prod --legacy /prod/api
 

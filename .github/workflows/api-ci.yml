@@ -51,6 +51,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Generate Prisma Client
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ci
+        run: pnpm --filter @costume/api db:generate
+
       - name: Run verification suite
         run: |
           pnpm --filter @costume/api lint

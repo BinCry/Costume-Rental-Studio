@@ -6,7 +6,13 @@ import { baseTypeScriptConfig, prettierCompatibilityConfig } from '../../eslint.
 export default defineConfig([
   globalIgnores(['dist/**', 'coverage/**', 'src/generated/**', '.agents/**']),
   {
-    files: ['src/**/*.ts', 'tests/**/*.ts', 'prisma/**/*.ts', 'prisma.config.ts'],
+    files: [
+      'src/**/*.ts',
+      'tests/**/*.ts',
+      'prisma/**/*.ts',
+      'prisma.config.ts',
+      'vitest.config.ts',
+    ],
     extends: [...baseTypeScriptConfig, prettierCompatibilityConfig],
     languageOptions: {
       globals: globals.node,
