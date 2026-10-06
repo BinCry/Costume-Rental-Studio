@@ -12,9 +12,20 @@ import { notFoundHandler } from './common/middleware/not-found-handler.js';
 import { env } from './config/env.js';
 import { logger } from './config/logger.js';
 import { prisma } from './database/prisma.js';
+import { authRouter } from './modules/auth/auth.route.js';
+import { customerRouter } from './modules/customers/customer.route.js';
+import { branchRouter } from './modules/branches/branch.route.js';
+import { catalogRouter } from './modules/catalog/catalog.route.js';
+import { promotionRouter } from './modules/promotions/promotion.route.js';
+import { policyRouter } from './modules/policies/policy.route.js';
+import { staffRouter } from './modules/staff/staff.route.js';
+import { rbacRouter } from './modules/rbac/rbac.route.js';
 
 export function createApp() {
   const app = express();
+  app.set('json replacer', (_key: string, value: unknown) =>
+    typeof value === 'bigint' ? value.toString() : value,
+  );
 
   app.disable('x-powered-by');
   app.use(
@@ -81,6 +92,14 @@ export function createApp() {
     }
   });
 
+  app.use('/api/v1/customers', customerRouter);
+  app.use('/api/v1/branches', branchRouter);
+  app.use('/api/v1/catalog', catalogRouter);
+  app.use('/api/v1/promotions', promotionRouter);
+  app.use('/api/v1/rental-policies', policyRouter);
+  app.use('/api/v1/staff', staffRouter);
+  app.use('/api/v1/rbac', rbacRouter);
+  app.use('/api/v1/auth', authRouter);
   app.use(notFoundHandler);
   app.use(errorHandler);
 
