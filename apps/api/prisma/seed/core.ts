@@ -10,8 +10,11 @@ import { seedId } from './helpers.js';
 
 const permissionDefinitions = [
   ['branches.manage.all', 'branches', 'manage', PermissionScope.ALL],
+  ['branches.read.all', 'branches', 'read', PermissionScope.ALL],
   ['staff.manage.all', 'staff', 'manage', PermissionScope.ALL],
+  ['staff.read.all', 'staff', 'read', PermissionScope.ALL],
   ['rbac.manage.all', 'rbac', 'manage', PermissionScope.ALL],
+  ['rbac.read.all', 'rbac', 'read', PermissionScope.ALL],
   ['catalog.manage.all', 'catalog', 'manage', PermissionScope.ALL],
   ['catalog.read.all', 'catalog', 'read', PermissionScope.ALL],
   ['inventory.read.branch', 'inventory', 'read', PermissionScope.BRANCH],
@@ -27,6 +30,16 @@ const permissionDefinitions = [
   ['crm.manage.branch', 'crm', 'manage', PermissionScope.BRANCH],
   ['reports.read.branch', 'reports', 'read', PermissionScope.BRANCH],
   ['reports.read.all', 'reports', 'read', PermissionScope.ALL],
+  ['customers.create.all', 'customers', 'create', PermissionScope.ALL],
+  ['customers.create.branch', 'customers', 'create', PermissionScope.BRANCH],
+  ['customers.read.all', 'customers', 'read', PermissionScope.ALL],
+  ['customers.read.branch', 'customers', 'read', PermissionScope.BRANCH],
+  ['customers.update.all', 'customers', 'update', PermissionScope.ALL],
+  ['customers.update.branch', 'customers', 'update', PermissionScope.BRANCH],
+  ['promotions.read.all', 'promotions', 'read', PermissionScope.ALL],
+  ['promotions.manage.all', 'promotions', 'manage', PermissionScope.ALL],
+  ['policies.read.all', 'policies', 'read', PermissionScope.ALL],
+  ['policies.manage.all', 'policies', 'manage', PermissionScope.ALL],
 ] as const;
 
 export interface CoreSeedContext {
@@ -169,6 +182,9 @@ export async function seedCore(db: SeedDatabase): Promise<CoreSeedContext> {
   const rolePermissionCodes: Record<string, readonly string[]> = {
     ADMIN: permissionDefinitions.map(([code]) => code),
     SALES_STAFF: [
+      'customers.create.branch',
+      'customers.read.branch',
+      'customers.update.branch',
       'catalog.read.all',
       'inventory.read.branch',
       'rentals.read.branch',

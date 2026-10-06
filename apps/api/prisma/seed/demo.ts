@@ -1198,22 +1198,6 @@ async function seedFinanceAndCrm(
     });
   }
 
-  await db.auditLog.upsert({
-    where: { id: seedId(970) },
-    update: {
-      actorUserId: core.adminUserId,
-      actionCode: 'seed.completed',
-      afterJson: { profile: 'demo', status: 'completed' },
-    },
-    create: {
-      id: seedId(970),
-      actorUserId: core.adminUserId,
-      actionCode: 'seed.completed',
-      entityType: 'database',
-      afterJson: { profile: 'demo', status: 'completed' },
-      occurredAt: anchor,
-    },
-  });
   await db.outboxEvent.upsert({
     where: { id: seedId(971) },
     update: {
