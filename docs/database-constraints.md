@@ -4,6 +4,28 @@ Tài liệu này chốt các ràng buộc thực thi cho PostgreSQL dựa trên
 [`database-schema.dbml`](database-schema.dbml). DBML vẫn là nguồn thiết kế ERD;
 `migration.sql` là nguồn thực thi cuối cùng sau khi Prisma schema được tạo.
 
+## Customer registration: migration bổ sung
+
+`20261002230000_customer_registration` tạo cấu trúc ban đầu; migration tiếp theo
+`20261003010000_user_password_fields` chuyển mật khẩu vào users trước khi bỏ password_credentials.
+Không chỉnh lịch sử migration cũ. users.password_hash và phone_verified_at nullable;
+CHECK hash nếu có phải Argon2id; phone_verified_at nếu có yêu cầu phone không null.
+Khi thay số điện thoại, ứng dụng phải xóa phone_verified_at và xác minh lại.
+Các CHECK OTP raw SQL bổ sung: phone E.164, OTP HMAC 64 ký tự hex,
+attempt_count từ 0 đến 5, expires_at > created_at, consumed_at yêu cầu sent_at.
+Phone challenge có unique phone nhưng không FK đến user. Giữ nguyên các CHECK này khi tạo
+migration tiếp theo vì Prisma không biểu diễn chúng. Giới hạn gửi lại, OTP một lần, xác minh
+và không ghi đè credential được thực thi trong service/transaction; xem [API](auth-registration.md).
+
+## Refresh session: migration bổ sung
+
+`20261003020000_refresh_sessions` thêm bảng refresh_sessions với FK users ON DELETE CASCADE.
+CHECK raw SQL: token_hash gồm 64 ký tự hex, expires_at > created_at,
+used_at/revoked_at nếu có phải >= created_at. Unique token_hash để tra cứu; index family_id
+để khóa/thu hồi chuỗi phiên, index user_id để quản lý phiên của tài khoản.
+Rotation và replay được xử lý trong transaction có advisory lock theo family_id;
+không xóa token cũ trước hạn family vì cần phát hiện replay. Xem [API](auth-session.md).
+
 ## 1. Quy ước
 
 - PostgreSQL 15 trở lên để sử dụng `UNIQUE NULLS NOT DISTINCT`.
@@ -384,7 +406,7 @@ ALTER TABLE outbox_events
     );
 ```
 
-`audit_logs`, `customer_interactions` và `crm_case_history` không được `UPDATE`. Việc xóa chỉ thực hiện bởi retention/admin hoặc `CASCADE` theo aggregate đã quy định.
+`customer_interactions` và `crm_case_history` không được `UPDATE`. Việc xóa chỉ thực hiện bởi retention/admin hoặc `CASCADE` theo aggregate đã quy định.
 
 ## 3. Unique và exclusion constraints đặc biệt
 
@@ -472,7 +494,6 @@ Chỉ dùng cho liên kết tùy chọn mà bản ghi con vẫn còn ý nghĩa k
 | Foreign key | Chính sách |
 |---|---|
 | `customers.preferred_branch_id` | `SET NULL` |
-| `audit_logs.actor_user_id` | `SET NULL` |
 | `unit_blocks.assigned_to` | `SET NULL` |
 | `unit_events.stock_transfer_id` | `SET NULL` |
 | `unit_events.from_branch_id` | `SET NULL` |

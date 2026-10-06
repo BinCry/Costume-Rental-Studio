@@ -14,7 +14,7 @@ Khi có khác biệt giữa các tài liệu, dùng thứ tự ưu tiên sau:
 
 | Tài liệu | Mục đích |
 |---|---|
-| `database-schema.dbml` | ERD đầy đủ gồm 32 bảng |
+| `database-schema.dbml` | ERD đầy đủ gồm 33 bảng |
 | `database-schema-summary.md` | Tóm tắt các nhóm bảng và trách nhiệm |
 | `database-constraints.md` | `CHECK`, FK, `ON DELETE`, unique và exclusion constraint |
 | `database-review-guide.md` | Checklist review schema, migration và dữ liệu |
@@ -26,6 +26,11 @@ Khi có khác biệt giữa các tài liệu, dùng thứ tự ưu tiên sau:
 | `Báo cáo kiểm toán hoàn chỉnh giai đoạn UI UX.md` | Kết quả nghiệm thu UI/UX cuối giai đoạn fixture: 10 hành trình, trạng thái phục hồi, responsive, accessibility và việc còn chờ API |
 | `Đối chiếu luồng UI UX theo báo cáo rà soát nghiệp vụ.md` | Mức bao phủ UI/fixture của 40 tình huống, các hành trình mới và phần chờ API/quyết định |
 | `Báo cáo rà soát nghiệp vụ toàn diện studio cho thuê trang phục.docx` | Đánh giá nghiệp vụ đa chi nhánh, ngoại lệ vận hành và 40 kịch bản nghiệm thu; các thay đổi trong báo cáo là đề xuất cần chốt trước khi triển khai |
+| `customer-api.md` | Admin/Sales Staff tạo customer tại quầy |
+| `auth-registration.md` | Khách đăng ký và liên kết customer bằng OTP |
+| `auth-session.md` | Login bằng email/password, refresh token và thông tin tài khoản hiện tại |
+| `auth-google.md` | Google OAuth login, liên kết/kích hoạt tài khoản và tạo phiên nội bộ |
+| `auth-email-change.md` | Đổi email có xác minh OTP và thu hồi phiên đăng nhập |
 | `ci-cd.md` | CI, publish Docker image, deploy Coolify và migration production |
 
 File `Phân tích nghiệp vụ và thiết kế hệ thống studio cho thuê trang phục.md` là tài liệu phân tích lịch sử. Một số phương án trong đó đã được rút gọn và không còn phản ánh schema cuối cùng; không dùng file đó làm nguồn để viết migration hoặc API.

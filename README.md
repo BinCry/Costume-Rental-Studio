@@ -111,7 +111,6 @@ Repository đã có nền kỹ thuật và bản frontend trình diễn toàn lu
 - Ba nhóm tài khoản chính: Customer, Staff và Admin.
 - Staff nhận quyền thao tác bằng checkbox theo chi nhánh.
 - Một người có thể nhận nhiều role theo chi nhánh; quyền hiệu lực là hợp các permission thuộc các role được gán.
-- Ghi audit khi thay đổi quyền hoặc dữ liệu nhạy cảm.
 
 ### 👘 Catalog & Costume Inventory
 
@@ -484,7 +483,7 @@ Thiết kế dữ liệu hiện tại được chia theo các nhóm:
 
 | Group | Main Data |
 |-------|-----------|
-| **Identity & Permissions** | User, Google identity, employee, branch, role/permission và audit |
+| **Identity & Permissions** | User, Google identity, employee, branch và role/permission |
 | **Catalog & Inventory** | Category, model, variant, media, phụ kiện, unit, block và transfer |
 | **Policy & Promotions** | Policy toàn chuỗi có phiên bản và promotion |
 | **Rentals** | Order, từng unit được thuê, pickup/return và phụ kiện snapshot |
@@ -614,7 +613,6 @@ pnpm build:api
 - Google Identity Services / OpenID Connect.
 - Session security và CSRF protection phù hợp với cơ chế auth được chọn.
 - Quyền theo thao tác và phạm vi `OWN`, `BRANCH`, `ALL`.
-- Audit log cho quyền, giá, thanh toán và trạng thái đơn.
 - Validation cho toàn bộ request DTO.
 - Database transactions và constraints chống đặt trùng.
 

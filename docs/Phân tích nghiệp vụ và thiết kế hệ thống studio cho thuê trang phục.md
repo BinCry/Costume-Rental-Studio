@@ -73,7 +73,7 @@ Các tác nhân ngoài hệ thống: Google cung cấp danh tính đăng nhập;
 | FR-12 | Kho/điều chuyển | Admin đăng ký trước unit và chi nhánh nhận; nhân viên kho chi nhánh xác nhận nhận, kiểm kê, vệ sinh, sửa chữa, điều chuyển và ngừng khai thác |
 | FR-13 | CRM | Hồ sơ khách, lịch sử thuê và tương tác, ghi chú, nhãn, phản hồi, đồng ý marketing |
 | FR-14 | Báo cáo | Đơn, doanh thu, cọc chưa tất toán, quá hạn, mức sử dụng, hư hỏng, khách quay lại |
-| FR-15 | Kiểm soát | Audit log, thông báo nghiệp vụ, sao lưu, đối soát thay đổi nhạy cảm |
+| FR-15 | Kiểm soát | Thông báo nghiệp vụ, sao lưu và đối soát dữ liệu nhạy cảm |
 | FR-16 | Theo dõi đang thuê | Tra cứu theo khách, số điện thoại, mã đơn hoặc mã bộ; xem ai đang giữ từng bộ, giờ giao, hạn trả, quá hạn và tình trạng cọc |
 | FR-17 | Quản lý giá | Người có quyền sửa giá thuê/ngày và cọc trên giao diện theo biến thể/chi nhánh/ngày hiệu lực; đơn cũ giữ giá đã chốt |
 
@@ -332,7 +332,6 @@ Các cột `status` có tập giá trị kiểm soát bằng `CHECK` hoặc bả
 | `role_permissions` | `role_id`, `permission_id` | PK kép; mỗi ô tick của bộ quyền tương ứng một bản ghi |
 | `user_role_assignments` | `id`, `user_id`, `role_id`, `branch_id NULL`, `valid_from`, `valid_to`, `assigned_by` | Gán role theo chi nhánh; `branch_id NULL` chỉ cho quyền OWN/ALL phù hợp |
 | `user_permission_overrides` | `id`, `user_id`, `permission_id`, `branch_id NULL`, `effect`, `valid_from`, `valid_to`, `changed_by` | `effect = ALLOW/DENY`; ngoại lệ cá nhân; ngăn bản ghi hiệu lực trùng |
-| `audit_logs` | `id`, `actor_user_id`, `action_code`, `entity_type`, `entity_id`, `before_json`, `after_json`, `occurred_at` | Chỉ thêm; che/mã hóa dữ liệu nhạy cảm trong log |
 
 ### 10.3. Bảng danh mục, tài sản và điều chuyển
 

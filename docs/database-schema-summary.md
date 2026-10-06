@@ -1,20 +1,21 @@
 # Database Schema Summary
 
-Schema hiện tại có **32 bảng**, chia thành 7 nhóm. Danh sách field đầy đủ nằm trong `database-schema.dbml` và `schema.prisma`.
+Schema hiện tại có **33 bảng**, chia thành 7 nhóm. Danh sách field đầy đủ nằm trong `database-schema.dbml` và `schema.prisma`.
 
-## 1. Identity và phân quyền — 9 bảng
+## 1. Identity và phân quyền — 10 bảng
 
 | Bảng | Dữ liệu chính | Ràng buộc quan trọng |
 |---|---|---|
-| `users` | email, phone, display name, avatar, trạng thái | Email/phone unique khi có; phải có ít nhất một phương thức liên hệ |
+| `users` | email, phone, display name, avatar, trạng thái, password_hash, phone_verified_at | Email/phone unique khi có; phải có ít nhất một phương thức liên hệ; password hash và thời điểm xác minh nullable; không trả hash ra API |
 | `auth_identities` | provider, provider subject, email lúc liên kết | Unique `(provider, provider_subject)` và `(user_id, provider)` |
+| `phone_otp_challenges` | Challenge UUID, phone, HMAC OTP, hạn dùng, số lần sai | Phone unique; tối đa 5 lần sai; gửi lại thay challenge; không liên kết FK đến user |
+| `refresh_sessions` | User, family UUID, hash token, hạn dùng, thời điểm dùng/thu hồi | Hash unique; FK user CASCADE; xoay token một lần, replay thu hồi family; hạn tuyệt đối 7 ngày |
 | `employees` | mã nhân viên, trạng thái làm việc, ngày vào/nghỉ, ngày kích hoạt | Shared PK với `users`; `TERMINATED` cần `terminated_at` |
 | `branches` | mã, tên, địa chỉ, điện thoại, timezone | `branch_code` unique; timezone mặc định Việt Nam |
 | `roles` | mã role, tên, actor group | `role_code` unique |
 | `permissions` | code, module, action, scope | `code` unique |
 | `role_permissions` | role và permission | Composite PK |
 | `user_role_assignments` | user, role, branch, người gán | Không trùng cả khi `branch_id` null |
-| `audit_logs` | actor, action, entity, before/after JSON | Append-only; actor có thể `SET NULL` |
 
 ## 2. Catalog, inventory và transfer — 10 bảng
 

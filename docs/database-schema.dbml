@@ -1,6 +1,6 @@
 Project costume_rental_studio {
   database_type: 'PostgreSQL'
-  Note: 'Conceptual full ERD for Costume Rental Studio. This file is the design source for dbdiagram.io; Prisma models and migrations have not been implemented yet.'
+  Note: 'ERD design source for Costume Rental Studio. Prisma models and SQL migrations implement this design; raw PostgreSQL constraints are documented in database-constraints.md.'
 }
 
 // ============================================================
@@ -205,6 +205,8 @@ Table users {
   id uuid [pk]
   email varchar(255) [unique]
   phone varchar(30) [unique]
+  password_hash varchar(255)
+  phone_verified_at timestamptz
   display_name varchar(255) [not null]
   avatar_url varchar(500)
   status user_status [not null]
@@ -229,6 +231,37 @@ Table auth_identities {
   }
 
   Note: 'Google and future external identities. Provider subject, not email, is the stable identity key.'
+}
+
+Table refresh_sessions {
+  id uuid [pk]
+  user_id uuid [not null]
+  family_id uuid [not null]
+  token_hash varchar(64) [not null, unique]
+  expires_at timestamptz [not null]
+  used_at timestamptz
+  revoked_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    family_id
+    user_id
+  }
+
+  Note: 'Opaque random refresh tokens; only SHA256 hashes are persisted. Each rotation consumes the old token and creates a new row in the same family, retaining the seven-day absolute expiry. Replay revokes the whole family. User deletion cascades sessions. Used rows must be kept until family expiry for replay detection.'
+}
+
+Table phone_otp_challenges {
+  id uuid [pk]
+  phone varchar(30) [not null, unique]
+  code_hash varchar(64) [not null]
+  attempt_count int [not null, default: 0]
+  expires_at timestamptz [not null]
+  sent_at timestamptz
+  consumed_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'One latest registration challenge per phone. HMAC-SHA256 protects the OTP; secret stays outside the database. Five-minute expiry, five attempts, sixty-second resend cooldown, single use. Resend replaces the challenge UUID. Not linked to users, so requesting OTP does not reveal account existence.'
 }
 
 Table employees {
@@ -304,26 +337,6 @@ Table user_role_assignments {
 
   Note: 'Assigns a role to a user, optionally within one branch. Null branch_id means a global assignment. PostgreSQL migration should use UNIQUE NULLS NOT DISTINCT (user_id, role_id, branch_id), or equivalent partial indexes, so global assignments cannot be duplicated.'
 }
-
-Table audit_logs {
-  id uuid [pk]
-  actor_user_id uuid
-  action_code varchar(150) [not null]
-  entity_type varchar(100) [not null]
-  entity_id uuid
-  before_json jsonb
-  after_json jsonb
-  occurred_at timestamptz [not null, default: `now()`]
-
-  indexes {
-    (entity_type, entity_id, occurred_at)
-    (actor_user_id, occurred_at)
-  }
-
-  Note: 'Append-only audit trail. Sensitive values must be redacted or encrypted.'
-}
-
-
 
 // ============================================================
 // CATALOG, PHYSICAL INVENTORY AND TRANSFERS
@@ -630,7 +643,7 @@ Table rental_orders {
     (status, quote_expires_at)
   }
 
-  Note: 'The ordering customer picks up and returns at pickup_branch_id; pickup_processed_by is the counter employee, not a courier. One pickup, one return and at most one promotion per order. picked_up_at requires pickup_processed_by. Without a promotion, promotion_id/code are null and promotion_discount_vnd is zero; with one, promotion_code and the computed discount become immutable snapshots after confirmation. Require planned_start_at < planned_due_at and all discount/fee/deduction amounts >= 0. Usage limits are checked by locking the promotion while confirming an order; rejected or cancelled orders do not consume usage. Order status transitions are recorded in audit_logs.'
+  Note: 'The ordering customer picks up and returns at pickup_branch_id; pickup_processed_by is the counter employee, not a courier. One pickup, one return and at most one promotion per order. picked_up_at requires pickup_processed_by. Without a promotion, promotion_id/code are null and promotion_discount_vnd is zero; with one, promotion_code and the computed discount become immutable snapshots after confirmation. Require planned_start_at < planned_due_at and all discount/fee/deduction amounts >= 0. Usage limits are checked by locking the promotion while confirming an order; rejected or cancelled orders do not consume usage.'
 }
 
 Table rental_order_items {
@@ -872,6 +885,7 @@ Table outbox_events {
 // ============================================================
 
 Ref: users.id < auth_identities.user_id
+Ref: users.id < refresh_sessions.user_id [delete: cascade]
 Ref: users.id - employees.user_id
 Ref: users.id < employees.created_by
 Ref: roles.id < role_permissions.role_id
@@ -880,7 +894,6 @@ Ref: users.id < user_role_assignments.user_id
 Ref: roles.id < user_role_assignments.role_id
 Ref: branches.id < user_role_assignments.branch_id
 Ref: users.id < user_role_assignments.assigned_by
-Ref: users.id < audit_logs.actor_user_id
 
 Ref: costume_categories.id < costume_categories.parent_id
 Ref: costume_categories.id < costume_models.category_id
@@ -956,13 +969,14 @@ Ref: employees.user_id < crm_case_history.actor_user_id
 TableGroup identity_and_access {
   users
   auth_identities
+  phone_otp_challenges
+  refresh_sessions
   employees
   branches
   roles
   permissions
   role_permissions
   user_role_assignments
-  audit_logs
 }
 
 TableGroup catalog_and_inventory {
