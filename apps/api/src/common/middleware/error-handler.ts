@@ -6,6 +6,8 @@ import { sendError } from '../http/response.js';
 type HttpError = Error & {
   status?: number;
   type?: string;
+  code?: string;
+  meta?: { target?: unknown };
 };
 
 function normalizeError(error: unknown) {
@@ -21,6 +23,20 @@ function normalizeError(error: unknown) {
 
   if (error instanceof AppError) {
     return error;
+  }
+
+  // Prisma errors deliberately remain duck-typed: generated client classes may be duplicated
+  // across build/test boundaries, whereas their stable codes are part of Prisma's API.
+  if (httpError.code === 'P2002') {
+    return new AppError(409, 'DUPLICATE_RECORD', 'A record with this value already exists', {
+      target: httpError.meta?.target ?? 'unknown',
+    });
+  }
+  if (httpError.code === 'P2025') {
+    return new AppError(404, 'RECORD_NOT_FOUND', 'Requested record was not found');
+  }
+  if (httpError.code === 'P2003') {
+    return new AppError(400, 'INVALID_REFERENCE', 'Referenced record is invalid');
   }
 
   return new AppError(500, 'INTERNAL_SERVER_ERROR', 'An unexpected error occurred');

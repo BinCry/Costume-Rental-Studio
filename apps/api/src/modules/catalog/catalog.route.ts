@@ -7,10 +7,14 @@ import { requireActor } from '../auth/authorization.js';
 import {
   accessorySchema,
   categorySchema,
+  idSchema,
   listCatalogSchema,
   mediaSchema,
+  mediaUpdateSchema,
   modelSchema,
+  modelUpdateSchema,
   variantSchema,
+  variantUpdateSchema,
 } from './catalog.schema.js';
 import * as service from './catalog.service.js';
 
@@ -25,6 +29,7 @@ const action = (value: string) => {
     throw new AppError(400, 'VALIDATION_ERROR', 'Invalid catalog action');
   return value === 'activate' ? ('ACTIVE' as const) : ('INACTIVE' as const);
 };
+const id = (value: string) => parse(idSchema.safeParse({ id: value }), 'Invalid resource id').id;
 
 catalogRouter.get('/categories', async (q, r) =>
   sendSuccess(
@@ -47,12 +52,15 @@ catalogRouter.post('/categories', async (q, r) =>
     201,
   ),
 );
+catalogRouter.get('/categories/:id', async (q, r) =>
+  sendSuccess(r, await service.getCategory(r.locals.actor, id(q.params.id)), 'Category loaded'),
+);
 catalogRouter.patch('/categories/:id', async (q, r) =>
   sendSuccess(
     r,
     await service.updateCategory(
       r.locals.actor,
-      q.params.id,
+      id(q.params.id),
       parse(categorySchema.partial().safeParse(q.body), 'Invalid category'),
     ),
     'Category updated',
@@ -61,7 +69,7 @@ catalogRouter.patch('/categories/:id', async (q, r) =>
 catalogRouter.post('/categories/:id/:action', async (q, r) =>
   sendSuccess(
     r,
-    await service.setCategoryStatus(r.locals.actor, q.params.id, action(q.params.action)),
+    await service.setCategoryStatus(r.locals.actor, id(q.params.id), action(q.params.action)),
     'Category status updated',
   ),
 );
@@ -86,13 +94,16 @@ catalogRouter.post('/models', async (q, r) =>
     201,
   ),
 );
+catalogRouter.get('/models/:id', async (q, r) =>
+  sendSuccess(r, await service.getModel(r.locals.actor, id(q.params.id)), 'Model loaded'),
+);
 catalogRouter.patch('/models/:id', async (q, r) =>
   sendSuccess(
     r,
     await service.updateModel(
       r.locals.actor,
-      q.params.id,
-      parse(modelSchema.partial().safeParse(q.body), 'Invalid model'),
+      id(q.params.id),
+      parse(modelUpdateSchema.safeParse(q.body), 'Invalid model'),
     ),
     'Model updated',
   ),
@@ -118,13 +129,16 @@ catalogRouter.post('/variants', async (q, r) =>
     201,
   ),
 );
+catalogRouter.get('/variants/:id', async (q, r) =>
+  sendSuccess(r, await service.getVariant(r.locals.actor, id(q.params.id)), 'Variant loaded'),
+);
 catalogRouter.patch('/variants/:id', async (q, r) =>
   sendSuccess(
     r,
     await service.updateVariant(
       r.locals.actor,
-      q.params.id,
-      parse(variantSchema.partial().safeParse(q.body), 'Invalid variant'),
+      id(q.params.id),
+      parse(variantUpdateSchema.safeParse(q.body), 'Invalid variant'),
     ),
     'Variant updated',
   ),
@@ -132,7 +146,7 @@ catalogRouter.patch('/variants/:id', async (q, r) =>
 catalogRouter.get('/models/:modelId/accessories', async (q, r) =>
   sendSuccess(
     r,
-    await service.listAccessories(r.locals.actor, q.params.modelId),
+    await service.listAccessories(r.locals.actor, id(q.params.modelId)),
     'Accessories loaded',
   ),
 );
@@ -141,7 +155,7 @@ catalogRouter.post('/models/:modelId/accessories', async (q, r) =>
     r,
     await service.createAccessory(
       r.locals.actor,
-      q.params.modelId,
+      id(q.params.modelId),
       parse(accessorySchema.safeParse(q.body), 'Invalid accessory'),
     ),
     'Accessory created',
@@ -153,16 +167,30 @@ catalogRouter.patch('/accessories/:id', async (q, r) =>
     r,
     await service.updateAccessory(
       r.locals.actor,
-      q.params.id,
+      id(q.params.id),
       parse(accessorySchema.partial().safeParse(q.body), 'Invalid accessory'),
     ),
     'Accessory updated',
   ),
 );
+catalogRouter.post('/accessories/:id/activate', async (q, r) =>
+  sendSuccess(
+    r,
+    await service.setAccessoryStatus(r.locals.actor, id(q.params.id), true),
+    'Accessory activated',
+  ),
+);
+catalogRouter.post('/accessories/:id/deactivate', async (q, r) =>
+  sendSuccess(
+    r,
+    await service.setAccessoryStatus(r.locals.actor, id(q.params.id), false),
+    'Accessory deactivated',
+  ),
+);
 catalogRouter.get('/models/:modelId/media', async (q, r) =>
   sendSuccess(
     r,
-    await service.listMedia(r.locals.actor, { modelId: q.params.modelId }),
+    await service.listMedia(r.locals.actor, { modelId: id(q.params.modelId) }),
     'Media loaded',
   ),
 );
@@ -171,7 +199,7 @@ catalogRouter.post('/models/:modelId/media', async (q, r) =>
     r,
     await service.createMedia(
       r.locals.actor,
-      { modelId: q.params.modelId },
+      { modelId: id(q.params.modelId) },
       parse(mediaSchema.safeParse(q.body), 'Invalid media'),
     ),
     'Media created',
@@ -181,7 +209,7 @@ catalogRouter.post('/models/:modelId/media', async (q, r) =>
 catalogRouter.get('/variants/:variantId/media', async (q, r) =>
   sendSuccess(
     r,
-    await service.listMedia(r.locals.actor, { variantId: q.params.variantId }),
+    await service.listMedia(r.locals.actor, { variantId: id(q.params.variantId) }),
     'Media loaded',
   ),
 );
@@ -190,28 +218,39 @@ catalogRouter.post('/variants/:variantId/media', async (q, r) =>
     r,
     await service.createMedia(
       r.locals.actor,
-      { variantId: q.params.variantId },
+      { variantId: id(q.params.variantId) },
       parse(mediaSchema.safeParse(q.body), 'Invalid media'),
     ),
     'Media created',
     201,
   ),
 );
+catalogRouter.patch('/media/:id', async (q, r) =>
+  sendSuccess(
+    r,
+    await service.updateMedia(
+      r.locals.actor,
+      id(q.params.id),
+      parse(mediaUpdateSchema.safeParse(q.body), 'Invalid media'),
+    ),
+    'Media updated',
+  ),
+);
 catalogRouter.delete('/media/:id', async (q, r) => {
-  await service.deleteMedia(r.locals.actor, q.params.id);
+  await service.deleteMedia(r.locals.actor, id(q.params.id));
   return r.status(204).send();
 });
 catalogRouter.post('/models/:id/:action', async (q, r) =>
   sendSuccess(
     r,
-    await service.setModelStatus(r.locals.actor, q.params.id, action(q.params.action)),
+    await service.setModelStatus(r.locals.actor, id(q.params.id), action(q.params.action)),
     'Model status updated',
   ),
 );
 catalogRouter.post('/variants/:id/:action', async (q, r) =>
   sendSuccess(
     r,
-    await service.setVariantStatus(r.locals.actor, q.params.id, action(q.params.action)),
+    await service.setVariantStatus(r.locals.actor, id(q.params.id), action(q.params.action)),
     'Variant status updated',
   ),
 );

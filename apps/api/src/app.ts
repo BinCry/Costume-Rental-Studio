@@ -5,6 +5,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import pinoHttp from 'pino-http';
+import swaggerUi from 'swagger-ui-express';
 
 import { sendError, sendSuccess } from './common/http/response.js';
 import { errorHandler } from './common/middleware/error-handler.js';
@@ -20,6 +21,7 @@ import { promotionRouter } from './modules/promotions/promotion.route.js';
 import { policyRouter } from './modules/policies/policy.route.js';
 import { staffRouter } from './modules/staff/staff.route.js';
 import { rbacRouter } from './modules/rbac/rbac.route.js';
+import { openApiDocument } from './openapi.js';
 
 export function createApp() {
   const app = express();
@@ -60,6 +62,13 @@ export function createApp() {
     }),
   );
   app.use(express.json({ limit: '1mb' }));
+
+  app.get('/api/openapi.json', (_request, response) => response.json(openApiDocument));
+  app.use(
+    '/api/docs',
+    swaggerUi.serve,
+    swaggerUi.setup(openApiDocument, { customSiteTitle: 'Costume Rental Studio API' }),
+  );
 
   app.get('/health', (_request, response) => {
     sendSuccess(

@@ -42,6 +42,13 @@ function createErrorTestApp() {
     throw new Error('Sensitive internal error');
   });
 
+  app.get('/prisma/:code', (request) => {
+    throw Object.assign(new Error('Prisma error'), {
+      code: request.params.code,
+      meta: { target: ['model_code'] },
+    });
+  });
+
   app.use(errorHandler);
 
   return app;
@@ -93,5 +100,15 @@ describe('error handler', () => {
     expect(typeof body.requestId).toBe('string');
     expect(body.requestId).toBe(response.headers['x-request-id']);
     expect(response.text).not.toContain('Sensitive internal error');
+  });
+
+  it.each([
+    ['P2002', 409, 'DUPLICATE_RECORD'],
+    ['P2025', 404, 'RECORD_NOT_FOUND'],
+    ['P2003', 400, 'INVALID_REFERENCE'],
+  ])('maps Prisma %s to HTTP %i', async (prismaCode, status, errorCode) => {
+    const response = await request(createErrorTestApp()).get(`/prisma/${prismaCode}`);
+    expect(response.status).toBe(status);
+    expect((response.body as ErrorResponse).error.code).toBe(errorCode);
   });
 });
