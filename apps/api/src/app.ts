@@ -21,6 +21,7 @@ import { promotionRouter } from './modules/promotions/promotion.route.js';
 import { policyRouter } from './modules/policies/policy.route.js';
 import { staffRouter } from './modules/staff/staff.route.js';
 import { rbacRouter } from './modules/rbac/rbac.route.js';
+import { uploadRouter } from './modules/uploads/upload.route.js';
 import { openApiDocument } from './openapi.js';
 
 export function createApp() {
@@ -104,6 +105,7 @@ export function createApp() {
   app.use('/api/v1/customers', customerRouter);
   app.use('/api/v1/branches', branchRouter);
   app.use('/api/v1/catalog', catalogRouter);
+  app.use('/api/v1/uploads', uploadRouter);
   app.use('/api/v1/promotions', promotionRouter);
   app.use('/api/v1/rental-policies', policyRouter);
   app.use('/api/v1/staff', staffRouter);

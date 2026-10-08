@@ -70,7 +70,7 @@ export const accessorySchema = z.object({
   replacementValueVnd: z.coerce.bigint().nonnegative().optional(),
 });
 export const mediaSchema = z.object({
-  objectKey: z.string().trim().min(1).max(500),
+  uploadKey: z.string().trim().min(1).max(500),
   sortOrder: z.coerce.number().int().nonnegative().default(0),
   altText: z.string().trim().max(500).optional(),
 });

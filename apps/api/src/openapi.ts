@@ -93,11 +93,41 @@ export const openApiDocument = {
       },
       MediaInput: {
         type: 'object',
-        required: ['objectKey'],
+        required: ['uploadKey'],
         properties: {
-          objectKey: { type: 'string', maxLength: 500 },
+          uploadKey: {
+            type: 'string',
+            maxLength: 500,
+            description: 'Temporary key returned by the presign endpoint',
+          },
           sortOrder: { type: 'integer', minimum: 0, default: 0 },
           altText: { type: 'string', nullable: true, maxLength: 500 },
+        },
+      },
+      UploadPresignInput: {
+        type: 'object',
+        required: ['purpose', 'ownerType', 'ownerId', 'contentType', 'size'],
+        properties: {
+          purpose: { type: 'string', enum: ['catalog-media'] },
+          ownerType: { type: 'string', enum: ['model', 'variant'] },
+          ownerId: { type: 'string', format: 'uuid' },
+          contentType: { type: 'string', enum: ['image/jpeg', 'image/png', 'image/webp'] },
+          size: { type: 'integer', minimum: 1, maximum: 10485760 },
+        },
+      },
+      UploadPresignResponse: {
+        type: 'object',
+        required: ['objectKey', 'uploadUrl', 'method', 'fields', 'expiresAt'],
+        properties: {
+          objectKey: { type: 'string', example: 'catalog-staging/models/{modelId}/{uuid}.jpg' },
+          uploadUrl: { type: 'string', format: 'uri' },
+          method: { type: 'string', enum: ['POST'] },
+          fields: {
+            type: 'object',
+            additionalProperties: { type: 'string' },
+            example: { key: 'catalog-staging/models/{modelId}/{uuid}.jpg' },
+          },
+          expiresAt: { type: 'string', format: 'date-time' },
         },
       },
       Error: {
@@ -133,6 +163,34 @@ export const openApiDocument = {
     },
   },
   paths: {
+    '/uploads/presign': {
+      post: {
+        tags: ['Catalog'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Create a temporary direct-upload URL for catalog media',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/UploadPresignInput' } },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Upload URL created',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/UploadPresignResponse' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+          '503': { description: 'Object storage is not configured or unavailable' },
+        },
+      },
+    },
     '/catalog/categories': {
       get: {
         tags: ['Catalog'],

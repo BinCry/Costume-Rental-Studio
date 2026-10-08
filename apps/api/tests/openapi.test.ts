@@ -21,6 +21,7 @@ describe('OpenAPI documentation', () => {
     expect(document.openapi).toBe('3.0.3');
     expect(document.info.title).toBe('Costume Rental Studio API');
     expect(document.paths['/catalog/variants/{id}']).toBeDefined();
+    expect(document.paths['/uploads/presign']).toBeDefined();
   });
 
   it('serves Swagger UI', async () => {

@@ -1,7 +1,17 @@
 import { AppError } from '../../common/errors/app-error.js';
 import { pageResult, pagination } from '../../common/http/query.js';
+import {
+  deleteStoredObject,
+  imageContentTypeForKey,
+  promoteStoredImage,
+  publicObjectUrl,
+} from '../../common/storage/s3.js';
+import { env } from '../../config/env.js';
+import { logger } from '../../config/logger.js';
 import { prisma } from '../../database/prisma.js';
 import { assertPermission, type AuthenticatedActor } from '../auth/authorization.js';
+import { mediaDeleteEventType } from '../uploads/media-maintenance.service.js';
+import { catalogMediaKey } from '../uploads/upload.service.js';
 import type {
   AccessoryInput,
   CategoryInput,
@@ -19,6 +29,12 @@ function read(actor: AuthenticatedActor) {
 }
 function manage(actor: AuthenticatedActor) {
   assertPermission(actor, { module: 'catalog', action: 'manage' });
+}
+function mediaResponse<T extends { objectKey: string }>(item: T) {
+  return { ...item, mediaUrl: publicObjectUrl(item.objectKey) };
+}
+function isUniqueConstraintError(error: unknown) {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
 }
 function categoryOrder(query: ListCatalogInput) {
   return {
@@ -310,7 +326,8 @@ export async function listMedia(
   owner: { modelId?: string; variantId?: string },
 ) {
   read(actor);
-  return prisma.costumeMedia.findMany({ where: owner, orderBy: { sortOrder: 'asc' } });
+  const items = await prisma.costumeMedia.findMany({ where: owner, orderBy: { sortOrder: 'asc' } });
+  return items.map(mediaResponse);
 }
 export async function createMedia(
   actor: AuthenticatedActor,
@@ -320,17 +337,99 @@ export async function createMedia(
   manage(actor);
   if ((!owner.modelId && !owner.variantId) || (owner.modelId && owner.variantId))
     throw new AppError(400, 'INVALID_MEDIA_OWNER', 'Media must belong to exactly one resource');
-  return prisma.costumeMedia.create({ data: { ...input, ...owner } });
+  const ownerType = owner.modelId ? 'model' : 'variant';
+  const ownerId = owner.modelId ?? owner.variantId;
+  if (!ownerId)
+    throw new AppError(400, 'INVALID_MEDIA_OWNER', 'Media must belong to exactly one resource');
+  const ownerExists =
+    ownerType === 'model'
+      ? await prisma.costumeModel.findUnique({ where: { id: ownerId }, select: { id: true } })
+      : await prisma.costumeVariant.findUnique({ where: { id: ownerId }, select: { id: true } });
+  if (!ownerExists)
+    throw new AppError(
+      404,
+      ownerType === 'model' ? 'MODEL_NOT_FOUND' : 'VARIANT_NOT_FOUND',
+      `${ownerType === 'model' ? 'Model' : 'Variant'} not found`,
+    );
+  const mediaLimit =
+    ownerType === 'model' ? env.MEDIA_MAX_MODEL_IMAGES : env.MEDIA_MAX_VARIANT_IMAGES;
+  const mediaCount = await prisma.costumeMedia.count({ where: owner });
+  if (mediaCount >= mediaLimit)
+    throw new AppError(
+      409,
+      'MEDIA_LIMIT_REACHED',
+      `${ownerType === 'model' ? 'Model' : 'Variant'} may have at most ${mediaLimit} images`,
+    );
+  const expectedPrefix = `catalog-staging/${ownerType}s/${ownerId}/`;
+  if (!input.uploadKey.startsWith(expectedPrefix))
+    throw new AppError(400, 'INVALID_UPLOAD', 'Upload key does not belong to this catalog item');
+  const contentType = imageContentTypeForKey(input.uploadKey);
+  if (!contentType)
+    throw new AppError(400, 'INVALID_UPLOAD', 'Upload key must use a supported image extension');
+  const objectKey = catalogMediaKey(ownerType, ownerId, contentType);
+  await promoteStoredImage({
+    uploadKey: input.uploadKey,
+    objectKey,
+    contentType,
+    maxBytes: env.MEDIA_MAX_UPLOAD_BYTES,
+  });
+  try {
+    const media = await prisma.costumeMedia.create({
+      data: {
+        objectKey,
+        sortOrder: input.sortOrder,
+        ...(input.altText === undefined ? {} : { altText: input.altText }),
+        ...owner,
+      },
+    });
+    try {
+      await deleteStoredObject(input.uploadKey);
+    } catch (error: unknown) {
+      logger.warn(
+        { err: error, uploadKey: input.uploadKey },
+        'Could not immediately remove finalized staging image; cleanup will retry later',
+      );
+    }
+    return mediaResponse(media);
+  } catch (error: unknown) {
+    if (isUniqueConstraintError(error))
+      throw new AppError(409, 'MEDIA_ALREADY_REGISTERED', 'Image is already registered');
+    throw error;
+  }
 }
 export async function updateMedia(actor: AuthenticatedActor, id: string, input: MediaUpdateInput) {
   manage(actor);
   const item = await prisma.costumeMedia.findUnique({ where: { id } });
   if (!item) throw new AppError(404, 'MEDIA_NOT_FOUND', 'Media not found');
-  return prisma.costumeMedia.update({ where: { id }, data: input });
+  return mediaResponse(await prisma.costumeMedia.update({ where: { id }, data: input }));
 }
 export async function deleteMedia(actor: AuthenticatedActor, id: string) {
   manage(actor);
   const item = await prisma.costumeMedia.findUnique({ where: { id } });
   if (!item) throw new AppError(404, 'MEDIA_NOT_FOUND', 'Media not found');
-  await prisma.costumeMedia.delete({ where: { id } });
+  const event = await prisma.$transaction(async (transaction) => {
+    await transaction.costumeMedia.delete({ where: { id } });
+    return transaction.outboxEvent.create({
+      data: {
+        eventType: mediaDeleteEventType,
+        aggregateType: 'CostumeMedia',
+        aggregateId: item.id,
+        payloadJson: { objectKey: item.objectKey },
+        availableAt: new Date(Date.now() + 30_000),
+      },
+    });
+  });
+
+  try {
+    await deleteStoredObject(item.objectKey);
+    await prisma.outboxEvent.update({
+      where: { id: event.id },
+      data: { status: 'PROCESSED', processedAt: new Date(), lastError: null },
+    });
+  } catch (error: unknown) {
+    logger.warn(
+      { err: error, objectKey: item.objectKey, mediaId: item.id, outboxEventId: event.id },
+      'Could not complete immediate media deletion; outbox will retry',
+    );
+  }
 }
