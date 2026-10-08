@@ -53,6 +53,7 @@ docs/
 | [`api/auth/google-oauth.md`](api/auth/google-oauth.md) | Google OAuth và liên kết/kích hoạt tài khoản |
 | [`api/auth/email-change.md`](api/auth/email-change.md) | Đổi email có OTP và thu hồi phiên |
 | [`api/customers/create-counter-customer.md`](api/customers/create-counter-customer.md) | Admin/Staff tạo Customer tại quầy |
+| [`api/catalog/delete-catalog.md`](api/catalog/delete-catalog.md) | Hợp đồng hard delete có guard cho category, model, variant và phụ kiện |
 | [`operations/ci-cd.md`](operations/ci-cd.md) | CI, Docker, Coolify và migration production |
 
 ### UI và báo cáo

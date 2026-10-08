@@ -104,6 +104,11 @@ costume_categories
 - Ảnh lưu ở object storage; `costume_media` chỉ lưu object key và metadata.
 - Phụ kiện chuẩn của model lưu trong `costume_model_accessories`.
 - Phụ kiện thực tế giao/trả của dòng đơn lưu snapshot trong `rental_item_accessories`.
+- Hard delete catalog không cascade: category chỉ xóa khi không có category con/model; model
+  chỉ xóa khi không có variant/phụ kiện/media; variant chỉ xóa khi không có unit/dòng đơn/media;
+  phụ kiện chỉ xóa khi chưa xuất hiện trong snapshot đơn thuê.
+- Catalog đã được sử dụng phải trả xung đột và chuyển sang inactive để giữ lịch sử. Việc bật lại
+  category cha không tự bật lại các phần tử con đã inactive.
 
 Admin đăng ký unit mới với `INBOUND/UNINSPECTED`. Nhân viên kho chi nhánh nhận và kiểm tra; chỉ unit `READY` mới được cho thuê.
 
