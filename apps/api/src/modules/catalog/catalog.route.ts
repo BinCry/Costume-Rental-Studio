@@ -73,6 +73,10 @@ catalogRouter.post('/categories/:id/:action', async (q, r) =>
     'Category status updated',
   ),
 );
+catalogRouter.delete('/categories/:id', async (q, r) => {
+  await service.deleteCategory(r.locals.actor, id(q.params.id));
+  return r.status(204).send();
+});
 catalogRouter.get('/models', async (q, r) =>
   sendSuccess(
     r,
@@ -108,6 +112,10 @@ catalogRouter.patch('/models/:id', async (q, r) =>
     'Model updated',
   ),
 );
+catalogRouter.delete('/models/:id', async (q, r) => {
+  await service.deleteModel(r.locals.actor, id(q.params.id));
+  return r.status(204).send();
+});
 catalogRouter.get('/variants', async (q, r) =>
   sendSuccess(
     r,
@@ -143,6 +151,10 @@ catalogRouter.patch('/variants/:id', async (q, r) =>
     'Variant updated',
   ),
 );
+catalogRouter.delete('/variants/:id', async (q, r) => {
+  await service.deleteVariant(r.locals.actor, id(q.params.id));
+  return r.status(204).send();
+});
 catalogRouter.get('/models/:modelId/accessories', async (q, r) =>
   sendSuccess(
     r,
@@ -187,6 +199,10 @@ catalogRouter.post('/accessories/:id/deactivate', async (q, r) =>
     'Accessory deactivated',
   ),
 );
+catalogRouter.delete('/accessories/:id', async (q, r) => {
+  await service.deleteAccessory(r.locals.actor, id(q.params.id));
+  return r.status(204).send();
+});
 catalogRouter.get('/models/:modelId/media', async (q, r) =>
   sendSuccess(
     r,

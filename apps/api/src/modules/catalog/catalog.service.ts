@@ -252,6 +252,25 @@ export async function setCategoryStatus(
     return updated;
   });
 }
+export async function deleteCategory(actor: AuthenticatedActor, id: string) {
+  manage(actor);
+  await prisma.$transaction(async (transaction) => {
+    await lockCatalogHierarchy(transaction);
+    const rows = await transaction.$queryRaw<{ id: string }[]>`
+      SELECT id FROM costume_categories WHERE id = ${id}::uuid FOR UPDATE
+    `;
+    if (rows.length === 0) throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Category not found');
+    const childCount = await transaction.costumeCategory.count({ where: { parentId: id } });
+    const modelCount = await transaction.costumeModel.count({ where: { categoryId: id } });
+    if (childCount > 0 || modelCount > 0)
+      throw new AppError(
+        409,
+        'CATEGORY_IN_USE',
+        'Category has child categories or models; deactivate it instead',
+      );
+    await transaction.costumeCategory.delete({ where: { id } });
+  });
+}
 
 export async function listModels(actor: AuthenticatedActor, query: ListCatalogInput) {
   read(actor);
@@ -343,6 +362,28 @@ export async function setModelStatus(
     if (!current) throw new AppError(404, 'MODEL_NOT_FOUND', 'Model not found');
     await lockActiveCategory(transaction, current.categoryId);
     return transaction.costumeModel.update({ where: { id }, data: { status } });
+  });
+}
+export async function deleteModel(actor: AuthenticatedActor, id: string) {
+  manage(actor);
+  await prisma.$transaction(async (transaction) => {
+    await lockCatalogHierarchy(transaction);
+    const rows = await transaction.$queryRaw<{ id: string }[]>`
+      SELECT id FROM costume_models WHERE id = ${id}::uuid FOR UPDATE
+    `;
+    if (rows.length === 0) throw new AppError(404, 'MODEL_NOT_FOUND', 'Model not found');
+    const variantCount = await transaction.costumeVariant.count({ where: { modelId: id } });
+    const accessoryCount = await transaction.costumeModelAccessory.count({
+      where: { modelId: id },
+    });
+    const mediaCount = await transaction.costumeMedia.count({ where: { modelId: id } });
+    if (variantCount > 0 || accessoryCount > 0 || mediaCount > 0)
+      throw new AppError(
+        409,
+        'MODEL_IN_USE',
+        'Model has variants, accessories, media, or related business data; deactivate it instead',
+      );
+    await transaction.costumeModel.delete({ where: { id } });
   });
 }
 
@@ -438,6 +479,26 @@ export async function setVariantStatus(
     return transaction.costumeVariant.update({ where: { id }, data: { status } });
   });
 }
+export async function deleteVariant(actor: AuthenticatedActor, id: string) {
+  manage(actor);
+  await prisma.$transaction(async (transaction) => {
+    await lockCatalogHierarchy(transaction);
+    const rows = await transaction.$queryRaw<{ id: string }[]>`
+      SELECT id FROM costume_variants WHERE id = ${id}::uuid FOR UPDATE
+    `;
+    if (rows.length === 0) throw new AppError(404, 'VARIANT_NOT_FOUND', 'Variant not found');
+    const mediaCount = await transaction.costumeMedia.count({ where: { variantId: id } });
+    const unitCount = await transaction.costumeUnit.count({ where: { variantId: id } });
+    const orderItemCount = await transaction.rentalOrderItem.count({ where: { variantId: id } });
+    if (mediaCount > 0 || unitCount > 0 || orderItemCount > 0)
+      throw new AppError(
+        409,
+        'VARIANT_IN_USE',
+        'Variant has units, order items, or media; deactivate it instead',
+      );
+    await transaction.costumeVariant.delete({ where: { id } });
+  });
+}
 
 export async function listAccessories(actor: AuthenticatedActor, modelId: string) {
   read(actor);
@@ -477,6 +538,26 @@ export async function setAccessoryStatus(actor: AuthenticatedActor, id: string, 
     });
   }
   return prisma.costumeModelAccessory.update({ where: { id }, data: { isActive } });
+}
+export async function deleteAccessory(actor: AuthenticatedActor, id: string) {
+  manage(actor);
+  await prisma.$transaction(async (transaction) => {
+    await lockCatalogHierarchy(transaction);
+    const rows = await transaction.$queryRaw<{ id: string }[]>`
+      SELECT id FROM costume_model_accessories WHERE id = ${id}::uuid FOR UPDATE
+    `;
+    if (rows.length === 0) throw new AppError(404, 'ACCESSORY_NOT_FOUND', 'Accessory not found');
+    const snapshotCount = await transaction.rentalItemAccessory.count({
+      where: { modelAccessoryId: id },
+    });
+    if (snapshotCount > 0)
+      throw new AppError(
+        409,
+        'ACCESSORY_IN_USE',
+        'Accessory appears in rental history; deactivate it instead',
+      );
+    await transaction.costumeModelAccessory.delete({ where: { id } });
+  });
 }
 export async function listMedia(
   actor: AuthenticatedActor,

@@ -246,6 +246,21 @@ export const openApiDocument = {
           '404': { $ref: '#/components/responses/NotFound' },
         },
       },
+      delete: {
+        tags: ['Catalog'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Delete an unused category',
+        description: 'Returns 409 when the category still has child categories or models.',
+        parameters: [{ $ref: '#/components/parameters/id' }],
+        responses: {
+          '204': { description: 'Category deleted' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
     },
     '/catalog/categories/{id}/{action}': {
       post: {
@@ -313,6 +328,21 @@ export const openApiDocument = {
           content: { 'application/json': { schema: { $ref: '#/components/schemas/ModelInput' } } },
         },
         responses: { '200': { description: 'Model updated' } },
+      },
+      delete: {
+        tags: ['Catalog'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Delete an unused model',
+        description: 'Returns 409 when the model still has variants, accessories, or media.',
+        parameters: [{ $ref: '#/components/parameters/id' }],
+        responses: {
+          '204': { description: 'Model deleted' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
       },
     },
     '/catalog/models/{id}/{action}': {
@@ -393,6 +423,21 @@ export const openApiDocument = {
           '400': { $ref: '#/components/responses/BadRequest' },
         },
       },
+      delete: {
+        tags: ['Catalog'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Delete an unused variant',
+        description: 'Returns 409 when the variant has units, order items, or media.',
+        parameters: [{ $ref: '#/components/parameters/id' }],
+        responses: {
+          '204': { description: 'Variant deleted' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
     },
     '/catalog/variants/{id}/{action}': {
       post: {
@@ -445,6 +490,21 @@ export const openApiDocument = {
           },
         },
         responses: { '200': { description: 'Accessory updated' } },
+      },
+      delete: {
+        tags: ['Catalog'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Delete an unused accessory',
+        description: 'Returns 409 when the accessory appears in rental history.',
+        parameters: [{ $ref: '#/components/parameters/id' }],
+        responses: {
+          '204': { description: 'Accessory deleted' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
       },
     },
     '/catalog/accessories/{id}/{action}': {
