@@ -17,6 +17,11 @@ export const openApiDocument = {
       description:
         'Global branch administration. GET requires branches.read.ALL; mutations require branches.manage.ALL.',
     },
+    {
+      name: 'Inventory',
+      description:
+        'Physical costume-unit lifecycle. Branch staff are limited to their assigned active branches; inventory ALL permissions can operate across branches.',
+    },
   ],
   components: {
     securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },
@@ -36,6 +41,12 @@ export const openApiDocument = {
       },
       variantId: {
         name: 'variantId',
+        in: 'path',
+        required: true,
+        schema: { type: 'string', format: 'uuid' },
+      },
+      unitId: {
+        name: 'unitId',
         in: 'path',
         required: true,
         schema: { type: 'string', format: 'uuid' },
@@ -73,6 +84,81 @@ export const openApiDocument = {
           createdAt: { type: 'string', format: 'date-time' },
           updatedAt: { type: 'string', format: 'date-time' },
         },
+      },
+      UnitOperationalStatus: {
+        type: 'string',
+        enum: ['INBOUND', 'READY', 'CLEANING', 'REPAIR', 'IN_TRANSFER', 'RETIRED'],
+      },
+      CostumeConditionGrade: {
+        type: 'string',
+        enum: ['UNINSPECTED', 'NEW', 'GOOD', 'FAIR', 'POOR', 'DAMAGED'],
+      },
+      CostumeUnit: {
+        type: 'object',
+        required: [
+          'id',
+          'unitCode',
+          'variantId',
+          'currentBranchId',
+          'conditionGrade',
+          'operationalStatus',
+        ],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          unitCode: { type: 'string', example: 'HCM-AODAI-001' },
+          variantId: { type: 'string', format: 'uuid' },
+          currentBranchId: { type: 'string', format: 'uuid' },
+          conditionGrade: { $ref: '#/components/schemas/CostumeConditionGrade' },
+          conditionNotes: { type: 'string', nullable: true },
+          operationalStatus: { $ref: '#/components/schemas/UnitOperationalStatus' },
+          acquiredAt: { type: 'string', format: 'date', nullable: true },
+          acquisitionCostVnd: { type: 'string', nullable: true, example: '150000' },
+          retiredAt: { type: 'string', format: 'date-time', nullable: true },
+        },
+      },
+      CreateCostumeUnitInput: {
+        type: 'object',
+        required: ['unitCode', 'variantId', 'branchId'],
+        properties: {
+          unitCode: { type: 'string', minLength: 2, maxLength: 50, pattern: '^[A-Za-z0-9-]+$' },
+          variantId: { type: 'string', format: 'uuid' },
+          branchId: { type: 'string', format: 'uuid' },
+          acquiredAt: { type: 'string', format: 'date' },
+          acquisitionCostVnd: { type: 'string', minimum: 0 },
+          conditionNotes: { type: 'string', maxLength: 10000 },
+        },
+      },
+      UpdateCostumeUnitInput: {
+        type: 'object',
+        description:
+          'Only acquisition metadata and notes. unitCode, variantId, currentBranchId, condition and operationalStatus are managed by dedicated flows.',
+        properties: {
+          acquiredAt: { type: 'string', format: 'date', nullable: true },
+          acquisitionCostVnd: { type: 'string', nullable: true, minimum: 0 },
+          conditionNotes: { type: 'string', nullable: true, maxLength: 10000 },
+        },
+      },
+      InspectCostumeUnitInput: {
+        type: 'object',
+        required: ['conditionGrade', 'nextStatus'],
+        properties: {
+          conditionGrade: { type: 'string', enum: ['NEW', 'GOOD', 'FAIR', 'POOR', 'DAMAGED'] },
+          nextStatus: { type: 'string', enum: ['READY', 'REPAIR'] },
+          notes: { type: 'string', maxLength: 10000 },
+        },
+      },
+      ChangeCostumeUnitStatusInput: {
+        type: 'object',
+        required: ['targetStatus'],
+        properties: {
+          targetStatus: { type: 'string', enum: ['READY', 'CLEANING', 'REPAIR'] },
+          notes: { type: 'string', maxLength: 10000 },
+        },
+      },
+      RetireCostumeUnitInput: {
+        type: 'object',
+        required: ['notes'],
+        properties: { notes: { type: 'string', minLength: 1, maxLength: 10000 } },
       },
       CreateBranchInput: {
         type: 'object',
@@ -223,6 +309,213 @@ export const openApiDocument = {
     },
   },
   paths: {
+    '/inventory/units': {
+      get: {
+        tags: ['Inventory'],
+        security: [{ bearerAuth: [] }],
+        summary: 'List physical costume units',
+        description:
+          'Requires inventory.read.BRANCH for assigned branches or inventory.read.ALL. Retired units remain visible.',
+        parameters: [
+          { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1, default: 1 } },
+          {
+            name: 'pageSize',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          },
+          {
+            name: 'search',
+            in: 'query',
+            schema: { type: 'string', maxLength: 100 },
+            description: 'Matches unitCode',
+          },
+          { name: 'branchId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          { name: 'variantId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          {
+            name: 'operationalStatus',
+            in: 'query',
+            schema: { $ref: '#/components/schemas/UnitOperationalStatus' },
+          },
+          {
+            name: 'conditionGrade',
+            in: 'query',
+            schema: { $ref: '#/components/schemas/CostumeConditionGrade' },
+          },
+          {
+            name: 'sortBy',
+            in: 'query',
+            schema: {
+              type: 'string',
+              enum: ['unitCode', 'operationalStatus', 'conditionGrade', 'createdAt', 'updatedAt'],
+              default: 'createdAt',
+            },
+          },
+          {
+            name: 'sortOrder',
+            in: 'query',
+            schema: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
+          },
+        ],
+        responses: {
+          '200': { description: 'Units loaded' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+        },
+      },
+      post: {
+        tags: ['Inventory'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Register a physical costume unit',
+        description:
+          'Requires inventory.manage for the target branch. Locks the active branch and active variant/model/category hierarchy; unitCode is normalized to uppercase and the unit starts INBOUND + UNINSPECTED.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/CreateCostumeUnitInput' } },
+          },
+        },
+        responses: {
+          '201': { description: 'Unit created' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '409': {
+            description: 'UNIT_CODE_CONFLICT',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
+          },
+        },
+      },
+    },
+    '/inventory/units/{unitId}': {
+      get: {
+        tags: ['Inventory'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Get costume unit detail',
+        parameters: [{ $ref: '#/components/parameters/unitId' }],
+        responses: {
+          '200': { description: 'Unit loaded' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+      patch: {
+        tags: ['Inventory'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Correct unit acquisition metadata or notes',
+        description:
+          'Requires inventory.manage for the unit branch. Branch, variant, code, condition and lifecycle status cannot be changed here.',
+        parameters: [{ $ref: '#/components/parameters/unitId' }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/UpdateCostumeUnitInput' } },
+          },
+        },
+        responses: {
+          '200': { description: 'Unit updated' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+    },
+    '/inventory/units/{unitId}/inspect': {
+      post: {
+        tags: ['Inventory'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Inspect an inbound unit',
+        description:
+          'Requires inventory.manage. Only INBOUND units can be inspected; this atomically records condition and moves the unit to READY or REPAIR.',
+        parameters: [{ $ref: '#/components/parameters/unitId' }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/InspectCostumeUnitInput' },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Unit inspected' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+          '409': { description: 'INVALID_UNIT_TRANSITION' },
+        },
+      },
+    },
+    '/inventory/units/{unitId}/status': {
+      post: {
+        tags: ['Inventory'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Change a unit operational status',
+        description:
+          'Requires inventory.manage. Allowed transitions: READY→CLEANING/REPAIR, CLEANING→READY/REPAIR, REPAIR→READY. Transfer and retirement have dedicated flows.',
+        parameters: [{ $ref: '#/components/parameters/unitId' }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/ChangeCostumeUnitStatusInput' },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Unit status updated' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+          '409': { description: 'INVALID_UNIT_TRANSITION' },
+        },
+      },
+    },
+    '/inventory/units/{unitId}/retire': {
+      post: {
+        tags: ['Inventory'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Permanently retire a unit',
+        description:
+          'Requires inventory.manage. Prohibited while the unit has an active order, transfer or block; retirement is terminal.',
+        parameters: [{ $ref: '#/components/parameters/unitId' }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/RetireCostumeUnitInput' } },
+          },
+        },
+        responses: {
+          '200': { description: 'Unit retired' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+          '409': { description: 'UNIT_IN_USE or INVALID_UNIT_TRANSITION' },
+        },
+      },
+    },
+    '/inventory/units/{unitId}/events': {
+      get: {
+        tags: ['Inventory'],
+        security: [{ bearerAuth: [] }],
+        summary: 'List costume unit lifecycle events',
+        description:
+          'Requires inventory.read for the unit branch. Events are immutable history and remain available after retirement.',
+        parameters: [
+          { $ref: '#/components/parameters/unitId' },
+          { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1, default: 1 } },
+          {
+            name: 'pageSize',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          },
+        ],
+        responses: {
+          '200': { description: 'Unit events loaded' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+    },
     '/branches': {
       get: {
         tags: ['Branches'],

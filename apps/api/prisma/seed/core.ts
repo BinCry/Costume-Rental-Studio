@@ -19,6 +19,8 @@ const permissionDefinitions = [
   ['catalog.read.all', 'catalog', 'read', PermissionScope.ALL],
   ['inventory.read.branch', 'inventory', 'read', PermissionScope.BRANCH],
   ['inventory.manage.branch', 'inventory', 'manage', PermissionScope.BRANCH],
+  ['inventory.read.all', 'inventory', 'read', PermissionScope.ALL],
+  ['inventory.manage.all', 'inventory', 'manage', PermissionScope.ALL],
   ['transfers.manage.branch', 'transfers', 'manage', PermissionScope.BRANCH],
   ['rentals.read.own', 'rentals', 'read', PermissionScope.OWN],
   ['rentals.manage.own', 'rentals', 'manage', PermissionScope.OWN],
