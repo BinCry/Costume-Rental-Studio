@@ -1,6 +1,6 @@
 # Database Schema Summary
 
-Schema hiện tại có **33 bảng**, chia thành 7 nhóm. Danh sách field đầy đủ nằm trong `database-schema.dbml` và `schema.prisma`.
+Schema hiện tại có **33 bảng**, chia thành 7 nhóm. Danh sách field đầy đủ nằm trong [`schema.dbml`](schema.dbml) và `apps/api/prisma/schema.prisma`.
 
 ## 1. Identity và phân quyền — 10 bảng
 

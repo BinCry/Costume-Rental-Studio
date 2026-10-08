@@ -12,4 +12,4 @@ pnpm --filter @costume/web lint
 pnpm --filter @costume/web build
 ```
 
-Xem `docs/Hướng dẫn trình diễn giao diện toàn hệ thống.md` để biết đường dẫn, các vai trò, tình huống lỗi/xung đột và phụ thuộc backend.
+Xem [`docs/ui/demo-guide.md`](../../docs/ui/demo-guide.md) để biết đường dẫn, các vai trò, tình huống lỗi/xung đột và phụ thuộc backend.

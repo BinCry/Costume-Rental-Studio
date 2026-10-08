@@ -44,11 +44,11 @@ Configure JWT_ACCESS_SECRET (random secret >=32 characters), JWT_ISSUER (default
 JWT_AUDIENCE (default costume-web) in the API environment. The access JWT uses HS256 with
 sub=user UUID, iss, aud, iat and exp; maximum age is 15 minutes. No login or token issuance
 endpoint is included in the counter-customer endpoint. Registration token issuance is documented
-in [Customer registration](auth-registration.md). Missing configuration denies access rather than bypassing auth.
+in [Customer registration](../auth/registration.md). Missing configuration denies access rather than bypassing auth.
 
 Core seed adds customers.create.all to ADMIN and customers.create.branch to SALES_STAFF.
 Apply these permission assignments to the intended environment before using the endpoint.
 Do not run demo seed against production merely to add permissions.
 
-Online registration, password credentials and phone OTP are documented in [Customer registration](auth-registration.md).
+Online registration, password credentials and phone OTP are documented in [Customer registration](../auth/registration.md).
 This endpoint does not claim an existing customer account or mark their phone/email verified.

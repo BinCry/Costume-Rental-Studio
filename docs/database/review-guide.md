@@ -2,10 +2,10 @@
 
 ## 1. Thứ tự review
 
-1. Nghiệp vụ và state machine trong `business-rules.md`.
-2. Bảng và quan hệ trong `database-schema.dbml`.
+1. Nghiệp vụ và state machine trong [`business-rules.md`](../business/business-rules.md).
+2. Bảng và quan hệ trong [`schema.dbml`](schema.dbml).
 3. Field, enum, nullability và index trong `schema.prisma`.
-4. Constraint thực thi trong `database-constraints.md`.
+4. Constraint thực thi trong [`constraints.md`](constraints.md).
 5. SQL cuối cùng trong migration.
 6. Chạy migration trên PostgreSQL rỗng và test rule quan trọng.
 

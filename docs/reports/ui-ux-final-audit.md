@@ -1,6 +1,6 @@
 # Báo cáo kiểm toán hoàn chỉnh giai đoạn UI/UX
 
-Ngày kiểm toán: 04/10/2026. Phạm vi là frontend React dùng adapter fixture của Costume Rental Studio. Đợt này nối tiếp [đánh giá mười luồng chính](Đánh%20giá%20và%20tối%20ưu%20trải%20nghiệm%20mười%20luồng%20chính.md) và [QA responsive trước đó](Báo%20cáo%20QA%20responsive%20và%20khả%20năng%20truy%20cập%20các%20luồng%20lõi.md). Không thay nhận diện đã duyệt, schema Prisma, API hay chính sách nghiệp vụ.
+Ngày kiểm toán: 04/10/2026. Phạm vi là frontend React dùng adapter fixture của Costume Rental Studio. Đợt này nối tiếp [đánh giá mười luồng chính](../ui/core-flow-ux-review.md) và [QA responsive trước đó](responsive-accessibility-qa.md). Không thay nhận diện đã duyệt, schema Prisma, API hay chính sách nghiệp vụ.
 
 ## Kết luận trong phạm vi fixture
 

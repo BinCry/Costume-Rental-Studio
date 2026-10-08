@@ -1,6 +1,8 @@
 # Hướng dẫn chạy bản mẫu giao diện năm màn hình lõi
 
-**Phạm vi:** UI-01 catalog, UI-03 đặt thuê, UI-06 bảng việc nhân viên, UI-07 không gian xử lý đơn và cặp UI-09/UI-11 dùng chung `OrderDetailShell`. Đây là prototype React/Vite theo [quy chuẩn thiết kế](Quy%20chu%E1%BA%A9n%20thi%E1%BA%BFt%20k%E1%BA%BF%20giao%20di%E1%BB%87n%20v%C3%A0%20n%C4%83m%20m%C3%A0n%20h%C3%ACnh%20l%C3%B5i.md). Chưa triển khai 13 màn hình còn lại.
+> **Trạng thái: lưu trữ.** Hướng dẫn này chỉ áp dụng cho prototype 5 màn hình ban đầu. Dùng [demo-guide.md](../ui/demo-guide.md) cho bản trình diễn hiện hành.
+
+**Phạm vi:** UI-01 catalog, UI-03 đặt thuê, UI-06 bảng việc nhân viên, UI-07 không gian xử lý đơn và cặp UI-09/UI-11 dùng chung `OrderDetailShell`. Đây là prototype React/Vite theo [quy chuẩn thiết kế](../ui/design-standards.md). Chưa triển khai 13 màn hình còn lại.
 
 ## Chạy tại máy
 

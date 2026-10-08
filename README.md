@@ -451,13 +451,15 @@ Costume-Rental-Studio/
 │       └── src/
 ├── packages/                      # Future shared workspace packages
 ├── docs/
-│   ├── README.md                   # Chỉ mục và thứ tự ưu tiên tài liệu
-│   ├── business-rules.md          # Nghiệp vụ hiện hành
-│   ├── database-schema.dbml       # ERD 32 bảng
-│   ├── database-schema-summary.md # Tóm tắt nhóm bảng
-│   ├── database-constraints.md    # Constraint PostgreSQL
-│   ├── database-review-guide.md   # Checklist review/migration
-│   └── ci-cd.md                   # CI/CD và migration production
+│   ├── README.md                  # Chỉ mục và thứ tự ưu tiên tài liệu
+│   ├── business/                  # Nghiệp vụ hiện hành và phân tích
+│   ├── database/                  # ERD, tóm tắt và constraints
+│   ├── api/                       # Hợp đồng/flow API theo module
+│   ├── ui/                        # Đặc tả, kế hoạch và demo giao diện
+│   ├── reports/                   # Báo cáo QA/đối chiếu
+│   ├── operations/                # CI/CD và vận hành
+│   ├── archive/                   # Tài liệu lịch sử, không còn nguồn chuẩn
+│   └── journals/                  # Nhật ký kỹ thuật
 ├── package.json                   # Root workspace scripts
 ├── pnpm-workspace.yaml
 └── pnpm-lock.yaml
@@ -471,11 +473,11 @@ PostgreSQL + Prisma đã có schema và initial migration. Migration hiện cầ
 
 Tài liệu database được chia theo mục đích:
 
-- [`docs/database-schema-summary.md`](docs/database-schema-summary.md) — xem nhanh 7 nhóm và 32 bảng.
-- [`docs/database-review-guide.md`](docs/database-review-guide.md) — checklist review và migration.
-- [`docs/database-schema.dbml`](docs/database-schema.dbml) — ERD đầy đủ để import vào dbdiagram.io.
-- [`docs/database-constraints.md`](docs/database-constraints.md) — constraint SQL và chính sách `ON DELETE`.
-- [`docs/business-rules.md`](docs/business-rules.md) — flow nghiệp vụ đã chốt.
+- [`docs/database/schema-summary.md`](docs/database/schema-summary.md) — xem nhanh 7 nhóm và 33 bảng.
+- [`docs/database/review-guide.md`](docs/database/review-guide.md) — checklist review và migration.
+- [`docs/database/schema.dbml`](docs/database/schema.dbml) — ERD đầy đủ để import vào dbdiagram.io.
+- [`docs/database/constraints.md`](docs/database/constraints.md) — constraint SQL và chính sách `ON DELETE`.
+- [`docs/business/business-rules.md`](docs/business/business-rules.md) — flow nghiệp vụ đã chốt.
 
 Các file DBML có thể import trực tiếp vào [dbdiagram.io](https://dbdiagram.io) để xem, sắp xếp và xuất PNG/PDF.
 
@@ -623,14 +625,15 @@ pnpm build:api
 | Document | Description |
 |----------|-------------|
 | [`docs/README.md`](docs/README.md) | Chỉ mục và thứ tự ưu tiên tài liệu |
-| [`docs/Báo cáo kiểm toán hoàn chỉnh giai đoạn UI UX.md`](docs/B%C3%A1o%20c%C3%A1o%20ki%E1%BB%83m%20to%C3%A1n%20ho%C3%A0n%20ch%E1%BB%89nh%20giai%20%C4%91o%E1%BA%A1n%20UI%20UX.md) | Kết quả nghiệm thu frontend fixture và các việc chờ API |
-| [`docs/business-rules.md`](docs/business-rules.md) | Nghiệp vụ đã chốt và state machine hiện hành |
-| [`docs/database-schema-summary.md`](docs/database-schema-summary.md) | Tóm tắt 7 nhóm và 32 bảng |
-| [`docs/database-schema.dbml`](docs/database-schema.dbml) | ERD đầy đủ |
-| [`docs/database-constraints.md`](docs/database-constraints.md) | Constraint PostgreSQL và chính sách FK |
-| [`docs/database-review-guide.md`](docs/database-review-guide.md) | Checklist review, test và migration |
-| [`docs/ci-cd.md`](docs/ci-cd.md) | CI/CD, Coolify và migration production |
-| [`docs/Phân tích nghiệp vụ và thiết kế hệ thống studio cho thuê trang phục.md`](docs/Phân%20tích%20nghiệp%20vụ%20và%20thiết%20kế%20hệ%20thống%20studio%20cho%20thuê%20trang%20phục.md) | Tài liệu phân tích lịch sử; không phải nguồn schema hiện hành |
+| [`docs/business/business-rules.md`](docs/business/business-rules.md) | Nghiệp vụ đã chốt và state machine hiện hành |
+| [`docs/business/business-analysis.md`](docs/business/business-analysis.md) | Phân tích ngoại lệ và kịch bản nghiệm thu nghiệp vụ |
+| [`docs/database/schema-summary.md`](docs/database/schema-summary.md) | Tóm tắt 7 nhóm và 33 bảng |
+| [`docs/database/schema.dbml`](docs/database/schema.dbml) | ERD đầy đủ |
+| [`docs/database/constraints.md`](docs/database/constraints.md) | Constraint PostgreSQL và chính sách FK |
+| [`docs/database/review-guide.md`](docs/database/review-guide.md) | Checklist review, test và migration |
+| [`docs/reports/ui-ux-final-audit.md`](docs/reports/ui-ux-final-audit.md) | Kết quả nghiệm thu frontend fixture và các việc chờ API |
+| [`docs/operations/ci-cd.md`](docs/operations/ci-cd.md) | CI/CD, Coolify và migration production |
+| [`docs/archive/historical-business-analysis.md`](docs/archive/historical-business-analysis.md) | Tài liệu phân tích lịch sử; không phải nguồn hiện hành |
 | [`README.md`](README.md) | Tổng quan kỹ thuật, trạng thái và cách chạy dự án |
 
 ---

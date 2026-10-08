@@ -6,11 +6,11 @@
 
 **Trạng thái:** kế hoạch để nhóm thống nhất trước khi triển khai UI nghiệp vụ.
 
-Quy chuẩn token, trạng thái tổng hợp, tình huống lỗi và wireframe cho năm màn hình đầu nằm ở [Quy chuẩn thiết kế giao diện và năm màn hình lõi](Quy%20chuẩn%20thiết%20kế%20giao%20diện%20và%20năm%20màn%20hình%20lõi.md).
+Quy chuẩn token, trạng thái tổng hợp, tình huống lỗi và wireframe cho năm màn hình đầu nằm ở [design-standards.md](design-standards.md).
 
 ## 1. Căn cứ và hiện trạng
 
-Nguồn nghiệp vụ hiện hành là [`business-rules.md`](business-rules.md). Khi thiết kế dữ liệu hoặc API, đối chiếu tiếp `apps/api/prisma/schema.prisma` và migration như thứ tự nguồn chuẩn trong [`README.md`](README.md). Tài liệu phân tích dài trước đây là tài liệu lịch sử; các đề xuất chưa vào schema không được mô tả như chức năng đã có.
+Nguồn nghiệp vụ hiện hành là [`business-rules.md`](../business/business-rules.md). Khi thiết kế dữ liệu hoặc API, đối chiếu tiếp `apps/api/prisma/schema.prisma` và migration như thứ tự nguồn chuẩn trong [`README.md`](../README.md). Tài liệu phân tích dài trước đây là tài liệu lịch sử; các đề xuất chưa vào schema không được mô tả như chức năng đã có.
 
 | Hạng mục | Hiện trạng trong code | Tác động lên kế hoạch UI |
 |---|---|---|
@@ -112,7 +112,7 @@ Route gợi ý: `/`, `/trang-phuc/:ma-mau`, `/dat-thue`, `/don-cua-toi`, `/don-c
 
 ## 5. Hướng thiết kế hình ảnh và component
 
-**Hướng đã chốt:** trẻ trung, hiện đại, tối giản có điểm nhấn; nền sáng nhiều khoảng trắng, ảnh trang phục lớn, card bo vừa phải, chữ hiện đại. Khu khách hàng thiên về fashion/lifestyle; khu nội bộ là bảng việc gọn, dễ xử lý, không theo mẫu admin dashboard khô cứng. Accent hồng berry `#C0265B` là mã thử nghiệm trên nền trung tính sáng; màu chính thức cần thử với logo/ảnh thật. Token, typography, composite status và component được quy định trong [UI design contract](Quy%20chuẩn%20thiết%20kế%20giao%20diện%20và%20năm%20màn%20hình%20lõi.md).
+**Hướng đã chốt:** trẻ trung, hiện đại, tối giản có điểm nhấn; nền sáng nhiều khoảng trắng, ảnh trang phục lớn, card bo vừa phải, chữ hiện đại. Khu khách hàng thiên về fashion/lifestyle; khu nội bộ là bảng việc gọn, dễ xử lý, không theo mẫu admin dashboard khô cứng. Accent hồng berry `#C0265B` là mã thử nghiệm trên nền trung tính sáng; màu chính thức cần thử với logo/ảnh thật. Token, typography, composite status và component được quy định trong [UI design contract](design-standards.md).
 
 - **Điều hướng:** khách dùng header gọn và bước đặt rõ tiến độ; nội bộ dùng sidebar theo quyền, bộ chọn chi nhánh và vùng công việc. Breadcrumb ở màn hình chi tiết.
 - **Thành phần dùng lại:** thẻ trang phục, bộ lọc lịch/chi nhánh, báo giá, badge trạng thái đơn/bộ/giao dịch, bảng có lọc/sắp xếp/phân trang, biểu mẫu tiền VND, modal xác nhận, checklist giao trả, timeline, ma trận quyền.

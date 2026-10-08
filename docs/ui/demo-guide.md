@@ -2,7 +2,7 @@
 
 ## Phạm vi
 
-Frontend hiện có 18 màn hình theo `Kế hoạch thiết kế và triển khai giao diện.md`: 5 màn hình lõi đã duyệt và 13 màn hình mở rộng. Giao diện dùng dữ liệu fixture trong bộ nhớ trình duyệt, không ghi vào PostgreSQL và không gọi API nghiệp vụ. Tải lại trang sẽ đưa dữ liệu mẫu về trạng thái ban đầu.
+Frontend hiện có 18 màn hình theo [design-implementation-plan.md](design-implementation-plan.md): 5 màn hình lõi đã duyệt và 13 màn hình mở rộng. Giao diện dùng dữ liệu fixture trong bộ nhớ trình duyệt, không ghi vào PostgreSQL và không gọi API nghiệp vụ. Tải lại trang sẽ đưa dữ liệu mẫu về trạng thái ban đầu.
 
 Chạy từ thư mục gốc:
 

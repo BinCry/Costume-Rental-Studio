@@ -1,7 +1,7 @@
 # Database Constraints
 
 Tài liệu này chốt các ràng buộc thực thi cho PostgreSQL dựa trên
-[`database-schema.dbml`](database-schema.dbml). DBML vẫn là nguồn thiết kế ERD;
+[`schema.dbml`](schema.dbml). DBML vẫn là nguồn thiết kế ERD;
 `migration.sql` là nguồn thực thi cuối cùng sau khi Prisma schema được tạo.
 
 ## Customer registration: migration bổ sung
@@ -15,7 +15,7 @@ Các CHECK OTP raw SQL bổ sung: phone E.164, OTP HMAC 64 ký tự hex,
 attempt_count từ 0 đến 5, expires_at > created_at, consumed_at yêu cầu sent_at.
 Phone challenge có unique phone nhưng không FK đến user. Giữ nguyên các CHECK này khi tạo
 migration tiếp theo vì Prisma không biểu diễn chúng. Giới hạn gửi lại, OTP một lần, xác minh
-và không ghi đè credential được thực thi trong service/transaction; xem [API](auth-registration.md).
+và không ghi đè credential được thực thi trong service/transaction; xem [API](../api/auth/registration.md).
 
 ## Refresh session: migration bổ sung
 
@@ -24,7 +24,7 @@ CHECK raw SQL: token_hash gồm 64 ký tự hex, expires_at > created_at,
 used_at/revoked_at nếu có phải >= created_at. Unique token_hash để tra cứu; index family_id
 để khóa/thu hồi chuỗi phiên, index user_id để quản lý phiên của tài khoản.
 Rotation và replay được xử lý trong transaction có advisory lock theo family_id;
-không xóa token cũ trước hạn family vì cần phát hiện replay. Xem [API](auth-session.md).
+không xóa token cũ trước hạn family vì cần phát hiện replay. Xem [API](../api/auth/session.md).
 
 ## 1. Quy ước
 

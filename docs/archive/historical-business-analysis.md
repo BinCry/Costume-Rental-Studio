@@ -1,6 +1,6 @@
 # Phân tích nghiệp vụ và thiết kế hệ thống studio cho thuê trang phục
 
-> **Trạng thái: tài liệu phân tích lịch sử.** Tài liệu này chứa cả những phương án đã bị rút gọn trong quá trình review. Nguồn nghiệp vụ hiện hành là [`business-rules.md`](business-rules.md); nguồn database hiện hành là [`database-schema.dbml`](database-schema.dbml), [`database-schema-summary.md`](database-schema-summary.md) và [`database-constraints.md`](database-constraints.md). Không dùng tên bảng trong tài liệu lịch sử này để viết migration/API khi chúng khác schema hiện hành.
+> **Trạng thái: tài liệu phân tích lịch sử.** Tài liệu này chứa cả những phương án đã bị rút gọn trong quá trình review. Nguồn nghiệp vụ hiện hành là [`business-rules.md`](../business/business-rules.md); nguồn database hiện hành là [`schema.dbml`](../database/schema.dbml), [`schema-summary.md`](../database/schema-summary.md) và [`constraints.md`](../database/constraints.md). Không dùng tên bảng trong tài liệu lịch sử này để viết migration/API khi chúng khác schema hiện hành.
 
 **Phiên bản:** 1.0 — 25/09/2026
 

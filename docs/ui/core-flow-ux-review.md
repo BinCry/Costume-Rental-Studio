@@ -2,7 +2,7 @@
 
 ## Phạm vi và nguyên tắc
 
-Đợt này rà soát **toàn bộ hành trình** từ màn trước đến màn sau trên bản frontend dùng fixture. Giữ hệ màu, typography, bố cục và các quy tắc nghiệp vụ trong `business-rules.md` cùng `Quy chuẩn thiết kế giao diện và năm màn hình lõi.md`. Không thay Prisma, không tạo API hoặc tự tính kết quả tiền thay backend. Dữ liệu chỉnh trong trình duyệt là dữ liệu trình diễn, không phải giao dịch thật.
+Đợt này rà soát **toàn bộ hành trình** từ màn trước đến màn sau trên bản frontend dùng fixture. Giữ hệ màu, typography, bố cục và các quy tắc trong [business-rules.md](../business/business-rules.md) cùng [design-standards.md](design-standards.md). Không thay Prisma, không tạo API hoặc tự tính kết quả tiền thay backend. Dữ liệu chỉnh trong trình duyệt là dữ liệu trình diễn, không phải giao dịch thật.
 
 “Trước → sau” dưới đây là số thao tác hoặc chuyển màn **theo luồng mẫu đã đi thử bằng tay**; không phải số liệu đo hành vi người dùng. Khi trạng thái dữ liệu khác, số thao tác có thể khác.
 

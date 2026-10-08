@@ -68,7 +68,7 @@ otp.delivery.ts before enabling real registration. This is not production-ready 
 - Delivery failure leaves the challenge unusable. Resend invalidates the previous UUID/code.
 - Missing secrets or delivery provider: 503. Bad/expired/reused OTP: 400. Cooldown/rate limit: 429.
 - A conditional users update (matching phone and passwordHash=null) rejects concurrent overwrite.
-  Login, refresh and me are documented in [Auth sessions](auth-session.md).
+  Login, refresh and me are documented in [Auth sessions](session.md).
   Password recovery, logout and Google linking endpoints are not implemented yet.
 
 Before production, configure trusted proxy hops for the actual deployment (do not blindly trust

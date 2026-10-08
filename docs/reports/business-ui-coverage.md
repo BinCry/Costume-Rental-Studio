@@ -1,6 +1,6 @@
 # Đối chiếu luồng UI/UX theo báo cáo rà soát nghiệp vụ
 
-Ngày rà soát: 03/10/2026. Tài liệu đối chiếu với **Báo cáo rà soát nghiệp vụ toàn diện studio cho thuê trang phục.docx** và frontend React dùng fixture. Báo cáo Word là nguồn đề xuất; quyết định nghiệp vụ đã chốt vẫn theo thứ tự nguồn tại [README](README.md). Mọi thao tác trong giao diện mẫu chỉ thay đổi dữ liệu fixture trong phiên, không xác nhận giao dịch hoặc tồn kho trên máy chủ.
+Ngày rà soát: 03/10/2026. Tài liệu đối chiếu với [báo cáo nghiệp vụ Word đã lưu trữ](../archive/comprehensive-business-review.docx) và frontend React dùng fixture. Báo cáo Word là nguồn đề xuất; quyết định nghiệp vụ đã chốt vẫn theo thứ tự nguồn tại [README](../README.md). Mọi thao tác trong giao diện mẫu chỉ thay đổi dữ liệu fixture trong phiên, không xác nhận giao dịch hoặc tồn kho trên máy chủ.
 
 ## 1. Hành trình đã nối trên giao diện
 

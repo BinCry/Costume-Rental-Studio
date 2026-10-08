@@ -4,7 +4,7 @@
 
 **Áp dụng cho:** giao diện web Customer, Staff và Admin của Costume Rental Studio.
 
-**Trạng thái:** đặc tả thiết kế để dựng wireframe/prototype. Hướng thẩm mỹ và cách tick quyền đã được chủ dự án xác nhận; mã màu accent cụ thể và ảnh thật còn có thể tinh chỉnh. Tài liệu này cụ thể hóa [kế hoạch UI](Kế%20hoạch%20thiết%20kế%20và%20triển%20khai%20giao%20diện.md), không thay đổi [quy tắc nghiệp vụ hiện hành](business-rules.md) hoặc schema/API.
+**Trạng thái:** đặc tả thiết kế để dựng wireframe/prototype. Hướng thẩm mỹ và cách tick quyền đã được chủ dự án xác nhận; mã màu accent cụ thể và ảnh thật còn có thể tinh chỉnh. Tài liệu này cụ thể hóa [kế hoạch UI](design-implementation-plan.md), không thay đổi [quy tắc nghiệp vụ hiện hành](../business/business-rules.md) hoặc schema/API.
 
 ## 1. Nguyên tắc áp dụng
 

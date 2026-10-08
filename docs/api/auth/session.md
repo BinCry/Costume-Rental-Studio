@@ -66,7 +66,7 @@ transaction is committing.
 Revoking refresh tokens does not immediately invalidate already-issued stateless access JWTs;
 they last up to 15 minutes. Middleware rechecks user status on every authenticated request.
 Password recovery is available through `/forgot-password`, `/verify-reset-otp` and `/reset-password`.
-Google login is documented in [Google OAuth login](auth-google.md).
+Google login is documented in [Google OAuth login](google-oauth.md).
 
 ## Change password
 
