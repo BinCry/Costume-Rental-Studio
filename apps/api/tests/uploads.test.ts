@@ -14,6 +14,7 @@ process.env.JWT_ACCESS_SECRET = 'upload-test-key-only-not-for-production-12345';
 const mocks = vi.hoisted(() => ({
   actor: vi.fn(),
   transaction: vi.fn(),
+  queryRaw: vi.fn(),
   model: { findUnique: vi.fn() },
   variant: { findUnique: vi.fn() },
   media: { findUnique: vi.fn(), count: vi.fn(), create: vi.fn(), delete: vi.fn() },
@@ -90,10 +91,12 @@ beforeEach(() => {
   });
   mocks.promoteStoredImage.mockResolvedValue(undefined);
   mocks.media.count.mockResolvedValue(0);
+  mocks.media.findUnique.mockResolvedValue(null);
   mocks.deleteStoredObject.mockResolvedValue(undefined);
   mocks.transaction.mockImplementation((callback: (transaction: object) => Promise<unknown>) =>
-    callback({ costumeMedia: mocks.media, outboxEvent: mocks.outbox }),
+    callback({ costumeMedia: mocks.media, outboxEvent: mocks.outbox, $queryRaw: mocks.queryRaw }),
   );
+  mocks.queryRaw.mockResolvedValue([{ id: modelId }]);
 });
 
 describe('Upload API', () => {
@@ -210,6 +213,152 @@ describe('Upload API', () => {
       .expect(409);
 
     expect(response.body.error.code).toBe('MEDIA_ALREADY_REGISTERED');
+  });
+
+  it('checks the image limit inside the owner-locked transaction for simultaneous uploads', async () => {
+    let count = 9;
+    let queue = Promise.resolve();
+    let promotions = 0;
+    let releasePromotions!: () => void;
+    const bothPromoting = new Promise<void>((resolve) => {
+      releasePromotions = resolve;
+    });
+    mocks.promoteStoredImage.mockImplementation(async () => {
+      if (++promotions === 2) releasePromotions();
+      await bothPromoting;
+    });
+    mocks.media.count.mockImplementation(() => Promise.resolve(count));
+    mocks.media.create.mockImplementation(({ data }) => {
+      count++;
+      return Promise.resolve({ id: `media-${count}`, ...data });
+    });
+    // Model the database's per-owner serialization, not an in-process service mutex.
+    mocks.transaction.mockImplementation((callback: (transaction: object) => Promise<unknown>) => {
+      const result = queue.then(() =>
+        callback({
+          costumeMedia: mocks.media,
+          $queryRaw: mocks.queryRaw,
+        }),
+      );
+      queue = result.then(
+        () => undefined,
+        () => undefined,
+      );
+      return result;
+    });
+    const accessToken = await token();
+    const responses = await Promise.all(
+      [7, 8].map((suffix) =>
+        request(createApp())
+          .post(`/api/v1/catalog/models/${modelId}/media`)
+          .auth(accessToken, { type: 'bearer' })
+          .send({
+            uploadKey: `catalog-staging/models/${modelId}/10000000-0000-4000-8000-00000000000${suffix}.jpg`,
+          }),
+      ),
+    );
+    expect(responses.map((response) => response.status).sort()).toEqual([201, 409]);
+    expect(count).toBe(10);
+    expect(mocks.queryRaw).toHaveBeenCalledTimes(2);
+    const lockSql = mocks.queryRaw.mock.calls[0]?.[0] as TemplateStringsArray;
+    expect(lockSql.join('')).toContain('FOR UPDATE');
+  });
+
+  it('registers a source upload only once even when finalized simultaneously', async () => {
+    const uploadKey = `catalog-staging/models/${modelId}/10000000-0000-4000-8000-000000000007.jpg`;
+    let registered: object | null = null;
+    let queue = Promise.resolve();
+    let promotions = 0;
+    let releasePromotions!: () => void;
+    const bothPromoting = new Promise<void>((resolve) => {
+      releasePromotions = resolve;
+    });
+    mocks.promoteStoredImage.mockImplementation(async () => {
+      if (++promotions === 2) releasePromotions();
+      await bothPromoting;
+    });
+    mocks.media.findUnique.mockImplementation(() => Promise.resolve(registered));
+    mocks.media.create.mockImplementation(({ data }) => {
+      registered = { id: 'media-id', ...data };
+      return Promise.resolve(registered);
+    });
+    mocks.transaction.mockImplementation((callback: (transaction: object) => Promise<unknown>) => {
+      const result = queue.then(() =>
+        callback({
+          costumeMedia: mocks.media,
+          $queryRaw: mocks.queryRaw,
+        }),
+      );
+      queue = result.then(
+        () => undefined,
+        () => undefined,
+      );
+      return result;
+    });
+    const accessToken = await token();
+    const responses = await Promise.all(
+      [1, 2].map(() =>
+        request(createApp())
+          .post(`/api/v1/catalog/models/${modelId}/media`)
+          .auth(accessToken, { type: 'bearer' })
+          .send({ uploadKey }),
+      ),
+    );
+    expect(responses.map((response) => response.status).sort()).toEqual([201, 409]);
+    expect(mocks.media.create).toHaveBeenCalledTimes(1);
+    expect(mocks.media.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ sourceUploadKey: uploadKey }),
+      }),
+    );
+    const created = responses.find((response) => response.status === 201);
+    expect(created?.body.data).not.toHaveProperty('sourceUploadKey');
+  });
+
+  it('rejects replaying an already registered upload before reading storage', async () => {
+    mocks.media.findUnique.mockResolvedValue({ id: 'existing-media' });
+    await request(createApp())
+      .post(`/api/v1/catalog/models/${modelId}/media`)
+      .auth(await token(), { type: 'bearer' })
+      .send({
+        uploadKey: `catalog-staging/models/${modelId}/10000000-0000-4000-8000-000000000007.jpg`,
+      })
+      .expect(409);
+    expect(mocks.promoteStoredImage).not.toHaveBeenCalled();
+    expect(mocks.media.create).not.toHaveBeenCalled();
+  });
+
+  it('locks the variant owner and rejects a limit reached during promotion', async () => {
+    const variantId = '10000000-0000-4000-8000-000000000004';
+    mocks.variant.findUnique.mockResolvedValue({ id: variantId });
+    mocks.media.count.mockResolvedValueOnce(4).mockResolvedValueOnce(5);
+    await request(createApp())
+      .post(`/api/v1/catalog/variants/${variantId}/media`)
+      .auth(await token(), { type: 'bearer' })
+      .send({
+        uploadKey: `catalog-staging/variants/${variantId}/10000000-0000-4000-8000-000000000007.jpg`,
+      })
+      .expect(409);
+    const lockSql = mocks.queryRaw.mock.calls[0]?.[0] as TemplateStringsArray;
+    expect(lockSql.join('')).toContain('costume_variants');
+    expect(mocks.media.create).not.toHaveBeenCalled();
+    // Remove only this rejected request's random final object, never the staging key.
+    expect(mocks.deleteStoredObject).toHaveBeenCalledWith(
+      expect.stringContaining(`catalog/variants/${variantId}/`),
+    );
+  });
+
+  it('does not delete a potentially committed final image after an ambiguous database error', async () => {
+    mocks.transaction.mockRejectedValue(new Error('connection lost while committing'));
+    await request(createApp())
+      .post(`/api/v1/catalog/models/${modelId}/media`)
+      .auth(await token(), { type: 'bearer' })
+      .send({
+        uploadKey: `catalog-staging/models/${modelId}/10000000-0000-4000-8000-000000000007.jpg`,
+      })
+      .expect(500);
+    expect(mocks.promoteStoredImage).toHaveBeenCalledTimes(1);
+    expect(mocks.deleteStoredObject).not.toHaveBeenCalled();
   });
 
   it('deletes media and records the storage deletion in the outbox atomically', async () => {
