@@ -1,16 +1,53 @@
 import { AppError } from '../../common/errors/app-error.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 
+export const authenticatedActorSelect = {
+  id: true,
+  email: true,
+  phone: true,
+  displayName: true,
+  avatarUrl: true,
+  emailVerifiedAt: true,
+  status: true,
+  employee: {
+    select: {
+      employmentStatus: true,
+    },
+  },
+  roleAssignments: {
+    select: {
+      branchId: true,
+      branch: {
+        select: {
+          status: true,
+        },
+      },
+      role: {
+        select: {
+          roleCode: true,
+          name: true,
+          actorGroup: true,
+          isActive: true,
+          rolePermissions: {
+            select: {
+              permission: {
+                select: {
+                  code: true,
+                  module: true,
+                  action: true,
+                  scope: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+} satisfies Prisma.UserSelect;
+
 export type AuthenticatedActor = Prisma.UserGetPayload<{
-  include: {
-    employee: true;
-    roleAssignments: {
-      include: {
-        branch: true;
-        role: { include: { rolePermissions: { include: { permission: true } } } };
-      };
-    };
-  };
+  select: typeof authenticatedActorSelect;
 }>;
 
 export function requireActor(actor: AuthenticatedActor | undefined): AuthenticatedActor {

@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { AppError } from '../../common/errors/app-error.js';
 import { env } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
-import { requireActor } from './authorization.js';
+import { authenticatedActorSelect, requireActor } from './authorization.js';
 
 export const requireAuthentication: RequestHandler = async (request, response, next) => {
   const match = /^Bearer ([^\s]+)$/i.exec(request.headers.authorization ?? '');
@@ -31,15 +31,7 @@ export const requireAuthentication: RequestHandler = async (request, response, n
   // Read permissions on every request: role changes and account locks take effect immediately.
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: {
-      employee: true,
-      roleAssignments: {
-        include: {
-          branch: true,
-          role: { include: { rolePermissions: { include: { permission: true } } } },
-        },
-      },
-    },
+    select: authenticatedActorSelect,
   });
   response.locals.actor = requireActor(user ?? undefined);
   next();

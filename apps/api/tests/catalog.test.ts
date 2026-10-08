@@ -78,6 +78,7 @@ vi.mock('../src/database/prisma.js', () => ({
 
 const { createApp } = await import('../src/app.js');
 const { env } = await import('../src/config/env.js');
+const { authenticatedActorSelect } = await import('../src/modules/auth/authorization.js');
 const actorId = '10000000-0000-4000-8000-000000000001';
 const categoryId = '10000000-0000-4000-8000-000000000002';
 const modelId = '10000000-0000-4000-8000-000000000003';
@@ -188,6 +189,18 @@ beforeEach(() => {
 });
 
 describe('Catalog API', () => {
+  it('loads only fields required by authentication and authorization', async () => {
+    await request(createApp())
+      .get(`/api/v1/catalog/categories/${categoryId}`)
+      .auth(await token(), { type: 'bearer' })
+      .expect(200);
+
+    expect(mocks.actor).toHaveBeenCalledWith({
+      where: { id: actorId },
+      select: authenticatedActorSelect,
+    });
+  });
+
   it.each(['SALES', 'INVENTORY'])(
     'allows %s staff at an active branch to read shared catalog data',
     async (roleCode) => {

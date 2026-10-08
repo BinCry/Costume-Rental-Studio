@@ -26,8 +26,10 @@ vi.mock('../src/database/prisma.js', () => ({
   },
 }));
 const { createApp } = await import('../src/app.js');
+const { authenticatedActorSelect } = await import('../src/modules/auth/authorization.js');
 const { login, refresh, logout, listSessions, revokeAllSessions, revokeSession } =
   await import('../src/modules/auth/session/session.service.js');
+const { issueAccessToken } = await import('../src/modules/auth/token.service.js');
 const email = 'customer@example.com';
 const password = 'a-long-enough-test-password';
 const userId = '10000000-0000-4000-8000-000000000001';
@@ -103,8 +105,8 @@ beforeEach(() => {
     ],
     internalNote: 'private',
   };
-  mocks.findUser.mockImplementation(({ where }: { where: { email?: string } }) =>
-    where.email === email ? account : null,
+  mocks.findUser.mockImplementation(({ where }: { where: { email?: string; id?: string } }) =>
+    where.email === email || where.id === userId ? account : null,
   );
   mocks.updateUser.mockResolvedValue({ count: 1 });
   let queue = Promise.resolve();
@@ -215,6 +217,31 @@ describe('session lifecycle', () => {
   });
 });
 describe('auth HTTP contract', () => {
+  it('returns the current user using the minimal authenticated actor query', async () => {
+    const response = await request(createApp())
+      .get('/api/v1/auth/me')
+      .auth(await issueAccessToken(userId), { type: 'bearer' })
+      .expect(200);
+
+    expect(response.body.data).toMatchObject({
+      id: userId,
+      displayName: 'Customer',
+      email,
+      roles: [
+        {
+          roleCode: 'CUSTOMER',
+          name: 'Customer',
+          actorGroup: 'CUSTOMER',
+          permissions: [{ code: 'orders.read.own', scope: 'OWN' }],
+        },
+      ],
+    });
+    expect(mocks.findUser).toHaveBeenLastCalledWith({
+      where: { id: userId },
+      select: authenticatedActorSelect,
+    });
+  });
+
   it('logs in by email and sets HttpOnly cookie without refresh token JSON', async () => {
     const response = await request(createApp())
       .post('/api/v1/auth/login')
