@@ -11,7 +11,7 @@ const { createApp } = await import('../src/app.js');
 interface OpenApiResponse {
   openapi: string;
   info: { title: string };
-  paths: Record<string, unknown>;
+  paths: Record<string, Record<string, unknown>>;
 }
 
 describe('OpenAPI documentation', () => {
@@ -22,6 +22,14 @@ describe('OpenAPI documentation', () => {
     expect(document.info.title).toBe('Costume Rental Studio API');
     expect(document.paths['/catalog/variants/{id}']).toBeDefined();
     expect(document.paths['/uploads/presign']).toBeDefined();
+    for (const path of [
+      '/catalog/categories/{id}',
+      '/catalog/models/{id}',
+      '/catalog/variants/{id}',
+      '/catalog/accessories/{id}',
+    ]) {
+      expect(document.paths[path]?.delete).toBeDefined();
+    }
   });
 
   it('serves Swagger UI', async () => {

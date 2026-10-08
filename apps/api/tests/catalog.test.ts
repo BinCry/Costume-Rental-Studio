@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
     create: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),
+    delete: vi.fn(),
   },
   model: {
     findUnique: vi.fn(),
@@ -28,6 +29,7 @@ const mocks = vi.hoisted(() => ({
     create: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),
+    delete: vi.fn(),
   },
   variant: {
     findUnique: vi.fn(),
@@ -36,6 +38,7 @@ const mocks = vi.hoisted(() => ({
     create: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),
+    delete: vi.fn(),
   },
   accessory: {
     findUnique: vi.fn(),
@@ -43,6 +46,8 @@ const mocks = vi.hoisted(() => ({
     create: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),
+    count: vi.fn(),
+    delete: vi.fn(),
   },
   media: {
     findUnique: vi.fn(),
@@ -50,7 +55,11 @@ const mocks = vi.hoisted(() => ({
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
+    count: vi.fn(),
   },
+  unit: { count: vi.fn() },
+  orderItem: { count: vi.fn() },
+  rentalItemAccessory: { count: vi.fn() },
 }));
 vi.mock('../src/database/prisma.js', () => ({
   prisma: {
@@ -61,6 +70,9 @@ vi.mock('../src/database/prisma.js', () => ({
     costumeVariant: mocks.variant,
     costumeModelAccessory: mocks.accessory,
     costumeMedia: mocks.media,
+    costumeUnit: mocks.unit,
+    rentalOrderItem: mocks.orderItem,
+    rentalItemAccessory: mocks.rentalItemAccessory,
   },
 }));
 
@@ -144,6 +156,18 @@ beforeEach(() => {
   mocks.media.update.mockImplementation(({ data }: { data: object }) =>
     Promise.resolve({ id: mediaId, ...data }),
   );
+  mocks.category.count.mockResolvedValue(0);
+  mocks.model.count.mockResolvedValue(0);
+  mocks.variant.count.mockResolvedValue(0);
+  mocks.accessory.count.mockResolvedValue(0);
+  mocks.media.count.mockResolvedValue(0);
+  mocks.unit.count.mockResolvedValue(0);
+  mocks.orderItem.count.mockResolvedValue(0);
+  mocks.rentalItemAccessory.count.mockResolvedValue(0);
+  mocks.category.delete.mockResolvedValue({ id: categoryId });
+  mocks.model.delete.mockResolvedValue({ id: modelId });
+  mocks.variant.delete.mockResolvedValue({ id: variantId });
+  mocks.accessory.delete.mockResolvedValue({ id: accessoryId });
   mocks.queryRaw.mockResolvedValue([{ id: categoryId, status: 'ACTIVE' }]);
   mocks.transaction.mockImplementation(
     (input: Promise<unknown>[] | ((transaction: object) => Promise<unknown>)) =>
@@ -156,6 +180,9 @@ beforeEach(() => {
             costumeVariant: mocks.variant,
             costumeModelAccessory: mocks.accessory,
             costumeMedia: mocks.media,
+            costumeUnit: mocks.unit,
+            rentalOrderItem: mocks.orderItem,
+            rentalItemAccessory: mocks.rentalItemAccessory,
           }),
   );
 });
@@ -331,6 +358,68 @@ describe('Catalog API', () => {
     expect(mocks.accessory.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { isActive: false } }),
     );
+  });
+
+  it('deletes unused catalog entities without cascading', async () => {
+    const accessToken = await token();
+    await request(createApp())
+      .delete(`/api/v1/catalog/categories/${categoryId}`)
+      .auth(accessToken, { type: 'bearer' })
+      .expect(204);
+    await request(createApp())
+      .delete(`/api/v1/catalog/models/${modelId}`)
+      .auth(accessToken, { type: 'bearer' })
+      .expect(204);
+    await request(createApp())
+      .delete(`/api/v1/catalog/variants/${variantId}`)
+      .auth(accessToken, { type: 'bearer' })
+      .expect(204);
+    await request(createApp())
+      .delete(`/api/v1/catalog/accessories/${accessoryId}`)
+      .auth(accessToken, { type: 'bearer' })
+      .expect(204);
+
+    expect(mocks.category.delete).toHaveBeenCalledWith({ where: { id: categoryId } });
+    expect(mocks.model.delete).toHaveBeenCalledWith({ where: { id: modelId } });
+    expect(mocks.variant.delete).toHaveBeenCalledWith({ where: { id: variantId } });
+    expect(mocks.accessory.delete).toHaveBeenCalledWith({ where: { id: accessoryId } });
+  });
+
+  it.each([
+    ['categories', categoryId, mocks.category.count, 'CATEGORY_IN_USE'],
+    ['categories', categoryId, mocks.model.count, 'CATEGORY_IN_USE'],
+    ['models', modelId, mocks.variant.count, 'MODEL_IN_USE'],
+    ['models', modelId, mocks.accessory.count, 'MODEL_IN_USE'],
+    ['models', modelId, mocks.media.count, 'MODEL_IN_USE'],
+    ['variants', variantId, mocks.media.count, 'VARIANT_IN_USE'],
+    ['variants', variantId, mocks.unit.count, 'VARIANT_IN_USE'],
+    ['variants', variantId, mocks.orderItem.count, 'VARIANT_IN_USE'],
+    ['accessories', accessoryId, mocks.rentalItemAccessory.count, 'ACCESSORY_IN_USE'],
+  ] as const)('returns 409 instead of deleting an in-use %s', async (path, id, count, code) => {
+    count.mockResolvedValueOnce(1);
+    const response = await request(createApp())
+      .delete(`/api/v1/catalog/${path}/${id}`)
+      .auth(await token(), { type: 'bearer' })
+      .expect(409);
+    expect((response.body as CatalogResponse).error.code).toBe(code);
+  });
+
+  it.each([
+    ['categories', categoryId, 'CATEGORY_NOT_FOUND'],
+    ['models', modelId, 'MODEL_NOT_FOUND'],
+    ['variants', variantId, 'VARIANT_NOT_FOUND'],
+    ['accessories', accessoryId, 'ACCESSORY_NOT_FOUND'],
+  ] as const)('returns 404 when deleting a missing %s', async (path, id, code) => {
+    mocks.queryRaw.mockResolvedValueOnce([{ lock: '' }]).mockResolvedValueOnce([]);
+    const response = await request(createApp())
+      .delete(`/api/v1/catalog/${path}/${id}`)
+      .auth(await token(), { type: 'bearer' })
+      .expect(404);
+    expect((response.body as CatalogResponse).error.code).toBe(code);
+    expect(mocks.category.delete).not.toHaveBeenCalled();
+    expect(mocks.model.delete).not.toHaveBeenCalled();
+    expect(mocks.variant.delete).not.toHaveBeenCalled();
+    expect(mocks.accessory.delete).not.toHaveBeenCalled();
   });
 
   it('blocks deactivating a model while it has active variants', async () => {

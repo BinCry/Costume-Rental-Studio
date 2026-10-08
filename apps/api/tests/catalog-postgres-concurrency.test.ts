@@ -5,7 +5,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import type { AuthenticatedActor } from '../src/modules/auth/authorization.js';
 
 const databaseTestUrl = process.env.DATABASE_TEST_URL;
-const runDatabaseTests = process.env.RUN_DATABASE_TESTS === '1' || Boolean(databaseTestUrl);
+const databaseTestsRequested = process.env.RUN_DATABASE_TESTS === '1';
+if (databaseTestsRequested && !databaseTestUrl)
+  throw new Error('DATABASE_TEST_URL is required; PostgreSQL tests must not use DATABASE_URL');
+const runDatabaseTests = Boolean(databaseTestUrl);
 
 if (databaseTestUrl) process.env.DATABASE_URL = databaseTestUrl;
 
@@ -24,6 +27,10 @@ describe.skipIf(!runDatabaseTests)('Catalog media concurrency with PostgreSQL', 
   let createMedia: Awaited<ReturnType<typeof loadCatalogService>>['createMedia'];
   let createCategory: Awaited<ReturnType<typeof loadCatalogService>>['createCategory'];
   let createCatalogModel: Awaited<ReturnType<typeof loadCatalogService>>['createModel'];
+  let deleteAccessory: Awaited<ReturnType<typeof loadCatalogService>>['deleteAccessory'];
+  let deleteCategory: Awaited<ReturnType<typeof loadCatalogService>>['deleteCategory'];
+  let deleteModel: Awaited<ReturnType<typeof loadCatalogService>>['deleteModel'];
+  let deleteVariant: Awaited<ReturnType<typeof loadCatalogService>>['deleteVariant'];
   let setCategoryStatus: Awaited<ReturnType<typeof loadCatalogService>>['setCategoryStatus'];
   let setModelStatus: Awaited<ReturnType<typeof loadCatalogService>>['setModelStatus'];
   let env: Awaited<ReturnType<typeof loadEnv>>['env'];
@@ -55,6 +62,10 @@ describe.skipIf(!runDatabaseTests)('Catalog media concurrency with PostgreSQL', 
       createCategory,
       createMedia,
       createModel: createCatalogModel,
+      deleteAccessory,
+      deleteCategory,
+      deleteModel,
+      deleteVariant,
       setCategoryStatus,
       setModelStatus,
     } = await loadCatalogService());
@@ -355,4 +366,171 @@ describe.skipIf(!runDatabaseTests)('Catalog media concurrency with PostgreSQL', 
       }),
     ).toBe(1);
   });
+
+  it('serializes category deletion with concurrent child creation', async () => {
+    const parent = await prisma.costumeCategory.create({
+      data: { name: `Delete race parent ${randomUUID()}`, parentId: categoryId },
+    });
+    descendantCategoryIds.push(parent.id);
+
+    const [deletion, creation] = await Promise.allSettled([
+      deleteCategory(actor, parent.id),
+      createCategory(actor, {
+        parentId: parent.id,
+        name: `Delete race child ${randomUUID()}`,
+      }),
+    ]);
+
+    expect([deletion.status, creation.status].sort()).toEqual(['fulfilled', 'rejected']);
+    if (deletion.status === 'fulfilled') {
+      expect(creation).toMatchObject({
+        reason: { code: 'INVALID_PARENT', statusCode: 400 },
+      });
+      expect(await prisma.costumeCategory.count({ where: { id: parent.id } })).toBe(0);
+      descendantCategoryIds.splice(descendantCategoryIds.indexOf(parent.id), 1);
+      return;
+    }
+
+    expect(deletion).toMatchObject({
+      reason: { code: 'CATEGORY_IN_USE', statusCode: 409 },
+    });
+    expect(creation.status).toBe('fulfilled');
+    if (creation.status === 'fulfilled') descendantCategoryIds.push(creation.value.id);
+  });
+
+  it('deletes only unused catalog records and preserves rental history guards', async () => {
+    const marker = randomUUID();
+    const emptyCategory = await prisma.costumeCategory.create({
+      data: { name: `Delete empty ${marker}` },
+    });
+    await deleteCategory(actor, emptyCategory.id);
+    expect(await prisma.costumeCategory.count({ where: { id: emptyCategory.id } })).toBe(0);
+
+    const child = await prisma.costumeCategory.create({
+      data: { name: `Delete child ${marker}`, parentId: categoryId },
+    });
+    descendantCategoryIds.push(child.id);
+    await expect(deleteCategory(actor, categoryId)).rejects.toMatchObject({
+      code: 'CATEGORY_IN_USE',
+      statusCode: 409,
+    });
+
+    const model = await prisma.costumeModel.create({
+      data: {
+        categoryId: child.id,
+        modelCode: `DELETE-${marker}`,
+        name: `Delete model ${marker}`,
+      },
+    });
+    modelIds.push(model.id);
+    const variant = await prisma.costumeVariant.create({
+      data: {
+        modelId: model.id,
+        variantCode: `DELETE-V-${marker}`,
+        sizeCode: 'M',
+        colorCode: 'BLACK',
+        dailyRentalPriceVnd: 100n,
+        depositAmountVnd: 100n,
+        replacementValueVnd: 200n,
+      },
+    });
+    const accessory = await prisma.costumeModelAccessory.create({
+      data: { modelId: model.id, name: `Delete accessory ${marker}` },
+    });
+    let userId: string | undefined;
+    let branchId: string | undefined;
+    let orderId: string | undefined;
+    let orderDeleted = false;
+    let accessoryDeleted = false;
+    let variantDeleted = false;
+    try {
+      const user = await prisma.user.create({
+        data: {
+          email: `delete-${marker}@example.test`,
+          displayName: 'Delete test customer',
+          status: 'ACTIVE',
+          customer: { create: { customerCode: `DELETE-C-${marker}` } },
+        },
+      });
+      userId = user.id;
+      const branch = await prisma.branch.create({
+        data: {
+          branchCode: `DELETE-B-${marker}`,
+          name: 'Delete test branch',
+          address: 'Integration test only',
+        },
+      });
+      branchId = branch.id;
+      const policy = await prisma.rentalPolicyVersion.findFirst({
+        orderBy: { effectiveFrom: 'desc' },
+      });
+      if (!policy) throw new Error('A rental policy is required for the catalog delete test');
+      const order = await prisma.rentalOrder.create({
+        data: {
+          orderCode: `DELETE-O-${marker}`,
+          customerUserId: user.id,
+          pickupBranchId: branch.id,
+          channel: 'TEST',
+          plannedStartAt: new Date('2026-12-01T00:00:00.000Z'),
+          plannedDueAt: new Date('2026-12-02T00:00:00.000Z'),
+          policyVersionId: policy.id,
+          createdBy: user.id,
+          items: {
+            create: {
+              variantId: variant.id,
+              occupiedFrom: new Date('2026-12-01T00:00:00.000Z'),
+              occupiedUntil: new Date('2026-12-02T00:00:00.000Z'),
+              billableDays: 1,
+              unitDailyPriceVnd: 100n,
+              unitDepositVnd: 100n,
+              accessories: {
+                create: {
+                  modelAccessoryId: accessory.id,
+                  accessoryName: accessory.name,
+                  quantityOut: 1,
+                  unitReplacementValueVnd: 50n,
+                },
+              },
+            },
+          },
+        },
+      });
+      orderId = order.id;
+
+      await expect(deleteAccessory(actor, accessory.id)).rejects.toMatchObject({
+        code: 'ACCESSORY_IN_USE',
+        statusCode: 409,
+      });
+      await expect(deleteVariant(actor, variant.id)).rejects.toMatchObject({
+        code: 'VARIANT_IN_USE',
+        statusCode: 409,
+      });
+      await expect(deleteModel(actor, model.id)).rejects.toMatchObject({
+        code: 'MODEL_IN_USE',
+        statusCode: 409,
+      });
+
+      await prisma.rentalOrder.delete({ where: { id: order.id } });
+      orderDeleted = true;
+      await deleteAccessory(actor, accessory.id);
+      accessoryDeleted = true;
+      await deleteVariant(actor, variant.id);
+      variantDeleted = true;
+    } finally {
+      if (!orderDeleted && orderId) await prisma.rentalOrder.deleteMany({ where: { id: orderId } });
+      if (!accessoryDeleted)
+        await prisma.costumeModelAccessory.deleteMany({ where: { id: accessory.id } });
+      if (!variantDeleted) await prisma.costumeVariant.deleteMany({ where: { id: variant.id } });
+      if (userId) {
+        await prisma.customer.deleteMany({ where: { userId } });
+        await prisma.user.deleteMany({ where: { id: userId } });
+      }
+      if (branchId) await prisma.branch.deleteMany({ where: { id: branchId } });
+    }
+
+    await deleteModel(actor, model.id);
+    modelIds.splice(modelIds.indexOf(model.id), 1);
+    await deleteCategory(actor, child.id);
+    descendantCategoryIds.splice(descendantCategoryIds.indexOf(child.id), 1);
+  }, 15_000);
 });
