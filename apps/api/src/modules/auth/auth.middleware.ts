@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { AppError } from '../../common/errors/app-error.js';
 import { env } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
+import { requireActor } from './authorization.js';
 
 export const requireAuthentication: RequestHandler = async (request, response, next) => {
   const match = /^Bearer ([^\s]+)$/i.exec(request.headers.authorization ?? '');
@@ -40,9 +41,6 @@ export const requireAuthentication: RequestHandler = async (request, response, n
       },
     },
   });
-  if (user?.status !== 'ACTIVE') {
-    throw new AppError(401, 'ACCOUNT_UNAVAILABLE', 'Account is unavailable');
-  }
-  response.locals.actor = user;
+  response.locals.actor = requireActor(user ?? undefined);
   next();
 };

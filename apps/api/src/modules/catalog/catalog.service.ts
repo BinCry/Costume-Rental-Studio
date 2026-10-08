@@ -9,6 +9,7 @@ import {
 import { env } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 import { prisma } from '../../database/prisma.js';
+import type { Prisma } from '../../generated/prisma/client.js';
 import { assertPermission, type AuthenticatedActor } from '../auth/authorization.js';
 import { mediaDeleteEventType } from '../uploads/media-maintenance.service.js';
 import { catalogMediaKey } from '../uploads/upload.service.js';
@@ -30,8 +31,10 @@ function read(actor: AuthenticatedActor) {
 function manage(actor: AuthenticatedActor) {
   assertPermission(actor, { module: 'catalog', action: 'manage' });
 }
-function mediaResponse<T extends { objectKey: string }>(item: T) {
-  return { ...item, mediaUrl: publicObjectUrl(item.objectKey) };
+function mediaResponse<T extends { objectKey: string; sourceUploadKey?: string | null }>(item: T) {
+  const { sourceUploadKey, ...publicFields } = item;
+  void sourceUploadKey;
+  return { ...publicFields, mediaUrl: publicObjectUrl(item.objectKey) };
 }
 function isUniqueConstraintError(error: unknown) {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
@@ -56,14 +59,31 @@ function variantOrder(query: ListCatalogInput) {
       : 'createdAt']: query.sortOrder,
   };
 }
-async function assertCategoryActive(categoryId: string) {
-  const category = await prisma.costumeCategory.findUnique({ where: { id: categoryId } });
-  if (category?.status !== 'ACTIVE')
+async function lockActiveCategory(transaction: Prisma.TransactionClient, categoryId: string) {
+  const categories = await transaction.$queryRaw<{ id: string; status: string }[]>`
+    SELECT id, status
+    FROM costume_categories
+    WHERE id = ${categoryId}::uuid
+    FOR UPDATE
+  `;
+  if (categories[0]?.status !== 'ACTIVE')
     throw new AppError(400, 'INVALID_CATEGORY', 'Category must exist and be active');
 }
-async function assertModelActive(modelId: string) {
-  const model = await prisma.costumeModel.findUnique({ where: { id: modelId } });
-  if (model?.status !== 'ACTIVE')
+async function lockCatalogHierarchy(transaction: Prisma.TransactionClient) {
+  // Serialize parent changes and activation with subtree status changes. Row locks alone cannot
+  // prevent recursive snapshots or parent IDs read before a transaction from becoming stale.
+  await transaction.$queryRaw<{ lock: string }[]>`
+    SELECT pg_advisory_xact_lock(112835284, 1)::text AS lock
+  `;
+}
+async function lockActiveModel(transaction: Prisma.TransactionClient, modelId: string) {
+  const models = await transaction.$queryRaw<{ id: string; status: string }[]>`
+    SELECT id, status
+    FROM costume_models
+    WHERE id = ${modelId}::uuid
+    FOR UPDATE
+  `;
+  if (models[0]?.status !== 'ACTIVE')
     throw new AppError(400, 'INVALID_MODEL', 'Model must exist and be active');
 }
 
@@ -94,12 +114,18 @@ export async function getCategory(actor: AuthenticatedActor, id: string) {
 }
 export async function createCategory(actor: AuthenticatedActor, input: CategoryInput) {
   manage(actor);
-  if (input.parentId) {
-    const parent = await prisma.costumeCategory.findUnique({ where: { id: input.parentId } });
-    if (parent?.status !== 'ACTIVE')
-      throw new AppError(400, 'INVALID_PARENT', 'Parent category must exist and be active');
-  }
-  return prisma.costumeCategory.create({ data: input });
+  if (!input.parentId) return prisma.costumeCategory.create({ data: input });
+  return prisma.$transaction(async (transaction) => {
+    await lockCatalogHierarchy(transaction);
+    try {
+      await lockActiveCategory(transaction, input.parentId!);
+    } catch (error: unknown) {
+      if (error instanceof AppError)
+        throw new AppError(400, 'INVALID_PARENT', 'Parent category must exist and be active');
+      throw error;
+    }
+    return transaction.costumeCategory.create({ data: input });
+  });
 }
 export async function updateCategory(
   actor: AuthenticatedActor,
@@ -111,21 +137,35 @@ export async function updateCategory(
   if (!item) throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Category not found');
   if (input.parentId === id)
     throw new AppError(400, 'INVALID_PARENT', 'Category cannot be its own parent');
-  if (input.parentId) {
-    const parent = await prisma.costumeCategory.findUnique({ where: { id: input.parentId } });
-    if (parent?.status !== 'ACTIVE')
-      throw new AppError(400, 'INVALID_PARENT', 'Parent category must exist and be active');
-    let cursor = parent;
-    while (cursor.parentId) {
+  if (input.parentId === undefined)
+    return prisma.costumeCategory.update({ where: { id }, data: input });
+  const parentId = input.parentId;
+  return prisma.$transaction(async (transaction) => {
+    await lockCatalogHierarchy(transaction);
+    if (parentId) {
+      try {
+        await lockActiveCategory(transaction, parentId);
+      } catch (error: unknown) {
+        if (error instanceof AppError)
+          throw new AppError(400, 'INVALID_PARENT', 'Parent category must exist and be active');
+        throw error;
+      }
+    }
+    await transaction.$queryRaw<{ id: string }[]>`
+      SELECT id FROM costume_categories WHERE id = ${id}::uuid FOR UPDATE
+    `;
+    let cursor = parentId
+      ? await transaction.costumeCategory.findUnique({ where: { id: parentId } })
+      : null;
+    while (cursor?.parentId) {
       if (cursor.parentId === id)
         throw new AppError(400, 'CATEGORY_CYCLE', 'Category parent cannot create a cycle');
-      const next: Awaited<ReturnType<typeof prisma.costumeCategory.findUnique>> =
-        await prisma.costumeCategory.findUnique({ where: { id: cursor.parentId } });
-      if (!next) break;
-      cursor = next;
+      cursor = await transaction.costumeCategory.findUnique({
+        where: { id: cursor.parentId },
+      });
     }
-  }
-  return prisma.costumeCategory.update({ where: { id }, data: input });
+    return transaction.costumeCategory.update({ where: { id }, data: input });
+  });
 }
 export async function setCategoryStatus(
   actor: AuthenticatedActor,
@@ -135,14 +175,82 @@ export async function setCategoryStatus(
   manage(actor);
   const item = await prisma.costumeCategory.findUnique({ where: { id } });
   if (!item) throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Category not found');
-  if (status === 'INACTIVE') {
-    const activeModels = await prisma.costumeModel.count({
-      where: { categoryId: id, status: 'ACTIVE' },
+  if (status === 'ACTIVE') {
+    return prisma.$transaction(async (transaction) => {
+      await lockCatalogHierarchy(transaction);
+      const current = await transaction.costumeCategory.findUnique({ where: { id } });
+      if (!current) throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Category not found');
+      if (current.parentId) {
+        try {
+          await lockActiveCategory(transaction, current.parentId);
+        } catch (error: unknown) {
+          if (error instanceof AppError)
+            throw new AppError(400, 'INVALID_PARENT', 'Parent category must exist and be active');
+          throw error;
+        }
+      }
+      return transaction.costumeCategory.update({ where: { id }, data: { status } });
     });
-    if (activeModels)
-      throw new AppError(409, 'CATEGORY_HAS_ACTIVE_MODELS', 'Deactivate active models first');
   }
-  return prisma.costumeCategory.update({ where: { id }, data: { status } });
+
+  return prisma.$transaction(async (transaction) => {
+    await lockCatalogHierarchy(transaction);
+    const root = await transaction.$queryRaw<{ id: string }[]>`
+      SELECT id
+      FROM costume_categories
+      WHERE id = ${id}::uuid
+      FOR UPDATE
+    `;
+    if (root.length === 0) throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Category not found');
+
+    const categories = await transaction.$queryRaw<{ id: string }[]>`
+      WITH RECURSIVE category_tree AS (
+        SELECT id
+        FROM costume_categories
+        WHERE id = ${id}::uuid
+
+        UNION
+
+        SELECT child.id
+        FROM costume_categories child
+        INNER JOIN category_tree parent ON child.parent_id = parent.id
+      )
+      SELECT category.id
+      FROM costume_categories category
+      INNER JOIN category_tree tree ON tree.id = category.id
+      FOR UPDATE OF category
+    `;
+    if (categories.length === 0)
+      throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Category not found');
+
+    const categoryIds = categories.map((category) => category.id);
+    await transaction.$queryRaw<{ id: string }[]>`
+      SELECT id
+      FROM costume_models
+      WHERE category_id = ANY(${categoryIds}::uuid[])
+      FOR UPDATE
+    `;
+    await transaction.costumeModelAccessory.updateMany({
+      where: { model: { categoryId: { in: categoryIds } }, isActive: true },
+      data: { isActive: false },
+    });
+    await transaction.costumeVariant.updateMany({
+      where: { model: { categoryId: { in: categoryIds } }, status: 'ACTIVE' },
+      data: { status: 'INACTIVE' },
+    });
+    await transaction.costumeModel.updateMany({
+      where: { categoryId: { in: categoryIds }, status: 'ACTIVE' },
+      data: { status: 'INACTIVE' },
+    });
+    await transaction.costumeCategory.updateMany({
+      where: { id: { in: categoryIds }, status: 'ACTIVE' },
+      data: { status: 'INACTIVE' },
+    });
+
+    const updated = await transaction.costumeCategory.findUnique({ where: { id } });
+    if (!updated) throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Category not found');
+    return updated;
+  });
 }
 
 export async function listModels(actor: AuthenticatedActor, query: ListCatalogInput) {
@@ -178,9 +286,11 @@ export async function getModel(actor: AuthenticatedActor, id: string) {
 }
 export async function createModel(actor: AuthenticatedActor, input: ModelInput) {
   manage(actor);
-  await assertCategoryActive(input.categoryId);
-  return prisma.costumeModel.create({
-    data: { ...input, modelCode: input.modelCode.toUpperCase() },
+  return prisma.$transaction(async (transaction) => {
+    await lockActiveCategory(transaction, input.categoryId);
+    return transaction.costumeModel.create({
+      data: { ...input, modelCode: input.modelCode.toUpperCase() },
+    });
   });
 }
 export async function updateModel(actor: AuthenticatedActor, id: string, input: ModelUpdateInput) {
@@ -192,8 +302,19 @@ export async function updateModel(actor: AuthenticatedActor, id: string, input: 
   if (!item) throw new AppError(404, 'MODEL_NOT_FOUND', 'Model not found');
   if (item.variants.length > 0 && (input.modelCode || input.categoryId))
     throw new AppError(409, 'MODEL_IMMUTABLE', 'Used model code and category cannot be changed');
-  if (input.categoryId) await assertCategoryActive(input.categoryId);
-  return prisma.costumeModel.update({ where: { id }, data: input });
+  const data = {
+    ...input,
+    ...(input.modelCode === undefined ? {} : { modelCode: input.modelCode.toUpperCase() }),
+  };
+  if (!input.categoryId) return prisma.costumeModel.update({ where: { id }, data });
+  return prisma.$transaction(async (transaction) => {
+    await lockCatalogHierarchy(transaction);
+    await lockActiveCategory(transaction, input.categoryId!);
+    await transaction.$queryRaw<{ id: string }[]>`
+      SELECT id FROM costume_models WHERE id = ${id}::uuid FOR UPDATE
+    `;
+    return transaction.costumeModel.update({ where: { id }, data });
+  });
 }
 export async function setModelStatus(
   actor: AuthenticatedActor,
@@ -203,15 +324,26 @@ export async function setModelStatus(
   manage(actor);
   const item = await prisma.costumeModel.findUnique({ where: { id } });
   if (!item) throw new AppError(404, 'MODEL_NOT_FOUND', 'Model not found');
-  if (status === 'ACTIVE') await assertCategoryActive(item.categoryId);
   if (status === 'INACTIVE') {
-    const activeVariants = await prisma.costumeVariant.count({
-      where: { modelId: id, status: 'ACTIVE' },
+    return prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw<{ id: string }[]>`
+        SELECT id FROM costume_models WHERE id = ${id}::uuid FOR UPDATE
+      `;
+      const activeVariants = await transaction.costumeVariant.count({
+        where: { modelId: id, status: 'ACTIVE' },
+      });
+      if (activeVariants)
+        throw new AppError(409, 'MODEL_HAS_ACTIVE_VARIANTS', 'Deactivate active variants first');
+      return transaction.costumeModel.update({ where: { id }, data: { status } });
     });
-    if (activeVariants)
-      throw new AppError(409, 'MODEL_HAS_ACTIVE_VARIANTS', 'Deactivate active variants first');
   }
-  return prisma.costumeModel.update({ where: { id }, data: { status } });
+  return prisma.$transaction(async (transaction) => {
+    await lockCatalogHierarchy(transaction);
+    const current = await transaction.costumeModel.findUnique({ where: { id } });
+    if (!current) throw new AppError(404, 'MODEL_NOT_FOUND', 'Model not found');
+    await lockActiveCategory(transaction, current.categoryId);
+    return transaction.costumeModel.update({ where: { id }, data: { status } });
+  });
 }
 
 export async function listVariants(actor: AuthenticatedActor, query: ListCatalogInput) {
@@ -253,9 +385,11 @@ export async function getVariant(actor: AuthenticatedActor, id: string) {
 }
 export async function createVariant(actor: AuthenticatedActor, input: VariantInput) {
   manage(actor);
-  await assertModelActive(input.modelId);
-  return prisma.costumeVariant.create({
-    data: { ...input, variantCode: input.variantCode.toUpperCase() },
+  return prisma.$transaction(async (transaction) => {
+    await lockActiveModel(transaction, input.modelId);
+    return transaction.costumeVariant.create({
+      data: { ...input, variantCode: input.variantCode.toUpperCase() },
+    });
   });
 }
 export async function updateVariant(
@@ -271,12 +405,20 @@ export async function updateVariant(
   if (!item) throw new AppError(404, 'VARIANT_NOT_FOUND', 'Variant not found');
   if ((item.units.length > 0 || item.orderItems.length > 0) && (input.variantCode || input.modelId))
     throw new AppError(409, 'VARIANT_IMMUTABLE', 'Used variant code and model cannot be changed');
-  if (input.modelId) await assertModelActive(input.modelId);
   const deposit = input.depositAmountVnd ?? item.depositAmountVnd;
   const replacement = input.replacementValueVnd ?? item.replacementValueVnd;
   if (replacement < deposit)
     throw new AppError(400, 'VALIDATION_ERROR', 'Replacement value must cover deposit');
-  return prisma.costumeVariant.update({ where: { id }, data: input });
+  const data = {
+    ...input,
+    ...(input.variantCode === undefined ? {} : { variantCode: input.variantCode.toUpperCase() }),
+  };
+  if (!input.modelId) return prisma.costumeVariant.update({ where: { id }, data });
+  return prisma.$transaction(async (transaction) => {
+    await lockCatalogHierarchy(transaction);
+    await lockActiveModel(transaction, input.modelId!);
+    return transaction.costumeVariant.update({ where: { id }, data });
+  });
 }
 export async function setVariantStatus(
   actor: AuthenticatedActor,
@@ -286,8 +428,15 @@ export async function setVariantStatus(
   manage(actor);
   const item = await prisma.costumeVariant.findUnique({ where: { id } });
   if (!item) throw new AppError(404, 'VARIANT_NOT_FOUND', 'Variant not found');
-  if (status === 'ACTIVE') await assertModelActive(item.modelId);
-  return prisma.costumeVariant.update({ where: { id }, data: { status } });
+  if (status === 'INACTIVE')
+    return prisma.costumeVariant.update({ where: { id }, data: { status } });
+  return prisma.$transaction(async (transaction) => {
+    await lockCatalogHierarchy(transaction);
+    const current = await transaction.costumeVariant.findUnique({ where: { id } });
+    if (!current) throw new AppError(404, 'VARIANT_NOT_FOUND', 'Variant not found');
+    await lockActiveModel(transaction, current.modelId);
+    return transaction.costumeVariant.update({ where: { id }, data: { status } });
+  });
 }
 
 export async function listAccessories(actor: AuthenticatedActor, modelId: string) {
@@ -302,8 +451,10 @@ export async function createAccessory(
   input: AccessoryInput,
 ) {
   manage(actor);
-  await assertModelActive(modelId);
-  return prisma.costumeModelAccessory.create({ data: { ...input, modelId } });
+  return prisma.$transaction(async (transaction) => {
+    await lockActiveModel(transaction, modelId);
+    return transaction.costumeModelAccessory.create({ data: { ...input, modelId } });
+  });
 }
 export async function updateAccessory(
   actor: AuthenticatedActor,
@@ -319,6 +470,12 @@ export async function setAccessoryStatus(actor: AuthenticatedActor, id: string, 
   manage(actor);
   const item = await prisma.costumeModelAccessory.findUnique({ where: { id } });
   if (!item) throw new AppError(404, 'ACCESSORY_NOT_FOUND', 'Accessory not found');
+  if (isActive) {
+    return prisma.$transaction(async (transaction) => {
+      await lockActiveModel(transaction, item.modelId);
+      return transaction.costumeModelAccessory.update({ where: { id }, data: { isActive } });
+    });
+  }
   return prisma.costumeModelAccessory.update({ where: { id }, data: { isActive } });
 }
 export async function listMedia(
@@ -366,6 +523,8 @@ export async function createMedia(
   const contentType = imageContentTypeForKey(input.uploadKey);
   if (!contentType)
     throw new AppError(400, 'INVALID_UPLOAD', 'Upload key must use a supported image extension');
+  if (await prisma.costumeMedia.findUnique({ where: { sourceUploadKey: input.uploadKey } }))
+    throw new AppError(409, 'MEDIA_ALREADY_REGISTERED', 'Image is already registered');
   const objectKey = catalogMediaKey(ownerType, ownerId, contentType);
   await promoteStoredImage({
     uploadKey: input.uploadKey,
@@ -374,13 +533,37 @@ export async function createMedia(
     maxBytes: env.MEDIA_MAX_UPLOAD_BYTES,
   });
   try {
-    const media = await prisma.costumeMedia.create({
-      data: {
-        objectKey,
-        sortOrder: input.sortOrder,
-        ...(input.altText === undefined ? {} : { altText: input.altText }),
-        ...owner,
-      },
+    const media = await prisma.$transaction(async (transaction) => {
+      // Shared database row lock serializes finalization for this owner across API instances.
+      // Storage I/O stays outside the transaction to keep the lock short-lived.
+      const rows =
+        ownerType === 'model'
+          ? await transaction.$queryRaw<{ id: string }[]>`
+            SELECT id FROM costume_models WHERE id = ${ownerId}::uuid FOR UPDATE`
+          : await transaction.$queryRaw<{ id: string }[]>`
+            SELECT id FROM costume_variants WHERE id = ${ownerId}::uuid FOR UPDATE`;
+      if (rows.length === 0)
+        throw new AppError(404, 'MEDIA_OWNER_NOT_FOUND', 'Catalog item no longer exists');
+      if (
+        await transaction.costumeMedia.findUnique({ where: { sourceUploadKey: input.uploadKey } })
+      )
+        throw new AppError(409, 'MEDIA_ALREADY_REGISTERED', 'Image is already registered');
+      const currentCount = await transaction.costumeMedia.count({ where: owner });
+      if (currentCount >= mediaLimit)
+        throw new AppError(
+          409,
+          'MEDIA_LIMIT_REACHED',
+          `${ownerType === 'model' ? 'Model' : 'Variant'} may have at most ${mediaLimit} images`,
+        );
+      return transaction.costumeMedia.create({
+        data: {
+          objectKey,
+          sourceUploadKey: input.uploadKey,
+          sortOrder: input.sortOrder,
+          ...(input.altText === undefined ? {} : { altText: input.altText }),
+          ...owner,
+        },
+      });
     });
     try {
       await deleteStoredObject(input.uploadKey);
@@ -392,6 +575,18 @@ export async function createMedia(
     }
     return mediaResponse(media);
   } catch (error: unknown) {
+    // Only clean up definitely rejected writes. An unknown transaction/connection error
+    // can have an ambiguous commit result; the orphan sweeper handles that safely later.
+    if (error instanceof AppError || isUniqueConstraintError(error)) {
+      try {
+        await deleteStoredObject(objectKey);
+      } catch (cleanupError: unknown) {
+        logger.warn(
+          { err: cleanupError, objectKey },
+          'Could not remove rejected final image; cleanup will retry',
+        );
+      }
+    }
     if (isUniqueConstraintError(error))
       throw new AppError(409, 'MEDIA_ALREADY_REGISTERED', 'Image is already registered');
     throw error;
