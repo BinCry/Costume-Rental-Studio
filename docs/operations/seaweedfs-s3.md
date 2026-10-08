@@ -6,6 +6,48 @@ The presigned POST writes only to `catalog-staging/`. The browser sends that tem
 
 After a successful database insert, the API best-effort deletes the staging object. The periodic orphan cleanup also scans old objects under both `catalog/` and `catalog-staging/`; registered final objects are retained, while stale staging objects and unregistered final objects are removed after `MEDIA_ORPHAN_RETENTION_HOURS`.
 
+## Database integrity and deployment order
+
+`costume_media.source_upload_key` is nullable and unique. Existing media may keep `NULL`; each new registration records the staging upload key so replaying that key cannot register another image, including across API instances. This field is internal integrity metadata and is omitted from media API responses; public URLs continue to use the final `object_key`.
+
+Finalization takes a database `FOR UPDATE` row lock on the owning model or variant, then counts its media and inserts the new row in the same transaction. The shared database lock enforces the per-owner image limit across API instances. Storage promotion occurs before this short transaction.
+
+Before deploying the changed API, apply its migration from the repository root against the intended deployment database:
+
+```sh
+pnpm --filter @costume/api db:migrate:deploy
+```
+
+The migration must complete before the changed API starts. This documentation update does not execute a production migration.
+
+Run the PostgreSQL-backed locking tests explicitly after migration. The command uses
+`DATABASE_URL` from `apps/api/.env`; set `DATABASE_TEST_URL` to override it with a dedicated
+database. Use a non-production database because the suite creates and deletes catalog rows:
+
+```sh
+pnpm --filter @costume/api test:postgres
+```
+
+The test creates uniquely named catalog rows and removes them afterward. It verifies the model
+image limit, duplicate finalize protection, atomic category deactivation, and the create-versus-
+deactivate race against a real PostgreSQL server. Object-storage calls are mocked so this suite
+isolates database concurrency guarantees.
+
+Category deactivation is a status-only, atomic cascade over the selected category, all nested
+categories, their models and variants, and model accessories. It does not delete catalog data,
+media, or existing rental records. Reactivating the selected category does not reactivate any
+descendant; descendants retain their previous inactive state and must be reactivated explicitly
+under an active parent.
+
+After the PostgreSQL suite passes against a test database and the migration succeeds against the
+deployment database, merge or push the API changes to `main`. The `Build, Test, Publish API Image`
+GitHub Actions workflow publishes
+`kietphan24/costume-rental-studio-api:staging` and an immutable `staging-<short-sha>` tag to Docker
+Hub, then invokes the configured Coolify webhook. A local migration or successful local test run
+does not deploy the API: confirm the workflow completed and that Coolify pulled the expected image
+before considering the release deployed. Required secrets and production migration details are in
+[CI/CD and database migration](ci-cd.md).
+
 API tạo presigned **POST** policy, giới hạn file 1 byte đến `MEDIA_MAX_UPLOAD_BYTES`. Browser gửi toàn bộ `fields` nhận từ `/api/v1/uploads/presign` và field `file` vào `uploadUrl`; không gửi AWS key/secret.
 
 ## Bắt buộc khi deploy
