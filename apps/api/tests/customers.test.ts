@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   actor: vi.fn(),
   transaction: vi.fn(),
   branch: vi.fn(),
+  queryRaw: vi.fn(),
   findUser: vi.fn(),
   createUser: vi.fn(),
 }));
@@ -46,6 +47,7 @@ interface ResultBody {
   data: { created: boolean; customer: { displayName: string } };
 }
 interface MockTransaction {
+  $queryRaw: typeof mocks.queryRaw;
   branch: { findUnique: typeof mocks.branch };
   user: { findUnique: typeof mocks.findUser; create: typeof mocks.createUser };
 }
@@ -87,10 +89,15 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.actor.mockResolvedValue(actor());
   mocks.branch.mockResolvedValue({ id: branchId, status: 'ACTIVE' });
+  mocks.queryRaw.mockImplementation(async () => {
+    const branch = (await mocks.branch()) as unknown as { id: string; status: string } | null;
+    return branch ? [branch] : [];
+  });
   mocks.findUser.mockResolvedValue(null);
   mocks.createUser.mockResolvedValue({ ...existing, displayName: 'Customer' });
   mocks.transaction.mockImplementation((callback: (tx: MockTransaction) => Promise<unknown>) =>
     callback({
+      $queryRaw: mocks.queryRaw,
       branch: { findUnique: mocks.branch },
       user: { findUnique: mocks.findUser, create: mocks.createUser },
     }),

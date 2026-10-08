@@ -5,6 +5,7 @@ import { assertPermission, type AuthenticatedActor } from '../auth/authorization
 import type { CreateStaffInput } from './staff.schema.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { lockUserAuthentication } from '../auth/token.service.js';
+import { lockActiveBranch } from '../branches/branch.service.js';
 
 export async function listStaff(
   actor: AuthenticatedActor,
@@ -80,7 +81,8 @@ export async function createStaff(actor: AuthenticatedActor, input: CreateStaffI
         },
         include: { employee: true },
       });
-      for (const assignment of input.assignments)
+      for (const assignment of input.assignments) {
+        if (assignment.branchId) await lockActiveBranch(tx, assignment.branchId);
         await tx.userRoleAssignment.create({
           data: {
             userId: user.id,
@@ -89,6 +91,7 @@ export async function createStaff(actor: AuthenticatedActor, input: CreateStaffI
             assignedBy: actor.id,
           },
         });
+      }
       return user;
     });
   } catch (error) {
@@ -159,13 +162,11 @@ export async function assignRole(
       'ADMIN_ROLE_RESTRICTED',
       'Global admin role requires a global admin actor',
     );
-  if (
-    data.branchId &&
-    !(await prisma.branch.findFirst({ where: { id: data.branchId, status: 'ACTIVE' } }))
-  )
-    throw new AppError(400, 'INVALID_BRANCH', 'Branch must exist and be active');
-  return prisma.userRoleAssignment.create({
-    data: { userId, roleId: data.roleId, branchId: data.branchId ?? null, assignedBy: actor.id },
+  return prisma.$transaction(async (transaction) => {
+    if (data.branchId) await lockActiveBranch(transaction, data.branchId);
+    return transaction.userRoleAssignment.create({
+      data: { userId, roleId: data.roleId, branchId: data.branchId ?? null, assignedBy: actor.id },
+    });
   });
 }
 export async function removeAssignment(

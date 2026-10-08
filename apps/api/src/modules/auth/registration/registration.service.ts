@@ -8,6 +8,7 @@ import type { Prisma } from '../../../generated/prisma/client.js';
 import { assertEmailOtpDeliveryAvailable, deliverEmailOtp } from './otp.delivery.js';
 import type { RegisterCustomerInput } from './registration.schema.js';
 import { accessSecret, issueSessionTokens, type SessionMetadata } from '../token.service.js';
+import { lockActiveBranch } from '../../branches/branch.service.js';
 
 const otpLifetimeMs = 5 * 60 * 1000;
 const resendCooldownMs = 60 * 1000;
@@ -134,9 +135,7 @@ export async function registerCustomer(
         return { error: 'ACCOUNT_NOT_ELIGIBLE' } as const;
       }
       if (!existing && input.preferredBranchId) {
-        const branch = await tx.branch.findUnique({ where: { id: input.preferredBranchId } });
-        if (branch?.status !== 'ACTIVE')
-          throw new AppError(400, 'INVALID_BRANCH', 'Preferred branch must be active');
+        await lockActiveBranch(tx, input.preferredBranchId);
       }
       const role = await tx.role.findUnique({ where: { roleCode: 'CUSTOMER' } });
       if (!role?.isActive || role.actorGroup !== 'CUSTOMER') {

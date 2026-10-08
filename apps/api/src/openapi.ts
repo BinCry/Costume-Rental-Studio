@@ -12,11 +12,22 @@ export const openApiDocument = {
       name: 'Catalog',
       description: 'Costume category, model, variant, accessory, and media management.',
     },
+    {
+      name: 'Branches',
+      description:
+        'Global branch administration. GET requires branches.read.ALL; mutations require branches.manage.ALL.',
+    },
   ],
   components: {
     securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },
     parameters: {
       id: { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      branchId: {
+        name: 'branchId',
+        in: 'path',
+        required: true,
+        schema: { type: 'string', format: 'uuid' },
+      },
       modelId: {
         name: 'modelId',
         in: 'path',
@@ -38,6 +49,55 @@ export const openApiDocument = {
     },
     schemas: {
       CatalogStatus: { type: 'string', enum: ['ACTIVE', 'INACTIVE'] },
+      BranchStatus: { type: 'string', enum: ['ACTIVE', 'INACTIVE'] },
+      Branch: {
+        type: 'object',
+        required: [
+          'id',
+          'branchCode',
+          'name',
+          'address',
+          'timezone',
+          'status',
+          'createdAt',
+          'updatedAt',
+        ],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          branchCode: { type: 'string', example: 'HCM-Q1' },
+          name: { type: 'string', maxLength: 255 },
+          address: { type: 'string' },
+          phone: { type: 'string', nullable: true, maxLength: 30 },
+          timezone: { type: 'string', example: 'Asia/Ho_Chi_Minh' },
+          status: { $ref: '#/components/schemas/BranchStatus' },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      CreateBranchInput: {
+        type: 'object',
+        required: ['branchCode', 'name', 'address'],
+        properties: {
+          branchCode: { type: 'string', minLength: 2, maxLength: 50, pattern: '^[A-Za-z0-9-]+$' },
+          name: { type: 'string', minLength: 1, maxLength: 255 },
+          address: { type: 'string', minLength: 1 },
+          phone: { type: 'string', maxLength: 30 },
+          timezone: {
+            type: 'string',
+            default: 'Asia/Ho_Chi_Minh',
+            description: 'Valid IANA timezone',
+          },
+        },
+      },
+      UpdateBranchInput: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 255 },
+          address: { type: 'string', minLength: 1 },
+          phone: { type: 'string', nullable: true, maxLength: 30 },
+          timezone: { type: 'string', description: 'Valid IANA timezone' },
+        },
+      },
       CategoryInput: {
         type: 'object',
         required: ['name'],
@@ -149,7 +209,7 @@ export const openApiDocument = {
         content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
       },
       Forbidden: {
-        description: 'Missing catalog permission',
+        description: 'Missing required permission',
         content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
       },
       NotFound: {
@@ -157,12 +217,165 @@ export const openApiDocument = {
         content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
       },
       Conflict: {
-        description: 'Duplicate or invalid status transition',
+        description: 'Duplicate record or prohibited operation',
         content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
       },
     },
   },
   paths: {
+    '/branches': {
+      get: {
+        tags: ['Branches'],
+        security: [{ bearerAuth: [] }],
+        summary: 'List branches',
+        description:
+          'Requires branches.read.ALL. Branch administration is global; branch-scoped assignments cannot list branches.',
+        parameters: [
+          { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1, default: 1 } },
+          {
+            name: 'pageSize',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          },
+          { name: 'search', in: 'query', schema: { type: 'string', maxLength: 100 } },
+          { name: 'status', in: 'query', schema: { $ref: '#/components/schemas/BranchStatus' } },
+          {
+            name: 'sortBy',
+            in: 'query',
+            schema: {
+              type: 'string',
+              enum: ['branchCode', 'name', 'status', 'createdAt', 'updatedAt'],
+              default: 'createdAt',
+            },
+          },
+          {
+            name: 'sortOrder',
+            in: 'query',
+            schema: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
+          },
+        ],
+        responses: {
+          '200': { description: 'Branches loaded' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+        },
+      },
+      post: {
+        tags: ['Branches'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Create a branch',
+        description: 'Requires branches.manage.ALL. branchCode is normalized to uppercase.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/CreateBranchInput' } },
+          },
+        },
+        responses: {
+          '201': { description: 'Branch created' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '409': {
+            description: 'BRANCH_CODE_CONFLICT',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
+          },
+        },
+      },
+    },
+    '/branches/{branchId}': {
+      get: {
+        tags: ['Branches'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Get a branch',
+        description: 'Requires branches.read.ALL.',
+        parameters: [{ $ref: '#/components/parameters/branchId' }],
+        responses: {
+          '200': { description: 'Branch loaded' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+      patch: {
+        tags: ['Branches'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Update a branch',
+        description: 'Requires branches.manage.ALL. branchCode and status cannot be changed here.',
+        parameters: [{ $ref: '#/components/parameters/branchId' }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/UpdateBranchInput' } },
+          },
+        },
+        responses: {
+          '200': { description: 'Branch updated' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+      delete: {
+        tags: ['Branches'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Delete an unused branch',
+        description:
+          'Requires branches.manage.ALL. Returns BRANCH_IN_USE when any historical or operational relation exists; no relation is cascaded.',
+        parameters: [{ $ref: '#/components/parameters/branchId' }],
+        responses: {
+          '204': { description: 'Branch deleted' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+          '409': {
+            description: 'BRANCH_IN_USE',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
+          },
+        },
+      },
+    },
+    '/branches/{branchId}/activate': {
+      post: {
+        tags: ['Branches'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Activate a branch',
+        description: 'Requires branches.manage.ALL.',
+        parameters: [{ $ref: '#/components/parameters/branchId' }],
+        responses: {
+          '200': { description: 'Branch activated' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+    },
+    '/branches/{branchId}/deactivate': {
+      post: {
+        tags: ['Branches'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Deactivate a branch',
+        description:
+          'Requires branches.manage.ALL. Blocked by open orders/transfers/CRM cases, non-retired units, or branch role assignments.',
+        parameters: [{ $ref: '#/components/parameters/branchId' }],
+        responses: {
+          '200': { description: 'Branch deactivated' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+          '409': {
+            description: 'BRANCH_IN_USE',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
+          },
+        },
+      },
+    },
     '/uploads/presign': {
       post: {
         tags: ['Catalog'],

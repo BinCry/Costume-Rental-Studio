@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    include: ['tests/catalog-postgres-concurrency.test.ts'],
+    include: ['tests/*-postgres-concurrency.test.ts'],
     env: {
       NODE_ENV: 'test',
       PORT: '4000',

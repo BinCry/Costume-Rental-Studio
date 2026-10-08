@@ -2,24 +2,14 @@ import { randomUUID } from 'node:crypto';
 
 import { AppError } from '../../common/errors/app-error.js';
 import { prisma } from '../../database/prisma.js';
-import type { Prisma } from '../../generated/prisma/client.js';
 import type { CreateCustomerInput } from './customer.schema.js';
 import { pageResult, pagination } from '../../common/http/query.js';
-import { assertPermission } from '../auth/authorization.js';
+import { assertPermission, type AuthenticatedActor } from '../auth/authorization.js';
 import { lockUserAuthentication } from '../auth/token.service.js';
+import { lockActiveBranch } from '../branches/branch.service.js';
 import type { UpdateCustomerInput } from './customer.schema.js';
 
-export type CustomerActor = Prisma.UserGetPayload<{
-  include: {
-    employee: true;
-    roleAssignments: {
-      include: {
-        branch: true;
-        role: { include: { rolePermissions: { include: { permission: true } } } };
-      };
-    };
-  };
-}>;
+export type CustomerActor = AuthenticatedActor;
 
 export async function createCustomer(input: CreateCustomerInput, actor: CustomerActor) {
   if (actor.status !== 'ACTIVE' || actor.employee?.employmentStatus !== 'ACTIVE') {
@@ -46,10 +36,7 @@ export async function createCustomer(input: CreateCustomerInput, actor: Customer
 
   const run = () =>
     prisma.$transaction(async (tx) => {
-      const branch = await tx.branch.findUnique({ where: { id: input.branchId } });
-      if (branch?.status !== 'ACTIVE') {
-        throw new AppError(400, 'INVALID_BRANCH', 'Branch must exist and be active');
-      }
+      await lockActiveBranch(tx, input.branchId);
       const existing = await tx.user.findUnique({
         where: { email: input.email },
         include: { customer: true },
@@ -171,9 +158,7 @@ export async function updateCustomer(
   try {
     return await prisma.$transaction(async (tx) => {
       if (input.preferredBranchId) {
-        const branch = await tx.branch.findUnique({ where: { id: input.preferredBranchId } });
-        if (branch?.status !== 'ACTIVE')
-          throw new AppError(400, 'INVALID_BRANCH', 'Preferred branch must be active');
+        await lockActiveBranch(tx, input.preferredBranchId);
       }
       const user = await tx.user.update({ where: { id: userId }, data: { displayName, email } });
       const customer = await tx.customer.update({

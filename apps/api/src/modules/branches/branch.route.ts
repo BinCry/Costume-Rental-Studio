@@ -12,6 +12,7 @@ import {
 } from './branch.schema.js';
 import {
   createBranch,
+  deleteBranch,
   getBranch,
   listBranches,
   setBranchStatus,
@@ -46,6 +47,12 @@ branchRouter.patch('/:branchId', async (req, res) => {
     await updateBranch(res.locals.actor, params.data.branchId, body.data),
     'Branch updated',
   );
+});
+branchRouter.delete('/:branchId', async (req, res) => {
+  const parsed = branchIdSchema.safeParse(req.params);
+  if (!parsed.success) throw new AppError(400, 'VALIDATION_ERROR', 'Invalid branch id');
+  await deleteBranch(res.locals.actor, parsed.data.branchId);
+  return res.status(204).send();
 });
 branchRouter.post('/:branchId/:action', async (req, res) => {
   const params = branchIdSchema

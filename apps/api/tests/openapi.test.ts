@@ -22,6 +22,10 @@ describe('OpenAPI documentation', () => {
     expect(document.info.title).toBe('Costume Rental Studio API');
     expect(document.paths['/catalog/variants/{id}']).toBeDefined();
     expect(document.paths['/uploads/presign']).toBeDefined();
+    expect(document.paths['/branches']).toBeDefined();
+    expect(document.paths['/branches/{branchId}']?.delete).toBeDefined();
+    expect(document.paths['/branches/{branchId}/activate']).toBeDefined();
+    expect(document.paths['/branches/{branchId}/deactivate']).toBeDefined();
     for (const path of [
       '/catalog/categories/{id}',
       '/catalog/models/{id}',
