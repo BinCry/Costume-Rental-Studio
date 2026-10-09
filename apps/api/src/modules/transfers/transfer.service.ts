@@ -32,6 +32,7 @@ const activeOrderStatuses = [
   'RETURN_INSPECTION',
 ] satisfies OrderStatus[];
 const activeTransferStatuses = ['REQUESTED', 'APPROVED', 'IN_TRANSIT'] satisfies TransferStatus[];
+const transferTransactionOptions = { maxWait: 10_000, timeout: 20_000 } as const;
 
 function transferInclude() {
   return {
@@ -161,24 +162,24 @@ async function assertUnitsAvailable(
       'Units must be at the source branch and ready or under repair',
     );
   const unitIds = units.map((unit) => unit.id);
-  const [orders, blocks, transfers] = await Promise.all([
-    transaction.rentalOrderItem.findMany({
-      where: { unitId: { in: unitIds }, order: { status: { in: activeOrderStatuses } } },
-      select: { unitId: true },
-    }),
-    transaction.unitBlock.findMany({
-      where: { unitId: { in: unitIds }, status: { in: ['PLANNED', 'IN_PROGRESS'] } },
-      select: { unitId: true },
-    }),
-    transaction.stockTransferItem.findMany({
-      where: {
-        unitId: { in: unitIds },
-        ...(excludedTransferId ? { transferId: { not: excludedTransferId } } : {}),
-        transfer: { status: { in: activeTransferStatuses } },
-      },
-      select: { unitId: true },
-    }),
-  ]);
+  // An interactive Prisma transaction owns one pg client. Run these queries
+  // sequentially so the adapter never calls client.query() concurrently.
+  const orders = await transaction.rentalOrderItem.findMany({
+    where: { unitId: { in: unitIds }, order: { status: { in: activeOrderStatuses } } },
+    select: { unitId: true },
+  });
+  const blocks = await transaction.unitBlock.findMany({
+    where: { unitId: { in: unitIds }, status: { in: ['PLANNED', 'IN_PROGRESS'] } },
+    select: { unitId: true },
+  });
+  const transfers = await transaction.stockTransferItem.findMany({
+    where: {
+      unitId: { in: unitIds },
+      ...(excludedTransferId ? { transferId: { not: excludedTransferId } } : {}),
+      transfer: { status: { in: activeTransferStatuses } },
+    },
+    select: { unitId: true },
+  });
   if (orders.length || blocks.length || transfers.length)
     throw new AppError(409, 'UNIT_UNAVAILABLE', 'One or more units are already in use');
 }
@@ -270,7 +271,7 @@ export async function createTransfer(actor: AuthenticatedActor, input: CreateTra
         },
         include: transferInclude(),
       });
-    });
+    }, transferTransactionOptions);
   } catch (error) {
     if (isUnique(error))
       throw new AppError(409, 'TRANSFER_CODE_CONFLICT', 'Transfer code already exists');
@@ -307,7 +308,7 @@ export async function updateTransfer(
       },
       include: transferInclude(),
     });
-  });
+  }, transferTransactionOptions);
 }
 
 export async function approveTransfer(
@@ -339,7 +340,7 @@ export async function approveTransfer(
       },
       include: transferInclude(),
     });
-  });
+  }, transferTransactionOptions);
 }
 
 export async function endTransfer(
@@ -371,7 +372,7 @@ export async function endTransfer(
       },
       include: transferInclude(),
     });
-  });
+  }, transferTransactionOptions);
 }
 
 export async function shipTransfer(
@@ -428,7 +429,7 @@ export async function shipTransfer(
       },
       include: transferInclude(),
     });
-  });
+  }, transferTransactionOptions);
 }
 
 export async function receiveTransfer(
@@ -505,5 +506,5 @@ export async function receiveTransfer(
       },
       include: transferInclude(),
     });
-  });
+  }, transferTransactionOptions);
 }

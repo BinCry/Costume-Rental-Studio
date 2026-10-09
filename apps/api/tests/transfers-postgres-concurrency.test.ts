@@ -130,7 +130,7 @@ describe.skipIf(!runDatabaseTests)('Stock transfer concurrency with PostgreSQL',
     await prisma.$disconnect();
   });
 
-  it('reserves a unit so only one simultaneous request succeeds', async () => {
+  it('reserves a unit so only one simultaneous request succeeds', { timeout: 30_000 }, async () => {
     const unit = await createReadyUnit();
     const attempts = await Promise.allSettled(
       [1, 2].map(() =>
@@ -156,24 +156,31 @@ describe.skipIf(!runDatabaseTests)('Stock transfer concurrency with PostgreSQL',
     });
   });
 
-  it('serializes approve versus cancel using the transfer version and row lock', async () => {
-    const unit = await createReadyUnit();
-    const transfer = await createTransfer(actor, {
-      fromBranchId: sourceBranchId,
-      toBranchId: destinationBranchId,
-      unitIds: [unit.id],
-    });
-    transferIds.push(transfer.id);
-    const attempts = await Promise.allSettled([
-      approveTransfer(actor, transfer.id, { expectedVersion: 1 }),
-      endTransfer(actor, transfer.id, 'CANCELLED', { expectedVersion: 1, reason: 'Changed plan' }),
-    ]);
-    expect(attempts.filter((attempt) => attempt.status === 'fulfilled')).toHaveLength(1);
-    expect(attempts.find((attempt) => attempt.status === 'rejected')).toMatchObject({
-      reason: { statusCode: 409 },
-    });
-    const stored = await prisma.stockTransfer.findUniqueOrThrow({ where: { id: transfer.id } });
-    expect(['APPROVED', 'CANCELLED']).toContain(stored.status);
-    expect(stored.version).toBe(2);
-  });
+  it(
+    'serializes approve versus cancel using the transfer version and row lock',
+    { timeout: 30_000 },
+    async () => {
+      const unit = await createReadyUnit();
+      const transfer = await createTransfer(actor, {
+        fromBranchId: sourceBranchId,
+        toBranchId: destinationBranchId,
+        unitIds: [unit.id],
+      });
+      transferIds.push(transfer.id);
+      const attempts = await Promise.allSettled([
+        approveTransfer(actor, transfer.id, { expectedVersion: 1 }),
+        endTransfer(actor, transfer.id, 'CANCELLED', {
+          expectedVersion: 1,
+          reason: 'Changed plan',
+        }),
+      ]);
+      expect(attempts.filter((attempt) => attempt.status === 'fulfilled')).toHaveLength(1);
+      expect(attempts.find((attempt) => attempt.status === 'rejected')).toMatchObject({
+        reason: { statusCode: 409 },
+      });
+      const stored = await prisma.stockTransfer.findUniqueOrThrow({ where: { id: transfer.id } });
+      expect(['APPROVED', 'CANCELLED']).toContain(stored.status);
+      expect(stored.version).toBe(2);
+    },
+  );
 });
