@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
     deleteMany: vi.fn(),
   },
   media: { findMany: vi.fn() },
+  rentalEvidence: { findMany: vi.fn() },
   deleteStoredObject: vi.fn(),
   listStoredObjectsPage: vi.fn(),
 }));
@@ -24,6 +25,7 @@ vi.mock('../src/database/prisma.js', () => ({
   prisma: {
     outboxEvent: mocks.outbox,
     costumeMedia: mocks.media,
+    rentalItemEvidence: mocks.rentalEvidence,
   },
 }));
 
@@ -95,14 +97,17 @@ describe('media maintenance', () => {
                 { key: 'catalog/models/a/orphan.jpg', lastModified: old },
                 { key: 'catalog/models/a/recent.jpg', lastModified: recent },
               ]
-            : [
-                { key: 'catalog-staging/models/a/expired.jpg', lastModified: old },
-                { key: 'catalog-staging/models/a/recent.jpg', lastModified: recent },
-              ],
+            : prefix === 'catalog-staging/'
+              ? [
+                  { key: 'catalog-staging/models/a/expired.jpg', lastModified: old },
+                  { key: 'catalog-staging/models/a/recent.jpg', lastModified: recent },
+                ]
+              : [],
         nextContinuationToken: undefined,
       }),
     );
     mocks.media.findMany.mockResolvedValue([{ objectKey: 'catalog/models/a/registered.jpg' }]);
+    mocks.rentalEvidence.findMany.mockResolvedValue([]);
     mocks.deleteStoredObject.mockResolvedValue(undefined);
 
     await expect(cleanupOrphanedCatalogMedia(now)).resolves.toEqual({ scanned: 5, deleted: 2 });

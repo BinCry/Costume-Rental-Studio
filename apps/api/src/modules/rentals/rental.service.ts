@@ -1,0 +1,1025 @@
+import { randomUUID } from 'node:crypto';
+
+import { AppError } from '../../common/errors/app-error.js';
+import { pageResult, pagination } from '../../common/http/query.js';
+import { promoteStoredImage } from '../../common/storage/s3.js';
+import { env } from '../../config/env.js';
+import { prisma } from '../../database/prisma.js';
+import { Prisma, type OrderStatus } from '../../generated/prisma/client.js';
+import {
+  assertPermission,
+  hasPermission,
+  requireActor,
+  type AuthenticatedActor,
+} from '../auth/authorization.js';
+import { lockActiveBranch } from '../branches/branch.service.js';
+import type {
+  CompleteInput,
+  ConfirmInput,
+  CreateOrderInput,
+  ListOrdersInput,
+  PickupInput,
+  ReallocateInput,
+  ReturnInput,
+  UpdateOrderInput,
+} from './rental.schema.js';
+
+const transactionOptions = { maxWait: 10_000, timeout: 20_000 } as const;
+const occupiedStatuses = [
+  'CONFIRMED',
+  'PREPARING',
+  'READY_FOR_PICKUP',
+  'ACTIVE',
+  'RETURN_INSPECTION',
+] satisfies OrderStatus[];
+const mutableStatus: OrderStatus = 'PENDING_CONFIRMATION';
+
+function includeOrder() {
+  return {
+    customer: {
+      include: { user: { select: { id: true, displayName: true, email: true, phone: true } } },
+    },
+    pickupBranch: true,
+    policyVersion: true,
+    promotion: true,
+    items: {
+      include: {
+        variant: { include: { model: { include: { category: true } } } },
+        unit: true,
+        accessories: true,
+        evidence: { orderBy: { createdAt: 'asc' } },
+      },
+      orderBy: { createdAt: 'asc' },
+    },
+    payments: { orderBy: { createdAt: 'asc' } },
+  } satisfies Prisma.RentalOrderInclude;
+}
+
+function orderCode() {
+  return `ORD-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${randomUUID().slice(0, 8).toUpperCase()}`;
+}
+function assertVersion(current: number, expected: number) {
+  if (current !== expected)
+    throw new AppError(409, 'ORDER_VERSION_CONFLICT', 'Order was changed by another request');
+}
+function assertStatus(current: OrderStatus, expected: readonly OrderStatus[]) {
+  if (!expected.includes(current))
+    throw new AppError(409, 'INVALID_ORDER_TRANSITION', 'Order status transition is not allowed');
+}
+function requireEmployee(actor: AuthenticatedActor) {
+  requireActor(actor);
+  if (!actor.employee)
+    throw new AppError(403, 'EMPLOYEE_REQUIRED', 'A current employee account is required');
+  return actor;
+}
+function canOwn(actor: AuthenticatedActor, action: 'read' | 'manage', customerUserId: string) {
+  return (
+    actor.id === customerUserId && hasPermission(actor, { module: 'rentals', action, scope: 'OWN' })
+  );
+}
+function canBranch(actor: AuthenticatedActor, action: 'read' | 'manage', branchId: string) {
+  return hasPermission(actor, { module: 'rentals', action, branchId });
+}
+function assertRead(
+  actor: AuthenticatedActor,
+  order: { customerUserId: string; pickupBranchId: string },
+) {
+  if (
+    !canOwn(actor, 'read', order.customerUserId) &&
+    !canBranch(actor, 'read', order.pickupBranchId)
+  )
+    throw new AppError(403, 'FORBIDDEN', 'Permission denied for this rental order');
+}
+function assertManage(
+  actor: AuthenticatedActor,
+  order: { customerUserId: string; pickupBranchId: string },
+) {
+  if (
+    !canOwn(actor, 'manage', order.customerUserId) &&
+    !canBranch(actor, 'manage', order.pickupBranchId)
+  )
+    throw new AppError(403, 'FORBIDDEN', 'Permission denied for this rental order');
+}
+
+async function lockOrder(tx: Prisma.TransactionClient, id: string) {
+  const rows = await tx.$queryRaw<
+    { id: string }[]
+  >`SELECT id FROM rental_orders WHERE id = ${id}::uuid FOR UPDATE`;
+  if (!rows.length) throw new AppError(404, 'RENTAL_ORDER_NOT_FOUND', 'Rental order not found');
+  return tx.rentalOrder.findUniqueOrThrow({ where: { id }, include: includeOrder() });
+}
+async function lockUnits(tx: Prisma.TransactionClient, ids: string[]) {
+  const sorted = [...new Set(ids)].sort();
+  const rows = await tx.$queryRaw<
+    { id: string }[]
+  >`SELECT id FROM costume_units WHERE id IN (${Prisma.join(sorted.map((id) => Prisma.sql`${id}::uuid`))}) ORDER BY id FOR UPDATE`;
+  if (rows.length !== sorted.length)
+    throw new AppError(404, 'UNIT_NOT_FOUND', 'One or more costume units were not found');
+  return tx.costumeUnit.findMany({
+    where: { id: { in: sorted } },
+    include: { variant: { include: { model: { include: { category: true } } } } },
+  });
+}
+async function currentPolicy(tx: Prisma.TransactionClient, at = new Date()) {
+  const policy = await tx.rentalPolicyVersion.findFirst({
+    where: { effectiveFrom: { lte: at }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: at } }] },
+    orderBy: { effectiveFrom: 'desc' },
+  });
+  if (!policy) throw new AppError(404, 'POLICY_NOT_FOUND', 'No active rental policy');
+  return policy;
+}
+function billableDays(start: Date, due: Date, mode: string) {
+  const hours = (due.getTime() - start.getTime()) / 3_600_000;
+  return mode === 'CALENDAR_DAY'
+    ? Math.max(
+        1,
+        Math.ceil(
+          (Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate()) -
+            Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate())) /
+            86_400_000,
+        ),
+      )
+    : Math.max(1, Math.ceil(hours / 24));
+}
+async function pricedItems(tx: Prisma.TransactionClient, input: CreateOrderInput) {
+  const ids = input.items.map((item) => item.variantId);
+  if (new Set(ids).size !== ids.length)
+    throw new AppError(400, 'DUPLICATE_VARIANT', 'Each variant may appear only once per order');
+  const variants = await tx.costumeVariant.findMany({
+    where: { id: { in: ids } },
+    include: { model: { include: { category: true, accessories: { where: { isActive: true } } } } },
+  });
+  if (variants.length !== ids.length)
+    throw new AppError(404, 'VARIANT_NOT_FOUND', 'One or more variants were not found');
+  if (
+    variants.some(
+      (v) =>
+        v.status !== 'ACTIVE' ||
+        v.model.status !== 'ACTIVE' ||
+        v.model.category.status !== 'ACTIVE',
+    )
+  )
+    throw new AppError(409, 'VARIANT_INACTIVE', 'Every variant and its hierarchy must be active');
+  const policy = await currentPolicy(tx);
+  const days = billableDays(input.plannedStartAt, input.plannedDueAt, policy.billingDayMode);
+  if (days < policy.minRentalDays || (policy.maxRentalDays && days > policy.maxRentalDays))
+    throw new AppError(400, 'INVALID_RENTAL_PERIOD', 'Rental duration violates the active policy');
+  return { policy, days, variants };
+}
+async function resolvePromotion(
+  tx: Prisma.TransactionClient,
+  input: CreateOrderInput,
+  customerUserId: string,
+  subtotal: bigint,
+) {
+  if (!input.promotionCode) return { promotion: null, discount: 0n };
+  const promotion = await tx.promotion.findUnique({
+    where: { code: input.promotionCode.toUpperCase() },
+  });
+  const now = new Date();
+  if (
+    !promotion ||
+    !promotion.isActive ||
+    promotion.startAt > now ||
+    promotion.endAt <= now ||
+    subtotal < promotion.minOrderAmountVnd
+  )
+    throw new AppError(409, 'PROMOTION_INVALID', 'Promotion is invalid for this order');
+  await tx.$queryRaw`SELECT id FROM promotions WHERE id = ${promotion.id}::uuid FOR UPDATE`;
+  const used = await tx.rentalOrder.count({
+    where: {
+      promotionId: promotion.id,
+      customerUserId,
+      status: { notIn: ['REJECTED', 'CANCELLED'] },
+    },
+  });
+  if (used >= promotion.perCustomerLimit)
+    throw new AppError(409, 'PROMOTION_LIMIT_REACHED', 'Promotion usage limit reached');
+  const totalUsed = await tx.rentalOrder.count({
+    where: { promotionId: promotion.id, status: { notIn: ['REJECTED', 'CANCELLED'] } },
+  });
+  if (promotion.totalUsageLimit !== null && totalUsed >= promotion.totalUsageLimit)
+    throw new AppError(409, 'PROMOTION_LIMIT_REACHED', 'Promotion usage limit reached');
+  let discount =
+    promotion.discountType === 'PERCENT'
+      ? (subtotal * promotion.discountValue) / 100n
+      : promotion.discountValue;
+  if (promotion.maxDiscountVnd !== null && discount > promotion.maxDiscountVnd)
+    discount = promotion.maxDiscountVnd;
+  return { promotion, discount: discount > subtotal ? subtotal : discount };
+}
+function itemCreateData(
+  input: CreateOrderInput,
+  variants: Awaited<ReturnType<typeof pricedItems>>['variants'],
+  days: number,
+) {
+  return input.items.map((item) => {
+    const variant = variants.find((v) => v.id === item.variantId)!;
+    const active = new Map(variant.model.accessories.map((a) => [a.id, a]));
+    if (new Set(item.accessories.map((a) => a.modelAccessoryId)).size !== item.accessories.length)
+      throw new AppError(400, 'DUPLICATE_ACCESSORY', 'Accessories must be unique per item');
+    return {
+      variantId: variant.id,
+      occupiedFrom: input.plannedStartAt,
+      occupiedUntil: input.plannedDueAt,
+      billableDays: days,
+      unitDailyPriceVnd: variant.dailyRentalPriceVnd,
+      unitDepositVnd: variant.depositAmountVnd,
+      accessories: {
+        create: item.accessories.map((a) => {
+          const accessory = active.get(a.modelAccessoryId);
+          if (!accessory)
+            throw new AppError(
+              400,
+              'INVALID_ACCESSORY',
+              'Accessory does not belong to the selected model',
+            );
+          return {
+            modelAccessoryId: accessory.id,
+            accessoryName: accessory.name,
+            quantityOut: a.quantity,
+            unitReplacementValueVnd: accessory.replacementValueVnd ?? 0n,
+          };
+        }),
+      },
+    };
+  });
+}
+async function addEvent(
+  tx: Prisma.TransactionClient,
+  orderId: string,
+  eventType: string,
+  actorId: string,
+  fromStatus?: OrderStatus,
+  toStatus?: OrderStatus,
+  metadataJson?: Prisma.InputJsonValue,
+) {
+  await tx.rentalOrderEvent.create({
+    data: { orderId, eventType, actorUserId: actorId, fromStatus, toStatus, metadataJson },
+  });
+}
+
+export async function listOrders(actor: AuthenticatedActor, query: ListOrdersInput) {
+  requireActor(actor);
+  const global = hasPermission(actor, { module: 'rentals', action: 'read' });
+  const branches = actor.roleAssignments.flatMap((a) =>
+    a.branchId &&
+    a.role.isActive &&
+    a.branch?.status === 'ACTIVE' &&
+    a.role.rolePermissions.some(
+      ({ permission }) =>
+        permission.module === 'rentals' &&
+        permission.action === 'read' &&
+        permission.scope === 'BRANCH',
+    )
+      ? [a.branchId]
+      : [],
+  );
+  const own = hasPermission(actor, { module: 'rentals', action: 'read', scope: 'OWN' });
+  if (!global && !branches.length && !own)
+    assertPermission(actor, { module: 'rentals', action: 'read' });
+  const visibility: Prisma.RentalOrderWhereInput = global
+    ? {}
+    : {
+        OR: [
+          ...(own ? [{ customerUserId: actor.id }] : []),
+          ...(branches.length ? [{ pickupBranchId: { in: branches } }] : []),
+        ],
+      };
+  const where: Prisma.RentalOrderWhereInput = {
+    ...visibility,
+    ...(query.search ? { orderCode: { contains: query.search, mode: 'insensitive' } } : {}),
+    ...(query.customerUserId ? { customerUserId: query.customerUserId } : {}),
+    ...(query.pickupBranchId ? { pickupBranchId: query.pickupBranchId } : {}),
+    ...(query.status ? { status: query.status } : {}),
+    ...(query.plannedFrom || query.plannedTo
+      ? {
+          plannedStartAt: {
+            ...(query.plannedFrom ? { gte: query.plannedFrom } : {}),
+            ...(query.plannedTo ? { lte: query.plannedTo } : {}),
+          },
+        }
+      : {}),
+  };
+  const orderBy: Prisma.RentalOrderOrderByWithRelationInput = { [query.sortBy]: query.sortOrder };
+  const [items, totalItems] = await prisma.$transaction([
+    prisma.rentalOrder.findMany({
+      where,
+      include: includeOrder(),
+      orderBy: [orderBy, { id: 'asc' }],
+      ...pagination(query),
+    }),
+    prisma.rentalOrder.count({ where }),
+  ]);
+  return pageResult(items, totalItems, query);
+}
+export async function getOrder(actor: AuthenticatedActor, id: string) {
+  const order = await prisma.rentalOrder.findUnique({ where: { id }, include: includeOrder() });
+  if (!order) throw new AppError(404, 'RENTAL_ORDER_NOT_FOUND', 'Rental order not found');
+  assertRead(actor, order);
+  return order;
+}
+export async function checkAvailability(
+  actor: AuthenticatedActor,
+  input: { variantId: string; pickupBranchId: string; plannedStartAt: Date; plannedDueAt: Date },
+) {
+  requireActor(actor);
+  if (
+    !canBranch(actor, 'read', input.pickupBranchId) &&
+    !hasPermission(actor, { module: 'rentals', action: 'manage', scope: 'OWN' })
+  )
+    throw new AppError(403, 'FORBIDDEN', 'Permission denied for availability');
+  const units = await prisma.costumeUnit.findMany({
+    where: {
+      variantId: input.variantId,
+      currentBranchId: input.pickupBranchId,
+      operationalStatus: 'READY',
+      orderItems: {
+        none: {
+          order: { status: { in: occupiedStatuses } },
+          occupiedFrom: { lt: input.plannedDueAt },
+          occupiedUntil: { gt: input.plannedStartAt },
+        },
+      },
+      blocks: {
+        none: {
+          status: { in: ['PLANNED', 'IN_PROGRESS'] },
+          blockedFrom: { lt: input.plannedDueAt },
+          blockedUntil: { gt: input.plannedStartAt },
+        },
+      },
+      transferItems: {
+        none: { transfer: { status: { in: ['REQUESTED', 'APPROVED', 'IN_TRANSIT'] } } },
+      },
+    },
+    select: { id: true, unitCode: true, conditionGrade: true },
+  });
+  return { available: units.length > 0, units };
+}
+export async function createOrder(actor: AuthenticatedActor, input: CreateOrderInput) {
+  requireActor(actor);
+  if (actor.id !== input.customerUserId) {
+    requireEmployee(actor);
+    assertPermission(actor, {
+      module: 'rentals',
+      action: 'manage',
+      branchId: input.pickupBranchId,
+    });
+  } else assertPermission(actor, { module: 'rentals', action: 'manage', scope: 'OWN' });
+  return prisma.$transaction(async (tx) => {
+    await lockActiveBranch(tx, input.pickupBranchId);
+    const customer = await tx.customer.findUnique({
+      where: { userId: input.customerUserId },
+      select: { userId: true },
+    });
+    if (!customer) throw new AppError(404, 'CUSTOMER_NOT_FOUND', 'Customer not found');
+    const { policy, days, variants } = await pricedItems(tx, input);
+    const subtotal = variants.reduce(
+      (total, variant) => total + variant.dailyRentalPriceVnd * BigInt(days),
+      0n,
+    );
+    const { promotion, discount } = await resolvePromotion(
+      tx,
+      input,
+      input.customerUserId,
+      subtotal,
+    );
+    const created = await tx.rentalOrder.create({
+      data: {
+        orderCode: orderCode(),
+        customerUserId: input.customerUserId,
+        pickupBranchId: input.pickupBranchId,
+        channel: input.channel,
+        plannedStartAt: input.plannedStartAt,
+        plannedDueAt: input.plannedDueAt,
+        customerNote: input.customerNote ?? null,
+        status: mutableStatus,
+        policyVersionId: policy.id,
+        promotionId: promotion?.id,
+        promotionCode: promotion?.code,
+        promotionDiscountVnd: discount,
+        quoteExpiresAt: new Date(Date.now() + policy.quoteValidHours * 3_600_000),
+        createdBy: actor.id,
+        items: { create: itemCreateData(input, variants, days) },
+      },
+      include: includeOrder(),
+    });
+    await addEvent(tx, created.id, 'ORDER_CREATED', actor.id, undefined, mutableStatus);
+    return created;
+  }, transactionOptions);
+}
+export async function updateOrder(actor: AuthenticatedActor, id: string, input: UpdateOrderInput) {
+  requireActor(actor);
+  return prisma.$transaction(async (tx) => {
+    const order = await lockOrder(tx, id);
+    assertManage(actor, order);
+    assertStatus(order.status, [mutableStatus]);
+    assertVersion(order.version, input.expectedVersion);
+    if (input.customerUserId !== order.customerUserId)
+      throw new AppError(
+        400,
+        'CUSTOMER_IMMUTABLE',
+        'The customer cannot be changed after order creation',
+      );
+    if (actor.employee)
+      assertPermission(actor, {
+        module: 'rentals',
+        action: 'manage',
+        branchId: input.pickupBranchId,
+      });
+    await lockActiveBranch(tx, input.pickupBranchId);
+    const { policy, days, variants } = await pricedItems(tx, input);
+    const subtotal = variants.reduce(
+      (total, variant) => total + variant.dailyRentalPriceVnd * BigInt(days),
+      0n,
+    );
+    const { promotion, discount } = await resolvePromotion(
+      tx,
+      input,
+      order.customerUserId,
+      subtotal,
+    );
+    const updated = await tx.rentalOrder.update({
+      where: { id },
+      data: {
+        pickupBranchId: input.pickupBranchId,
+        channel: input.channel,
+        plannedStartAt: input.plannedStartAt,
+        plannedDueAt: input.plannedDueAt,
+        customerNote: input.customerNote ?? null,
+        policyVersionId: policy.id,
+        promotionId: promotion?.id ?? null,
+        promotionCode: promotion?.code ?? null,
+        promotionDiscountVnd: discount,
+        quoteExpiresAt: new Date(Date.now() + policy.quoteValidHours * 3_600_000),
+        items: { deleteMany: {}, create: itemCreateData(input, variants, days) },
+        version: { increment: 1 },
+      },
+      include: includeOrder(),
+    });
+    await addEvent(tx, id, 'ORDER_UPDATED', actor.id, mutableStatus, mutableStatus);
+    return updated;
+  }, transactionOptions);
+}
+async function assertAllocations(
+  tx: Prisma.TransactionClient,
+  order: Awaited<ReturnType<typeof lockOrder>>,
+  allocations: ConfirmInput['allocations'],
+) {
+  const expected = order.items.map((item) => item.id).sort();
+  const received = allocations.map((item) => item.orderItemId).sort();
+  if (expected.length !== received.length || expected.some((v, i) => v !== received[i]))
+    throw new AppError(
+      400,
+      'INVALID_ALLOCATION',
+      'Every order item must be allocated exactly once',
+    );
+  if (new Set(allocations.map((allocation) => allocation.unitId)).size !== allocations.length)
+    throw new AppError(400, 'INVALID_ALLOCATION', 'A physical unit may be allocated only once');
+  const units = await lockUnits(
+    tx,
+    allocations.map((a) => a.unitId),
+  );
+  for (const allocation of allocations) {
+    const item = order.items.find((x) => x.id === allocation.orderItemId)!;
+    const unit = units.find((x) => x.id === allocation.unitId)!;
+    if (
+      unit.variantId !== item.variantId ||
+      unit.currentBranchId !== order.pickupBranchId ||
+      unit.operationalStatus !== 'READY'
+    )
+      throw new AppError(409, 'UNIT_UNAVAILABLE', 'Unit does not match an available order item');
+    const overlap = await tx.rentalOrderItem.findFirst({
+      where: {
+        unitId: unit.id,
+        id: { not: item.id },
+        order: { status: { in: occupiedStatuses } },
+        occupiedFrom: { lt: item.occupiedUntil },
+        occupiedUntil: { gt: item.occupiedFrom },
+      },
+      select: { id: true },
+    });
+    const blocked = await tx.unitBlock.findFirst({
+      where: {
+        unitId: unit.id,
+        status: { in: ['PLANNED', 'IN_PROGRESS'] },
+        blockedFrom: { lt: item.occupiedUntil },
+        blockedUntil: { gt: item.occupiedFrom },
+      },
+      select: { id: true },
+    });
+    const transfer = await tx.stockTransferItem.findFirst({
+      where: {
+        unitId: unit.id,
+        transfer: { status: { in: ['REQUESTED', 'APPROVED', 'IN_TRANSIT'] } },
+      },
+      select: { id: true },
+    });
+    if (overlap || blocked || transfer)
+      throw new AppError(409, 'UNIT_UNAVAILABLE', 'Unit is already reserved or unavailable');
+  }
+}
+export async function confirmOrder(actor: AuthenticatedActor, id: string, input: ConfirmInput) {
+  requireEmployee(actor);
+  return prisma.$transaction(async (tx) => {
+    const order = await lockOrder(tx, id);
+    assertManage(actor, order);
+    await lockActiveBranch(tx, order.pickupBranchId);
+    assertStatus(order.status, [mutableStatus]);
+    assertVersion(order.version, input.expectedVersion);
+    if (order.quoteExpiresAt && order.quoteExpiresAt <= new Date())
+      throw new AppError(409, 'QUOTE_EXPIRED', 'The order quote has expired and must be repriced');
+    await assertAllocations(tx, order, input.allocations);
+    for (const a of input.allocations)
+      await tx.rentalOrderItem.update({
+        where: { id: a.orderItemId },
+        data: { unitId: a.unitId, allocationStatus: 'CONFIRMED', allocatedBy: actor.id },
+      });
+    const result = await tx.rentalOrder.update({
+      where: { id },
+      data: { status: 'CONFIRMED', version: { increment: 1 } },
+      include: includeOrder(),
+    });
+    await addEvent(tx, id, 'ORDER_CONFIRMED', actor.id, mutableStatus, 'CONFIRMED');
+    return result;
+  }, transactionOptions);
+}
+export async function reallocateOrder(
+  actor: AuthenticatedActor,
+  id: string,
+  input: ReallocateInput,
+) {
+  requireEmployee(actor);
+  return prisma.$transaction(async (tx) => {
+    const order = await lockOrder(tx, id);
+    assertManage(actor, order);
+    assertStatus(order.status, ['CONFIRMED', 'PREPARING']);
+    assertVersion(order.version, input.expectedVersion);
+    if (!order.items.some((item) => item.id === input.orderItemId))
+      throw new AppError(404, 'ORDER_ITEM_NOT_FOUND', 'Rental order item not found');
+    await assertAllocations(
+      tx,
+      { ...order, items: order.items.filter((item) => item.id === input.orderItemId) },
+      [{ orderItemId: input.orderItemId, unitId: input.unitId }],
+    );
+    const result = await tx.rentalOrder.update({
+      where: { id },
+      data: {
+        items: {
+          update: {
+            where: { id: input.orderItemId },
+            data: { unitId: input.unitId, allocationStatus: 'CONFIRMED', allocatedBy: actor.id },
+          },
+        },
+        version: { increment: 1 },
+      },
+      include: includeOrder(),
+    });
+    await addEvent(tx, id, 'UNIT_REALLOCATED', actor.id, order.status, order.status);
+    return result;
+  }, transactionOptions);
+}
+async function transition(
+  actor: AuthenticatedActor,
+  id: string,
+  expectedVersion: number,
+  from: OrderStatus[],
+  to: OrderStatus,
+  event: string,
+) {
+  requireEmployee(actor);
+  return prisma.$transaction(async (tx) => {
+    const order = await lockOrder(tx, id);
+    assertManage(actor, order);
+    assertStatus(order.status, from);
+    assertVersion(order.version, expectedVersion);
+    await lockActiveBranch(tx, order.pickupBranchId);
+    const result = await tx.rentalOrder.update({
+      where: { id },
+      data: { status: to, version: { increment: 1 } },
+      include: includeOrder(),
+    });
+    await addEvent(tx, id, event, actor.id, order.status, to);
+    return result;
+  }, transactionOptions);
+}
+export const prepareOrder = (actor: AuthenticatedActor, id: string, expectedVersion: number) =>
+  transition(actor, id, expectedVersion, ['CONFIRMED'], 'PREPARING', 'PREPARATION_STARTED');
+export const markOrderReady = (actor: AuthenticatedActor, id: string, expectedVersion: number) =>
+  transition(actor, id, expectedVersion, ['PREPARING'], 'READY_FOR_PICKUP', 'ORDER_READY');
+export async function rejectOrder(
+  actor: AuthenticatedActor,
+  id: string,
+  expectedVersion: number,
+  reason: string,
+) {
+  requireEmployee(actor);
+  return endOrder(actor, id, expectedVersion, 'REJECTED', reason, ['PENDING_CONFIRMATION']);
+}
+export async function cancelOrder(
+  actor: AuthenticatedActor,
+  id: string,
+  expectedVersion: number,
+  reason: string,
+) {
+  requireActor(actor);
+  return prisma.$transaction(async (tx) => {
+    const order = await lockOrder(tx, id);
+    const isCustomer = canOwn(actor, 'manage', order.customerUserId);
+    if (isCustomer) {
+      assertStatus(order.status, ['PENDING_CONFIRMATION']);
+    } else {
+      requireEmployee(actor);
+      assertManage(actor, order);
+      assertStatus(order.status, [
+        'PENDING_CONFIRMATION',
+        'CONFIRMED',
+        'PREPARING',
+        'READY_FOR_PICKUP',
+      ]);
+    }
+    assertVersion(order.version, expectedVersion);
+    return finishOrder(tx, order, actor.id, 'CANCELLED', reason);
+  }, transactionOptions);
+}
+export async function markNoShow(
+  actor: AuthenticatedActor,
+  id: string,
+  expectedVersion: number,
+  reason: string,
+) {
+  requireEmployee(actor);
+  return prisma.$transaction(async (tx) => {
+    const order = await lockOrder(tx, id);
+    assertManage(actor, order);
+    assertStatus(order.status, ['READY_FOR_PICKUP']);
+    assertVersion(order.version, expectedVersion);
+    if (
+      new Date() <
+      new Date(order.plannedStartAt.getTime() + order.policyVersion.noShowGraceMinutes * 60_000)
+    )
+      throw new AppError(409, 'NO_SHOW_TOO_EARLY', 'No-show grace period has not elapsed');
+    return finishOrder(tx, order, actor.id, 'NO_SHOW', reason);
+  }, transactionOptions);
+}
+async function endOrder(
+  actor: AuthenticatedActor,
+  id: string,
+  expectedVersion: number,
+  status: 'REJECTED' | 'CANCELLED',
+  reason: string,
+  from: OrderStatus[],
+) {
+  requireActor(actor);
+  return prisma.$transaction(async (tx) => {
+    const order = await lockOrder(tx, id);
+    assertManage(actor, order);
+    assertStatus(order.status, from);
+    assertVersion(order.version, expectedVersion);
+    return finishOrder(tx, order, actor.id, status, reason);
+  }, transactionOptions);
+}
+async function finishOrder(
+  tx: Prisma.TransactionClient,
+  order: Awaited<ReturnType<typeof lockOrder>>,
+  actorId: string,
+  status: 'REJECTED' | 'CANCELLED' | 'NO_SHOW',
+  reason: string,
+) {
+  await tx.rentalOrderItem.updateMany({
+    where: { orderId: order.id },
+    data: { allocationStatus: 'RELEASED' },
+  });
+  const result = await tx.rentalOrder.update({
+    where: { id: order.id },
+    data: { status, version: { increment: 1 } },
+    include: includeOrder(),
+  });
+  await addEvent(tx, order.id, status, actorId, order.status, status, { reason });
+  return result;
+}
+async function storeEvidence(
+  tx: Prisma.TransactionClient,
+  itemId: string,
+  phase: 'PICKUP' | 'RETURN',
+  evidence: {
+    uploadKey: string;
+    contentType: 'image/jpeg' | 'image/png' | 'image/webp';
+    size: number;
+    capturedAt?: Date;
+  }[],
+  actorId: string,
+) {
+  for (const image of evidence) {
+    if (!image.uploadKey.startsWith('rental-staging/'))
+      throw new AppError(400, 'INVALID_EVIDENCE', 'Evidence key is invalid');
+    const extension =
+      image.contentType === 'image/jpeg'
+        ? 'jpg'
+        : image.contentType === 'image/png'
+          ? 'png'
+          : 'webp';
+    const objectKey = `rentals/${itemId}/${phase.toLowerCase()}/${randomUUID()}.${extension}`;
+    await promoteStoredImage({
+      uploadKey: image.uploadKey,
+      objectKey,
+      contentType: image.contentType,
+      maxBytes: env.MEDIA_MAX_UPLOAD_BYTES,
+    });
+    await tx.rentalItemEvidence.create({
+      data: {
+        orderItemId: itemId,
+        phase,
+        objectKey,
+        sourceUploadKey: image.uploadKey,
+        contentType: image.contentType,
+        sizeBytes: image.size,
+        uploadedBy: actorId,
+        capturedAt: image.capturedAt,
+      },
+    });
+  }
+}
+export async function pickupOrder(actor: AuthenticatedActor, id: string, input: PickupInput) {
+  requireEmployee(actor);
+  return prisma.$transaction(async (tx) => {
+    const order = await lockOrder(tx, id);
+    assertManage(actor, order);
+    assertStatus(order.status, ['READY_FOR_PICKUP']);
+    assertVersion(order.version, input.expectedVersion);
+    const rentalDue =
+      order.items.reduce(
+        (sum, item) => sum + item.unitDailyPriceVnd * BigInt(item.billableDays),
+        0n,
+      ) - order.promotionDiscountVnd;
+    const depositDue = order.items.reduce((sum, item) => sum + item.unitDepositVnd, 0n);
+    const paidRental = order.payments
+      .filter((payment) => payment.status === 'SUCCEEDED' && payment.purpose === 'RENTAL')
+      .reduce((sum, payment) => sum + payment.amountVnd, 0n);
+    const paidDeposit = order.payments
+      .filter((payment) => payment.status === 'SUCCEEDED' && payment.purpose === 'DEPOSIT')
+      .reduce((sum, payment) => sum + payment.amountVnd, 0n);
+    if (paidRental < rentalDue || paidDeposit < depositDue)
+      throw new AppError(
+        409,
+        'PAYMENT_REQUIRED',
+        'Rental payment and deposit must succeed before pickup',
+      );
+    const itemIds = order.items.map((x) => x.id).sort();
+    const received = input.items.map((x) => x.orderItemId).sort();
+    if (itemIds.length !== received.length || itemIds.some((v, i) => v !== received[i]))
+      throw new AppError(
+        400,
+        'INVALID_PICKUP_ITEMS',
+        'Every order item must be supplied exactly once',
+      );
+    await lockUnits(tx, order.items.map((item) => item.unitId!).filter(Boolean));
+    for (const item of input.items) {
+      await storeEvidence(tx, item.orderItemId, 'PICKUP', item.evidence, actor.id);
+      await tx.rentalOrderItem.update({
+        where: { id: item.orderItemId },
+        data: { pickupConditionGrade: item.conditionGrade, pickupEvidenceKey: null },
+      });
+    }
+    const result = await tx.rentalOrder.update({
+      where: { id },
+      data: {
+        status: 'ACTIVE',
+        pickedUpAt: new Date(),
+        pickupProcessedBy: actor.id,
+        version: { increment: 1 },
+        items: { updateMany: { where: {}, data: { allocationStatus: 'ACTIVE' } } },
+      },
+      include: includeOrder(),
+    });
+    await addEvent(tx, id, 'PICKED_UP', actor.id, 'READY_FOR_PICKUP', 'ACTIVE');
+    return result;
+  }, transactionOptions);
+}
+export async function returnOrder(actor: AuthenticatedActor, id: string, input: ReturnInput) {
+  requireEmployee(actor);
+  return prisma.$transaction(async (tx) => {
+    const order = await lockOrder(tx, id);
+    assertManage(actor, order);
+    assertStatus(order.status, ['ACTIVE']);
+    assertVersion(order.version, input.expectedVersion);
+    const expected = order.items.map((x) => x.id).sort();
+    const received = input.items.map((x) => x.orderItemId).sort();
+    if (expected.length !== received.length || expected.some((v, i) => v !== received[i]))
+      throw new AppError(
+        400,
+        'INVALID_RETURN_ITEMS',
+        'Every order item must be supplied exactly once',
+      );
+    await lockUnits(tx, order.items.map((item) => item.unitId!).filter(Boolean));
+    for (const inputItem of input.items) {
+      const orderItem = order.items.find((x) => x.id === inputItem.orderItemId)!;
+      if (
+        inputItem.returnConditionGrade === 'DAMAGED' &&
+        inputItem.nextOperationalStatus !== 'REPAIR'
+      )
+        throw new AppError(400, 'INVALID_RETURN_STATUS', 'Damaged units must enter repair');
+      const expectedAccessoryIds = orderItem.accessories.map((accessory) => accessory.id).sort();
+      const returnedAccessoryIds = inputItem.accessories
+        .map((accessory) => accessory.accessoryId)
+        .sort();
+      if (
+        expectedAccessoryIds.length !== returnedAccessoryIds.length ||
+        expectedAccessoryIds.some(
+          (accessoryId, index) => accessoryId !== returnedAccessoryIds[index],
+        ) ||
+        new Set(returnedAccessoryIds).size !== returnedAccessoryIds.length
+      )
+        throw new AppError(
+          400,
+          'INVALID_RETURN_ACCESSORIES',
+          'Every order accessory must be supplied exactly once',
+        );
+      for (const accessory of inputItem.accessories) {
+        const original = orderItem.accessories.find((value) => value.id === accessory.accessoryId)!;
+        if (accessory.quantityReturned > original.quantityOut)
+          throw new AppError(
+            400,
+            'INVALID_RETURN_ACCESSORIES',
+            'Returned quantity exceeds quantity out',
+          );
+      }
+      await storeEvidence(tx, orderItem.id, 'RETURN', inputItem.evidence, actor.id);
+      await tx.rentalOrderItem.update({
+        where: { id: orderItem.id },
+        data: {
+          returnConditionGrade: inputItem.returnConditionGrade,
+          isMissing: inputItem.isMissing,
+          damageNotes: inputItem.damageNotes ?? null,
+          damageFeeVnd: inputItem.damageFeeVnd,
+          missingFeeVnd: inputItem.missingFeeVnd,
+          returnEvidenceKey: null,
+          accessories: {
+            update: inputItem.accessories.map((a) => ({
+              where: { id: a.accessoryId },
+              data: {
+                quantityReturned: a.quantityReturned,
+                conditionIn: a.conditionIn ?? null,
+                damageFeeVnd: a.damageFeeVnd,
+                missingFeeVnd: a.missingFeeVnd,
+              },
+            })),
+          },
+        },
+      });
+      if (inputItem.isMissing)
+        await tx.costumeUnit.update({
+          where: { id: orderItem.unitId! },
+          data: {
+            conditionGrade: 'DAMAGED',
+            conditionNotes: inputItem.damageNotes ?? 'Reported missing by customer',
+            operationalStatus: 'RETIRED',
+            retiredAt: new Date(),
+          },
+        });
+      else
+        await tx.costumeUnit.update({
+          where: { id: orderItem.unitId! },
+          data: {
+            conditionGrade: inputItem.returnConditionGrade,
+            conditionNotes: inputItem.damageNotes ?? null,
+            operationalStatus: inputItem.nextOperationalStatus,
+          },
+        });
+    }
+    const returnedAt = new Date();
+    const graceEnd = order.plannedDueAt.getTime() + order.policyVersion.lateGraceMinutes * 60_000;
+    const lateDays =
+      returnedAt.getTime() <= graceEnd
+        ? 0
+        : Math.ceil((returnedAt.getTime() - graceEnd) / 86_400_000);
+    const rentalBase = order.items.reduce(
+      (sum, item) => sum + item.unitDailyPriceVnd * BigInt(item.billableDays),
+      0n,
+    );
+    const late = lateDays
+      ? (rentalBase *
+          BigInt(Math.trunc(Number(order.policyVersion.lateFeePercentPerDay) * 100)) *
+          BigInt(lateDays)) /
+        10_000n
+      : 0n;
+    const result = await tx.rentalOrder.update({
+      where: { id },
+      data: {
+        status: 'RETURN_INSPECTION',
+        returnedAt,
+        returnProcessedBy: actor.id,
+        returnNotes: input.returnNotes ?? null,
+        inspectionStatus: 'COMPLETED',
+        lateFeeVnd: late,
+        version: { increment: 1 },
+        items: {
+          updateMany: {
+            where: {},
+            data: { allocationStatus: 'COMPLETED' },
+          },
+        },
+      },
+      include: includeOrder(),
+    });
+    await addEvent(tx, id, 'RETURNED', actor.id, 'ACTIVE', 'RETURN_INSPECTION');
+    return result;
+  }, transactionOptions);
+}
+export async function completeOrder(actor: AuthenticatedActor, id: string, input: CompleteInput) {
+  requireEmployee(actor);
+  return prisma.$transaction(async (tx) => {
+    const order = await lockOrder(tx, id);
+    assertManage(actor, order);
+    assertStatus(order.status, ['RETURN_INSPECTION']);
+    assertVersion(order.version, input.expectedVersion);
+    const damage = order.items.reduce(
+      (sum, item) =>
+        sum +
+        item.damageFeeVnd +
+        item.missingFeeVnd +
+        item.accessories.reduce((a, x) => a + x.damageFeeVnd + x.missingFeeVnd, 0n),
+      0n,
+    );
+    const deposits = order.items.reduce((sum, item) => sum + item.unitDepositVnd, 0n);
+    if (input.depositDeductionVnd > deposits)
+      throw new AppError(
+        400,
+        'INVALID_DEPOSIT_DEDUCTION',
+        'Deposit deduction exceeds order deposit',
+      );
+    const rentalDue =
+      order.items.reduce(
+        (sum, item) => sum + item.unitDailyPriceVnd * BigInt(item.billableDays),
+        0n,
+      ) - order.promotionDiscountVnd;
+    const extraDue = damage + order.lateFeeVnd + input.otherFeeVnd;
+    const paidRental = order.payments
+      .filter((payment) => payment.status === 'SUCCEEDED' && payment.purpose === 'RENTAL')
+      .reduce((sum, payment) => sum + payment.amountVnd, 0n);
+    const paidExtra = order.payments
+      .filter((payment) => payment.status === 'SUCCEEDED' && payment.purpose === 'EXTRA')
+      .reduce((sum, payment) => sum + payment.amountVnd, 0n);
+    const paidDeposit = order.payments
+      .filter((payment) => payment.status === 'SUCCEEDED' && payment.purpose === 'DEPOSIT')
+      .reduce((sum, payment) => sum + payment.amountVnd, 0n);
+    if (
+      paidRental < rentalDue ||
+      input.depositDeductionVnd > paidDeposit ||
+      paidExtra + input.depositDeductionVnd < extraDue
+    )
+      throw new AppError(
+        409,
+        'SETTLEMENT_REQUIRED',
+        'Successful payments do not cover the rental settlement',
+      );
+    const refunded = await tx.refund.aggregate({
+      where: { payment: { orderId: order.id }, status: 'COMPLETED' },
+      _sum: { amountVnd: true },
+    });
+    const refundDue = paidDeposit - input.depositDeductionVnd;
+    if ((refunded._sum.amountVnd ?? 0n) < refundDue)
+      throw new AppError(
+        409,
+        'SETTLEMENT_REQUIRED',
+        'Deposit refund must be completed before closing the order',
+      );
+    const result = await tx.rentalOrder.update({
+      where: { id },
+      data: {
+        status: 'COMPLETED',
+        otherFeeVnd: input.otherFeeVnd,
+        depositDeductionVnd: input.depositDeductionVnd,
+        settlementNote: input.settlementNote ?? null,
+        financiallySettledAt: new Date(),
+        version: { increment: 1 },
+      },
+      include: includeOrder(),
+    });
+    await addEvent(tx, id, 'ORDER_COMPLETED', actor.id, 'RETURN_INSPECTION', 'COMPLETED');
+    return { ...result, calculatedDamageFeesVnd: damage, totalDepositVnd: deposits };
+  }, transactionOptions);
+}
+export async function listOrderEvents(
+  actor: AuthenticatedActor,
+  id: string,
+  query: { page: number; pageSize: number },
+) {
+  const order = await getOrder(actor, id);
+  const [items, totalItems] = await prisma.$transaction([
+    prisma.rentalOrderEvent.findMany({
+      where: { orderId: order.id },
+      orderBy: { occurredAt: 'desc' },
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    }),
+    prisma.rentalOrderEvent.count({ where: { orderId: order.id } }),
+  ]);
+  return {
+    items,
+    page: query.page,
+    pageSize: query.pageSize,
+    totalItems,
+    totalPages: Math.ceil(totalItems / query.pageSize),
+  };
+}

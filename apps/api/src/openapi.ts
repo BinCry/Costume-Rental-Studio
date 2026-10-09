@@ -27,6 +27,11 @@ export const openApiDocument = {
       description:
         'Inter-branch stock transfers. The source requests and ships; the destination approves, rejects, and receives.',
     },
+    {
+      name: 'Rentals',
+      description:
+        'Rental-order lifecycle. Orders are created as PENDING_CONFIRMATION; staff confirms with physical-unit allocation, then processes pickup, return, and settlement.',
+    },
   ],
   components: {
     securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },
@@ -457,6 +462,101 @@ export const openApiDocument = {
     },
   },
   paths: {
+    '/rentals/availability': {
+      get: {
+        tags: ['Rentals'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Check available costume units',
+        responses: {
+          '200': { description: 'Availability loaded' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+        },
+      },
+    },
+    '/rentals/orders': {
+      get: {
+        tags: ['Rentals'],
+        security: [{ bearerAuth: [] }],
+        summary: 'List rental orders',
+        responses: { '200': { description: 'Rental orders loaded' } },
+      },
+      post: {
+        tags: ['Rentals'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Create a rental order in PENDING_CONFIRMATION',
+        responses: {
+          '201': { description: 'Rental order created' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/rentals/orders/{orderId}': {
+      get: {
+        tags: ['Rentals'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Get rental order',
+        responses: {
+          '200': { description: 'Rental order loaded' },
+          '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+      patch: {
+        tags: ['Rentals'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Edit a pending rental order',
+        description: 'Requires expectedVersion and is allowed only while PENDING_CONFIRMATION.',
+        responses: {
+          '200': { description: 'Rental order updated' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/rentals/orders/{orderId}/confirm': {
+      post: {
+        tags: ['Rentals'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Confirm order and allocate units',
+        responses: {
+          '200': { description: 'Rental order confirmed' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/rentals/orders/{orderId}/pickup': {
+      post: {
+        tags: ['Rentals'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Record pickup condition and evidence',
+        responses: {
+          '200': { description: 'Rental order picked up' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/rentals/orders/{orderId}/return': {
+      post: {
+        tags: ['Rentals'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Inspect returned items and evidence',
+        responses: {
+          '200': { description: 'Rental order returned' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/rentals/orders/{orderId}/complete': {
+      post: {
+        tags: ['Rentals'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Complete settlement',
+        responses: {
+          '200': { description: 'Rental order completed' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
     '/inventory/units': {
       get: {
         tags: ['Inventory'],

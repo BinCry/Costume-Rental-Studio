@@ -29,6 +29,8 @@ const permissionDefinitions = [
   ['rentals.manage.own', 'rentals', 'manage', PermissionScope.OWN],
   ['rentals.read.branch', 'rentals', 'read', PermissionScope.BRANCH],
   ['rentals.manage.branch', 'rentals', 'manage', PermissionScope.BRANCH],
+  ['rentals.read.all', 'rentals', 'read', PermissionScope.ALL],
+  ['rentals.manage.all', 'rentals', 'manage', PermissionScope.ALL],
   ['payments.read.branch', 'payments', 'read', PermissionScope.BRANCH],
   ['payments.manage.branch', 'payments', 'manage', PermissionScope.BRANCH],
   ['crm.read.branch', 'crm', 'read', PermissionScope.BRANCH],

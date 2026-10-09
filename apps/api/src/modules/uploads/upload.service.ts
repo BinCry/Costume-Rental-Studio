@@ -4,7 +4,7 @@ import { AppError } from '../../common/errors/app-error.js';
 import { createPresignedPostUrl, type AllowedImageContentType } from '../../common/storage/s3.js';
 import { env } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
-import { assertPermission, type AuthenticatedActor } from '../auth/authorization.js';
+import { assertPermission, hasPermission, type AuthenticatedActor } from '../auth/authorization.js';
 import type { CreatePresignedUploadInput } from './upload.schema.js';
 
 const extensionByContentType: Record<AllowedImageContentType, string> = {
@@ -30,7 +30,7 @@ async function assertOwnerExists(
 }
 
 export function catalogMediaStagingKey(
-  ownerType: CreatePresignedUploadInput['ownerType'],
+  ownerType: 'model' | 'variant',
   ownerId: string,
   contentType: AllowedImageContentType,
 ) {
@@ -38,7 +38,7 @@ export function catalogMediaStagingKey(
 }
 
 export function catalogMediaKey(
-  ownerType: CreatePresignedUploadInput['ownerType'],
+  ownerType: 'model' | 'variant',
   ownerId: string,
   contentType: AllowedImageContentType,
 ) {
@@ -49,12 +49,31 @@ export async function createPresignedUpload(
   actor: AuthenticatedActor,
   input: CreatePresignedUploadInput,
 ) {
-  assertPermission(actor, { module: 'catalog', action: 'manage' });
   if (input.size > env.MEDIA_MAX_UPLOAD_BYTES)
     throw new AppError(400, 'FILE_TOO_LARGE', 'Image exceeds the allowed size');
-
-  await assertOwnerExists(input.ownerType, input.ownerId);
-  const objectKey = catalogMediaStagingKey(input.ownerType, input.ownerId, input.contentType);
+  if (input.purpose === 'catalog-media') {
+    assertPermission(actor, { module: 'catalog', action: 'manage' });
+    await assertOwnerExists(input.ownerType, input.ownerId);
+    const objectKey = catalogMediaStagingKey(input.ownerType, input.ownerId, input.contentType);
+    const signed = await createPresignedPostUrl({ key: objectKey, contentType: input.contentType });
+    return { objectKey, method: 'POST' as const, ...signed };
+  }
+  const item = await prisma.rentalOrderItem.findUnique({
+    where: { id: input.ownerId },
+    select: { id: true, order: { select: { customerUserId: true, pickupBranchId: true } } },
+  });
+  if (!item) throw new AppError(404, 'ORDER_ITEM_NOT_FOUND', 'Rental order item not found');
+  const isOwner =
+    actor.id === item.order.customerUserId &&
+    hasPermission(actor, { module: 'rentals', action: 'manage', scope: 'OWN' });
+  if (!isOwner)
+    assertPermission(actor, {
+      module: 'rentals',
+      action: 'manage',
+      branchId: item.order.pickupBranchId,
+    });
+  const extension = extensionByContentType[input.contentType];
+  const objectKey = `rental-staging/items/${item.id}/${input.phase.toLowerCase()}/${randomUUID()}.${extension}`;
   const signed = await createPresignedPostUrl({ key: objectKey, contentType: input.contentType });
   return { objectKey, method: 'POST' as const, ...signed };
 }

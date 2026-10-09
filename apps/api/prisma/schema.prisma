@@ -149,6 +149,13 @@ enum AllocationStatus {
   @@map("allocation_status")
 }
 
+enum RentalEvidencePhase {
+  PICKUP
+  RETURN
+
+  @@map("rental_evidence_phase")
+}
+
 enum InspectionStatus {
   PENDING_ASSESSMENT
   PASSED
@@ -274,6 +281,8 @@ model User {
   policyVersionsCreated  RentalPolicyVersion[]
   promotionsCreated      Promotion[]
   rentalOrdersCreated    RentalOrder[]           @relation("RentalOrderCreator")
+  rentalEvidenceUploaded RentalItemEvidence[]    @relation("RentalEvidenceUploader")
+  rentalOrderEvents      RentalOrderEvent[]      @relation("RentalOrderEventActor")
   refundsRequested       Refund[]                @relation("RefundRequester")
   customer               Customer?               @relation("CustomerUser")
 
@@ -779,6 +788,7 @@ model RentalOrder {
   payments             Payment[]
   interactions         CustomerInteraction[]
   crmCases             CrmCase[]
+  events               RentalOrderEvent[]
 
   @@index([pickupBranchId, status, plannedStartAt])
   @@index([customerUserId, createdAt])
@@ -814,9 +824,45 @@ model RentalOrderItem {
   unit                 CostumeUnit?           @relation(fields: [unitId], references: [id], onDelete: Restrict)
   allocator            Employee?              @relation(fields: [allocatedBy], references: [userId], onDelete: SetNull)
   accessories          RentalItemAccessory[]
+  evidence             RentalItemEvidence[]
 
   @@index([orderId, allocationStatus])
+  @@index([unitId, occupiedFrom, occupiedUntil, allocationStatus])
   @@map("rental_order_items")
+}
+
+model RentalItemEvidence {
+  id              String              @id @default(uuid()) @db.Uuid
+  orderItemId     String              @map("order_item_id") @db.Uuid
+  phase           RentalEvidencePhase
+  objectKey       String              @unique @map("object_key") @db.VarChar(500)
+  sourceUploadKey String?             @unique @map("source_upload_key") @db.VarChar(500)
+  contentType     String              @map("content_type") @db.VarChar(100)
+  sizeBytes       Int                 @map("size_bytes")
+  uploadedBy      String              @map("uploaded_by") @db.Uuid
+  capturedAt      DateTime?           @map("captured_at") @db.Timestamptz(6)
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  orderItem       RentalOrderItem     @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  uploader        User                @relation("RentalEvidenceUploader", fields: [uploadedBy], references: [id], onDelete: Restrict)
+
+  @@index([orderItemId, phase, createdAt])
+  @@map("rental_item_evidence")
+}
+
+model RentalOrderEvent {
+  id           String       @id @default(uuid()) @db.Uuid
+  orderId      String       @map("order_id") @db.Uuid
+  eventType    String       @map("event_type") @db.VarChar(100)
+  fromStatus   OrderStatus? @map("from_status")
+  toStatus     OrderStatus? @map("to_status")
+  actorUserId  String?      @map("actor_user_id") @db.Uuid
+  metadataJson Json?        @map("metadata_json") @db.JsonB
+  occurredAt   DateTime     @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  order        RentalOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  actor        User?        @relation("RentalOrderEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, occurredAt])
+  @@map("rental_order_events")
 }
 
 model RentalItemAccessory {

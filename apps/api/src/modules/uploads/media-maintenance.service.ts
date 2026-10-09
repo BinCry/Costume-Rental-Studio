@@ -114,7 +114,7 @@ export async function cleanupOrphanedCatalogMedia(now = new Date()) {
   let scanned = 0;
   let deleted = 0;
 
-  for (const prefix of ['catalog/', 'catalog-staging/']) {
+  for (const prefix of ['catalog/', 'catalog-staging/', 'rentals/', 'rental-staging/']) {
     let continuationToken: string | undefined;
     do {
       const page = await listStoredObjectsPage({ prefix, continuationToken, maxKeys: 500 });
@@ -132,7 +132,12 @@ export async function cleanupOrphanedCatalogMedia(now = new Date()) {
               where: { objectKey: { in: keys } },
               select: { objectKey: true },
             })
-          : [];
+          : prefix === 'rentals/'
+            ? await prisma.rentalItemEvidence.findMany({
+                where: { objectKey: { in: keys } },
+                select: { objectKey: true },
+              })
+            : [];
       const registeredKeys = new Set(registered.map((item) => item.objectKey));
 
       for (const key of keys) {
