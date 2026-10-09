@@ -23,6 +23,7 @@ import { staffRouter } from './modules/staff/staff.route.js';
 import { rbacRouter } from './modules/rbac/rbac.route.js';
 import { uploadRouter } from './modules/uploads/upload.route.js';
 import { inventoryRouter } from './modules/inventory/inventory.route.js';
+import { transferRouter } from './modules/transfers/transfer.route.js';
 import { openApiDocument } from './openapi.js';
 
 export function createApp() {
@@ -107,6 +108,7 @@ export function createApp() {
   app.use('/api/v1/branches', branchRouter);
   app.use('/api/v1/catalog', catalogRouter);
   app.use('/api/v1/inventory', inventoryRouter);
+  app.use('/api/v1/inventory', transferRouter);
   app.use('/api/v1/uploads', uploadRouter);
   app.use('/api/v1/promotions', promotionRouter);
   app.use('/api/v1/rental-policies', policyRouter);

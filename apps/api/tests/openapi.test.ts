@@ -26,6 +26,8 @@ describe('OpenAPI documentation', () => {
     expect(document.paths['/branches/{branchId}']?.delete).toBeDefined();
     expect(document.paths['/branches/{branchId}/activate']).toBeDefined();
     expect(document.paths['/branches/{branchId}/deactivate']).toBeDefined();
+    expect(document.paths['/inventory/transfers']).toBeDefined();
+    expect(document.paths['/inventory/transfers/{transferId}/receive']).toBeDefined();
     for (const path of [
       '/catalog/categories/{id}',
       '/catalog/models/{id}',

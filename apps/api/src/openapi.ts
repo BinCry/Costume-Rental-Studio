@@ -22,6 +22,11 @@ export const openApiDocument = {
       description:
         'Physical costume-unit lifecycle. Branch staff are limited to their assigned active branches; inventory ALL permissions can operate across branches.',
     },
+    {
+      name: 'Transfers',
+      description:
+        'Inter-branch stock transfers. The source requests and ships; the destination approves, rejects, and receives.',
+    },
   ],
   components: {
     securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },
@@ -47,6 +52,12 @@ export const openApiDocument = {
       },
       unitId: {
         name: 'unitId',
+        in: 'path',
+        required: true,
+        schema: { type: 'string', format: 'uuid' },
+      },
+      transferId: {
+        name: 'transferId',
         in: 'path',
         required: true,
         schema: { type: 'string', format: 'uuid' },
@@ -159,6 +170,143 @@ export const openApiDocument = {
         type: 'object',
         required: ['notes'],
         properties: { notes: { type: 'string', minLength: 1, maxLength: 10000 } },
+      },
+      TransferStatus: {
+        type: 'string',
+        enum: ['REQUESTED', 'APPROVED', 'IN_TRANSIT', 'RECEIVED', 'REJECTED', 'CANCELLED'],
+      },
+      StockTransferItem: {
+        type: 'object',
+        required: ['id', 'transferId', 'unitId'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          transferId: { type: 'string', format: 'uuid' },
+          unitId: { type: 'string', format: 'uuid' },
+          conditionOut: { $ref: '#/components/schemas/CostumeConditionGrade' },
+          conditionOutNotes: { type: 'string', nullable: true },
+          conditionIn: { $ref: '#/components/schemas/CostumeConditionGrade' },
+          conditionInNotes: { type: 'string', nullable: true },
+          receivedOperationalStatus: { $ref: '#/components/schemas/UnitOperationalStatus' },
+        },
+      },
+      StockTransfer: {
+        type: 'object',
+        required: [
+          'id',
+          'transferCode',
+          'fromBranchId',
+          'toBranchId',
+          'status',
+          'requestedBy',
+          'version',
+          'items',
+        ],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          transferCode: { type: 'string', example: 'TRF-20261009-A1B2C3D4' },
+          fromBranchId: { type: 'string', format: 'uuid' },
+          toBranchId: { type: 'string', format: 'uuid' },
+          status: { $ref: '#/components/schemas/TransferStatus' },
+          requestNote: { type: 'string', nullable: true },
+          requestedBy: { type: 'string', format: 'uuid' },
+          approvedBy: { type: 'string', format: 'uuid', nullable: true },
+          shippedBy: { type: 'string', format: 'uuid', nullable: true },
+          receivedBy: { type: 'string', format: 'uuid', nullable: true },
+          endedBy: { type: 'string', format: 'uuid', nullable: true },
+          endReason: { type: 'string', nullable: true },
+          version: { type: 'integer', minimum: 1 },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+          items: { type: 'array', items: { $ref: '#/components/schemas/StockTransferItem' } },
+        },
+      },
+      CreateTransferInput: {
+        type: 'object',
+        required: ['fromBranchId', 'toBranchId', 'unitIds'],
+        properties: {
+          fromBranchId: { type: 'string', format: 'uuid' },
+          toBranchId: { type: 'string', format: 'uuid' },
+          unitIds: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 100,
+            items: { type: 'string', format: 'uuid' },
+          },
+          requestNote: { type: 'string', maxLength: 10000 },
+        },
+      },
+      UpdateTransferInput: {
+        type: 'object',
+        required: ['expectedVersion'],
+        properties: {
+          expectedVersion: { type: 'integer', minimum: 1 },
+          requestNote: { type: 'string', nullable: true, maxLength: 10000 },
+          unitIds: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 100,
+            items: { type: 'string', format: 'uuid' },
+          },
+        },
+      },
+      TransferVersionInput: {
+        type: 'object',
+        required: ['expectedVersion'],
+        properties: { expectedVersion: { type: 'integer', minimum: 1 } },
+      },
+      TransferEndInput: {
+        type: 'object',
+        required: ['expectedVersion', 'reason'],
+        properties: {
+          expectedVersion: { type: 'integer', minimum: 1 },
+          reason: { type: 'string', minLength: 1, maxLength: 10000 },
+        },
+      },
+      ShipTransferInput: {
+        type: 'object',
+        required: ['expectedVersion', 'items'],
+        properties: {
+          expectedVersion: { type: 'integer', minimum: 1 },
+          items: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 100,
+            items: {
+              type: 'object',
+              required: ['unitId', 'conditionOut'],
+              properties: {
+                unitId: { type: 'string', format: 'uuid' },
+                conditionOut: { type: 'string', enum: ['NEW', 'GOOD', 'FAIR', 'POOR', 'DAMAGED'] },
+                conditionOutNotes: { type: 'string', maxLength: 10000 },
+              },
+            },
+          },
+        },
+      },
+      ReceiveTransferInput: {
+        type: 'object',
+        required: ['expectedVersion', 'items'],
+        properties: {
+          expectedVersion: { type: 'integer', minimum: 1 },
+          items: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 100,
+            items: {
+              type: 'object',
+              required: ['unitId', 'conditionIn', 'receivedOperationalStatus'],
+              properties: {
+                unitId: { type: 'string', format: 'uuid' },
+                conditionIn: { type: 'string', enum: ['NEW', 'GOOD', 'FAIR', 'POOR', 'DAMAGED'] },
+                conditionInNotes: { type: 'string', maxLength: 10000 },
+                receivedOperationalStatus: {
+                  type: 'string',
+                  enum: ['READY', 'CLEANING', 'REPAIR'],
+                },
+              },
+            },
+          },
+        },
       },
       CreateBranchInput: {
         type: 'object',
@@ -513,6 +661,207 @@ export const openApiDocument = {
           '401': { $ref: '#/components/responses/Unauthorized' },
           '403': { $ref: '#/components/responses/Forbidden' },
           '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+    },
+    '/inventory/transfers': {
+      get: {
+        tags: ['Transfers'],
+        security: [{ bearerAuth: [] }],
+        summary: 'List stock transfers',
+        description:
+          'Requires transfers.read for either transfer branch, or transfers.read.ALL. Supports page, pageSize, search, branchId, fromBranchId, toBranchId, status, sortBy and sortOrder.',
+        responses: {
+          '200': { description: 'Transfers loaded' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+        },
+      },
+      post: {
+        tags: ['Transfers'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Request a stock transfer',
+        description:
+          'Requires transfers.manage for the source branch. Locks both active branches and the requested units; a unit is reserved from REQUESTED onward.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/CreateTransferInput' } },
+          },
+        },
+        responses: {
+          '201': {
+            description: 'Transfer requested',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/StockTransfer' } },
+            },
+          },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '409': { description: 'UNIT_UNAVAILABLE or TRANSFER_CODE_CONFLICT' },
+        },
+      },
+    },
+    '/inventory/transfers/{transferId}': {
+      get: {
+        tags: ['Transfers'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Get transfer detail',
+        parameters: [{ $ref: '#/components/parameters/transferId' }],
+        responses: {
+          '200': {
+            description: 'Transfer loaded',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/StockTransfer' } },
+            },
+          },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+      patch: {
+        tags: ['Transfers'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Amend a requested transfer',
+        description:
+          'Source branch only. The expectedVersion prevents lost updates; only REQUESTED transfers can be changed.',
+        parameters: [{ $ref: '#/components/parameters/transferId' }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/UpdateTransferInput' } },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Transfer updated',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/StockTransfer' } },
+            },
+          },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+          '409': {
+            description:
+              'TRANSFER_VERSION_CONFLICT, UNIT_UNAVAILABLE, or INVALID_TRANSFER_TRANSITION',
+          },
+        },
+      },
+    },
+    '/inventory/transfers/{transferId}/approve': {
+      post: {
+        tags: ['Transfers'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Approve a requested transfer',
+        description: 'Destination branch only; REQUESTED to APPROVED.',
+        parameters: [{ $ref: '#/components/parameters/transferId' }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/TransferVersionInput' } },
+          },
+        },
+        responses: {
+          '200': { description: 'Transfer approved' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+          '409': { description: 'TRANSFER_VERSION_CONFLICT or INVALID_TRANSFER_TRANSITION' },
+        },
+      },
+    },
+    '/inventory/transfers/{transferId}/reject': {
+      post: {
+        tags: ['Transfers'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Reject a requested transfer',
+        description: 'Destination branch only; REQUESTED to REJECTED.',
+        parameters: [{ $ref: '#/components/parameters/transferId' }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/TransferEndInput' } },
+          },
+        },
+        responses: {
+          '200': { description: 'Transfer rejected' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+          '409': { description: 'TRANSFER_VERSION_CONFLICT or INVALID_TRANSFER_TRANSITION' },
+        },
+      },
+    },
+    '/inventory/transfers/{transferId}/cancel': {
+      post: {
+        tags: ['Transfers'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Cancel a requested or approved transfer',
+        description: 'Source branch only. Cannot cancel once shipped.',
+        parameters: [{ $ref: '#/components/parameters/transferId' }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/TransferEndInput' } },
+          },
+        },
+        responses: {
+          '200': { description: 'Transfer cancelled' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+          '409': { description: 'TRANSFER_VERSION_CONFLICT or INVALID_TRANSFER_TRANSITION' },
+        },
+      },
+    },
+    '/inventory/transfers/{transferId}/ship': {
+      post: {
+        tags: ['Transfers'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Ship every unit in an approved transfer',
+        description:
+          'Source branch only. All items must be supplied exactly once; units become IN_TRANSFER and immutable shipment events are created.',
+        parameters: [{ $ref: '#/components/parameters/transferId' }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/ShipTransferInput' } },
+          },
+        },
+        responses: {
+          '200': { description: 'Transfer shipped' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+          '409': {
+            description:
+              'UNIT_UNAVAILABLE, TRANSFER_VERSION_CONFLICT, or INVALID_TRANSFER_TRANSITION',
+          },
+        },
+      },
+    },
+    '/inventory/transfers/{transferId}/receive': {
+      post: {
+        tags: ['Transfers'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Receive every shipped unit',
+        description:
+          'Destination branch only. Full receipt moves each unit to the destination and records its incoming condition. DAMAGED must be received into REPAIR.',
+        parameters: [{ $ref: '#/components/parameters/transferId' }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/ReceiveTransferInput' } },
+          },
+        },
+        responses: {
+          '200': { description: 'Transfer received' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '404': { $ref: '#/components/responses/NotFound' },
+          '409': {
+            description:
+              'UNIT_UNAVAILABLE, TRANSFER_VERSION_CONFLICT, or INVALID_TRANSFER_TRANSITION',
+          },
         },
       },
     },

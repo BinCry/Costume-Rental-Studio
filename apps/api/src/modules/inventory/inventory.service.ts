@@ -244,6 +244,14 @@ export async function changeUnitStatus(
     };
     if (!allowed[unit.operationalStatus]?.includes(input.targetStatus))
       throw new AppError(409, 'INVALID_UNIT_TRANSITION', 'Unit status transition is not allowed');
+    const activeTransfers = await transaction.stockTransferItem.count({
+      where: {
+        unitId,
+        transfer: { status: { in: ['REQUESTED', 'APPROVED', 'IN_TRANSIT'] } },
+      },
+    });
+    if (activeTransfers)
+      throw new AppError(409, 'UNIT_IN_USE', 'Unit has an active stock transfer');
     const updated = await transaction.costumeUnit.update({
       where: { id: unitId },
       data: { operationalStatus: input.targetStatus },
