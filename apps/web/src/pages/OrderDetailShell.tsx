@@ -37,12 +37,16 @@ export function OrderDetailShell({
   go,
   initialOrderId,
   initialBranch,
+  canReadPayments = true,
+  canCollectPayments = true,
 }: {
   scenario: DemoScenario;
   mode: 'handover' | 'return';
   go: Navigate;
   initialOrderId: string;
   initialBranch: string;
+  canReadPayments?: boolean;
+  canCollectPayments?: boolean;
 }) {
   const realApiMode = apiEnabled && hasAccessToken();
   const [branch, setBranch] = useState(initialBranch);
@@ -112,7 +116,7 @@ export function OrderDetailShell({
     (settlement.damageFee > 0 || settlement.missingFee > 0);
   useEffect(() => {
     let active = true;
-    if (!realApiMode || mode !== 'return' || !order) {
+    if (!realApiMode || mode !== 'return' || !order || !canReadPayments) {
       setBackendSettlement(undefined);
       setSettlementError('');
       setSettlementLoading(false);
@@ -136,7 +140,7 @@ export function OrderDetailShell({
     return () => {
       active = false;
     };
-  }, [mode, order?.id, realApiMode]);
+  }, [canReadPayments, mode, order?.id, realApiMode]);
   const onOrderChange = (id: string) => {
     setOrderId(id);
     setBarcode('');
@@ -275,7 +279,7 @@ export function OrderDetailShell({
       previewHandover();
       return;
     }
-    if (!order || !allScanned || !allChecked || !allEvidenceSelected || restricted) return;
+    if (!order || !allScanned || !allChecked || !allEvidenceSelected || !canCollectPayments || restricted) return;
     if (effectiveMethod === 'BANK_TRANSFER' && !transactionReference.trim()) {
       setOperationIssue('Nhập mã giao dịch chuyển khoản trước khi xác nhận thu tiền.');
       return;
@@ -369,18 +373,18 @@ export function OrderDetailShell({
         </Button>
       </div>
       <div className="task-toolbar">
-        <SelectField
-          label="Chi nhánh thao tác"
-          value={branch}
-          onChange={(event) => {
-            setBranch(event.target.value);
-            onOrderChange('');
-          }}
-        >
-          {branches.map((entry) => (
-            <option key={entry}>{entry}</option>
-          ))}
-        </SelectField>
+        {!realApiMode && (
+          <SelectField
+            label="Chi nhánh thao tác"
+            value={branch}
+            onChange={(event) => {
+              setBranch(event.target.value);
+              onOrderChange('');
+            }}
+          >
+            {branches.map((entry) => <option key={entry}>{entry}</option>)}
+          </SelectField>
+        )}
         <SelectField
           label="Đơn đang xử lý"
           value={order?.id ?? ''}
@@ -702,7 +706,7 @@ export function OrderDetailShell({
                   <SelectField
                     label={`Phương thức thu ${realApiMode ? '' : '(bản xem trước)'}`}
                     value={effectiveMethod}
-                    disabled={scenario === 'bankPending'}
+                    disabled={scenario === 'bankPending' || (realApiMode && !canCollectPayments)}
                     onChange={(event) => {
                       setMethod(event.target.value as 'CASH' | 'BANK_TRANSFER');
                       setRentPreview(false);
@@ -716,7 +720,7 @@ export function OrderDetailShell({
                     <div className="collection-head">
                       <span>Khoản</span>
                       <span>Cần thu</span>
-                      <span>Đánh dấu nhận (demo)</span>
+                      <span>{realApiMode ? 'Đã xác nhận nhận' : 'Đánh dấu nhận (demo)'}</span>
                       <span>Còn thiếu</span>
                     </div>
                     <div>
@@ -769,6 +773,7 @@ export function OrderDetailShell({
                         <input
                           type="checkbox"
                           checked={rentPreview}
+                          disabled={realApiMode && !canCollectPayments}
                           onChange={(event) => setRentPreview(event.target.checked)}
                         />
                         <span>{realApiMode ? 'Đã nhận tiền thuê bằng tiền mặt' : 'Xem trước: đã nhận tiền thuê bằng tiền mặt'}</span>
@@ -777,6 +782,7 @@ export function OrderDetailShell({
                         <input
                           type="checkbox"
                           checked={depositPreview}
+                          disabled={realApiMode && !canCollectPayments}
                           onChange={(event) => setDepositPreview(event.target.checked)}
                         />
                         <span>{realApiMode ? 'Đã nhận tiền cọc bằng tiền mặt' : 'Xem trước: đã nhận tiền cọc bằng tiền mặt'}</span>
@@ -804,9 +810,19 @@ export function OrderDetailShell({
                       Không đánh dấu Đã thu hoặc giao bộ cho đến khi đối soát xong.
                     </Feedback>
                   )}
+                  {realApiMode && !canCollectPayments && (
+                    <Feedback tone="warning" title="Bạn chưa có quyền thu tiền cho đơn này">
+                      Cần quyền đọc và thu tiền tại chi nhánh nhận đồ. Liên hệ quản trị viên để được phân quyền.
+                    </Feedback>
+                  )}
                 </>
               ) : (
                 <>
+                  {realApiMode && !canReadPayments && (
+                    <Feedback tone="warning" title="Bạn chưa có quyền xem quyết toán">
+                      Số tiền và trạng thái hoàn cọc chỉ hiển thị cho nhân viên có quyền đọc thanh toán tại chi nhánh.
+                    </Feedback>
+                  )}
                   {realApiMode && settlementLoading && (
                     <Feedback title="Đang tải quyết toán từ máy chủ">
                       Đang đối chiếu khoản đã thu, cấn trừ và trạng thái hoàn cọc.
@@ -976,9 +992,9 @@ export function OrderDetailShell({
                     needsAssessmentNote ||
                     restricted ||
                     backendReturnReady ||
+                    (realApiMode && mode === 'handover' && !canCollectPayments) ||
                     (mode === 'handover' &&
-                      (!rentPreview ||
-                        !depositPreview ||
+                      ((effectiveMethod === 'CASH' && (!rentPreview || !depositPreview)) ||
                         (!realApiMode && effectiveMethod === 'BANK_TRANSFER') ||
                         (realApiMode && effectiveMethod === 'BANK_TRANSFER' && !transactionReference.trim())))
                   }

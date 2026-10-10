@@ -559,6 +559,8 @@ const roles: Role[] = [
     name: 'Nhân viên bán hàng',
     group: 'STAFF',
     permissions: [
+      'customers.create.branch',
+      'customers.read.branch',
       'catalog.read.all',
       'inventory.read.branch',
       'rentals.read.branch',

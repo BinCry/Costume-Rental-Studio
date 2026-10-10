@@ -16,6 +16,7 @@ import {
 } from '../components/studio';
 import { blockTypeLabels, conditionLabels, unitStatusLabels } from '../components/statusLabels';
 import { useFixtureResource } from '../components/useFixtureResource';
+import { useBranchOptions } from '../components/useBranchOptions';
 import { useMobileDetailReveal } from '../components/useMobileDetailReveal';
 import {
   studioAdapter,
@@ -268,17 +269,17 @@ export function InventoryPage({
   );
 }
 
-export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; branch: string }) {
+export function TransfersPage({ scenario, branch, canManage = true }: { scenario: DemoScenario; branch: string; canManage?: boolean }) {
   const loadTransfers = useCallback(
     (currentScenario: DemoScenario) => studioAdapter.transfers(currentScenario, branch),
     [branch],
   );
-  const { loading, error, data, retry } = useFixtureResource(scenario, loadTransfers);
+  const realApiMode = apiEnabled && hasAccessToken();
+  const { options: branchOptions, ready: branchesReady, error: branchesError, retry: retryBranches } = useBranchOptions();
+  const { loading, error, data, retry } = useFixtureResource(scenario, loadTransfers, branch);
   const [selected, setSelected] = useState('DC-001');
   const [from, setFrom] = useState(branch);
-  const [to, setTo] = useState(
-    branch === 'Chi nhánh Quận 1' ? 'Chi nhánh Thủ Đức' : 'Chi nhánh Quận 1',
-  );
+  const [to, setTo] = useState(realApiMode ? '' : branch === 'Chi nhánh Quận 1' ? 'Chi nhánh Thủ Đức' : 'Chi nhánh Quận 1');
   const [unitCode, setUnitCode] = useState('BC-012');
   const [note, setNote] = useState('');
   const [checks, setChecks] = useState<Record<string, string>>({});
@@ -287,6 +288,11 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const { detailRef, revealDetail } = useMobileDetailReveal<HTMLDivElement>();
+  const sourceBranch = realApiMode ? branch : from;
+  const destinationOptions = branchOptions.filter((name) => name !== sourceBranch);
+  const destinationBranch = realApiMode
+    ? destinationOptions.includes(to) ? to : destinationOptions[0] ?? ''
+    : to;
   const save = async (value: Transfer) => {
     setBusy(true);
     setIssue('');
@@ -349,17 +355,31 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
             />
             <div className="feature-two-column">
               <div>
-                <Panel title="Tạo yêu cầu">
+                {canManage && <Panel title="Tạo yêu cầu">
                   <div className="feature-filters">
+                    {realApiMode ? (
+                      <div className="field">
+                        <span>Chi nhánh xuất</span>
+                        <strong>{sourceBranch}</strong>
+                      </div>
+                    ) : (
+                      <BranchSelector
+                        label="Chi nhánh xuất"
+                        value={from}
+                        options={branchOptions}
+                        onChange={(value) => {
+                          setFrom(value);
+                          setTo(branchOptions.find((name) => name !== value) ?? '');
+                        }}
+                      />
+                    )}
                     <BranchSelector
-                      label="Chi nhánh xuất"
-                      value={from}
-                      onChange={(v) => {
-                        setFrom(v);
-                        setTo(v === 'Chi nhánh Quận 1' ? 'Chi nhánh Thủ Đức' : 'Chi nhánh Quận 1');
-                      }}
+                      label="Chi nhánh nhận"
+                      value={destinationBranch}
+                      options={destinationOptions}
+                      disabled={realApiMode && (!branchesReady || branchesError || destinationOptions.length === 0)}
+                      onChange={setTo}
                     />
-                    <BranchSelector label="Chi nhánh nhận" value={to} onChange={setTo} />
                     <Field
                       label="Barcode bộ sẵn sàng"
                       value={unitCode}
@@ -371,16 +391,23 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
                   />
+                  {realApiMode && branchesError && (
+                    <Feedback tone="danger" title="Chưa tải được danh sách chi nhánh">
+                      Không thể chọn nơi nhận.{' '}
+                      <button type="button" className="text-button" onClick={retryBranches}>Thử lại</button>
+                    </Feedback>
+                  )}
                   <Button
+                    disabled={busy || (realApiMode && (!branchesReady || branchesError || !destinationBranch))}
                     onClick={() => {
-                      if (from === to || !note.trim()) {
+                      if (sourceBranch === destinationBranch || !destinationBranch || !note.trim()) {
                         setIssue('Chọn hai chi nhánh khác nhau và nhập lý do.');
                         return;
                       }
                       void save({
                         code: `DC-DEMO-${transfers.length + 1}`,
-                        from,
-                        to,
+                        from: sourceBranch,
+                        to: destinationBranch,
                         status: 'REQUESTED',
                         units: [{ barcode: unitCode }],
                         note,
@@ -391,7 +418,7 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
                   >
                     Tạo phiếu yêu cầu
                   </Button>
-                </Panel>
+                </Panel>}
                 <Panel title="Phiếu điều chuyển">
                   <div className="feature-card-list">
                     {transfers.map((t) => (
@@ -454,7 +481,7 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
                         Tình trạng xuất: {u.out ? (conditionLabels[u.out] ?? u.out) : 'Chưa xuất'} ·
                         Nhận: {u.received ?? 'Chưa nhận'}
                       </span>
-                      {current.status === 'IN_TRANSIT' && !u.received ? (
+                      {canManage && current.status === 'IN_TRANSIT' && !u.received ? (
                         <SelectField
                           label={`Tình trạng nhận ${u.barcode}`}
                           value={checks[u.barcode] ?? ''}
@@ -472,7 +499,7 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
                       )}
                     </div>
                   ))}
-                  <div className="feature-actions">
+                  {canManage && <div className="feature-actions">
                     {current.status === 'REQUESTED' && (
                       <Button disabled={busy} onClick={() => void advance(current, 'APPROVED')}>
                         Duyệt điều chuyển
@@ -494,8 +521,8 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
                         {current.units.filter((u) => !u.received && checks[u.barcode]).length} bộ
                       </Button>
                     )}
-                  </div>
-                  {current.status === 'REQUESTED' && (
+                  </div>}
+                  {canManage && current.status === 'REQUESTED' && (
                     <div className="destructive-area">
                       <TextAreaField
                         label="Lý do từ chối hoặc hủy"
@@ -520,7 +547,7 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
                       </div>
                     </div>
                   )}
-                  {current.status === 'APPROVED' && (
+                  {canManage && current.status === 'APPROVED' && (
                     <div className="destructive-area">
                       <Button variant="quiet" onClick={() => void advance(current, 'CANCELLED')}>
                         Hủy trước khi xuất

@@ -22,6 +22,7 @@ import {
   Timeline,
 } from '../components/studio';
 import { useFixtureResource } from '../components/useFixtureResource';
+import { useBranchOptions } from '../components/useBranchOptions';
 import { useMobileDetailReveal } from '../components/useMobileDetailReveal';
 import {
   permissions,
@@ -58,7 +59,7 @@ const staffRoleLabels: Record<string, string> = {
   INVENTORY_STAFF: 'Nhân viên kho',
 };
 
-export function CatalogAdminPage({ scenario }: { scenario: DemoScenario }) {
+export function CatalogAdminPage({ scenario, canManage = true }: { scenario: DemoScenario; canManage?: boolean }) {
   const realApiMode = apiEnabled && hasAccessToken();
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.details);
   const loadCategories = useCallback(
@@ -155,7 +156,7 @@ export function CatalogAdminPage({ scenario }: { scenario: DemoScenario }) {
               eyebrow="QUẢN TRỊ / DANH MỤC"
               title="Mẫu, biến thể & giá"
               description="Giá thuê/ngày, cọc và giá thay thế được đặt trên biến thể, dùng chung toàn chuỗi."
-              action={
+              action={canManage ? (
                 <Button
                   variant="secondary"
                   onClick={() => {
@@ -178,7 +179,7 @@ export function CatalogAdminPage({ scenario }: { scenario: DemoScenario }) {
                 >
                   + Tạo mẫu
                 </Button>
-              }
+              ) : undefined}
             />
             <div className="feature-two-column">
               <div>
@@ -204,6 +205,7 @@ export function CatalogAdminPage({ scenario }: { scenario: DemoScenario }) {
                   </div>
                 </Panel>
                 <Panel title="Thông tin mẫu">
+                  <fieldset className="permission-fieldset" disabled={!canManage}>
                   <div className="feature-filters">
                     <Field
                       label="Mã mẫu"
@@ -288,12 +290,13 @@ export function CatalogAdminPage({ scenario }: { scenario: DemoScenario }) {
                   <Button loading={busy} onClick={() => void saveModel()}>
                     Lưu mẫu
                   </Button>
+                  </fieldset>
                 </Panel>
               </div>
               <div>
                 <Panel
                   title="Biến thể & giá"
-                  action={
+                  action={canManage ? (
                     <Button
                       variant="quiet"
                       onClick={() =>
@@ -311,7 +314,7 @@ export function CatalogAdminPage({ scenario }: { scenario: DemoScenario }) {
                     >
                       + Biến thể
                     </Button>
-                  }
+                  ) : undefined}
                 >
                   <div className="variant-pills">
                     {current.variants.map((v) => (
@@ -325,7 +328,7 @@ export function CatalogAdminPage({ scenario }: { scenario: DemoScenario }) {
                     ))}
                   </div>
                   {variant ? (
-                    <div className="stack-form">
+                    <fieldset className="permission-fieldset stack-form" disabled={!canManage}>
                       <p className="muted">
                         {variant.code} · biến thể {variant.modelId}
                       </p>
@@ -384,7 +387,7 @@ export function CatalogAdminPage({ scenario }: { scenario: DemoScenario }) {
                       <Button loading={busy} onClick={() => void saveVariant()}>
                         Lưu biến thể & giá
                       </Button>
-                    </div>
+                    </fieldset>
                   ) : (
                     <p className="muted">Chọn biến thể để sửa giá hoặc tạo mới.</p>
                   )}
@@ -404,8 +407,15 @@ export function CatalogAdminPage({ scenario }: { scenario: DemoScenario }) {
   );
 }
 
-export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
+export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoScenario; canManage?: boolean }) {
   const realApiMode = apiEnabled && hasAccessToken();
+  const {
+    options: branchOptions,
+    ready: branchesReady,
+    error: branchesError,
+    retry: retryBranches,
+  } = useBranchOptions();
+  const rolesResource = useFixtureResource(scenario, studioAdapter.roles);
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.employees);
   const [selected, setSelected] = useState('NV-001');
   const [editing, setEditing] = useState<Employee>();
@@ -413,10 +423,24 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
-  const [assignmentBranch, setAssignmentBranch] = useState('Chi nhánh Quận 1');
+  const [assignmentBranchSelection, setAssignmentBranchSelection] = useState(realApiMode ? '' : 'Chi nhánh Quận 1');
   const [assignmentRole, setAssignmentRole] = useState('SALES_STAFF');
+  const assignmentBranch = realApiMode
+    ? branchOptions.includes(assignmentBranchSelection)
+      ? assignmentBranchSelection
+      : branchOptions[0] ?? ''
+    : assignmentBranchSelection;
   const [pendingEmployee, setPendingEmployee] = useState('');
   const { detailRef, revealDetail } = useMobileDetailReveal<HTMLDivElement>();
+  const staffRoles = (rolesResource.data ?? []).filter((role) => role.group === 'STAFF');
+  const availableAssignmentRoles = staffRoles.length
+    ? staffRoles
+    : realApiMode
+      ? []
+      : [{ code: 'SALES_STAFF', name: staffRoleLabels.SALES_STAFF }, { code: 'INVENTORY_STAFF', name: staffRoleLabels.INVENTORY_STAFF }];
+  const selectedAssignmentRole = availableAssignmentRoles.some((role) => role.code === assignmentRole)
+    ? assignmentRole
+    : availableAssignmentRoles[0]?.code ?? '';
   const save = async () => {
     if (!editing?.name.trim() || !editing.email.includes('@')) {
       setIssue('Nhập tên và email hợp lệ.');
@@ -456,7 +480,7 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
               eyebrow="QUẢN TRỊ / NHÂN SỰ"
               title="Nhân viên & phân công"
               description="Thông tin nhân viên tách khỏi role được gán tại từng chi nhánh."
-              action={
+              action={canManage ? (
                 <Button
                   variant="secondary"
                   disabled={!!editing}
@@ -476,7 +500,7 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
                 >
                   + Tạo nhân viên chờ kích hoạt
                 </Button>
-              }
+              ) : undefined}
             />
             <div className="feature-two-column">
               <Panel title="Danh sách nhân viên">
@@ -519,6 +543,7 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
                 aria-label="Hồ sơ nhân viên đang chọn"
               >
                 <Panel title={`Hồ sơ ${person.code}`}>
+                  <fieldset className="permission-fieldset" disabled={!canManage}>
                   <div className="feature-filters">
                     <Field
                       label="Họ tên"
@@ -589,43 +614,59 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
                     <BranchSelector
                       label="Chi nhánh phân công"
                       value={assignmentBranch}
-                      onChange={setAssignmentBranch}
+                      options={realApiMode ? branchOptions : undefined}
+                      disabled={realApiMode && (!branchesReady || branchOptions.length === 0)}
+                      onChange={setAssignmentBranchSelection}
                     />
                     <SelectField
-                      label="Thêm role tại chi nhánh"
-                      value={assignmentRole}
+                      label="Thêm vai trò tại chi nhánh"
+                      value={selectedAssignmentRole}
+                      disabled={availableAssignmentRoles.length === 0 || (realApiMode && rolesResource.loading)}
                       onChange={(event) => setAssignmentRole(event.target.value)}
                     >
-                      <option value="SALES_STAFF">Nhân viên bán hàng</option>
-                      <option value="INVENTORY_STAFF">Nhân viên kho</option>
+                      {availableAssignmentRoles.map((role) => (
+                        <option value={role.code} key={role.code}>{role.name}</option>
+                      ))}
                     </SelectField>
                   </div>
+                  {realApiMode && rolesResource.error && (
+                    <Feedback tone="danger" title="Chưa tải được danh sách vai trò">
+                      Không thể gán vai trò cho đến khi tải được danh sách.{' '}
+                      <button type="button" className="text-button" onClick={() => rolesResource.retry()}>Thử lại</button>
+                    </Feedback>
+                  )}
                   <Button
                     variant="secondary"
-                    disabled={person.assignments.some(
-                      (entry) =>
-                        entry.branch === assignmentBranch && entry.roleCode === assignmentRole,
-                    )}
+                      disabled={person.assignments.some(
+                        (entry) =>
+                          entry.branch === assignmentBranch && entry.roleCode === selectedAssignmentRole,
+                      ) || (realApiMode && (!assignmentBranch || !selectedAssignmentRole || !!rolesResource.error))}
                     onClick={() =>
                       setEditing({
                         ...person,
                         assignments: [
                           ...person.assignments,
-                          { branch: assignmentBranch, roleCode: assignmentRole },
+                          { branch: assignmentBranch, roleCode: selectedAssignmentRole },
                         ],
                       })
                     }
                   >
                     {person.assignments.some(
                       (entry) =>
-                        entry.branch === assignmentBranch && entry.roleCode === assignmentRole,
+                        entry.branch === assignmentBranch && entry.roleCode === selectedAssignmentRole,
                     )
                       ? 'Vai trò đã được gán'
-                      : '+ Gán role mẫu'}
+                      : '+ Gán vai trò'}
                   </Button>
                   <p className="muted small-note">
                     Quyền thực tế được backend tính từ các role của nhân viên ở chi nhánh đang chọn.
                   </p>
+                  {realApiMode && branchesError && (
+                    <Feedback tone="danger" title="Chưa tải được danh sách chi nhánh">
+                      Không thể thêm phân công cho đến khi tải được danh sách chi nhánh.{' '}
+                      <button type="button" className="text-button" onClick={retryBranches}>Thử lại</button>
+                    </Feedback>
+                  )}
                   <div className="feature-actions">
                     <Button disabled={!editing} loading={busy} onClick={() => void save()}>
                       Lưu hồ sơ & phân công
@@ -641,6 +682,7 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
                       Có thay đổi chưa lưu trong hồ sơ này.
                     </p>
                   )}
+                  </fieldset>
                 </Panel>
                 <InlineIssue text={issue} />
                 {notice && (
@@ -672,7 +714,8 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
   );
 }
 
-export function BranchesPage({ scenario }: { scenario: DemoScenario }) {
+export function BranchesPage({ scenario, canManage = true }: { scenario: DemoScenario; canManage?: boolean }) {
+  const realApiMode = apiEnabled && hasAccessToken();
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.branches);
   const [selected, setSelected] = useState('HCM-Q1');
   const [editing, setEditing] = useState<Branch>();
@@ -690,7 +733,7 @@ export function BranchesPage({ scenario }: { scenario: DemoScenario }) {
         const existingBranch = items.find((x) => x.code === selected);
         const current = existingBranch ?? items[0];
         const branch = editing?.code === selected ? editing : current;
-        const obligations = existingBranch
+        const obligations = existingBranch && !realApiMode
           ? studioAdapter.branchObligations(existingBranch.name)
           : { orders: 0, units: 0, transfers: 0 };
         const hasObligations = obligations.orders + obligations.units + obligations.transfers > 0;
@@ -701,7 +744,7 @@ export function BranchesPage({ scenario }: { scenario: DemoScenario }) {
               eyebrow="QUẢN TRỊ / CHI NHÁNH"
               title="Chi nhánh"
               description="Mỗi bộ có chi nhánh hiện tại; nhận/trả cùng chi nhánh trong đơn thuê."
-              action={
+              action={canManage ? (
                 <Button
                   variant="secondary"
                   onClick={() => {
@@ -718,7 +761,7 @@ export function BranchesPage({ scenario }: { scenario: DemoScenario }) {
                 >
                   + Thêm chi nhánh
                 </Button>
-              }
+              ) : undefined}
             />
             <div className="feature-two-column">
               <Panel title="Danh sách chi nhánh">
@@ -742,6 +785,7 @@ export function BranchesPage({ scenario }: { scenario: DemoScenario }) {
                 </div>
               </Panel>
               <Panel title={`Thông tin ${branch.code}`}>
+                <fieldset className="permission-fieldset" disabled={!canManage}>
                 <div className="stack-form">
                   <Field
                     label="Tên chi nhánh"
@@ -768,7 +812,7 @@ export function BranchesPage({ scenario }: { scenario: DemoScenario }) {
                     <option value="ACTIVE">Đang hoạt động</option>
                     <option value="INACTIVE">Ngừng hoạt động</option>
                   </SelectField>
-                  {closingExisting && (
+                  {closingExisting && !realApiMode && (
                     <Feedback
                       tone={hasObligations ? 'warning' : 'info'}
                       title="Kiểm tra trước khi ngừng chi nhánh"
@@ -778,6 +822,11 @@ export function BranchesPage({ scenario }: { scenario: DemoScenario }) {
                       {hasObligations
                         ? ' Cần xử lý các nghĩa vụ này trước khi lưu trạng thái ngừng hoạt động.'
                         : ' Fixture không còn các nghĩa vụ trên. Backend vẫn phải kiểm tra khoản thu/hoàn và hồ sơ hỗ trợ trước khi chốt.'}
+                    </Feedback>
+                  )}
+                  {closingExisting && realApiMode && (
+                    <Feedback tone="info" title="Kiểm tra điều kiện trên máy chủ">
+                      Số liệu chi tiết không có trong API hiện tại. Máy chủ sẽ xác nhận điều kiện ngừng chi nhánh khi lưu.
                     </Feedback>
                   )}
                   <Button
@@ -806,6 +855,7 @@ export function BranchesPage({ scenario }: { scenario: DemoScenario }) {
                   </Button>
                   <InlineIssue text={issue} />
                 </div>
+                </fieldset>
               </Panel>
             </div>
           </div>
@@ -815,7 +865,7 @@ export function BranchesPage({ scenario }: { scenario: DemoScenario }) {
   );
 }
 
-export function RolesPage({ scenario }: { scenario: DemoScenario }) {
+export function RolesPage({ scenario, canManage = true }: { scenario: DemoScenario; canManage?: boolean }) {
   const realApiMode = apiEnabled && hasAccessToken();
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.roles);
   const permissionsResource = useFixtureResource(scenario, studioAdapter.permissions);
@@ -922,6 +972,7 @@ export function RolesPage({ scenario }: { scenario: DemoScenario }) {
                         permissions={matching}
                         selected={checked}
                         filtered={Boolean(permissionSearch)}
+                        disabled={!canManage}
                         onToggle={(code) =>
                           setDraft(
                             checked.includes(code)
@@ -980,7 +1031,7 @@ export function RolesPage({ scenario }: { scenario: DemoScenario }) {
                       Chưa lưu: +{addedPermissions.length} / −{removedPermissions.length} quyền
                     </span>
                     <Button
-                      disabled={busy}
+                      disabled={!canManage || busy}
                       loading={busy}
                       onClick={() => {
                         void (async () => {
@@ -1008,7 +1059,7 @@ export function RolesPage({ scenario }: { scenario: DemoScenario }) {
                     >
                       Lưu quyền vai trò
                     </Button>
-                    <Button variant="secondary" onClick={() => setDraft(undefined)}>
+                    <Button variant="secondary" disabled={!canManage} onClick={() => setDraft(undefined)}>
                       Bỏ thay đổi
                     </Button>
                   </div>
@@ -1043,7 +1094,7 @@ export function RolesPage({ scenario }: { scenario: DemoScenario }) {
   );
 }
 
-export function PoliciesPage({ scenario }: { scenario: DemoScenario }) {
+export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoScenario; canManage?: boolean }) {
   const realApiMode = apiEnabled && hasAccessToken();
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.policies);
   const [selected, setSelected] = useState('POLICY-2025');
@@ -1066,7 +1117,7 @@ export function PoliciesPage({ scenario }: { scenario: DemoScenario }) {
               eyebrow="QUẢN TRỊ / CHÍNH SÁCH"
               title="Phiên bản chính sách thuê"
               description="Đơn giữ snapshot chính sách tại thời điểm lập. Sửa bằng cách tạo phiên bản mới có thời điểm hiệu lực."
-              action={
+              action={canManage ? (
                 <Button
                   variant="secondary"
                   onClick={() =>
@@ -1081,7 +1132,7 @@ export function PoliciesPage({ scenario }: { scenario: DemoScenario }) {
                 >
                   + Phiên bản mới
                 </Button>
-              }
+              ) : undefined}
             />
             <div className="feature-two-column">
               <Panel title="Lịch sử phiên bản">
@@ -1131,6 +1182,7 @@ export function PoliciesPage({ scenario }: { scenario: DemoScenario }) {
                 </Panel>
                 {draft && (
                   <Panel title={realApiMode ? 'Tạo phiên bản trên máy chủ' : 'Tạo phiên bản fixture'}>
+                    <fieldset className="permission-fieldset" disabled={!canManage}>
                     <div className="feature-filters">
                       <Field
                         label="Mã phiên bản"
@@ -1177,6 +1229,7 @@ export function PoliciesPage({ scenario }: { scenario: DemoScenario }) {
                       onChange={(e) => setDraft({ ...draft, reason: e.target.value })}
                     />
                     <Button
+                      disabled={!canManage}
                       loading={busy}
                       onClick={() => {
                         void (async () => {
@@ -1205,6 +1258,7 @@ export function PoliciesPage({ scenario }: { scenario: DemoScenario }) {
                     >
                       Tạo phiên bản
                     </Button>
+                    </fieldset>
                   </Panel>
                 )}
                 <InlineIssue text={issue} />
@@ -1232,7 +1286,11 @@ export function ReportsPage({
       studioAdapter.reports(currentScenario, allBranches ? undefined : branch),
     [allBranches, branch],
   );
-  const { loading, error, data, retry } = useFixtureResource(scenario, loadReports);
+  const { loading, error, data, retry } = useFixtureResource(
+    scenario,
+    loadReports,
+    `${branch}:${allBranches ? 'all' : 'branch'}`,
+  );
   const [filter, setFilter] = useState(branch);
   return (
     <StateGate

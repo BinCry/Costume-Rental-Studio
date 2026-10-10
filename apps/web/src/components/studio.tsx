@@ -86,6 +86,7 @@ export function StateGate<T>({
   retry,
   children,
   emptyTitle = 'Chưa có dữ liệu',
+  allowEmpty = false,
 }: {
   loading: boolean;
   error?: string;
@@ -93,6 +94,7 @@ export function StateGate<T>({
   retry: () => void;
   children: (data: T[]) => ReactNode;
   emptyTitle?: string;
+  allowEmpty?: boolean;
 }) {
   if (loading)
     return (
@@ -118,7 +120,7 @@ export function StateGate<T>({
         </Feedback>
       </div>
     );
-  if (!data?.length)
+  if (!data?.length && !allowEmpty)
     return (
       <div className="page">
         <EmptyState title={emptyTitle}>
@@ -126,7 +128,7 @@ export function StateGate<T>({
         </EmptyState>
       </div>
     );
-  return <>{children(data)}</>;
+  return <>{children(data ?? [])}</>;
 }
 export function InlineIssue({ text, conflict = false }: { text: string; conflict?: boolean }) {
   return text ? (
@@ -176,9 +178,7 @@ export function BranchSelector({
   options?: string[];
   disabled?: boolean;
 }) {
-  const branchOptions = options?.length
-    ? options
-    : ['Chi nhánh Quận 1', 'Chi nhánh Thủ Đức'];
+  const branchOptions = options ?? ['Chi nhánh Quận 1', 'Chi nhánh Thủ Đức'];
   return (
     <SelectField
       label={label}
@@ -186,6 +186,9 @@ export function BranchSelector({
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
     >
+      {options !== undefined && branchOptions.length === 0 && (
+        <option value="">{disabled ? 'Đang tải chi nhánh…' : 'Chưa có chi nhánh khả dụng'}</option>
+      )}
       {all && <option value="">Tất cả chi nhánh</option>}
       {branchOptions.map((branch) => (
         <option key={branch}>{branch}</option>
@@ -340,6 +343,7 @@ export function PermissionGroup({
   onSelectAll,
   onClear,
   filtered = false,
+  disabled = false,
 }: {
   title: string;
   permissions: Permission[];
@@ -348,6 +352,7 @@ export function PermissionGroup({
   onSelectAll?: () => void;
   onClear?: () => void;
   filtered?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <Panel
@@ -357,14 +362,14 @@ export function PermissionGroup({
           <div className="permission-group-actions">
             <button
               type="button"
-              disabled={permissions.every((permission) => selected.includes(permission.code))}
+              disabled={disabled || permissions.every((permission) => selected.includes(permission.code))}
               onClick={onSelectAll}
             >
               {filtered ? 'Chọn các quyền hiện ra' : 'Chọn cả nhóm'}
             </button>
             <button
               type="button"
-              disabled={permissions.every((permission) => !selected.includes(permission.code))}
+              disabled={disabled || permissions.every((permission) => !selected.includes(permission.code))}
               onClick={onClear}
             >
               {filtered ? 'Bỏ các quyền hiện ra' : 'Bỏ cả nhóm'}
@@ -385,6 +390,7 @@ export function PermissionGroup({
             <input
               type="checkbox"
               checked={selected.includes(permission.code)}
+              disabled={disabled}
               onChange={() => onToggle(permission.code)}
             />
             <span>

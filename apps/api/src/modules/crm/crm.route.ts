@@ -6,6 +6,7 @@ import { sendSuccess } from '../../common/http/response.js';
 import { requireAuthentication } from '../auth/auth.middleware.js';
 import {
   assignCaseSchema,
+  assigneesQuerySchema,
   caseIdSchema,
   changeCaseStatusSchema,
   createCaseSchema,
@@ -30,6 +31,15 @@ function caseId(params: unknown) {
 function customerUserId(params: unknown) {
   return parse(customerIdSchema.safeParse(params), 'Invalid customer id').customerUserId;
 }
+
+crmRouter.get('/assignees', async (req, res) => {
+  const query = parse(assigneesQuerySchema.safeParse(req.query), 'Invalid CRM assignee query');
+  return sendSuccess(
+    res,
+    await service.listAssignees(res.locals.actor, query.branchId),
+    'CRM assignees loaded',
+  );
+});
 
 crmRouter.get('/cases', async (req, res) =>
   sendSuccess(

@@ -6,16 +6,21 @@ export function ApiSessionControl() {
   const [password, setPassword] = useState('');
   const [user, setUser] = useState<{ displayName?: string; email?: string }>();
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState(() => {
+    const callbackStatus = new URLSearchParams(window.location.search).get('status');
+    return window.location.pathname === '/auth/google/callback' && callbackStatus === 'error'
+      ? 'Đăng nhập Google chưa hoàn tất. Bạn có thể thử lại.'
+      : '';
+  });
 
   useEffect(() => {
     if (!apiEnabled) return;
     const callbackStatus = new URLSearchParams(window.location.search).get('status');
-    if (window.location.pathname === '/auth/google/callback' && callbackStatus === 'error') {
-      setMessage('Đăng nhập Google chưa hoàn tất. Bạn có thể thử lại.');
-    }
     void restoreSession().then((restored) => {
-      if (restored) setUser(restored);
+      if (restored) {
+        setUser(restored);
+        window.dispatchEvent(new Event('api-session-changed'));
+      }
       if (callbackStatus === 'success' && restored) {
         window.history.replaceState(null, '', '/');
         window.dispatchEvent(new Event('api-session-changed'));

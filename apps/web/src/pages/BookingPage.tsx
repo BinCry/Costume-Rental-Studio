@@ -10,12 +10,12 @@ import {
   SkeletonGrid,
   TextAreaField,
 } from '../components/ui';
-import { money } from '../components/support';
+import { defaultRentalDate, money } from '../components/support';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { branches, fixtureAdapter, fixtureCatalog, fixturePeriod } from '../fixtures/adapter';
 import { studioAdapter } from '../fixtures/studio';
 import type { BookingDraft, DemoScenario, QuoteSnapshot } from '../fixtures/types';
-import { apiEnabled } from '../api/client';
+import { apiEnabled, hasAccessToken } from '../api/client';
 import { useBranchOptions } from '../components/useBranchOptions';
 
 const steps = ['Trang phục', 'Lựa chọn', 'Nhận và trả', 'Báo giá', 'Người thuê', 'Xác nhận'];
@@ -38,15 +38,16 @@ const initialDraft = (costumeId?: string, context?: URLSearchParams): BookingDra
   const requestedBranch = context?.get('branch');
   const requestedPickup = context?.get('pickup');
   const requestedReturn = context?.get('returnAt');
+  const apiMode = apiEnabled && (hasAccessToken() || !import.meta.env.DEV);
   return {
     ...baseDraft,
     costumeId: costumeId ?? baseDraft.costumeId,
     variant: variants.includes(requestedVariant)
       ? requestedVariant
       : (variants[0] ?? baseDraft.variant),
-    branch: requestedBranch?.trim() || baseDraft.branch,
-    pickup: requestedPickup?.trim() ? requestedPickup : baseDraft.pickup,
-    returnAt: requestedReturn?.trim() ? requestedReturn : baseDraft.returnAt,
+    branch: requestedBranch?.trim() || (apiMode ? '' : baseDraft.branch),
+    pickup: requestedPickup?.trim() ? requestedPickup : apiMode ? defaultRentalDate(1) : baseDraft.pickup,
+    returnAt: requestedReturn?.trim() ? requestedReturn : apiMode ? defaultRentalDate(3) : baseDraft.returnAt,
   };
 };
 
@@ -63,7 +64,8 @@ export function BookingPage({
   initialContext: URLSearchParams;
   onCustomerCreated?: (code: string) => void;
 }) {
-  const { options: branchOptions, ready: branchOptionsReady } = useBranchOptions();
+  const apiMode = apiEnabled && (hasAccessToken() || !import.meta.env.DEV);
+  const { options: branchOptions, ready: branchOptionsReady, error: branchOptionsError, retry: retryBranches } = useBranchOptions();
   const [step, setStep] = useState(() => {
     const selected = fixtureCatalog.find((entry) => entry.id === costumeId);
     if (!selected) return 0;
@@ -73,7 +75,7 @@ export function BookingPage({
       ? 2
       : 1;
   });
-  const [draft, setDraft] = useState<BookingDraft>(() => initialDraft(costumeId, initialContext));
+  const [draftState, setDraft] = useState<BookingDraft>(() => initialDraft(costumeId, initialContext));
   const [quote, setQuote] = useState<QuoteSnapshot>();
   const [issue, setIssue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -100,10 +102,12 @@ export function BookingPage({
     if (submittedId) successHeadingRef.current?.focus();
   }, [submittedId]);
   const { loading, data, error, retry } = useFixtureResource(scenario, loadCatalog);
-  useEffect(() => {
-    if (branchOptionsReady && branchOptions.length && !branchOptions.includes(draft.branch))
-      setDraft((current) => ({ ...current, branch: branchOptions[0] }));
-  }, [branchOptions, branchOptionsReady, draft.branch]);
+  const draft = {
+    ...draftState,
+    branch: branchOptions.includes(draftState.branch)
+      ? draftState.branch
+      : branchOptions[0] ?? (apiMode ? '' : draftState.branch),
+  };
   const item = (data ?? []).find((entry) => entry.id === draft.costumeId) ??
     fixtureCatalog.find((entry) => entry.id === draft.costumeId);
   const choices = item ? item.sizes.map((size) => `${size} / ${item.colors[0]}`) : [];
@@ -184,7 +188,7 @@ export function BookingPage({
     setIssue('');
     try {
       const id = await fixtureAdapter.submitBooking(draft, quote, scenario);
-      if (apiEnabled) onCustomerCreated?.('');
+      if (apiMode) onCustomerCreated?.('');
       else onCustomerCreated?.(studioAdapter.recordBooking(id, draft, quote));
       setSubmittedId(id);
     } catch (caught) {
@@ -201,22 +205,22 @@ export function BookingPage({
           <span className="success-symbol">
             <Icon name="check" size={32} />
           </span>
-          <p className="eyebrow">YÊU CẦU ĐÃ GỬI · {apiEnabled ? 'API' : 'FIXTURE'}</p>
+          <p className="eyebrow">YÊU CẦU ĐÃ GỬI · {apiMode ? 'API' : 'FIXTURE'}</p>
           <h1 tabIndex={-1} ref={successHeadingRef}>
-            {apiEnabled ? 'Yêu cầu đã được tạo' : 'Yêu cầu demo đã được tạo'}
+            {apiMode ? 'Yêu cầu đã được tạo' : 'Yêu cầu demo đã được tạo'}
           </h1>
           <p className="success-code">
             Mã yêu cầu <strong>{submittedId}</strong>
           </p>
           <Feedback
-            tone={apiEnabled ? 'info' : 'warning'}
+            tone={apiMode ? 'info' : 'warning'}
             title={
-              apiEnabled
+              apiMode
                 ? 'Yêu cầu đã được gửi lên máy chủ; studio sẽ duyệt và gán bộ.'
                 : 'Yêu cầu chưa giữ trang phục cho đến khi studio xác nhận.'
             }
           >
-            {apiEnabled
+            {apiMode
               ? 'Giá và khả dụng cuối cùng được máy chủ kiểm tra khi tạo đơn.'
               : 'Yêu cầu đã lưu trong bộ nhớ fixture để bạn xem ở “Đơn của tôi”. Studio thật chưa nhận yêu cầu; cần API để lưu và xử lý trên máy chủ.'}
           </Feedback>
@@ -355,12 +359,22 @@ export function BookingPage({
                   <SelectField
                     label="Chi nhánh nhận và trả"
                     value={draft.branch}
+                    disabled={!branchOptionsReady || branchOptions.length === 0}
                     onChange={(event) => update('branch', event.target.value)}
                   >
+                    {branchOptions.length === 0 && (
+                      <option value="">{branchOptionsReady ? 'Chưa có chi nhánh khả dụng' : 'Đang tải chi nhánh…'}</option>
+                    )}
                     {branchOptions.map((entry) => (
                       <option key={entry}>{entry}</option>
                     ))}
                   </SelectField>
+                  {branchOptionsError && (
+                    <Feedback tone="danger" title="Chưa tải được danh sách chi nhánh">
+                      Hãy thử lại trước khi tiếp tục đặt thuê.{' '}
+                      <button type="button" className="text-button" onClick={retryBranches}>Thử lại</button>
+                    </Feedback>
+                  )}
                   <div className="two-fields">
                     <Field
                       label="Nhận đồ"
@@ -389,8 +403,8 @@ export function BookingPage({
               )}
               {step === 3 && (
                 <div className="form-stack">
-                  <Feedback tone="info" title={apiEnabled ? 'Báo giá từ máy chủ' : 'Báo giá minh họa'}>
-                    {apiEnabled
+                  <Feedback tone="info" title={apiMode ? 'Báo giá từ máy chủ' : 'Báo giá minh họa'}>
+                    {apiMode
                       ? 'Số ngày, giá thuê, tiền cọc và thời hạn được tính theo chính sách hiện hành trên máy chủ.'
                       : 'Bản demo chỉ có snapshot cho kỳ thuê mẫu; giá thật sẽ được máy chủ xác nhận.'}
                   </Feedback>
@@ -402,7 +416,7 @@ export function BookingPage({
                     loading={busy}
                   >
                     <Icon name="refresh" size={18} />{' '}
-                    {quote ? 'Tải lại báo giá' : apiEnabled ? 'Tải báo giá' : 'Tải báo giá minh họa'}
+                    {quote ? 'Tải lại báo giá' : apiMode ? 'Tải báo giá' : 'Tải báo giá minh họa'}
                   </Button>
                   {quote && (
                     <div className="quote-card">
@@ -594,7 +608,7 @@ export function BookingPage({
                   <span>Tiền cọc</span>
                   <strong>{money(quote.deposit)}</strong>
                 </div>
-                <small>Thu khi nhận đồ · Theo báo giá {apiEnabled ? 'máy chủ' : 'minh họa'}</small>
+                <small>Thu khi nhận đồ · Theo báo giá {apiMode ? 'máy chủ' : 'minh họa'}</small>
               </>
             ) : (
               <small>Chưa có báo giá cho lựa chọn hiện tại.</small>

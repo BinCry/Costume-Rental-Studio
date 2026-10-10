@@ -450,6 +450,12 @@ small {
   gap: 7px;
   min-width: 0;
 }
+.permission-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
 .field label {
   font-size: 14px;
   line-height: 20px;
@@ -2329,6 +2335,29 @@ small {
   border-bottom: 1px solid var(--border);
   scrollbar-width: thin;
 }
+.section-nav-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: 14px;
+  border-left: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.section-nav-branch select {
+  min-width: 190px;
+  max-width: min(280px, 42vw);
+  min-height: 40px;
+  padding: 7px 32px 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-primary);
+  font: inherit;
+}
 .section-nav a {
   display: inline-flex;
   align-items: center;
@@ -2963,6 +2992,13 @@ small {
   }
   .section-nav {
     padding: 6px 16px;
+  }
+  .section-nav-branch {
+    margin-left: 0;
+    padding-left: 10px;
+  }
+  .section-nav-branch select {
+    min-width: 160px;
   }
   .report-number {
     font-size: 24px;

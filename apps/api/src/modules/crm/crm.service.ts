@@ -63,6 +63,37 @@ function accessibleBranches(actor: AuthenticatedActor, action: 'read' | 'manage'
   if (!branchIds.length) throw new AppError(403, 'FORBIDDEN', 'CRM permission is required');
   return [...new Set(branchIds)];
 }
+
+export async function listAssignees(actor: AuthenticatedActor, branchId: string) {
+  requireEmployee(actor);
+  if (
+    !hasPermission(actor, { module: 'crm', action: 'read', branchId }) &&
+    !hasPermission(actor, { module: 'crm', action: 'manage', branchId })
+  )
+    throw new AppError(403, 'FORBIDDEN', 'CRM permission is required for this branch');
+
+  const users = await prisma.user.findMany({
+    where: {
+      status: 'ACTIVE',
+      employee: { employmentStatus: 'ACTIVE' },
+      roleAssignments: { some: { branchId, role: { isActive: true } } },
+    },
+    select: {
+      id: true,
+      displayName: true,
+      employee: { select: { employeeCode: true } },
+    },
+    orderBy: [{ displayName: 'asc' }, { id: 'asc' }],
+    take: 100,
+  });
+
+  return users.map((user) => ({
+    userId: user.id,
+    employeeCode: user.employee?.employeeCode ?? user.id,
+    displayName: user.displayName,
+  }));
+}
+
 function caseCode() {
   return `CASE-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}`;
 }

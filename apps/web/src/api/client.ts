@@ -1,4 +1,4 @@
-import type { BookingDraft, CatalogItem, Order, QuoteSnapshot } from '../fixtures/types';
+import type { BookingDraft, CatalogItem, Order, QueueTask, QuoteSnapshot } from '../fixtures/types';
 import type {
   ActiveUnit,
   Branch,
@@ -318,12 +318,18 @@ const branchRefs = new Map<string, string>();
 const variants = new Map<string, ApiVariant>();
 const modelRefs = new Map<string, { id: string; categoryId: string; modelCode: string }>();
 const variantRefs = new Map<string, { id: string; modelId: string }>();
-const orderRefs = new Map<string, { id: string; itemIds: string[] }>();
+const orderRefs = new Map<string, { id: string; itemIds: string[]; version?: number }>();
 const unitRefs = new Map<string, Map<string, string>>();
-const quoteRefs = new Map<string, { variantId: string; branchId: string }>();
+const quoteRefs = new Map<string, {
+  variantId: string;
+  branchId: string;
+  customerUserId: string;
+  channel: string;
+}>();
 const roleRefs = new Map<string, string>();
 const permissionRefs = new Map<string, string>();
 const staffRefs = new Map<string, { userId: string; assignments: Map<string, string> }>();
+const crmAssigneeRefs = new Map<string, string>();
 const customerRefs = new Map<string, { userId: string; branchId?: string }>();
 const caseRefs = new Map<
   string,
@@ -619,7 +625,7 @@ function enrichOrder(order: ApiOrder, availableUnits: ApiUnit[]) {
     status: 'READY',
     availableAtFixturePeriod: true,
   }));
-  orderRefs.set(mapped.id, { id: order.id, itemIds: (order.items ?? []).map((item) => item.id) });
+  orderRefs.set(mapped.id, { id: order.id, itemIds: (order.items ?? []).map((item) => item.id), version: order.version });
   unitRefs.set(mapped.id, new Map(availableUnits.map((unit) => [unit.unitCode, unit.id])));
   return mapped;
 }
@@ -703,18 +709,26 @@ export async function getOrder(orderId: string) {
   const order = await request<ApiOrder>('/api/v1/rentals/orders/' + encodeURIComponent(orderId));
   return enrichOrder(order, await availableForOrder(order));
 }
-export async function getQuote(draft: BookingDraft): Promise<QuoteSnapshot> {
+export async function getQuote(
+  draft: BookingDraft,
+  options: { customerCode?: string; channel?: string } = {},
+): Promise<QuoteSnapshot> {
   if (!branchIds.has(draft.branch)) await listBranches();
   const branchId = branchIds.get(draft.branch);
   const variant = variants.get(draft.costumeId);
   if (!branchId || !variant) throw new ApiClientError(422, 'API_CONTEXT_MISSING', 'Cần tải lại chi nhánh và mẫu trang phục');
-  const me = await currentUser();
+  const customerUserId = options.customerCode
+    ? customerRefs.get(options.customerCode)?.userId
+    : (await currentUser()).id;
+  if (!customerUserId)
+    throw new ApiClientError(422, 'CUSTOMER_CONTEXT_MISSING', 'Hãy tải lại danh sách và chọn hồ sơ khách hợp lệ.');
+  const channel = options.channel ?? 'ONLINE';
   const response = await request<ApiQuote>('/api/v1/rentals/quotes', {
     method: 'POST',
     body: JSON.stringify({
-      customerUserId: me.id,
+      customerUserId,
       pickupBranchId: branchId,
-      channel: 'ONLINE',
+      channel,
       plannedStartAt: new Date(draft.pickup).toISOString(),
       plannedDueAt: new Date(draft.returnAt).toISOString(),
       items: Array.from({ length: draft.quantity }, () => ({ variantId: variant.id, accessories: [] })),
@@ -723,7 +737,7 @@ export async function getQuote(draft: BookingDraft): Promise<QuoteSnapshot> {
   const quoteId = 'api-quote-' + (globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36));
   const pricePerDay = numberValue(response.items.find((item) => item.variantId === variant.id)?.dailyRentalPriceVnd);
   const billingMode = response.policy.billingDayMode === 'ROLLING_24_HOURS' ? 'chu kỳ 24 giờ' : 'ngày lịch';
-  quoteRefs.set(quoteId, { variantId: variant.id, branchId });
+  quoteRefs.set(quoteId, { variantId: variant.id, branchId, customerUserId, channel });
   return {
     id: quoteId,
     expiresAt: formatDate(response.quoteExpiresAt),
@@ -737,23 +751,31 @@ export async function getQuote(draft: BookingDraft): Promise<QuoteSnapshot> {
     policy: 'Chính sách ' + (response.policy.versionCode ?? 'hiện hành') + ' · do máy chủ tính',
   };
 }
-export async function createOrder(draft: BookingDraft, quote: QuoteSnapshot) {
+export async function createOrder(
+  draft: BookingDraft,
+  quote: QuoteSnapshot,
+  assignedUnit?: { code: string; id: string },
+) {
   const reference = quoteRefs.get(quote.id);
   const variantId = reference?.variantId;
   const branchId = reference?.branchId;
-  const me = await currentUser();
-  if (!variantId || !branchId) throw new ApiClientError(422, 'API_CONTEXT_MISSING', 'Thiếu mã mẫu hoặc chi nhánh');
+  const customerUserId = reference?.customerUserId;
+  const channel = reference?.channel ?? 'ONLINE';
+  if (!variantId || !branchId || !customerUserId) throw new ApiClientError(422, 'API_CONTEXT_MISSING', 'Thiếu khách, mẫu hoặc chi nhánh; hãy tải lại báo giá.');
   const created = await request<ApiOrder>('/api/v1/rentals/orders', {
     method: 'POST',
     body: JSON.stringify({
-      customerUserId: me.id, pickupBranchId: branchId, channel: 'ONLINE',
+      customerUserId, pickupBranchId: branchId, channel,
       plannedStartAt: new Date(draft.pickup).toISOString(), plannedDueAt: new Date(draft.returnAt).toISOString(),
       customerNote: draft.note || undefined,
       items: Array.from({ length: draft.quantity }, () => ({ variantId, accessories: [] })),
     }),
   });
   quoteRefs.delete(quote.id);
-  return created.orderCode || created.id;
+  const orderCode = created.orderCode || created.id;
+  orderRefs.set(orderCode, { id: created.id, itemIds: (created.items ?? []).map((item) => item.id), version: created.version });
+  if (assignedUnit) unitRefs.set(orderCode, new Map([[assignedUnit.code, assignedUnit.id]]));
+  return orderCode;
 }
 export async function confirmOrder(orderCode: string, version: number, unitCodes: string[]) {
   const reference = orderRefs.get(orderCode);
@@ -765,8 +787,42 @@ export async function confirmOrder(orderCode: string, version: number, unitCodes
   if (!reference || allocations.some((item) => !item.orderItemId || !item.unitId))
     throw new ApiClientError(422, 'UNIT_CONTEXT_MISSING', 'Chưa tải đủ mã bộ để xác nhận đơn');
   return request<ApiOrder>('/api/v1/rentals/orders/' + encodeURIComponent(reference.id) + '/confirm', {
-    method: 'POST', body: JSON.stringify({ expectedVersion: version, allocations }),
+    method: 'POST', body: JSON.stringify({ expectedVersion: reference.version ?? version, allocations }),
   });
+}
+export async function listRentalAvailability(
+  variantId: string,
+  branchName: string,
+  plannedStartAt: string,
+  plannedDueAt: string,
+): Promise<Unit[]> {
+  if (!branchIds.has(branchName)) await listBranches();
+  const pickupBranchId = branchIds.get(branchName);
+  const variant = variants.get(variantId);
+  if (!pickupBranchId || !variant)
+    throw new ApiClientError(422, 'API_CONTEXT_MISSING', 'Hãy tải lại mẫu trang phục và chi nhánh.');
+  const query = new URLSearchParams({
+    variantId,
+    pickupBranchId,
+    plannedStartAt: new Date(plannedStartAt).toISOString(),
+    plannedDueAt: new Date(plannedDueAt).toISOString(),
+  });
+  const result = await request<{ available: boolean; units: ApiUnit[] }>(
+    '/api/v1/rentals/availability?' + query.toString(),
+  );
+  return result.units.map((unit) => ({
+    apiId: unit.id,
+    barcode: unit.unitCode,
+    variantCode: variant.variantCode,
+    model: variant.model?.name ?? 'Trang phục',
+    variant: [variant.sizeCode, variant.colorCode].filter(Boolean).join(' / '),
+    branch: branchName,
+    status: 'READY',
+    condition: unit.conditionGrade ?? 'UNINSPECTED',
+    available: true,
+    blocks: [],
+    history: [],
+  }));
 }
 function orderReference(orderCode: string) {
   const reference = orderRefs.get(orderCode);
@@ -816,6 +872,91 @@ export async function cancelCustomerOrder(orderCode: string, version: number, re
   const updated = (await listCustomerOrders()).find((order) => order.id === orderCode);
   if (!updated) throw new ApiClientError(404, 'RENTAL_ORDER_NOT_FOUND', 'Không tìm thấy đơn vừa hủy');
   return updated;
+}
+function localDateKey(value: Date) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(value);
+}
+export async function listDashboardTasks(branchName?: string): Promise<QueueTask[]> {
+  if (branchName && !branchIds.has(branchName)) await listBranches();
+  const branchId = branchName ? branchIds.get(branchName) : undefined;
+  const statuses: ApiOrder['status'][] = ['PENDING_CONFIRMATION', 'READY_FOR_PICKUP', 'ACTIVE'];
+  const ordersByStatus = await Promise.all(statuses.map(async (status) => {
+    const orders: ApiOrder[] = [];
+    let pageNumber = 1;
+    let totalPages = 1;
+    while (pageNumber <= totalPages) {
+      const query = new URLSearchParams({
+        page: String(pageNumber),
+        pageSize: '100',
+        sortBy: 'plannedDueAt',
+        sortOrder: 'asc',
+        status,
+      });
+      if (branchId) query.set('pickupBranchId', branchId);
+      const page = await request<Page<ApiOrder>>('/api/v1/rentals/orders?' + query.toString());
+      orders.push(...page.items);
+      totalPages = page.pagination?.totalPages ?? 1;
+      pageNumber += 1;
+    }
+    return orders;
+  }));
+  const orders = ordersByStatus.flat();
+  const now = new Date();
+  const today = localDateKey(now);
+  const soon = now.getTime() + 2 * 60 * 60 * 1000;
+  return orders.flatMap((order) => {
+    const status = order.status;
+    const pickupAt = new Date(order.plannedStartAt);
+    const dueAt = new Date(order.plannedDueAt);
+    const isPending = status === 'PENDING_CONFIRMATION';
+    const isHandover = status === 'READY_FOR_PICKUP';
+    const isActive = status === 'ACTIVE';
+    if (!isPending && !isHandover && !isActive) return [];
+    const taskDate = isActive ? dueAt : pickupAt;
+    const overdue = isActive && dueAt.getTime() < now.getTime();
+    const group: QueueTask['group'] = overdue
+      ? 'Quá hạn'
+      : taskDate.getTime() <= soon && localDateKey(taskDate) === today
+        ? 'Trong 2 giờ tới'
+        : 'Hôm nay';
+    const taskType: QueueTask['kind'] = overdue
+      ? 'overdue'
+      : isPending
+        ? 'pending'
+        : isHandover
+          ? 'handover'
+          : 'return';
+    const branch = order.pickupBranch?.name ?? 'Chi nhánh chưa xác định';
+    const firstItem = order.items?.[0];
+    const task = overdue
+      ? `Đã quá hạn trả từ ${formatDate(order.plannedDueAt)}`
+      : isPending
+        ? 'Duyệt yêu cầu và kiểm tra khả dụng'
+        : isHandover
+          ? `Chuẩn bị giao lúc ${formatDate(order.plannedStartAt)}`
+          : `Theo dõi hạn trả ${formatDate(order.plannedDueAt)}`;
+    return [{
+      id: order.id,
+      orderId: order.orderCode,
+      due: formatDate(isActive ? order.plannedDueAt : order.plannedStartAt),
+      customer: order.customer?.user?.displayName ?? 'Khách hàng',
+      phone: order.customer?.user?.phone ?? '',
+      barcode: firstItem?.unit?.unitCode,
+      task,
+      urgency: overdue ? 'Quá hạn' : group,
+      group,
+      kind: taskType,
+      owner: 'Chưa phân công',
+      branch,
+      workDate: localDateKey(taskDate),
+      status: isPending ? 'Cần xử lý' : 'Đang xử lý',
+    }];
+  });
 }
 type ApiPermission = {
   id: string;
@@ -1065,6 +1206,28 @@ export async function listCrmCases(branchName?: string, customerCode?: string): 
   const page = await request<Page<ApiCrmCase>>('/api/v1/crm/cases?' + query.toString());
   return page.items.map(crmCaseFromApi);
 }
+export async function listCrmAssignees(branchName: string): Promise<Employee[]> {
+  if (!branchIds.has(branchName)) await listBranches();
+  const branchId = branchIds.get(branchName);
+  if (!branchId)
+    throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không tìm thấy chi nhánh CRM.');
+  const assignees = await request<Array<{
+    userId: string;
+    employeeCode: string;
+    displayName: string;
+  }>>(`/api/v1/crm/assignees?branchId=${encodeURIComponent(branchId)}`);
+  return assignees.map((assignee) => {
+    crmAssigneeRefs.set(`${branchName}|${assignee.displayName}`, assignee.userId);
+    return {
+      code: assignee.employeeCode,
+      name: assignee.displayName,
+      email: '',
+      accountStatus: 'ACTIVE',
+      employmentStatus: 'ACTIVE',
+      assignments: [{ branch: branchName, roleCode: 'SALES_STAFF' }],
+    };
+  });
+}
 export async function listCrmCaseHistory(caseCode: string) {
   const reference = caseRefs.get(caseCode);
   if (!reference) return [];
@@ -1108,8 +1271,12 @@ export async function createCustomerInteraction(
 }
 async function ownerUserId(owner: string | undefined, branch: string) {
   if (!owner) return null;
-  if (!staffRefs.has(owner)) await listStaff(branch);
-  return staffRefs.get(owner)?.userId ?? null;
+  const reference = `${branch}|${owner}`;
+  if (!crmAssigneeRefs.has(reference)) await listCrmAssignees(branch);
+  const userId = crmAssigneeRefs.get(reference);
+  if (!userId)
+    throw new ApiClientError(422, 'CRM_OWNER_NOT_FOUND', 'Người phụ trách không còn hoạt động tại chi nhánh này.');
+  return userId;
 }
 export async function saveCrmCase(value: Case): Promise<Case> {
   if (!branchIds.has(value.branch)) await listBranches();

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Navigate } from '../App';
 import { Button, Feedback, Field, SelectField, StatusLabel } from '../components/ui';
-import { money } from '../components/support';
+import { defaultRentalDate, money } from '../components/support';
 import {
   BarcodeLookup,
   BranchSelector,
@@ -16,36 +16,66 @@ import {
 } from '../components/studio';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { useMobileDetailReveal } from '../components/useMobileDetailReveal';
-import { fixtureAdapter, fixtureCatalog, fixturePeriod } from '../fixtures/adapter';
-import { studioAdapter, type ActiveUnit, type Unit } from '../fixtures/studio';
+import { branches, fixtureAdapter, fixtureCatalog, fixturePeriod } from '../fixtures/adapter';
+import { studioAdapter, type ActiveUnit, type Customer, type Unit } from '../fixtures/studio';
 import type { DemoScenario, QuoteSnapshot } from '../fixtures/types';
+import { apiEnabled, hasAccessToken } from '../api/client';
 
 export function CounterRentalPage({
   scenario,
   go,
   branch,
   canConfirm,
+  canCreateCustomer,
 }: {
   scenario: DemoScenario;
   go: Navigate;
   branch: string;
   canConfirm: boolean;
+  canCreateCustomer: boolean;
 }) {
+  const realApiMode = apiEnabled && hasAccessToken();
+  const [rentalBranch, setRentalBranch] = useState(branch);
+  const selectedBranch = realApiMode
+    ? branch
+    : branches.includes(rentalBranch)
+      ? rentalBranch
+      : branches.includes(branch)
+        ? branch
+        : branches[0] ?? rentalBranch;
   const loadCustomers = useCallback(
-    (currentScenario: DemoScenario) => studioAdapter.customers(currentScenario, branch),
-    [branch],
+    (currentScenario: DemoScenario) => studioAdapter.customers(currentScenario, selectedBranch),
+    [selectedBranch],
   );
-  const { loading, error, data, retry } = useFixtureResource(scenario, loadCustomers);
+  const { loading, error, data, retry } = useFixtureResource(
+    scenario,
+    loadCustomers,
+    `${selectedBranch}:${realApiMode ? 'api' : 'fixture'}`,
+  );
+  const loadCatalog = useCallback(
+    (currentScenario: DemoScenario) => fixtureAdapter.listCatalog(currentScenario),
+    [],
+  );
+  const {
+    loading: catalogLoading,
+    error: catalogError,
+    data: catalogData,
+    retry: retryCatalog,
+  } = useFixtureResource(scenario, loadCatalog, realApiMode ? 'api' : 'fixture');
+  const catalog = useMemo(
+    () => catalogData ?? (realApiMode ? [] : fixtureCatalog),
+    [catalogData, realApiMode],
+  );
   const [customerCode, setCustomerCode] = useState('KH-001');
   const [customerSearch, setCustomerSearch] = useState('');
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newPhone, setNewPhone] = useState('');
+  const [newEmail, setNewEmail] = useState('');
   const [costume, setCostume] = useState('ao-dai-lina');
   const [variant, setVariant] = useState('M / Hồng phấn');
-  const [rentalBranch, setRentalBranch] = useState(branch);
-  const [pickup, setPickup] = useState(fixturePeriod.pickup);
-  const [due, setDue] = useState(fixturePeriod.returnAt);
+  const [pickup, setPickup] = useState(() => realApiMode ? defaultRentalDate(1) : fixturePeriod.pickup);
+  const [due, setDue] = useState(() => realApiMode ? defaultRentalDate(3) : fixturePeriod.returnAt);
   const [quote, setQuote] = useState<QuoteSnapshot>();
   const [eligibleUnits, setEligibleUnits] = useState<Unit[]>([]);
   const [selectedUnit, setSelectedUnit] = useState('');
@@ -54,6 +84,7 @@ export function CounterRentalPage({
   const [created, setCreated] = useState('');
   const [createdMode, setCreatedMode] = useState<'pending' | 'confirmed'>('pending');
   const submittingRef = useRef(false);
+  const newCustomerSequenceRef = useRef(0);
   const quoteRequestRef = useRef(0);
   const issueRef = useRef<HTMLDivElement>(null);
   const createdRef = useRef<HTMLDivElement>(null);
@@ -69,15 +100,36 @@ export function CounterRentalPage({
     createdRef.current?.focus();
     createdRef.current?.scrollIntoView({ block: 'nearest' });
   }, [created]);
-  const item = fixtureCatalog.find((c) => c.id === costume);
-  const clearQuote = () => {
+  const selectedCostume = catalog.some((entry) => entry.id === costume)
+    ? costume
+    : catalog[0]?.id ?? '';
+  const item = catalog.find((c) => c.id === selectedCostume);
+  const selectedVariant = item?.sizes.includes(variant.split(' / ')[0])
+    ? variant
+    : item?.sizes[0]
+      ? `${item.sizes[0]} / ${item.colors[0]}`
+      : '';
+  const clearQuote = useCallback(() => {
     quoteRequestRef.current += 1;
     setQuote(undefined);
     setEligibleUnits([]);
     setSelectedUnit('');
     if (!submittingRef.current) setBusy(false);
-  };
+  }, []);
   const getQuote = async () => {
+    if (creating) {
+      setIssue('Lưu hồ sơ khách mới trước khi tải báo giá.');
+      return;
+    }
+    const selectedCustomer = data?.find((entry) => entry.code === customerCode);
+    if (!selectedCustomer) {
+      setIssue('Chọn đúng hồ sơ khách trước khi tải báo giá.');
+      return;
+    }
+    if (!item || catalogLoading) {
+      setIssue('Đợi danh mục trang phục tải xong rồi thử lại.');
+      return;
+    }
     const requestId = ++quoteRequestRef.current;
     setBusy(true);
     setIssue('');
@@ -85,10 +137,10 @@ export function CounterRentalPage({
       const [nextQuote, units] = await Promise.all([
         fixtureAdapter.getQuote(
           {
-            costumeId: costume,
-            variant,
+            costumeId: selectedCostume,
+            variant: selectedVariant,
             quantity: 1,
-            branch: rentalBranch,
+            branch: selectedBranch,
             pickup,
             returnAt: due,
             name: '',
@@ -96,17 +148,22 @@ export function CounterRentalPage({
             note: '',
           },
           scenario,
+          { customerCode: selectedCustomer.code, channel: 'IN_STORE' },
         ),
-        studioAdapter.units(scenario),
+        realApiMode
+          ? fixtureAdapter.rentalAvailability(selectedCostume, selectedBranch, pickup, due)
+          : studioAdapter.units(scenario).then((allUnits) =>
+              allUnits.filter(
+                (unit) =>
+                  unit.branch === selectedBranch &&
+                  unit.model === item.name &&
+                  unit.variant === selectedVariant,
+              ),
+            ),
       ]);
       if (requestId === quoteRequestRef.current) {
         setQuote(nextQuote);
-        setEligibleUnits(
-          units.filter(
-            (unit) =>
-              unit.branch === rentalBranch && unit.model === item?.name && unit.variant === variant,
-          ),
-        );
+        setEligibleUnits(units);
         setSelectedUnit('');
         revealQuote();
       }
@@ -119,25 +176,68 @@ export function CounterRentalPage({
       if (requestId === quoteRequestRef.current) setBusy(false);
     }
   };
+  const saveNewCustomer = async (customers: Customer[]) => {
+    if (busy) return;
+    if (!canCreateCustomer) {
+      setIssue('Tài khoản chưa có quyền tạo hồ sơ khách tại chi nhánh này.');
+      return;
+    }
+    if (!newName.trim() || !/^0[0-9 ]{8,12}$/.test(newPhone.trim())) {
+      setIssue('Nhập họ tên và số điện thoại hợp lệ.');
+      return;
+    }
+    if (realApiMode && !/^\S+@\S+\.\S+$/.test(newEmail.trim())) {
+      setIssue('Nhập email hợp lệ để lưu hồ sơ khách trên hệ thống.');
+      return;
+    }
+    if (
+      customers.some(
+        (customer) => customer.phone.replaceAll(' ', '') === newPhone.replaceAll(' ', ''),
+      )
+    ) {
+      setIssue('Số điện thoại đã có hồ sơ. Chọn khách hiện có để tránh tạo trùng.');
+      return;
+    }
+    setBusy(true);
+    setIssue('');
+    try {
+      const saved = await studioAdapter.saveCustomer(
+        {
+          code: `KH-DEMO-${++newCustomerSequenceRef.current}`,
+          name: newName.trim(),
+          phone: newPhone.trim(),
+          email: newEmail.trim(),
+          preferredBranch: selectedBranch,
+          history: [],
+          interactions: [],
+        },
+        scenario,
+      );
+      setCustomerCode(saved.code);
+      setCreating(false);
+      setNewName('');
+      setNewPhone('');
+      setNewEmail('');
+      clearQuote();
+      retry();
+    } catch (caught) {
+      setIssue(caught instanceof Error ? caught.message : 'Không lưu được hồ sơ khách.');
+    } finally {
+      setBusy(false);
+    }
+  };
   const create = async (name: string, phone: string, confirmNow: boolean) => {
     if (submittingRef.current || created) return;
     if (!quote) {
       setIssue('Tải báo giá trước khi tạo yêu cầu.');
       return;
     }
-    if (!name.trim() || !/^0[0-9 ]{8,12}$/.test(phone.trim())) {
-      setIssue('Chọn hoặc tạo hồ sơ khách hợp lệ.');
+    const selectedCustomer = data?.find((entry) => entry.code === customerCode);
+    if (creating || !selectedCustomer || !name.trim() || !/^0[0-9 ]{8,12}$/.test(phone.trim())) {
+      setIssue('Lưu hoặc chọn đúng hồ sơ khách trước khi tạo đơn.');
       return;
     }
-    if (
-      creating &&
-      data?.some((customer) => customer.phone.replaceAll(' ', '') === phone.replaceAll(' ', ''))
-    ) {
-      setIssue(
-        'Số điện thoại đã có hồ sơ. Chọn hồ sơ hiện có và xác minh khách tại quầy trước khi tiếp tục.',
-      );
-      return;
-    }
+    const unit = eligibleUnits.find((candidate) => candidate.barcode === selectedUnit);
     if (
       confirmNow &&
       (!canConfirm ||
@@ -154,10 +254,10 @@ export function CounterRentalPage({
     try {
       const id = await fixtureAdapter.submitBooking(
         {
-          costumeId: costume,
-          variant,
+          costumeId: selectedCostume,
+          variant: selectedVariant,
           quantity: 1,
-          branch: rentalBranch,
+          branch: selectedBranch,
           pickup,
           returnAt: due,
           name,
@@ -166,29 +266,32 @@ export function CounterRentalPage({
         },
         quote,
         scenario,
+        confirmNow && realApiMode && unit?.apiId
+          ? { code: unit.barcode, id: unit.apiId }
+          : undefined,
       );
-      studioAdapter.recordBooking(
-        id,
-        {
-          costumeId: costume,
-          variant,
-          quantity: 1,
-          branch: rentalBranch,
-          pickup,
-          returnAt: due,
-          name,
-          phone,
-          note: '',
-        },
-        quote,
-      );
+      if (!realApiMode)
+        studioAdapter.recordBooking(
+          id,
+          {
+            costumeId: selectedCostume,
+            variant: selectedVariant,
+            quantity: 1,
+            branch: selectedBranch,
+            pickup,
+            returnAt: due,
+            name,
+            phone,
+            note: '',
+          },
+          quote,
+        );
       setCreated(id);
       setCreatedMode('pending');
-      if (creating) retry();
       if (confirmNow) {
         try {
           await fixtureAdapter.confirmOrder(id, 1, [selectedUnit], scenario);
-          studioAdapter.reflectConfirmation(id, [selectedUnit]);
+          if (!realApiMode) studioAdapter.reflectConfirmation(id, [selectedUnit]);
           setCreatedMode('confirmed');
         } catch (caught) {
           setIssue(
@@ -210,14 +313,13 @@ export function CounterRentalPage({
       data={data}
       retry={retry}
       emptyTitle="Chưa có hồ sơ khách"
+      allowEmpty
     >
       {(customers) => {
         const matches = customers.filter((c) =>
           `${c.name} ${c.phone} ${c.code}`.toLowerCase().includes(customerSearch.toLowerCase()),
         );
-        const customer =
-          matches.find((c) => c.code === customerCode) ??
-          (matches.length === 1 ? matches[0] : undefined);
+        const customer = matches.find((c) => c.code === customerCode);
         return (
           <div className="page">
             <PageHeading
@@ -234,9 +336,11 @@ export function CounterRentalPage({
                   <Panel
                     title="1. Khách thuê"
                     action={
-                      <Button variant="quiet" onClick={() => setCreating(!creating)}>
-                        {creating ? 'Chọn khách có sẵn' : '+ Tạo hồ sơ'}
-                      </Button>
+                      canCreateCustomer ? (
+                        <Button variant="quiet" onClick={() => { setCreating(!creating); clearQuote(); setIssue(''); }}>
+                          {creating ? 'Chọn khách có sẵn' : '+ Tạo hồ sơ'}
+                        </Button>
+                      ) : <span className="muted">Chỉ chọn hồ sơ có sẵn</span>
                     }
                   >
                     {creating ? (
@@ -251,10 +355,22 @@ export function CounterRentalPage({
                           value={newPhone}
                           onChange={(e) => setNewPhone(e.target.value)}
                         />
+                        {realApiMode && (
+                          <Field
+                            label="Email"
+                            type="email"
+                            value={newEmail}
+                            onChange={(e) => setNewEmail(e.target.value)}
+                          />
+                        )}
                         <p className="muted">
-                          Hồ sơ mới chỉ được ghi trong fixture sau khi tạo; chưa liên kết tài khoản
-                          Google.
+                          {realApiMode
+                            ? 'Hồ sơ sẽ được lưu trên hệ thống. Việc lưu hồ sơ không tự tạo tài khoản đăng nhập.'
+                            : 'Hồ sơ mới được lưu trong dữ liệu demo trên thiết bị này.'}
                         </p>
+                        <Button loading={busy} onClick={() => void saveNewCustomer(customers)}>
+                          Lưu hồ sơ khách
+                        </Button>
                       </div>
                     ) : (
                       <>
@@ -294,23 +410,26 @@ export function CounterRentalPage({
                     <div className="feature-filters">
                       <SelectField
                         label="Mẫu trang phục"
-                        value={costume}
+                        value={selectedCostume}
+                        disabled={catalogLoading || !catalog.length}
                         onChange={(e) => {
-                          const next = fixtureCatalog.find((c) => c.id === e.target.value);
+                          const next = catalog.find((c) => c.id === e.target.value);
                           setCostume(e.target.value);
                           setVariant(next ? `${next.sizes[0]} / ${next.colors[0]}` : '');
                           clearQuote();
                         }}
                       >
-                        {fixtureCatalog.map((c) => (
+                        {!catalog.length && <option value="">Chưa có mẫu trang phục</option>}
+                        {catalog.map((c) => (
                           <option value={c.id} key={c.id}>
-                            {c.name}
+                            {c.name}{realApiMode ? ` · ${c.sizes[0]} / ${c.colors[0]}` : ''}
                           </option>
                         ))}
                       </SelectField>
                       <SelectField
                         label="Biến thể"
-                        value={variant}
+                        value={selectedVariant}
+                        disabled={!item || catalogLoading}
                         onChange={(e) => {
                           setVariant(e.target.value);
                           clearQuote();
@@ -322,14 +441,17 @@ export function CounterRentalPage({
                           </option>
                         ))}
                       </SelectField>
-                      <BranchSelector
-                        label="Chi nhánh nhận và trả"
-                        value={rentalBranch}
-                        onChange={(v) => {
-                          setRentalBranch(v);
-                          clearQuote();
-                        }}
-                      />
+                      {!realApiMode && (
+                        <BranchSelector
+                          label="Chi nhánh nhận và trả"
+                          value={selectedBranch}
+                          options={branches}
+                          onChange={(v) => {
+                            setRentalBranch(v);
+                            clearQuote();
+                          }}
+                        />
+                      )}
                       <DateTimeField
                         label="Nhận"
                         value={pickup}
@@ -347,11 +469,22 @@ export function CounterRentalPage({
                         }}
                       />
                     </div>
-                    <Feedback title="Chỉ giữ bộ sau khi xác nhận">
-                      Báo giá và yêu cầu chưa tự giữ bộ. Chọn barcode READY rồi xác nhận để cập nhật
-                      fixture; tiền thuê và cọc vẫn chỉ được thu ở bước giao đồ.
+                    {catalogLoading && <p className="muted" role="status">Đang tải danh mục trang phục…</p>}
+                    {catalogError && (
+                      <Feedback
+                        tone="danger"
+                        title="Không tải được danh mục trang phục"
+                        action={<Button variant="secondary" onClick={retryCatalog}>Thử tải lại</Button>}
+                      >
+                        {catalogError}
+                      </Feedback>
+                    )}
+                    <Feedback title={realApiMode ? 'Khả dụng được kiểm tra theo lịch và chi nhánh' : 'Dữ liệu demo'}>
+                      {realApiMode
+                        ? 'Chọn một bộ phù hợp để gán khi xác nhận đơn. Tiền thuê và tiền cọc được thu ở bước giao đồ. Chính sách giữ bộ trong lúc chờ duyệt vẫn cần được chốt.'
+                        : 'Báo giá và yêu cầu không tự giữ bộ trong dữ liệu demo. Tiền thuê và tiền cọc vẫn chỉ được thu ở bước giao đồ.'}
                     </Feedback>
-                    <Button variant="secondary" loading={busy} onClick={() => void getQuote()}>
+                    <Button variant="secondary" loading={busy} disabled={catalogLoading || !catalog.length || creating || !customer} onClick={() => void getQuote()}>
                       Kiểm tra khả dụng & báo giá
                     </Button>
                   </Panel>
@@ -385,7 +518,7 @@ export function CounterRentalPage({
                         ]}
                       />
                       <p className="muted">
-                        Báo giá fixture hết hạn: {quote.expiresAt}. Cọc không phải doanh thu.
+                        {realApiMode ? 'Báo giá hệ thống hết hạn: ' : 'Báo giá fixture hết hạn: '}{quote.expiresAt}. Cọc không phải doanh thu.
                       </p>
                       {canConfirm && (
                         <SelectField
@@ -413,9 +546,9 @@ export function CounterRentalPage({
                           ))}
                         </SelectField>
                       )}
-                      {canConfirm && eligibleUnits.length === 0 && (
-                        <Feedback tone="warning" title="Chưa có bộ phù hợp trong fixture">
-                          Có thể tạo yêu cầu chờ xử lý, hoặc đổi mẫu, biến thể và kỳ thuê.
+                      {eligibleUnits.length === 0 && (
+                        <Feedback tone="warning" title={realApiMode ? 'Không có bộ còn khả dụng' : 'Chưa có bộ phù hợp trong fixture'}>
+                          Đổi mẫu, chi nhánh hoặc kỳ thuê; hoặc tạo yêu cầu chờ nhân viên kiểm tra lại.
                         </Feedback>
                       )}
                     </>
@@ -429,20 +562,24 @@ export function CounterRentalPage({
                         title={`${createdMode === 'confirmed' ? 'Đã xác nhận' : 'Đã tạo'} ${created}`}
                       >
                         {createdMode === 'confirmed'
-                          ? `Đã gán ${selectedUnit} trong fixture. Kiểm bộ và phụ kiện trên chi tiết đơn trước khi giao; tiền thuê và cọc chưa thu.`
-                          : 'Yêu cầu đang chờ xác nhận, chưa giữ bộ. Mở chi tiết đơn để tiếp tục.'}
+                          ? realApiMode
+                            ? `Đã gán ${selectedUnit} trên hệ thống. Kiểm bộ và phụ kiện trên chi tiết đơn trước khi giao; tiền thuê và cọc chưa thu.`
+                            : `Đã gán ${selectedUnit} trong dữ liệu demo. Kiểm bộ và phụ kiện trên chi tiết đơn trước khi giao; tiền thuê và cọc chưa thu.`
+                          : realApiMode
+                            ? 'Đơn đã được tạo trên hệ thống. Mở chi tiết đơn để kiểm tra trạng thái và tiếp tục xử lý.'
+                            : 'Yêu cầu đang chờ xác nhận trong dữ liệu demo. Mở chi tiết đơn để tiếp tục.'}
                       </Feedback>
                     </div>
                   ) : (
                     <div className="counter-actions">
                       {canConfirm && (
                         <Button
-                          disabled={!quote || !selectedUnit || (!creating && !customer) || busy}
+                          disabled={!quote || !selectedUnit || creating || !customer || busy}
                           loading={busy}
                           onClick={() =>
                             void create(
-                              creating ? newName : (customer?.name ?? ''),
-                              creating ? newPhone : (customer?.phone ?? ''),
+                              customer?.name ?? '',
+                              customer?.phone ?? '',
                               true,
                             )
                           }
@@ -452,12 +589,12 @@ export function CounterRentalPage({
                       )}
                       <Button
                         variant={canConfirm ? 'secondary' : 'primary'}
-                        disabled={!quote || (!creating && !customer) || busy}
+                        disabled={!quote || creating || !customer || busy}
                         loading={busy}
                         onClick={() =>
                           void create(
-                            creating ? newName : (customer?.name ?? ''),
-                            creating ? newPhone : (customer?.phone ?? ''),
+                            customer?.name ?? '',
+                            customer?.phone ?? '',
                             false,
                           )
                         }
@@ -480,6 +617,7 @@ export function CounterRentalPage({
                           setCreating(false);
                           setNewName('');
                           setNewPhone('');
+                          setNewEmail('');
                           clearQuote();
                         }}
                       >

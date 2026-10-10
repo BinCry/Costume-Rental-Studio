@@ -51,6 +51,8 @@ prisma migrate deploy
 
 `migrate deploy` phải chạy trước khi phiên bản API cần schema mới nhận traffic. Coolify pre-deployment command có thể bị bỏ qua ở lần deploy đầu; initial migration cần được chạy chủ động. Docker image hoặc migration job phải chứa Prisma CLI, schema và thư mục migrations.
 
+Workflow `api-publish.yml` hiện chỉ kiểm tra, đóng gói image và gọi Coolify; nó không tự áp dụng migration vào database. Trước khi dùng quyền thanh toán toàn chuỗi cho quản trị viên, chạy migration `20261011020000_global_payment_permissions` bằng `prisma migrate deploy` từ môi trường có kết nối riêng tới database production. Nếu chưa chạy migration, các quyền thanh toán phạm vi toàn chuỗi chưa được gán và giao diện sẽ khóa thao tác tương ứng theo quyền API trả về.
+
 Không dùng `prisma migrate dev` hoặc `prisma db push` trên production.
 
 ## Database vận hành

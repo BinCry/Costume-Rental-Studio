@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Navigate } from '../App';
 import { Button, EmptyState, Feedback, Field, Icon, SelectField } from '../components/ui';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { WorkQueueItem } from '../components/WorkQueueItem';
 import { branches, fixtureAdapter, fixtureClock } from '../fixtures/adapter';
 import type { DemoScenario, QueueTask } from '../fixtures/types';
+import { apiEnabled, hasAccessToken, listDashboardTasks } from '../api/client';
 
-const loadQueue = (scenario: DemoScenario) => fixtureAdapter.listQueue(scenario);
 const groups: QueueTask['group'][] = ['Quá hạn', 'Trong 2 giờ tới', 'Hôm nay', 'Chờ xác nhận lâu'];
 const summary: { label: string; kind: QueueTask['kind']; short: string }[] = [
   { label: 'Chờ xác nhận', kind: 'pending', short: 'Cần duyệt' },
@@ -16,16 +16,42 @@ const summary: { label: string; kind: QueueTask['kind']; short: string }[] = [
   { label: 'Giao dịch cần xử lý', kind: 'payment', short: 'Tiền' },
 ];
 
-export function DashboardPage({ scenario, go }: { scenario: DemoScenario; go: Navigate }) {
-  const [branch, setBranch] = useState(branches[0]);
+const localDateKey = (value: Date) => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(value);
+  return `${parts.find((part) => part.type === 'year')?.value}-${parts.find((part) => part.type === 'month')?.value}-${parts.find((part) => part.type === 'day')?.value}`;
+};
+
+export function DashboardPage({
+  scenario,
+  go,
+  initialBranch,
+}: { scenario: DemoScenario; go: Navigate; initialBranch: string }) {
+  const realApiMode = apiEnabled && hasAccessToken();
+  const [fixtureBranch, setFixtureBranch] = useState(initialBranch || branches[0]);
+  const branch = realApiMode ? initialBranch : fixtureBranch;
   const [kind, setKind] = useState('all');
   const [priority, setPriority] = useState('all');
   const [taskStatus, setTaskStatus] = useState('all');
-  const [workDate, setWorkDate] = useState('2026-10-03');
+  const [workDate, setWorkDate] = useState(() => realApiMode ? localDateKey(new Date()) : '2026-10-03');
   const [search, setSearch] = useState('');
   const [stale, setStale] = useState<string[]>([]);
   const [notice, setNotice] = useState('');
-  const { loading, data, error, retry } = useFixtureResource(scenario, loadQueue);
+  const loadQueue = useCallback(
+    (currentScenario: DemoScenario) => realApiMode
+      ? listDashboardTasks(branch)
+      : fixtureAdapter.listQueue(currentScenario),
+    [branch, realApiMode],
+  );
+  const { loading, data, error, retry } = useFixtureResource(
+    scenario,
+    loadQueue,
+    `${branch}:${realApiMode ? 'api' : 'fixture'}`,
+  );
+  useEffect(() => {
+    if (realApiMode && workDate === '2026-10-03') setWorkDate(localDateKey(new Date()));
+  }, [realApiMode, workDate]);
   const scoped = (data ?? []).filter((task) => task.branch === branch && !stale.includes(task.id));
   const visible = scoped.filter(
     (task) =>
@@ -51,7 +77,7 @@ export function DashboardPage({ scenario, go }: { scenario: DemoScenario; go: Na
     timeZone: 'Asia/Ho_Chi_Minh',
     dateStyle: 'full',
     timeStyle: 'short',
-  }).format(fixtureClock);
+  }).format(realApiMode ? new Date() : fixtureClock);
   return (
     <div className="page staff-page dashboard-page">
       <div className="staff-page-heading">
@@ -62,22 +88,22 @@ export function DashboardPage({ scenario, go }: { scenario: DemoScenario; go: Na
         </div>
         <div className="date-pill">
           <Icon name="calendar" size={18} />
-          Giờ fixture · {dateText}
+          {realApiMode ? 'Giờ hiện tại · ' : 'Giờ fixture · '}{dateText}
         </div>
       </div>
       <div className="staff-toolbar">
-        <SelectField
-          label="Chi nhánh đang làm việc"
-          value={branch}
-          onChange={(event) => {
-            setBranch(event.target.value);
-            setKind('all');
-          }}
-        >
-          {branches.map((entry) => (
-            <option key={entry}>{entry}</option>
-          ))}
-        </SelectField>
+        {!realApiMode && (
+          <SelectField
+            label="Chi nhánh đang làm việc"
+            value={branch}
+            onChange={(event) => {
+              setFixtureBranch(event.target.value);
+              setKind('all');
+            }}
+          >
+            {branches.map((entry) => <option key={entry}>{entry}</option>)}
+          </SelectField>
+        )}
         <Field
           label="Tìm mã đơn, barcode hoặc số điện thoại"
           placeholder="Ví dụ: RT-1024, BC-028..."
@@ -198,7 +224,7 @@ export function DashboardPage({ scenario, go }: { scenario: DemoScenario; go: Na
                 setKind('all');
                 setPriority('all');
                 setTaskStatus('all');
-                setWorkDate('2026-10-03');
+                setWorkDate(realApiMode ? localDateKey(new Date()) : '2026-10-03');
               }}
             >
               Xóa bộ lọc
@@ -230,8 +256,9 @@ export function DashboardPage({ scenario, go }: { scenario: DemoScenario; go: Na
         </div>
       )}
       <p className="fixture-caption">
-        Ngưỡng “trong 2 giờ” và các mốc hạn chỉ là dữ liệu minh họa. SLA thực tế cần cấu hình theo
-        chính sách studio.
+        {realApiMode
+          ? 'Danh sách được tổng hợp từ trạng thái đơn và hạn trả trên máy chủ. Thứ tự ưu tiên không thay thế SLA vận hành của studio.'
+          : 'Ngưỡng “trong 2 giờ” và các mốc hạn chỉ là dữ liệu minh họa. SLA thực tế cần cấu hình theo chính sách studio.'}
       </p>
     </div>
   );

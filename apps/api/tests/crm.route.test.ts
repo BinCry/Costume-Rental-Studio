@@ -11,6 +11,7 @@ process.env.JWT_ACCESS_SECRET = 'crm-route-test-key-only-not-for-production-1234
 
 const mocks = vi.hoisted(() => ({
   actor: vi.fn(),
+  listAssignees: vi.fn(),
   listCases: vi.fn(),
   createCase: vi.fn(),
   getCase: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('../src/database/prisma.js', () => ({
   prisma: { user: { findUnique: mocks.actor }, $queryRaw: vi.fn() },
 }));
 vi.mock('../src/modules/crm/crm.service.js', () => ({
+  listAssignees: mocks.listAssignees,
   listCases: mocks.listCases,
   createCase: mocks.createCase,
   getCase: mocks.getCase,
@@ -62,6 +64,7 @@ beforeEach(() => {
     roleAssignments: [],
   });
   for (const method of [
+    mocks.listAssignees,
     mocks.listCases,
     mocks.createCase,
     mocks.getCase,
@@ -82,6 +85,10 @@ describe('CRM HTTP routes', () => {
   });
   it('wires the CRM endpoint surface and validates payloads', async () => {
     const auth = { Authorization: `Bearer ${await token()}` };
+    await request(createApp())
+      .get(`/api/v1/crm/assignees?branchId=${caseId}`)
+      .set(auth)
+      .expect(200);
     await request(createApp()).get('/api/v1/crm/cases').set(auth).expect(200);
     await request(createApp())
       .post('/api/v1/crm/cases')
@@ -125,6 +132,13 @@ describe('CRM HTTP routes', () => {
       .expect(201);
     await request(createApp()).post('/api/v1/crm/cases').set(auth).send({}).expect(400);
     expect(mocks.listCases).toHaveBeenCalledOnce();
+    expect(mocks.listAssignees).toHaveBeenCalledWith(expect.any(Object), caseId);
     expect(mocks.createInteraction).toHaveBeenCalledOnce();
+  });
+
+  it('requires a branch id when loading CRM assignees', async () => {
+    const auth = { Authorization: `Bearer ${await token()}` };
+    await request(createApp()).get('/api/v1/crm/assignees').set(auth).expect(400);
+    expect(mocks.listAssignees).not.toHaveBeenCalled();
   });
 });

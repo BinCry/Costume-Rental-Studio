@@ -25,6 +25,7 @@ import {
   createCustomerInteraction,
   hasAccessToken,
   listCrmCaseHistory,
+  listCrmAssignees,
   listCustomerInteractions,
 } from '../api/client';
 import { studioAdapter, type Case, type Customer } from '../fixtures/studio';
@@ -61,9 +62,14 @@ export function CrmPage({
     (currentScenario: DemoScenario) => studioAdapter.cases(currentScenario, branch),
     [branch],
   );
-  const { loading, error, data, retry } = useFixtureResource(scenario, loadCustomers);
-  const casesResource = useFixtureResource(scenario, loadCases);
-  const employeesResource = useFixtureResource(scenario, studioAdapter.employees);
+  const { loading, error, data, retry } = useFixtureResource(scenario, loadCustomers, branch);
+  const casesResource = useFixtureResource(scenario, loadCases, branch);
+  const loadEmployees = useCallback(
+    (currentScenario: DemoScenario) =>
+      realApiMode ? listCrmAssignees(branch) : studioAdapter.employees(currentScenario),
+    [branch, realApiMode],
+  );
+  const employeesResource = useFixtureResource(scenario, loadEmployees, branch);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState('KH-004');
   const [caseCode, setCaseCode] = useState('CS-001');
@@ -481,23 +487,28 @@ export function CrmPage({
                           tại {editing.branch}. Lịch sử cũ vẫn được giữ.
                         </Feedback>
                       )}
-                      <BranchSelector
-                        label="Chi nhánh xử lý case"
-                        value={editing.branch}
-                        disabled={realApiMode}
-                        onChange={(v) => {
-                          setIssue('');
-                          setDraft({
-                            ...editing,
-                            branch: v,
-                            history: [`03/10 · Chuyển case sang ${v}`, ...editing.history],
-                          });
-                        }}
-                      />
                       {realApiMode && (
-                        <p className="field-hint">
-                          Chi nhánh được khóa theo case trên máy chủ; API hiện chưa hỗ trợ chuyển case giữa chi nhánh.
-                        </p>
+                        <div className="field">
+                          <span>Chi nhánh xử lý case</span>
+                          <strong>{editing.branch}</strong>
+                          <p className="field-hint">
+                            Chi nhánh được khóa theo case trên máy chủ; API hiện chưa hỗ trợ chuyển case giữa chi nhánh.
+                          </p>
+                        </div>
+                      )}
+                      {!realApiMode && (
+                        <BranchSelector
+                          label="Chi nhánh xử lý case"
+                          value={editing.branch}
+                          onChange={(v) => {
+                            setIssue('');
+                            setDraft({
+                              ...editing,
+                              branch: v,
+                              history: [`03/10 · Chuyển case sang ${v}`, ...editing.history],
+                            });
+                          }}
+                        />
                       )}
                       <SelectField
                         label="Trạng thái"

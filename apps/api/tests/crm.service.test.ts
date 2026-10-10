@@ -4,12 +4,14 @@ const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
   caseFindMany: vi.fn(),
   caseCount: vi.fn(),
+  userFindMany: vi.fn(),
   lockActiveBranch: vi.fn(),
 }));
 vi.mock('../src/database/prisma.js', () => ({
   prisma: {
     $transaction: mocks.transaction,
     crmCase: { findMany: mocks.caseFindMany, count: mocks.caseCount },
+    user: { findMany: mocks.userFindMany },
   },
 }));
 vi.mock('../src/modules/branches/branch.service.js', () => ({
@@ -41,6 +43,31 @@ const actor = {
 } as never;
 
 describe('CRM service invariants', () => {
+  it('lists only active employees assigned to the requested branch', async () => {
+    mocks.userFindMany.mockResolvedValue([
+      {
+        id: '10000000-0000-4000-8000-000000000006',
+        displayName: 'Nhân viên CRM',
+        email: 'crm@example.test',
+        employee: { employeeCode: 'NV-006' },
+      },
+    ]);
+
+    const result = await service.listAssignees(actor, branchId);
+
+    expect(mocks.userFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          status: 'ACTIVE',
+          employee: { employmentStatus: 'ACTIVE' },
+          roleAssignments: { some: { branchId, role: { isActive: true } } },
+        },
+        take: 100,
+      }),
+    );
+    expect(result).toMatchObject([{ employeeCode: 'NV-006', displayName: 'Nhân viên CRM' }]);
+  });
+
   it('intersects status with overdue instead of overwriting the status filter', async () => {
     mocks.caseFindMany.mockResolvedValue([]);
     mocks.caseCount.mockResolvedValue(0);

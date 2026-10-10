@@ -9,7 +9,7 @@ import {
   SelectField,
   StatusLabel,
 } from '../components/ui';
-import { money, orderStatus } from '../components/support';
+import { defaultRentalDate, money, orderStatus } from '../components/support';
 import {
   BranchSelector,
   DateTimeField,
@@ -26,11 +26,12 @@ import { useFixtureResource } from '../components/useFixtureResource';
 import { branches, fixturePeriod } from '../fixtures/adapter';
 import { studioAdapter, type CostumeDetail, type CustomerOrder } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
-import { apiEnabled, checkPublicAvailability, getPublicVariant, hasAccessToken } from '../api/client';
+import { apiEnabled, checkPublicAvailability, getPublicVariant, googleLoginUrl, hasAccessToken } from '../api/client';
 import { useBranchOptions } from '../components/useBranchOptions';
 
 const loadCostumeDetails = (id: string) => async (scenario: DemoScenario): Promise<CostumeDetail[]> => {
-  if (!apiEnabled) return studioAdapter.details(scenario);
+  if (!apiEnabled || (!hasAccessToken() && import.meta.env.DEV))
+    return studioAdapter.details(scenario);
   // The public detail endpoint is intentionally unauthenticated. It exposes only
   // publishable catalog fields; private replacement values and unit identifiers stay
   // out of the customer page.
@@ -76,26 +77,29 @@ export function CostumeDetailPage({
   const requestedPickup = initialContext.get('pickup');
   const requestedReturn = initialContext.get('returnAt');
   const requestedBranch = initialContext.get('branch');
-  const { options: branchOptions } = useBranchOptions();
+  const usePublicApi = apiEnabled && (hasAccessToken() || !import.meta.env.DEV);
+  const { options: branchOptions, ready: branchOptionsReady, error: branchOptionsError, retry: retryBranches } = useBranchOptions();
+  const defaultPickup = usePublicApi ? defaultRentalDate(1) : fixturePeriod.pickup;
+  const defaultReturn = usePublicApi ? defaultRentalDate(3) : fixturePeriod.returnAt;
   const [variantCode, setVariantCode] = useState(initialContext.get('variantCode') ?? '');
-  const [branch, setBranch] = useState(
-    requestedBranch ?? branches[0],
+  const [branchSelection, setBranchSelection] = useState(
+    requestedBranch ?? (usePublicApi ? '' : branches[0]),
   );
+  const branch = branchOptions.includes(branchSelection)
+    ? branchSelection
+    : branchOptions[0] ?? (usePublicApi ? '' : branchSelection);
   const [pickup, setPickup] = useState(
-    requestedPickup?.trim() ? requestedPickup : fixturePeriod.pickup,
+    requestedPickup?.trim() ? requestedPickup : defaultPickup,
   );
   const [due, setDue] = useState(
-    requestedReturn?.trim() ? requestedReturn : fixturePeriod.returnAt,
+    requestedReturn?.trim() ? requestedReturn : defaultReturn,
   );
   const [photo, setPhoto] = useState(0);
   const [availability, setAvailability] = useState<
     'idle' | 'loading' | 'available' | 'unavailable' | 'error'
   >('idle');
   useEffect(() => {
-    if (branchOptions.length && !branchOptions.includes(branch)) setBranch(branchOptions[0]);
-  }, [branch, branchOptions]);
-  useEffect(() => {
-    if (!apiEnabled || !branch || !pickup || !due || !id) {
+    if (!usePublicApi || !branch || !pickup || !due || !id) {
       setAvailability('idle');
       return;
     }
@@ -107,7 +111,7 @@ export function CostumeDetailPage({
     return () => {
       active = false;
     };
-  }, [branch, due, id, pickup]);
+  }, [branch, due, id, pickup, usePublicApi]);
   const catalogContext = Object.fromEntries(
     [...initialContext.entries()].filter(([key]) => key !== 'id'),
   );
@@ -135,10 +139,10 @@ export function CostumeDetailPage({
           branch === 'Chi nhánh Quận 1' &&
           pickup === fixturePeriod.pickup &&
           due === fixturePeriod.returnAt;
-        const known = apiEnabled
+        const known = usePublicApi
           ? availability !== 'idle' && availability !== 'loading'
           : fixtureKnown;
-        const available = apiEnabled
+        const available = usePublicApi
           ? availability === 'available'
           : fixtureKnown && item.id !== 'dam-rouge' && scenario !== 'conflict';
         return (
@@ -215,10 +219,21 @@ export function CostumeDetailPage({
                 </Panel>
                 <Panel title="Kiểm tra khoảng thuê">
                   <div className="feature-filters">
-                    <BranchSelector value={branch} options={branchOptions} onChange={setBranch} />
+                    <BranchSelector
+                      value={branch}
+                      options={branchOptions}
+                      disabled={!branchOptionsReady || branchOptions.length === 0}
+                      onChange={setBranchSelection}
+                    />
                     <DateTimeField label="Nhận" value={pickup} onChange={setPickup} />
                     <DateTimeField label="Trả" value={due} onChange={setDue} />
                   </div>
+                  {branchOptionsError && (
+                    <Feedback tone="danger" title="Chưa tải được danh sách chi nhánh">
+                      Hãy thử lại trước khi kiểm tra lịch thuê.{' '}
+                      <button type="button" className="text-button" onClick={retryBranches}>Thử lại</button>
+                    </Feedback>
+                  )}
                   <Feedback
                     tone={known ? (available ? 'success' : 'warning') : 'info'}
                     title={
@@ -498,10 +513,14 @@ export function AccountPage({
   scenario,
   go,
   onRoleChange,
+  apiIdentity,
+  realApiMode = false,
 }: {
   scenario: DemoScenario;
   go: Navigate;
   onRoleChange: (role: 'CUSTOMER' | 'SALES_STAFF' | 'INVENTORY_STAFF' | 'ADMIN') => void;
+  apiIdentity?: { displayName: string; email: string; roles: Array<{ name: string; branchId: string | null }> };
+  realApiMode?: boolean;
 }) {
   const [state, setState] = useState<
     'entry' | 'profile' | 'PENDING' | 'LOCKED' | 'INACTIVE' | 'unauthorized' | 'ready'
@@ -521,6 +540,47 @@ export function AccountPage({
   useEffect(() => {
     if (attempted) profileRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
   }, [attempted]);
+  if (realApiMode) {
+    return (
+      <div className="page account-page">
+        <PageHeading
+          eyebrow="TÀI KHOẢN"
+          title="Tài khoản Studio"
+          description="Phiên đăng nhập và quyền truy cập được xác minh bởi máy chủ."
+        />
+        <div className="feature-two-column">
+          <Panel title={apiIdentity ? 'Thông tin tài khoản' : 'Đăng nhập'}>
+            {apiIdentity ? (
+              <>
+                <KeyFacts
+                  rows={[
+                    { label: 'Họ tên', value: apiIdentity.displayName },
+                    { label: 'Email', value: apiIdentity.email },
+                    { label: 'Vai trò', value: apiIdentity.roles.map((role) => role.name).join(', ') || 'Chưa được gán' },
+                  ]}
+                />
+                <Feedback tone="info" title="Phiên được quản lý bởi máy chủ">
+                  Quyền của tài khoản được kiểm tra theo vai trò và chi nhánh khi thực hiện từng thao tác.
+                </Feedback>
+              </>
+            ) : (
+              <div className="account-entry">
+                <span className="brand-mark">S</span>
+                <h2>Đăng nhập vào tài khoản</h2>
+                <p>Dùng biểu mẫu đăng nhập ở đầu trang hoặc tiếp tục bằng Google.</p>
+                <a className="button button-secondary" href={googleLoginUrl()}>
+                  Tiếp tục với Google
+                </a>
+              </div>
+            )}
+          </Panel>
+          <Panel title="Quyền riêng tư">
+            <p className="muted">Đơn thuê, hồ sơ và quyền vận hành chỉ hiển thị sau khi máy chủ xác minh tài khoản.</p>
+          </Panel>
+        </div>
+      </div>
+    );
+  }
   const demoStateLabels = {
     entry: 'Chưa đăng nhập',
     PENDING: 'Chờ kích hoạt',

@@ -4,10 +4,11 @@ import type { DemoScenario } from '../fixtures/types';
 export function useFixtureResource<T>(
   scenario: DemoScenario,
   loader: (scenario: DemoScenario) => Promise<T>,
+  contextKey = '',
 ) {
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<{ key: string; data?: T; error?: string }>({ key: '' });
-  const key = `${scenario}:${attempt}`;
+  const key = `${scenario}:${attempt}:${contextKey}`;
   useEffect(() => {
     if (scenario === 'loading') return;
     let active = true;
@@ -26,6 +27,11 @@ export function useFixtureResource<T>(
       active = false;
     };
   }, [scenario, loader, key]);
+  useEffect(() => {
+    const refreshAfterSessionChange = () => setAttempt((value) => value + 1);
+    window.addEventListener('api-session-changed', refreshAfterSessionChange);
+    return () => window.removeEventListener('api-session-changed', refreshAfterSessionChange);
+  }, []);
   return {
     loading: scenario === 'loading' || state.key !== key,
     data: state.key === key ? state.data : undefined,

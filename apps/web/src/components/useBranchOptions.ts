@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { apiEnabled, listBranches } from '../api/client';
+import { apiEnabled, hasAccessToken, listBranches } from '../api/client';
 import { branches as fixtureBranches } from '../fixtures/adapter';
 
 /**
@@ -7,26 +7,35 @@ import { branches as fixtureBranches } from '../fixtures/adapter';
  * The fixture list remains the local development fallback.
  */
 export function useBranchOptions() {
-  const [options, setOptions] = useState<string[]>(fixtureBranches);
-  const [ready, setReady] = useState(!apiEnabled);
+  const useApi = apiEnabled && (hasAccessToken() || !import.meta.env.DEV);
+  const [revision, setRevision] = useState(0);
+  const requestKey = `${useApi ? 'api' : 'fixture'}:${revision}`;
+  const [result, setResult] = useState<{
+    key: string;
+    options: string[];
+    error: boolean;
+  }>();
 
   useEffect(() => {
-    if (!apiEnabled) return;
+    if (!useApi) return;
     let cancelled = false;
     void listBranches()
       .then((items) => {
-        if (!cancelled && items.length) setOptions(items.map((item) => item.name));
+        if (!cancelled) setResult({ key: requestKey, options: items.map((item) => item.name), error: false });
       })
       .catch(() => {
-        // The page keeps the fixture choices and displays its normal API error state.
-      })
-      .finally(() => {
-        if (!cancelled) setReady(true);
+        if (!cancelled) setResult({ key: requestKey, options: [], error: true });
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [requestKey, useApi]);
 
-  return { options, ready };
+  const resolved = useApi && result?.key === requestKey ? result : undefined;
+  return {
+    options: useApi ? resolved?.options ?? [] : fixtureBranches,
+    ready: !useApi || !!resolved,
+    error: !!resolved?.error,
+    retry: () => setRevision((value) => value + 1),
+  };
 }

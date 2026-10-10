@@ -10,11 +10,11 @@ import {
   SkeletonGrid,
   StatusLabel,
 } from '../components/ui';
-import { money } from '../components/support';
+import { defaultRentalDate, money } from '../components/support';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { branches, fixtureAdapter, fixturePeriod } from '../fixtures/adapter';
 import type { CatalogItem, DemoScenario } from '../fixtures/types';
-import { apiEnabled, checkPublicAvailability } from '../api/client';
+import { apiEnabled, checkPublicAvailability, hasAccessToken } from '../api/client';
 import { useBranchOptions } from '../components/useBranchOptions';
 
 const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
@@ -286,10 +286,14 @@ export function CatalogPage({
   initialContext: URLSearchParams;
 }) {
   const requestedBranch = initialContext.get('branch');
-  const { options: branchOptions, ready: branchOptionsReady } = useBranchOptions();
-  const [branch, setBranch] = useState(() =>
-    requestedBranch?.trim() || branches[0],
+  const apiMode = apiEnabled && (hasAccessToken() || !import.meta.env.DEV);
+  const { options: branchOptions, ready: branchOptionsReady, error: branchOptionsError, retry: retryBranches } = useBranchOptions();
+  const [branchSelection, setBranchSelection] = useState(() =>
+    requestedBranch?.trim() || (apiMode ? '' : branches[0]),
   );
+  const branch = branchOptions.includes(branchSelection)
+    ? branchSelection
+    : branchOptions[0] ?? (apiMode ? '' : branchSelection);
   const [pickup, setPickup] = useState(initialContext.get('pickup') ?? '');
   const [returnAt, setReturnAt] = useState(initialContext.get('returnAt') ?? '');
   const [category, setCategory] = useState(initialContext.get('category') ?? 'Tất cả');
@@ -304,13 +308,9 @@ export function CatalogPage({
   const { loading, data, error, retry } = useFixtureResource(scenario, loadCatalog);
   const context = { branch, pickup, returnAt, category, size, color, search };
   useEffect(() => {
-    if (branchOptionsReady && branchOptions.length && !branchOptions.includes(branch))
-      setBranch(branchOptions[0]);
-  }, [branch, branchOptions, branchOptionsReady]);
-  useEffect(() => {
     if (window.location.pathname !== '/') return;
     const params = new URLSearchParams();
-    if (branch !== branches[0]) params.set('branch', branch);
+    if (branch && branch !== branches[0]) params.set('branch', branch);
     if (pickup) params.set('pickup', pickup);
     if (returnAt) params.set('returnAt', returnAt);
     if (category !== 'Tất cả') params.set('category', category);
@@ -321,7 +321,7 @@ export function CatalogPage({
   }, [branch, pickup, returnAt, category, size, color, search]);
   const periodSelected = !!pickup && !!returnAt;
   useEffect(() => {
-    if (!apiEnabled || !periodSelected || !data?.length) {
+    if (!apiMode || !branch || !periodSelected || !data?.length) {
       setApiAvailability({});
       return;
     }
@@ -346,8 +346,8 @@ export function CatalogPage({
     return () => {
       cancelled = true;
     };
-  }, [branch, data, periodSelected, pickup, returnAt]);
-  const fixtureAvailabilityKnown = apiEnabled
+  }, [apiMode, branch, data, periodSelected, pickup, returnAt]);
+  const fixtureAvailabilityKnown = apiMode
     ? periodSelected && Boolean(data?.length) && (data?.every((item) => apiAvailability[item.id] !== undefined) ?? false)
     : pickup === fixturePeriod.pickup && returnAt === fixturePeriod.returnAt && branch === branches[0];
   const filtered = (data ?? []).filter(
@@ -400,6 +400,12 @@ export function CatalogPage({
         </div>
         <HeroCarousel />
       </section>
+      {branchOptionsError && (
+        <Feedback tone="danger" title="Chưa tải được danh sách chi nhánh">
+          Danh mục vẫn hiển thị, nhưng chưa thể kiểm tra lịch thuê.{' '}
+          <Button variant="secondary" onClick={retryBranches}>Thử lại</Button>
+        </Feedback>
+      )}
       <section className="availability-bar" aria-label="Chi nhánh và thời gian thuê">
         <div className="availability-title">
           <Icon name="calendar" size={21} />
@@ -410,8 +416,12 @@ export function CatalogPage({
         <SelectField
           label="Chi nhánh"
           value={branch}
-          onChange={(event) => setBranch(event.target.value)}
+          disabled={!branchOptionsReady || branchOptions.length === 0}
+          onChange={(event) => setBranchSelection(event.target.value)}
         >
+          {branchOptions.length === 0 && (
+            <option value="">{branchOptionsReady ? 'Chưa có chi nhánh khả dụng' : 'Đang tải chi nhánh…'}</option>
+          )}
           {branchOptions.map((entry) => (
             <option key={entry}>{entry}</option>
           ))}
@@ -432,12 +442,12 @@ export function CatalogPage({
           type="button"
           className="sample-date"
           onClick={() => {
-            setBranch(branchOptions[0] ?? branches[0]);
-            setPickup(fixturePeriod.pickup);
-            setReturnAt(fixturePeriod.returnAt);
+            setBranchSelection(branchOptions[0] ?? (apiMode ? '' : branches[0]));
+            setPickup(apiMode ? defaultRentalDate(1) : fixturePeriod.pickup);
+            setReturnAt(apiMode ? defaultRentalDate(3) : fixturePeriod.returnAt);
           }}
         >
-          Dùng kỳ thuê mẫu
+          {apiMode ? 'Dùng kỳ thuê gợi ý' : 'Dùng kỳ thuê mẫu'}
         </button>
       </section>
       <section id="bo-suu-tap" className="catalog-section">

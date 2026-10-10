@@ -9,6 +9,7 @@ const pageSize = z.coerce.number().int().min(1).max(100).default(20);
 
 export const caseIdSchema = z.object({ caseId: z.uuid() }).strict();
 export const customerIdSchema = z.object({ customerUserId: z.uuid() }).strict();
+export const assigneesQuerySchema = z.object({ branchId: z.uuid() }).strict();
 
 export const listCasesSchema = z
   .object({

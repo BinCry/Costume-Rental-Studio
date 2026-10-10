@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/ui';
 import { ApiSessionControl } from '../components/ApiSessionControl';
-import { apiEnabled, currentUser, hasAccessToken, listBranches } from '../api/client';
+import { apiEnabled, currentUser, hasAccessToken, listBranches, restoreSession } from '../api/client';
 import type { DemoScenario } from '../fixtures/types';
 import { fixtureCustomers, fixtureEmployees, fixtureRoles } from '../fixtures/studio';
 import { CatalogPage } from '../pages/CatalogPage';
@@ -63,18 +63,19 @@ const staffNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
 ];
 const isStaff = (screen: Screen) =>
   !['catalog', 'detail', 'booking', 'myRentals', 'myRentalDetail', 'account'].includes(screen);
-const requiredPermission: Partial<Record<Screen, string>> = {
-  dashboard: 'rentals.read.branch',
-  orders: 'rentals.read.branch',
-  counter: 'rentals.manage.branch',
-  active: 'rentals.read.branch',
-  inventory: 'inventory.read.branch',
-  transfers: 'transfers.manage.branch',
-  crm: 'crm.read.branch',
-  adminCatalog: 'catalog.manage.all',
-  employees: 'staff.manage.all',
-  roles: 'rbac.manage.all',
-  branches: 'branches.manage.all',
+const requiredPermissions: Partial<Record<Screen, string[]>> = {
+  dashboard: ['rentals.read.branch', 'rentals.read.all'],
+  orders: ['rentals.read.branch', 'rentals.read.all'],
+  counter: ['rentals.manage.branch', 'rentals.manage.all'],
+  active: ['rentals.read.branch', 'rentals.read.all'],
+  inventory: ['inventory.read.branch', 'inventory.read.all'],
+  transfers: ['transfers.read.branch', 'transfers.read.all', 'transfers.manage.branch', 'transfers.manage.all'],
+  crm: ['crm.read.branch', 'crm.read.all'],
+  adminCatalog: ['catalog.read.all', 'catalog.manage.all'],
+  employees: ['staff.read.all', 'staff.manage.all'],
+  roles: ['rbac.read.all', 'rbac.manage.all'],
+  branches: ['branches.read.all', 'branches.manage.all'],
+  policies: ['policies.read.all', 'policies.manage.all'],
 };
 
 export default function StudioApp() {
@@ -82,7 +83,11 @@ export default function StudioApp() {
   const [scenario, setScenario] = useState<DemoScenario>('normal');
   const [role, setRole] = useState<DemoRole>('ADMIN');
   const [apiIdentity, setApiIdentity] = useState<ApiIdentity>();
+  const [apiSessionReady, setApiSessionReady] = useState(!apiEnabled || import.meta.env.DEV);
   const [apiBranchIds, setApiBranchIds] = useState<Record<string, string>>({});
+  const [apiBranchesReady, setApiBranchesReady] = useState(!apiEnabled || import.meta.env.DEV);
+  const [apiBranchesFailed, setApiBranchesFailed] = useState(false);
+  const [branchRetryRevision, setBranchRetryRevision] = useState(0);
   const [branch, setBranch] = useState('Chi nhánh Quận 1');
   const [customerCode, setCustomerCode] = useState('KH-001');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -113,36 +118,43 @@ export default function StudioApp() {
   useEffect(() => {
     if (!apiEnabled) return;
     let active = true;
-    const syncIdentity = () => {
-      if (!hasAccessToken()) {
-        setApiIdentity(undefined);
-        return;
-      }
-      void currentUser()
-        .then((identity) => {
-          if (active) setApiIdentity(identity);
-        })
-        .catch(() => {
-          if (active) setApiIdentity(undefined);
-        });
-    };
-    syncIdentity();
-    void listBranches()
-      .then((items) => {
+    const loadBranches = async () => {
+      setApiBranchesReady(false);
+      setApiBranchesFailed(false);
+      setApiBranchIds({});
+      try {
+        const items = await listBranches();
         if (active) setApiBranchIds(Object.fromEntries(items.map((item) => [item.name, item.id])));
-      })
-      .catch(() => undefined);
-    window.addEventListener('api-session-changed', syncIdentity);
+      } catch {
+        if (active) setApiBranchesFailed(true);
+      } finally {
+        if (active) setApiBranchesReady(true);
+      }
+    };
+    const syncIdentity = async () => {
+      try {
+        const identity = hasAccessToken() ? await currentUser() : await restoreSession();
+        if (active) setApiIdentity(identity);
+      } catch {
+        if (active) setApiIdentity(undefined);
+      } finally {
+        if (active) setApiSessionReady(true);
+      }
+    };
+    const refreshIdentity = () => { void syncIdentity(); };
+    void syncIdentity();
+    void loadBranches();
+    window.addEventListener('api-session-changed', refreshIdentity);
     return () => {
       active = false;
-      window.removeEventListener('api-session-changed', syncIdentity);
+      window.removeEventListener('api-session-changed', refreshIdentity);
     };
-  }, []);
+  }, [branchRetryRevision]);
   useEffect(() => {
     sectionNavRef.current
       ?.querySelector<HTMLElement>('a.active')
       ?.scrollIntoView({ block: 'nearest', inline: 'center' });
-  }, [route.screen, role, branch, apiIdentity]);
+  }, [route.screen, role, branch, apiIdentity, apiBranchIds]);
   const go: Navigate = (screen, params) => {
     window.history.pushState(null, '', pathFor(screen, params));
     setRoute(readRoute());
@@ -156,7 +168,20 @@ export default function StudioApp() {
       | DemoRole
       | undefined) ??
     role;
-  const activeBranchId = apiBranchIds[branch];
+  const staffApiRoles = apiIdentity?.roles.filter(
+    (entry) => entry.actorGroup === 'ADMIN' || entry.actorGroup === 'STAFF',
+  ) ?? [];
+  const canSelectEveryApiBranch = staffApiRoles.some(
+    (entry) => entry.branchId === null && entry.permissions.some((permission) => permission.scope === 'ALL'),
+  );
+  const apiBranchOptions = Object.entries(apiBranchIds)
+    .filter(([, id]) => canSelectEveryApiBranch || staffApiRoles.some((entry) => entry.branchId === id))
+    .map(([name]) => name)
+    .sort((left, right) => left.localeCompare(right, 'vi'));
+  const activeBranch = apiIdentity && staffApiRoles.length > 0
+    ? apiBranchOptions.includes(branch) ? branch : apiBranchOptions[0] ?? ''
+    : branch;
+  const activeBranchId = apiBranchIds[activeBranch];
   const serverPermissions = Array.from(
     new Set(
       apiIdentity?.roles
@@ -167,7 +192,9 @@ export default function StudioApp() {
   const staff = isStaff(route.screen);
   const assigned =
     apiIdentity
-      ? apiIdentity.roles.length > 0
+      ? staffApiRoles.length > 0 &&
+        !!activeBranch &&
+        apiBranchOptions.includes(activeBranch)
       : activeRole === 'ADMIN' ||
         activeRole === 'CUSTOMER' ||
         fixtureEmployees.some(
@@ -175,31 +202,55 @@ export default function StudioApp() {
             employee.accountStatus === 'ACTIVE' &&
             employee.employmentStatus === 'ACTIVE' &&
             employee.assignments.some(
-              (assignment) => assignment.branch === branch && assignment.roleCode === activeRole,
+              (assignment) => assignment.branch === activeBranch && assignment.roleCode === activeRole,
             ),
         );
   const effectivePermissions = apiIdentity
     ? serverPermissions
     : fixtureRoles.find((item) => item.code === activeRole)?.permissions ?? [];
+  const canReadPayments =
+    !apiIdentity ||
+    ['payments.read.branch', 'payments.read.all'].some((permission) => effectivePermissions.includes(permission));
+  const canCollectPayments =
+    !apiIdentity ||
+    (canReadPayments &&
+      [
+        'payments.collect.branch',
+        'payments.collect.all',
+        'payments.manage.branch',
+        'payments.manage.all',
+      ].some((permission) => effectivePermissions.includes(permission)));
   const canOpen = (screen: Screen) => {
     if (!assigned) return false;
-    if (screen === 'handover' || screen === 'return')
-      return (
-        (activeRole === 'ADMIN' || activeRole === 'SALES_STAFF') &&
-        effectivePermissions.includes('rentals.manage.branch')
-      );
+    if (screen === 'handover')
+      return ['rentals.handover.branch', 'rentals.manage.branch', 'rentals.manage.all']
+        .some((permission) => effectivePermissions.includes(permission));
+    if (screen === 'return')
+      return ['rentals.return.branch', 'rentals.manage.branch', 'rentals.manage.all']
+        .some((permission) => effectivePermissions.includes(permission));
+    if (screen === 'reports')
+      return effectivePermissions.includes('reports.read.all') || effectivePermissions.includes('reports.read.branch');
+    if (apiIdentity) {
+      const permissions = requiredPermissions[screen];
+      return permissions?.some((permission) => effectivePermissions.includes(permission)) ?? false;
+    }
+    if (screen === 'policies') return activeRole === 'ADMIN';
     const item = staffNav.find((value) => value.screen === screen);
     if (!item?.roles.includes(activeRole)) return false;
-    if (screen === 'policies') return activeRole === 'ADMIN';
-    if (screen === 'reports')
-      return effectivePermissions.includes(
-        activeRole === 'ADMIN' ? 'reports.read.all' : 'reports.read.branch',
-      );
-    const permission = requiredPermission[screen];
-    return !permission || effectivePermissions.includes(permission);
+    const permissions = requiredPermissions[screen];
+    return !permissions || permissions.some((permission) => effectivePermissions.includes(permission));
   };
   const nav = staff ? staffNav.filter((x) => canOpen(x.screen)) : customerNav;
-  const protectedArea = staff && !canOpen(route.screen);
+  const productionApiMode = apiEnabled && !import.meta.env.DEV;
+  const requiresCustomerSession =
+    route.screen === 'booking' || route.screen === 'myRentals' || route.screen === 'myRentalDetail';
+  const requiresSession = productionApiMode && (staff || requiresCustomerSession);
+  const sessionPending =
+    requiresSession && (!apiSessionReady || (!!apiIdentity && !apiBranchesReady));
+  const sessionMissing = requiresSession && apiSessionReady && !apiIdentity;
+  const protectedArea = (staff && !canOpen(route.screen)) || sessionPending || sessionMissing;
+  const productionConfigurationMissing = !apiEnabled && !import.meta.env.DEV;
+  const showFixtureControls = import.meta.env.DEV && !apiIdentity;
   const p = route.params;
   return (
     <div className={`app ${staff ? 'app-staff' : 'app-customer'}`}>
@@ -208,9 +259,13 @@ export default function StudioApp() {
       </a>
       <div className="demo-banner">
         <span className="demo-dot" />{' '}
-        {apiEnabled
-          ? 'Đã bật API · Đăng nhập để đọc và ghi dữ liệu máy chủ'
-          : 'Bản demo giao diện · Dữ liệu fixture, thao tác không lưu lên máy chủ'}
+        {import.meta.env.DEV
+          ? apiIdentity
+            ? 'Môi trường phát triển · Đang kết nối API'
+            : apiEnabled
+              ? 'Bản demo local · Đang dùng fixture khi chưa đăng nhập API'
+            : 'Bản demo giao diện · Dữ liệu fixture, thao tác không lưu lên máy chủ'
+          : 'Danh mục công khai · Đăng nhập để đặt thuê hoặc vào khu vận hành'}
       </div>
       <header className="site-header">
         <div className="header-inner">
@@ -310,9 +365,24 @@ export default function StudioApp() {
               {item.label}
             </a>
           ))}
+          {apiIdentity && activeRole !== 'CUSTOMER' && (
+            <label className="section-nav-branch">
+              <span>Chi nhánh làm việc</span>
+              <select
+                aria-label="Chi nhánh làm việc"
+                value={activeBranch}
+                onChange={(event) => setBranch(event.target.value)}
+                disabled={!apiBranchesReady || apiBranchOptions.length === 0}
+              >
+                {apiBranchOptions.length === 0 ? (
+                  <option value="">Không có chi nhánh được gán</option>
+                ) : apiBranchOptions.map((name) => <option value={name} key={name}>{name}</option>)}
+              </select>
+            </label>
+          )}
         </nav>
       )}
-      {import.meta.env.DEV && (
+      {showFixtureControls && (
         <div className="demo-controls">
           <div className="demo-controls-inner">
             <span className="demo-controls-title">Kiểm tra UI fixture</span>
@@ -388,21 +458,64 @@ export default function StudioApp() {
         className="main-content"
         ref={mainRef}
         tabIndex={-1}
-        key={`${route.screen}:${branch}:${p.get('order') ?? ''}`}
+        key={`${route.screen}:${activeBranch}:${p.get('order') ?? ''}`}
       >
-        {protectedArea ? (
+        {productionConfigurationMissing ? (
           <div className="page">
             <div className="feedback feedback-danger" role="alert">
               <div>
-                <strong>Không có quyền truy cập khu vực này</strong>
-                <p>
-                  {assigned
-                    ? 'Vai trò mẫu không có mã quyền cần thiết.'
-                    : `Vai trò mẫu chưa có nhân viên ACTIVE được phân công tại ${branch}.`}{' '}
-                  Backend phải xác minh quyền hiệu lực tại chi nhánh cho phiên thật.
-                </p>
+                <strong>Website chưa được nối với máy chủ</strong>
+                <p>Thiếu cấu hình API khi build. Hãy cấu hình VITE_API_URL rồi triển khai lại.</p>
               </div>
             </div>
+          </div>
+        ) : protectedArea ? (
+          <div className="page">
+            {sessionPending ? (
+              <div className="feature-skeleton shimmer" role="status">Đang xác minh phiên đăng nhập…</div>
+            ) : sessionMissing ? (
+              <div className="feedback feedback-warning" role="status">
+                <div>
+                  <strong>Đăng nhập để tiếp tục</strong>
+                  <p>Đăng nhập bằng tài khoản khách hoặc nhân viên ở thanh phía trên. Dữ liệu mẫu không được dùng trong bản production.</p>
+                  <button type="button" className="button button-secondary" onClick={() => go('account')}>
+                    Mở trang tài khoản
+                  </button>
+                </div>
+              </div>
+            ) : apiIdentity && apiBranchesFailed ? (
+              <div className="feedback feedback-danger" role="alert">
+                <div>
+                  <strong>Không tải được danh sách chi nhánh</strong>
+                  <p>Chưa thể xác định phạm vi làm việc của tài khoản. Hãy thử tải lại danh sách.</p>
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    onClick={() => setBranchRetryRevision((value) => value + 1)}
+                  >
+                    Thử lại
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="feedback feedback-danger" role="alert">
+                <div>
+                  <strong>Không có quyền truy cập khu vực này</strong>
+                  <p>
+                    {apiIdentity
+                      ? apiBranchesFailed
+                        ? 'Không tải được danh sách chi nhánh. Hãy tải lại trang để thử lại.'
+                        : apiBranchOptions.length === 0 && activeRole !== 'CUSTOMER'
+                          ? 'Tài khoản chưa được gán chi nhánh vận hành.'
+                          : 'Tài khoản chưa được gán vai trò hoặc quyền cần thiết tại chi nhánh đang chọn.'
+                      : assigned
+                        ? 'Vai trò mẫu không có mã quyền cần thiết.'
+                        : `Vai trò mẫu chưa có nhân viên ACTIVE được phân công tại ${activeBranch}.`}{' '}
+                    Backend xác minh quyền trên từng yêu cầu.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <>
@@ -441,20 +554,32 @@ export default function StudioApp() {
               <AccountPage
                 scenario={scenario}
                 go={go}
+                apiIdentity={apiIdentity}
+                realApiMode={apiEnabled}
                 onRoleChange={(nextRole) => {
                   if (!apiIdentity) setRole(nextRole);
                 }}
               />
             )}
-            {route.screen === 'dashboard' && <DashboardPage scenario={scenario} go={go} />}
+            {route.screen === 'dashboard' && (
+              <DashboardPage scenario={scenario} go={go} initialBranch={activeBranch} />
+            )}
             {route.screen === 'orders' && (
               <OrdersPage
                 scenario={scenario}
                 go={go}
-                canManage={effectivePermissions.includes('rentals.manage.branch')}
+                canManage={
+                  !apiIdentity ||
+                  effectivePermissions.includes('rentals.manage.branch') ||
+                  effectivePermissions.includes('rentals.manage.all')
+                }
+                canConfirm={['rentals.confirm.branch', 'rentals.manage.branch', 'rentals.manage.all'].some((permission) => effectivePermissions.includes(permission))}
+                canPrepare={['rentals.prepare.branch', 'rentals.manage.branch', 'rentals.manage.all'].some((permission) => effectivePermissions.includes(permission))}
+                canHandover={['rentals.handover.branch', 'rentals.manage.branch', 'rentals.manage.all'].some((permission) => effectivePermissions.includes(permission))}
+                canReturn={['rentals.return.branch', 'rentals.manage.branch', 'rentals.manage.all'].some((permission) => effectivePermissions.includes(permission))}
                 initialOrderId={p.get('order') ?? undefined}
                 initialFilter={p.get('filter') ?? undefined}
-                initialBranch={branch}
+                initialBranch={activeBranch}
               />
             )}
             {route.screen === 'handover' && (
@@ -463,7 +588,9 @@ export default function StudioApp() {
                 mode="handover"
                 go={go}
                 initialOrderId={p.get('order') ?? 'RT-1028'}
-                initialBranch={branch}
+                initialBranch={activeBranch}
+                canReadPayments={canReadPayments}
+                canCollectPayments={canCollectPayments}
               />
             )}
             {route.screen === 'return' && (
@@ -472,50 +599,95 @@ export default function StudioApp() {
                 mode="return"
                 go={go}
                 initialOrderId={p.get('order') ?? 'RT-1031'}
-                initialBranch={branch}
+                initialBranch={activeBranch}
+                canReadPayments={canReadPayments}
+                canCollectPayments={canCollectPayments}
               />
             )}
             {route.screen === 'counter' && (
               <CounterRentalPage
                 scenario={scenario}
                 go={go}
-                branch={branch}
+                branch={activeBranch}
                 canConfirm={effectivePermissions.includes('rentals.manage.branch')}
+                canCreateCustomer={
+                  effectivePermissions.includes('customers.create.branch') ||
+                  effectivePermissions.includes('customers.create.all')
+                }
               />
             )}
             {route.screen === 'active' && (
-              <ActiveRentalsPage scenario={scenario} go={go} branch={branch} />
+              <ActiveRentalsPage scenario={scenario} go={go} branch={activeBranch} />
             )}
             {route.screen === 'inventory' && (
               <InventoryPage
                 scenario={scenario}
                 go={go}
-                branch={branch}
-                canManage={effectivePermissions.includes('inventory.manage.branch')}
+                branch={activeBranch}
+                canManage={!apiIdentity || effectivePermissions.includes('inventory.manage.branch') || effectivePermissions.includes('inventory.manage.all')}
               />
             )}
-            {route.screen === 'transfers' && <TransfersPage scenario={scenario} branch={branch} />}
+            {route.screen === 'transfers' && (
+              <TransfersPage
+                scenario={scenario}
+                branch={activeBranch}
+                canManage={
+                  !apiIdentity ||
+                  effectivePermissions.includes('transfers.manage.branch') ||
+                  effectivePermissions.includes('transfers.manage.all')
+                }
+              />
+            )}
             {route.screen === 'crm' && (
               <CrmPage
                 scenario={scenario}
-                branch={branch}
-                canManage={effectivePermissions.includes('crm.manage.branch')}
+                branch={activeBranch}
+                canManage={!apiIdentity || effectivePermissions.includes('crm.manage.branch') || effectivePermissions.includes('crm.manage.all')}
               />
             )}
-            {route.screen === 'adminCatalog' && <CatalogAdminPage scenario={scenario} />}
-            {route.screen === 'employees' && <EmployeesPage scenario={scenario} />}
-            {route.screen === 'roles' && <RolesPage scenario={scenario} />}
-            {route.screen === 'branches' && <BranchesPage scenario={scenario} />}
-            {route.screen === 'policies' && <PoliciesPage scenario={scenario} />}
+            {route.screen === 'adminCatalog' && (
+              <CatalogAdminPage
+                scenario={scenario}
+                canManage={!apiIdentity || effectivePermissions.includes('catalog.manage.all')}
+              />
+            )}
+            {route.screen === 'employees' && (
+              <EmployeesPage
+                scenario={scenario}
+                canManage={!apiIdentity || effectivePermissions.includes('staff.manage.all')}
+              />
+            )}
+            {route.screen === 'roles' && (
+              <RolesPage
+                scenario={scenario}
+                canManage={!apiIdentity || effectivePermissions.includes('rbac.manage.all')}
+              />
+            )}
+            {route.screen === 'branches' && (
+              <BranchesPage
+                scenario={scenario}
+                canManage={!apiIdentity || effectivePermissions.includes('branches.manage.all')}
+              />
+            )}
+            {route.screen === 'policies' && (
+              <PoliciesPage
+                scenario={scenario}
+                canManage={!apiIdentity || effectivePermissions.includes('policies.manage.all')}
+              />
+            )}
             {route.screen === 'reports' && (
-              <ReportsPage scenario={scenario} branch={branch} allBranches={activeRole === 'ADMIN'} />
+              <ReportsPage
+                scenario={scenario}
+                branch={activeBranch}
+                allBranches={effectivePermissions.includes('reports.read.all')}
+              />
             )}
           </>
         )}
       </main>
       <footer className="site-footer">
-        <span>Studio Trang Phục · Prototype UI</span>
-        <span>{apiEnabled ? 'Dữ liệu từ API khi đã đăng nhập · Fixture là fallback' : 'Dữ liệu minh họa · Chưa kết nối API nghiệp vụ'}</span>
+        <span>Studio Trang Phục</span>
+        <span>{import.meta.env.DEV ? apiIdentity ? 'Môi trường phát triển · Dữ liệu API' : 'Môi trường phát triển · Fixture demo' : 'Dữ liệu vận hành lấy từ API · Cần đăng nhập cho chức năng riêng tư'}</span>
       </footer>
     </div>
   );

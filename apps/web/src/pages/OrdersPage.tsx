@@ -43,6 +43,10 @@ export function OrdersPage({
   initialFilter,
   initialBranch,
   canManage = true,
+  canConfirm,
+  canPrepare,
+  canHandover,
+  canReturn,
 }: {
   scenario: DemoScenario;
   go: Navigate;
@@ -50,7 +54,16 @@ export function OrdersPage({
   initialFilter?: string;
   initialBranch: string;
   canManage?: boolean;
+  canConfirm?: boolean;
+  canPrepare?: boolean;
+  canHandover?: boolean;
+  canReturn?: boolean;
 }) {
+  const realApiMode = apiEnabled && hasAccessToken();
+  const canConfirmAction = canConfirm ?? canManage;
+  const canPrepareAction = canPrepare ?? canManage;
+  const canHandoverAction = canHandover ?? canManage;
+  const canReturnAction = canReturn ?? canManage;
   const [branch, setBranch] = useState(initialBranch);
   const [selectedId, setSelectedId] = useState(initialOrderId ?? 'RT-1024');
   const [group, setGroup] = useState(initialFilter ?? 'Tất cả');
@@ -262,18 +275,18 @@ export function OrdersPage({
         />
       </div>
       <div className="staff-toolbar">
-        <SelectField
-          label="Chi nhánh"
-          value={branch}
-          onChange={(event) => {
-            setBranch(event.target.value);
-            setSelectedUnits([]);
-          }}
-        >
-          {branches.map((entry) => (
-            <option key={entry}>{entry}</option>
-          ))}
-        </SelectField>
+        {!realApiMode && (
+          <SelectField
+            label="Chi nhánh"
+            value={branch}
+            onChange={(event) => {
+              setBranch(event.target.value);
+              setSelectedUnits([]);
+            }}
+          >
+            {branches.map((entry) => <option key={entry}>{entry}</option>)}
+          </SelectField>
+        )}
         <Field
           label="Tìm mã đơn, khách hoặc barcode"
           placeholder="RT-1024, Nguyễn An, BC-..."
@@ -439,7 +452,7 @@ export function OrdersPage({
                   <div>
                     <p className="eyebrow">CHI TIẾT ĐƠN · PHIÊN BẢN {order.version}</p>
                     <h2>{order.id}</h2>
-                    {canManage && order.status === 'PENDING_CONFIRMATION' && (
+                    {canConfirmAction && order.status === 'PENDING_CONFIRMATION' && (
                       <a className="text-link" href="#unit-selection">
                         Đến phần chọn bộ và xác nhận ↓
                       </a>
@@ -549,7 +562,7 @@ export function OrdersPage({
                               aria-label={`Chọn bộ ${unit.code}`}
                               checked={selectedUnits.includes(unit.code)}
                               disabled={
-                                !canManage ||
+                                !canConfirmAction ||
                                 unit.status !== 'READY' ||
                                 !unit.availableAtFixturePeriod ||
                                 unavailableUnits.includes(unit.code) ||
@@ -605,48 +618,54 @@ export function OrdersPage({
                         BC-018 và BC-019 không thể gán. Chọn bộ READY khác hoặc một kỳ thuê khác.
                       </Feedback>
                     )}
-                    {canManage && (
+                    {(canManage || canConfirmAction) && (
                       <div className="detail-actions">
-                        <Button
-                          onClick={() => setDialog('confirm')}
-                          disabled={
-                            selectedUnits.length !== order.items.length || scenario === 'permission'
-                          }
-                        >
-                          Xác nhận và gán {order.items.length} bộ
-                        </Button>
-                        <Button
-                          variant="quiet"
-                          disabled={scenario === 'permission'}
-                          onClick={() => {
-                            setReason('');
-                            setDialog('reject');
-                          }}
-                        >
-                          Từ chối
-                        </Button>
-                        <Button
-                          variant="quiet"
-                          disabled={scenario === 'permission'}
-                          onClick={() => {
-                            setReason('');
-                            setDialog('cancel');
-                          }}
-                        >
-                          Hủy đơn
-                        </Button>
+                        {canConfirmAction && (
+                          <Button
+                            onClick={() => setDialog('confirm')}
+                            disabled={
+                              selectedUnits.length !== order.items.length || scenario === 'permission'
+                            }
+                          >
+                            Xác nhận và gán {order.items.length} bộ
+                          </Button>
+                        )}
+                        {canManage && (
+                          <>
+                            <Button
+                              variant="quiet"
+                              disabled={scenario === 'permission'}
+                              onClick={() => {
+                                setReason('');
+                                setDialog('reject');
+                              }}
+                            >
+                              Từ chối
+                            </Button>
+                            <Button
+                              variant="quiet"
+                              disabled={scenario === 'permission'}
+                              onClick={() => {
+                                setReason('');
+                                setDialog('cancel');
+                              }}
+                            >
+                              Hủy đơn
+                            </Button>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
                 )}
-                {canManage && order.status === 'READY_FOR_PICKUP' && (
+                {canHandoverAction && order.status === 'READY_FOR_PICKUP' && (
                   <div className="detail-actions">
                     <Button onClick={() => go('handover', { order: order.id })}>
                       Mở luồng giao đồ <Icon name="arrow" size={18} />
                     </Button>
                   </div>
                 )}
-                {canManage && ['CONFIRMED', 'PREPARING'].includes(order.status) && (
+                {canPrepareAction && ['CONFIRMED', 'PREPARING'].includes(order.status) && (
                   <div className="detail-section order-preparation" id="order-preparation">
                     <h3>Chuẩn bị từng bộ để giao</h3>
                     <p>
@@ -707,7 +726,7 @@ export function OrdersPage({
                     )}
                   </div>
                 )}
-                {canManage &&
+                {canReturnAction &&
                   (order.status === 'ACTIVE' || order.status === 'RETURN_INSPECTION') && (
                     <div className="detail-actions">
                       <Button onClick={() => go('return', { order: order.id })}>

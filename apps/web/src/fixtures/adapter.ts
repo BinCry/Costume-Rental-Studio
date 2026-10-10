@@ -8,6 +8,7 @@ import type {
   UnitOption,
 } from './types';
 import { FixtureIssue } from './types';
+import type { Unit } from './studio';
 import {
   ApiClientError,
   apiEnabled,
@@ -17,6 +18,7 @@ import {
   hasAccessToken,
   listCatalog as listApiCatalog,
   listOrders as listApiOrders,
+  listRentalAvailability as listApiRentalAvailability,
 } from '../api/client';
 
 export const fixturePeriod = { pickup: '2026-10-10T09:00', returnAt: '2026-10-12T09:00' };
@@ -356,7 +358,7 @@ export const fixtureAdapter = {
   async listCatalog(scenario: DemoScenario): Promise<CatalogItem[]> {
     // Public catalog discovery does not require a session. Authenticated
     // endpoints below still remain gated by hasAccessToken().
-    if (apiEnabled) {
+    if (apiEnabled && (hasAccessToken() || !import.meta.env.DEV)) {
       try {
         return await listApiCatalog();
       } catch (error) {
@@ -384,10 +386,14 @@ export const fixtureAdapter = {
     failNetwork(scenario);
     return scenario === 'empty' ? [] : orders;
   },
-  async getQuote(draft: BookingDraft, scenario: DemoScenario): Promise<QuoteSnapshot> {
+  async getQuote(
+    draft: BookingDraft,
+    scenario: DemoScenario,
+    options: { customerCode?: string; channel?: string } = {},
+  ): Promise<QuoteSnapshot> {
     if (apiEnabled && hasAccessToken()) {
       try {
-        return await getApiQuote(draft);
+        return await getApiQuote(draft, options);
       } catch (error) {
         throw asFixtureIssue(error);
       }
@@ -456,10 +462,11 @@ export const fixtureAdapter = {
     draft: BookingDraft,
     quote: QuoteSnapshot,
     scenario: DemoScenario,
+    assignedUnit?: { code: string; id: string },
   ): Promise<string> {
     if (apiEnabled && hasAccessToken()) {
       try {
-        return await createApiOrder(draft, quote);
+        return await createApiOrder(draft, quote, assignedUnit);
       } catch (error) {
         throw asFixtureIssue(error);
       }
@@ -474,6 +481,21 @@ export const fixtureAdapter = {
     if (!quote.id)
       throw new FixtureIssue('QUOTE_MISSING', 'Cần báo giá còn hiệu lực trước khi gửi.');
     return `RT-DEMO-${nextDemoRequest++}`;
+  },
+  async rentalAvailability(
+    variantId: string,
+    branchName: string,
+    plannedStartAt: string,
+    plannedDueAt: string,
+  ): Promise<Unit[]> {
+    if (apiEnabled && hasAccessToken()) {
+      try {
+        return await listApiRentalAvailability(variantId, branchName, plannedStartAt, plannedDueAt);
+      } catch (error) {
+        throw asFixtureIssue(error);
+      }
+    }
+    throw new ApiClientError(0, 'API_NOT_CONFIGURED', 'Tra cứu khả dụng theo lịch chỉ có trong chế độ API.');
   },
   async confirmOrder(
     orderId: string,
