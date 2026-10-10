@@ -42,6 +42,11 @@ export const openApiDocument = {
       description:
         'Read-only operational reports. Revenue includes only successful RENTAL and EXTRA payments; deposits are excluded.',
     },
+    {
+      name: 'CRM',
+      description:
+        'Customer-support cases and append-only interaction/history timelines. Staff are restricted to their assigned branches unless granted CRM ALL permissions.',
+    },
   ],
   components: {
     securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },
@@ -472,6 +477,125 @@ export const openApiDocument = {
     },
   },
   paths: {
+    '/crm/cases': {
+      get: {
+        tags: ['CRM'],
+        security: [{ bearerAuth: [] }],
+        summary: 'List CRM cases',
+        parameters: [
+          { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1, default: 1 } },
+          {
+            name: 'pageSize',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          },
+          { name: 'branchId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          {
+            name: 'status',
+            in: 'query',
+            schema: { type: 'string', enum: ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'] },
+          },
+          {
+            name: 'priority',
+            in: 'query',
+            schema: { type: 'string', enum: ['LOW', 'NORMAL', 'HIGH', 'URGENT'] },
+          },
+          { name: 'overdue', in: 'query', schema: { type: 'boolean' } },
+        ],
+        responses: {
+          '200': { description: 'CRM cases loaded' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+        },
+      },
+      post: {
+        tags: ['CRM'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Create a CRM case and immutable creation history event',
+        responses: {
+          '201': { description: 'CRM case created' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+        },
+      },
+    },
+    '/crm/cases/{caseId}': {
+      get: {
+        tags: ['CRM'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Get a CRM case',
+        responses: {
+          '200': { description: 'CRM case loaded' },
+          '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+      patch: {
+        tags: ['CRM'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Update mutable CRM case details',
+        responses: {
+          '200': { description: 'CRM case updated' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+        },
+      },
+    },
+    '/crm/cases/{caseId}/assign': {
+      post: {
+        tags: ['CRM'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Assign or unassign an active branch employee',
+        responses: {
+          '200': { description: 'CRM case owner updated' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/crm/cases/{caseId}/status': {
+      post: {
+        tags: ['CRM'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Transition CRM case status and record history',
+        responses: {
+          '200': { description: 'CRM case status updated' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/crm/cases/{caseId}/history': {
+      get: {
+        tags: ['CRM'],
+        security: [{ bearerAuth: [] }],
+        summary: 'List immutable CRM case history',
+        responses: { '200': { description: 'CRM case history loaded' } },
+      },
+    },
+    '/crm/cases/{caseId}/interactions': {
+      get: {
+        tags: ['CRM'],
+        security: [{ bearerAuth: [] }],
+        summary: 'List interactions linked to a CRM case',
+        responses: { '200': { description: 'CRM case interactions loaded' } },
+      },
+    },
+    '/crm/customers/{customerUserId}/interactions': {
+      get: {
+        tags: ['CRM'],
+        security: [{ bearerAuth: [] }],
+        summary: 'List customer interactions visible to the actor',
+        responses: { '200': { description: 'Customer interactions loaded' } },
+      },
+      post: {
+        tags: ['CRM'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Append a customer interaction',
+        responses: {
+          '201': { description: 'Customer interaction created' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+        },
+      },
+    },
     '/reports/overview': {
       get: {
         tags: ['Reports'],

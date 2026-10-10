@@ -35,6 +35,8 @@ const permissionDefinitions = [
   ['payments.manage.branch', 'payments', 'manage', PermissionScope.BRANCH],
   ['crm.read.branch', 'crm', 'read', PermissionScope.BRANCH],
   ['crm.manage.branch', 'crm', 'manage', PermissionScope.BRANCH],
+  ['crm.read.all', 'crm', 'read', PermissionScope.ALL],
+  ['crm.manage.all', 'crm', 'manage', PermissionScope.ALL],
   ['reports.read.branch', 'reports', 'read', PermissionScope.BRANCH],
   ['reports.read.all', 'reports', 'read', PermissionScope.ALL],
   ['customers.create.all', 'customers', 'create', PermissionScope.ALL],
