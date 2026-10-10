@@ -965,6 +965,7 @@ export function RolesPage({ scenario }: { scenario: DemoScenario }) {
 }
 
 export function PoliciesPage({ scenario }: { scenario: DemoScenario }) {
+  const realApiMode = apiEnabled && hasAccessToken();
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.policies);
   const [selected, setSelected] = useState('POLICY-2025');
   const [draft, setDraft] = useState<Policy>();
@@ -1026,7 +1027,7 @@ export function PoliciesPage({ scenario }: { scenario: DemoScenario }) {
               <div>
                 <Panel title={policy.code}>
                   <StatusLabel
-                    text={policy.to ? 'Lịch sử' : 'Đang hiệu lực theo fixture'}
+                    text={policy.to ? 'Lịch sử' : realApiMode ? 'Đang hiệu lực trên máy chủ' : 'Đang hiệu lực theo fixture'}
                     tone={policy.to ? 'neutral' : 'success'}
                   />
                   <KeyFacts
@@ -1050,7 +1051,7 @@ export function PoliciesPage({ scenario }: { scenario: DemoScenario }) {
                   <Timeline items={[`${policy.from} · Tạo ${policy.code}: ${policy.reason}`]} />
                 </Panel>
                 {draft && (
-                  <Panel title="Tạo phiên bản fixture">
+                  <Panel title={realApiMode ? 'Tạo phiên bản trên máy chủ' : 'Tạo phiên bản fixture'}>
                     <div className="feature-filters">
                       <Field
                         label="Mã phiên bản"
@@ -1146,6 +1147,7 @@ export function ReportsPage({
   branch: string;
   allBranches: boolean;
 }) {
+  const realApiMode = apiEnabled && hasAccessToken();
   const loadReports = useCallback(
     (currentScenario: DemoScenario) =>
       studioAdapter.reports(currentScenario, allBranches ? undefined : branch),
@@ -1162,17 +1164,27 @@ export function ReportsPage({
       emptyTitle="Chưa có báo cáo"
     >
       {(reports) => {
-        const scoped = reports.filter((r) => r.branch === (allBranches ? filter : branch));
+        const scoped = realApiMode && allBranches
+          ? reports
+          : reports.filter((r) => r.branch === (allBranches ? filter : branch));
         return (
           <div className="page">
             <PageHeading
               eyebrow="QUẢN TRỊ / BÁO CÁO"
               title="Báo cáo vận hành"
-              description="Snapshot fixture theo chi nhánh. Cọc đang giữ hiển thị riêng, không cộng vào doanh thu thuê."
+              description={
+                realApiMode
+                  ? 'Số liệu lấy từ hệ thống theo chi nhánh và khoảng 30 ngày gần nhất. Cọc đang giữ hiển thị riêng, không cộng vào doanh thu thuê.'
+                  : 'Snapshot fixture theo chi nhánh. Cọc đang giữ hiển thị riêng, không cộng vào doanh thu thuê.'
+              }
             />
             <FilterBar>
-              {allBranches ? (
+              {allBranches && !realApiMode ? (
                 <BranchSelector value={filter} onChange={setFilter} />
+              ) : allBranches && realApiMode ? (
+                <p>
+                  Phạm vi: <strong>Toàn chuỗi</strong> · API đang trả số liệu tổng hợp theo quyền được cấp.
+                </p>
               ) : (
                 <p>
                   Chi nhánh được cấp quyền: <strong>{branch}</strong>

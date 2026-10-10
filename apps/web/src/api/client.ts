@@ -1291,7 +1291,7 @@ export async function listReports(branchName?: string): Promise<ReportSnapshot[]
     request<ApiRentalReport>('/api/v1/reports/rentals?' + query),
     request<ApiPaymentReport>('/api/v1/reports/payments?' + query),
   ]);
-  const branch = branchName ?? branchNameById(overview.branchId);
+  const branch = branchName ?? (overview.branchId ? branchNameById(overview.branchId) : 'Toàn chuỗi');
   return [{
     branch,
     period: `${overview.from.slice(0, 10)} → ${overview.to.slice(0, 10)}`,
