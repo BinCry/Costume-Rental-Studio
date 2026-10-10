@@ -170,12 +170,11 @@ export async function seedCore(db: SeedDatabase): Promise<CoreSeedContext> {
   }
 
   const permissions = new Map<string, string>();
-  for (const [index, [code, module, action, scope]] of permissionDefinitions.entries()) {
+  for (const [code, module, action, scope] of permissionDefinitions) {
     const permission = await db.permission.upsert({
       where: { code },
       update: { module, action, scope },
       create: {
-        id: seedId(40 + index),
         code,
         module,
         action,
