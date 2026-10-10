@@ -10,7 +10,7 @@ import swaggerUi from 'swagger-ui-express';
 import { sendError, sendSuccess } from './common/http/response.js';
 import { errorHandler } from './common/middleware/error-handler.js';
 import { notFoundHandler } from './common/middleware/not-found-handler.js';
-import { env } from './config/env.js';
+import { env, webAllowedOrigins } from './config/env.js';
 import { logger } from './config/logger.js';
 import { prisma } from './database/prisma.js';
 import { authRouter } from './modules/auth/auth.route.js';
@@ -52,7 +52,7 @@ export function createApp() {
   app.use(helmet());
   app.use(
     cors({
-      origin: env.WEB_URL,
+      origin: webAllowedOrigins,
       credentials: true,
     }),
   );
