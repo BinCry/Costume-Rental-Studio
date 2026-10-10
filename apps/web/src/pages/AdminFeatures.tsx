@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   Button,
   ConfirmDialog,
@@ -1145,7 +1145,12 @@ export function ReportsPage({
   branch: string;
   allBranches: boolean;
 }) {
-  const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.reports);
+  const loadReports = useCallback(
+    (currentScenario: DemoScenario) =>
+      studioAdapter.reports(currentScenario, allBranches ? undefined : branch),
+    [allBranches, branch],
+  );
+  const { loading, error, data, retry } = useFixtureResource(scenario, loadReports);
   const [filter, setFilter] = useState(branch);
   return (
     <StateGate

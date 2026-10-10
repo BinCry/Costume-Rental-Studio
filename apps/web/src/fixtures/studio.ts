@@ -16,13 +16,19 @@ import {
   listCrmCases as listApiCrmCases,
   listCustomerOrders as listApiCustomerOrders,
   listInventoryUnits as listApiInventoryUnits,
+  listPolicies as listApiPolicies,
+  listReports as listApiReports,
+  listTransfers as listApiTransfers,
   listRbacPermissions as listApiRbacPermissions,
   listRbacRoles as listApiRbacRoles,
   listStaff as listApiStaff,
   replaceRbacRolePermissions as replaceApiRolePermissions,
   saveCrmCase as saveApiCrmCase,
   saveCustomer as saveApiCustomer,
+  savePolicy as saveApiPolicy,
   saveStaff as saveApiStaff,
+  saveTransfer as saveApiTransfer,
+  advanceTransfer as advanceApiTransfer,
 } from '../api/client';
 
 export type UnitStatus = 'INBOUND' | 'READY' | 'CLEANING' | 'REPAIR' | 'IN_TRANSFER' | 'RETIRED';
@@ -1140,7 +1146,18 @@ export const studioAdapter = {
     }
     return list(roles, scenario);
   },
-  transfers: (scenario: DemoScenario) => list(transfers, scenario),
+  async transfers(scenario: DemoScenario, branch?: string) {
+    if (apiEnabled && hasAccessToken()) {
+      try {
+        return await listApiTransfers(branch);
+      } catch (error) {
+        throw error instanceof FixtureIssue
+          ? error
+          : new FixtureIssue('NETWORK', error instanceof Error ? error.message : 'Không tải được phiếu điều chuyển.');
+      }
+    }
+    return list(transfers, scenario);
+  },
   async cases(scenario: DemoScenario, branch?: string) {
     if (apiEnabled && hasAccessToken()) {
       try {
@@ -1153,8 +1170,30 @@ export const studioAdapter = {
     }
     return list(cases, scenario);
   },
-  policies: (scenario: DemoScenario) => list(policies, scenario),
-  reports: (scenario: DemoScenario) => list(reports, scenario),
+  async policies(scenario: DemoScenario) {
+    if (apiEnabled && hasAccessToken()) {
+      try {
+        return await listApiPolicies();
+      } catch (error) {
+        throw error instanceof FixtureIssue
+          ? error
+          : new FixtureIssue('NETWORK', error instanceof Error ? error.message : 'Không tải được chính sách thuê.');
+      }
+    }
+    return list(policies, scenario);
+  },
+  async reports(scenario: DemoScenario, branch?: string) {
+    if (apiEnabled && hasAccessToken()) {
+      try {
+        return await listApiReports(branch);
+      } catch (error) {
+        throw error instanceof FixtureIssue
+          ? error
+          : new FixtureIssue('NETWORK', error instanceof Error ? error.message : 'Không tải được báo cáo.');
+      }
+    }
+    return list(reports, scenario);
+  },
   async customerOrders(scenario: DemoScenario) {
     if (apiEnabled && hasAccessToken()) return listApiCustomerOrders();
     return list(customerOrders, scenario);
@@ -1275,8 +1314,9 @@ export const studioAdapter = {
           window.dispatchEvent(new Event('fixture-access-updated'));
           return role;
         }),
-  saveTransfer: (transfer: Transfer, scenario: DemoScenario) =>
-    mutate(scenario, () => {
+  async saveTransfer(transfer: Transfer, scenario: DemoScenario) {
+    if (apiEnabled && hasAccessToken()) return saveApiTransfer(transfer);
+    return mutate(scenario, () => {
       if (transfer.from === transfer.to || !transfer.note.trim() || !transfer.units.length)
         throw new FixtureIssue('INVALID_TRANSFER', 'Chọn hai chi nhánh khác nhau, bộ và lý do.');
       for (const item of transfer.units) {
@@ -1291,15 +1331,22 @@ export const studioAdapter = {
       if (index < 0) transfers.unshift(transfer);
       else transfers[index] = transfer;
       return transfer;
-    }),
-  advanceTransfer: (
+    });
+  },
+  async advanceTransfer(
     code: string,
     next: TransferStatus,
     checked: { barcode: string; in: string }[],
     reason: string,
     scenario: DemoScenario,
-  ) =>
-    mutate(scenario, () => {
+    current?: Transfer,
+  ) {
+    if (apiEnabled && hasAccessToken()) {
+      const transfer = current ?? transfers.find((item) => item.code === code);
+      if (!transfer) throw new FixtureIssue('NOT_FOUND', 'Không tìm thấy phiếu điều chuyển.');
+      return advanceApiTransfer(code, next, checked, reason, transfer);
+    }
+    return mutate(scenario, () => {
       const transfer = transfers.find((t) => t.code === code);
       if (!transfer) throw new FixtureIssue('NOT_FOUND', 'Không tìm thấy phiếu điều chuyển.');
       const allowed: Record<TransferStatus, TransferStatus[]> = {
@@ -1399,7 +1446,8 @@ export const studioAdapter = {
       };
       transfer.history.unshift(`03/10 · ${actionLabels[next]}`);
       return transfer;
-    }),
+    });
+  },
   async saveCase(value: Case, scenario: DemoScenario) {
     if (apiEnabled && hasAccessToken()) return saveApiCrmCase(value);
     return mutate(scenario, () => {
@@ -1409,13 +1457,15 @@ export const studioAdapter = {
       return value;
     });
   },
-  savePolicy: (value: Policy, scenario: DemoScenario) =>
-    mutate(scenario, () => {
+  async savePolicy(value: Policy, scenario: DemoScenario) {
+    if (apiEnabled && hasAccessToken()) return saveApiPolicy(value);
+    return mutate(scenario, () => {
       if (policies.some((p) => p.code === value.code))
         throw new FixtureIssue('DUPLICATE', 'Mã phiên bản chính sách đã tồn tại.');
       policies.unshift(value);
       return value;
-    }),
+    });
+  },
   async saveCustomer(value: Customer, scenario: DemoScenario) {
     if (apiEnabled && hasAccessToken()) return saveApiCustomer(value);
     return mutate(scenario, () => {

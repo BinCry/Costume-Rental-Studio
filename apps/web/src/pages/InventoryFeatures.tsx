@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { Navigate } from '../App';
 import { Button, Feedback, Field, SelectField, TextAreaField, StatusLabel } from '../components/ui';
 import {
@@ -269,7 +269,11 @@ export function InventoryPage({
 }
 
 export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; branch: string }) {
-  const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.transfers);
+  const loadTransfers = useCallback(
+    (currentScenario: DemoScenario) => studioAdapter.transfers(currentScenario, branch),
+    [branch],
+  );
+  const { loading, error, data, retry } = useFixtureResource(scenario, loadTransfers);
   const [selected, setSelected] = useState('DC-001');
   const [from, setFrom] = useState(branch);
   const [to, setTo] = useState(
@@ -311,6 +315,7 @@ export function TransfersPage({ scenario, branch }: { scenario: DemoScenario; br
         Object.entries(checks).map(([barcode, grade]) => ({ barcode, in: grade })),
         reason,
         scenario,
+        transfer,
       );
       setNotice(
         next === 'RECEIVED'

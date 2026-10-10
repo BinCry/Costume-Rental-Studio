@@ -6,7 +6,11 @@ import type {
   CustomerOrder,
   Employee,
   Permission,
+  Policy,
+  ReportSnapshot,
   Role,
+  Transfer,
+  TransferStatus,
   Unit,
 } from '../fixtures/studio';
 
@@ -158,6 +162,49 @@ type ApiCaseHistory = {
   toStatus?: string | null;
   actorUserId?: string | null;
 };
+type ApiTransfer = {
+  id: string;
+  transferCode: string;
+  status: TransferStatus;
+  version: number;
+  requestNote?: string | null;
+  endReason?: string | null;
+  createdAt?: string;
+  fromBranch: { id: string; name: string };
+  toBranch: { id: string; name: string };
+  items: Array<{
+    unitId: string;
+    conditionOut?: string | null;
+    conditionIn?: string | null;
+    unit?: { unitCode?: string } | null;
+  }>;
+};
+type ApiPolicy = {
+  id: string;
+  versionCode: string;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  billingDayMode: Policy['billingMode'];
+  minRentalDays: number;
+  maxRentalDays?: number | null;
+  quoteValidHours: number;
+  freeCancelBeforeHours: number;
+  changeReason: string;
+};
+type ApiOverviewReport = {
+  from: string;
+  to: string;
+  branchId?: string | null;
+  ordersCreated: number;
+  overdueOrders: number;
+  rentalRevenueVnd: string | number | bigint;
+  depositsHeldVnd: string | number | bigint;
+};
+type ApiRentalReport = { totalOrders: number; overdueOrders: number };
+type ApiPaymentReport = {
+  byStatus: Array<{ status: string; count: number }>;
+  byMethod: Array<{ method: string; count: number }>;
+};
 
 export type RentalEvidence = {
   uploadKey: string;
@@ -268,6 +315,7 @@ const caseRefs = new Map<
     status: Case['status'];
   }
 >();
+const transferRefs = new Map<string, { id: string; fromBranchId: string; toBranchId: string; unitIds: Map<string, string> }>();
 
 export async function login(email: string, password: string) {
   const data = await request<{ accessToken: string; user: { id: string; displayName?: string } }>(
@@ -923,6 +971,191 @@ export async function saveCustomer(customer: Customer): Promise<Customer> {
     }),
   });
   return customerFromApi(updated);
+}
+function transferFromApi(transfer: ApiTransfer): Transfer {
+  const unitRefsForTransfer = new Map<string, string>();
+  const units = transfer.items.map((item) => {
+    const barcode = item.unit?.unitCode ?? item.unitId;
+    unitRefsForTransfer.set(barcode, item.unitId);
+    return {
+      barcode,
+      out: item.conditionOut ?? undefined,
+      received: item.conditionIn ? 'Đã nhận' : undefined,
+      in: item.conditionIn ?? undefined,
+    };
+  });
+  transferRefs.set(transfer.transferCode, {
+    id: transfer.id,
+    fromBranchId: transfer.fromBranch.id,
+    toBranchId: transfer.toBranch.id,
+    unitIds: unitRefsForTransfer,
+  });
+  const history = transfer.createdAt ? [`${formatDate(transfer.createdAt)} · Tạo yêu cầu`] : [];
+  if (transfer.endReason) history.unshift(`${formatDate(transfer.createdAt)} · ${transfer.endReason}`);
+  return {
+    code: transfer.transferCode,
+    from: transfer.fromBranch.name,
+    to: transfer.toBranch.name,
+    status: transfer.status,
+    units,
+    note: transfer.requestNote ?? transfer.endReason ?? '',
+    version: transfer.version,
+    history,
+  };
+}
+export async function listTransfers(branchName?: string): Promise<Transfer[]> {
+  if (branchIds.size === 0 || (branchName && !branchIds.has(branchName))) await listBranches();
+  const query = new URLSearchParams({ page: '1', pageSize: '100', sortBy: 'createdAt', sortOrder: 'desc' });
+  const branchId = branchName ? branchIds.get(branchName) : undefined;
+  if (branchId) query.set('branchId', branchId);
+  const page = await request<Page<ApiTransfer>>('/api/v1/transfers?' + query.toString());
+  return page.items.map(transferFromApi);
+}
+async function transferUnitIds(transfer: Transfer) {
+  const reference = transferRefs.get(transfer.code);
+  if (reference && transfer.units.every((item) => reference.unitIds.has(item.barcode))) return reference;
+  if (!branchIds.has(transfer.from)) await listBranches();
+  const fromBranchId = branchIds.get(transfer.from);
+  const toBranchId = branchIds.get(transfer.to);
+  if (!fromBranchId || !toBranchId)
+    throw new ApiClientError(422, 'TRANSFER_CONTEXT_MISSING', 'Chưa tải đủ chi nhánh điều chuyển.');
+  const inventory = await listInventoryUnits(transfer.from);
+  const unitIds = new Map(inventory.map((unit) => [unit.barcode, unit.apiId ?? '']));
+  if (transfer.units.some((item) => !unitIds.get(item.barcode)))
+    throw new ApiClientError(409, 'UNIT_CONTEXT_MISSING', 'Có bộ chưa tải được mã đơn vị để điều chuyển.');
+  return { id: reference?.id ?? '', fromBranchId, toBranchId, unitIds };
+}
+export async function saveTransfer(transfer: Transfer): Promise<Transfer> {
+  const reference = await transferUnitIds(transfer);
+  const unitIds = transfer.units.map((item) => reference.unitIds.get(item.barcode)!);
+  if (!reference.id) {
+    const created = await request<ApiTransfer>('/api/v1/transfers', {
+      method: 'POST',
+      body: JSON.stringify({
+        fromBranchId: reference.fromBranchId,
+        toBranchId: reference.toBranchId,
+        unitIds,
+        requestNote: transfer.note,
+      }),
+    });
+    return transferFromApi(created);
+  }
+  const updated = await request<ApiTransfer>(`/api/v1/transfers/${encodeURIComponent(reference.id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ expectedVersion: transfer.version, requestNote: transfer.note, unitIds }),
+  });
+  return transferFromApi(updated);
+}
+export async function advanceTransfer(
+  code: string,
+  next: TransferStatus,
+  checked: { barcode: string; in: string }[],
+  reason: string,
+  current: Transfer,
+): Promise<Transfer> {
+  const reference = transferRefs.get(code);
+  if (!reference) throw new ApiClientError(422, 'TRANSFER_CONTEXT_MISSING', 'Chưa tải đủ phiếu điều chuyển.');
+  const path = `/api/v1/transfers/${encodeURIComponent(reference.id)}`;
+  let updated: ApiTransfer;
+  if (next === 'APPROVED') {
+    updated = await request<ApiTransfer>(path + '/approve', {
+      method: 'POST', body: JSON.stringify({ expectedVersion: current.version }),
+    });
+  } else if (next === 'REJECTED' || next === 'CANCELLED') {
+    updated = await request<ApiTransfer>(path + '/' + next.toLowerCase(), {
+      method: 'POST', body: JSON.stringify({ expectedVersion: current.version, reason }),
+    });
+  } else if (next === 'IN_TRANSIT') {
+    updated = await request<ApiTransfer>(path + '/ship', {
+      method: 'POST',
+      body: JSON.stringify({
+        expectedVersion: current.version,
+        items: current.units.map((item) => ({ unitId: reference.unitIds.get(item.barcode), conditionOut: 'GOOD' })),
+      }),
+    });
+  } else if (next === 'RECEIVED') {
+    const pending = current.units.filter((item) => !item.received);
+    const selected = checked.filter((item) => pending.some((unit) => unit.barcode === item.barcode));
+    if (!selected.length) throw new ApiClientError(422, 'CHECK_REQUIRED', 'Chọn ít nhất một bộ và ghi tình trạng nhận.');
+    updated = await request<ApiTransfer>(path + '/receive', {
+      method: 'POST',
+      body: JSON.stringify({
+        expectedVersion: current.version,
+        partial: selected.length < pending.length,
+        items: selected.map((item) => ({
+          unitId: reference.unitIds.get(item.barcode),
+          conditionIn: item.in === 'DAMAGED' ? 'DAMAGED' : item.in === 'FAIR' ? 'FAIR' : 'GOOD',
+          receivedOperationalStatus: item.in === 'DAMAGED' ? 'REPAIR' : item.in === 'FAIR' ? 'CLEANING' : 'READY',
+        })),
+      }),
+    });
+  } else {
+    throw new ApiClientError(409, 'INVALID_TRANSFER_TRANSITION', 'Trạng thái điều chuyển không hợp lệ.');
+  }
+  return transferFromApi(updated);
+}
+function policyFromApi(policy: ApiPolicy): Policy {
+  return {
+    code: policy.versionCode,
+    from: policy.effectiveFrom.slice(0, 10),
+    to: policy.effectiveTo?.slice(0, 10),
+    billingMode: policy.billingDayMode,
+    minDays: policy.minRentalDays,
+    maxDays: policy.maxRentalDays ?? 365,
+    quoteHours: policy.quoteValidHours,
+    cancelHours: policy.freeCancelBeforeHours,
+    reason: policy.changeReason,
+  };
+}
+export async function listPolicies(): Promise<Policy[]> {
+  const items = await request<ApiPolicy[]>('/api/v1/policies');
+  return items.map(policyFromApi);
+}
+export async function savePolicy(policy: Policy): Promise<Policy> {
+  const created = await request<ApiPolicy>('/api/v1/policies', {
+    method: 'POST',
+    body: JSON.stringify({
+      versionCode: policy.code,
+      effectiveFrom: new Date(`${policy.from}T00:00:00.000Z`).toISOString(),
+      effectiveTo: policy.to ? new Date(`${policy.to}T23:59:59.999Z`).toISOString() : null,
+      billingDayMode: policy.billingMode,
+      minRentalDays: policy.minDays,
+      maxRentalDays: policy.maxDays || undefined,
+      quoteValidHours: policy.quoteHours,
+      noShowGraceMinutes: 0,
+      lateGraceMinutes: 0,
+      lateFeePercentPerDay: 0,
+      freeCancelBeforeHours: policy.cancelHours,
+      lateCancelFeePercent: 0,
+      refundSlaBusinessDays: 5,
+      changeReason: policy.reason,
+    }),
+  });
+  return policyFromApi(created);
+}
+export async function listReports(branchName?: string): Promise<ReportSnapshot[]> {
+  if (branchIds.size === 0 || (branchName && !branchIds.has(branchName))) await listBranches();
+  const branchId = branchName ? branchIds.get(branchName) : undefined;
+  const params = new URLSearchParams({ groupBy: 'day' });
+  if (branchId) params.set('branchId', branchId);
+  const query = params.toString();
+  const [overview, rentals, payments] = await Promise.all([
+    request<ApiOverviewReport>('/api/v1/reports/overview?' + query),
+    request<ApiRentalReport>('/api/v1/reports/rentals?' + query),
+    request<ApiPaymentReport>('/api/v1/reports/payments?' + query),
+  ]);
+  const branch = branchName ?? branchNameById(overview.branchId);
+  return [{
+    branch,
+    period: `${overview.from.slice(0, 10)} → ${overview.to.slice(0, 10)}`,
+    rentalCount: overview.ordersCreated,
+    rentalRevenue: numberValue(overview.rentalRevenueVnd),
+    depositsHeld: numberValue(overview.depositsHeldVnd),
+    // The report API exposes overdue orders, while the fixture label is legacy.
+    overdueUnits: rentals.overdueOrders,
+    transactions: payments.byStatus,
+    refunds: [],
+  }];
 }
 export async function listInventoryUnits(branchName?: string, search?: string): Promise<Unit[]> {
   if (branchName && !branchIds.has(branchName)) await listBranches();
