@@ -1,5 +1,5 @@
 import type { BookingDraft, CatalogItem, Order, QuoteSnapshot } from '../fixtures/types';
-import type { ActiveUnit, CustomerOrder } from '../fixtures/studio';
+import type { ActiveUnit, CustomerOrder, Unit } from '../fixtures/studio';
 
 type ApiEnvelope<T> = {
   success: boolean;
@@ -97,6 +97,19 @@ type ApiActiveRental = {
     pickupBranch?: { name?: string } | null;
     customer?: { user?: { displayName?: string; phone?: string | null } | null } | null;
   };
+};
+type ApiInventoryUnit = {
+  id: string;
+  unitCode: string;
+  operationalStatus: Unit['status'];
+  conditionGrade?: string;
+  variant?: {
+    variantCode?: string;
+    sizeCode?: string;
+    colorCode?: string;
+    model?: { name?: string };
+  } | null;
+  currentBranch?: { name?: string } | null;
 };
 
 export type RentalEvidence = {
@@ -516,6 +529,26 @@ export async function cancelCustomerOrder(orderCode: string, version: number, re
   const updated = (await listCustomerOrders()).find((order) => order.id === orderCode);
   if (!updated) throw new ApiClientError(404, 'RENTAL_ORDER_NOT_FOUND', 'Không tìm thấy đơn vừa hủy');
   return updated;
+}
+export async function listInventoryUnits(branchName?: string, search?: string): Promise<Unit[]> {
+  if (branchName && !branchIds.has(branchName)) await listBranches();
+  const query = new URLSearchParams({ page: '1', pageSize: '100', sortBy: 'unitCode', sortOrder: 'asc' });
+  const branchId = branchName ? branchIds.get(branchName) : undefined;
+  if (branchId) query.set('branchId', branchId);
+  if (search?.trim()) query.set('search', search.trim());
+  const page = await request<Page<ApiInventoryUnit>>('/api/v1/inventory/units?' + query.toString());
+  return page.items.map((unit) => ({
+    barcode: unit.unitCode,
+    variantCode: unit.variant?.variantCode ?? '',
+    model: unit.variant?.model?.name ?? 'Trang phục',
+    variant: [unit.variant?.sizeCode, unit.variant?.colorCode].filter(Boolean).join(' / '),
+    branch: unit.currentBranch?.name ?? 'Chi nhánh chưa xác định',
+    status: unit.operationalStatus,
+    condition: unit.conditionGrade ?? 'UNINSPECTED',
+    available: unit.operationalStatus === 'READY',
+    blocks: [],
+    history: [],
+  }));
 }
 
 function idempotencyKey(prefix: string) {

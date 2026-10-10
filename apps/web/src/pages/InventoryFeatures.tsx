@@ -25,6 +25,7 @@ import {
   type UnitBlock,
 } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
+import { apiEnabled, hasAccessToken } from '../api/client';
 
 const transferStatus: Record<TransferStatus, string> = {
   REQUESTED: 'Chờ duyệt',
@@ -46,6 +47,7 @@ export function InventoryPage({
   go: Navigate;
   canManage?: boolean;
 }) {
+  const realApiMode = apiEnabled && hasAccessToken();
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.units);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('Tất cả');
@@ -203,8 +205,9 @@ export function InventoryPage({
                     {canManage && (
                       <Panel title="Tạo block cho bộ">
                         <p className="muted">
-                          Fixture hỗ trợ vệ sinh, sửa chữa và kiểm tra. Việc block có thể ảnh hưởng
-                          lịch còn bộ.
+                          {realApiMode
+                            ? 'API hiện cho phép xem trạng thái bộ. Tạo block theo khoảng thời gian cần backend bổ sung; thao tác này đang chỉ có ở chế độ fixture.'
+                            : 'Fixture hỗ trợ vệ sinh, sửa chữa và kiểm tra. Việc block có thể ảnh hưởng lịch còn bộ.'}
                         </p>
                         <SelectField
                           label="Loại block"
@@ -234,8 +237,8 @@ export function InventoryPage({
                           value={reason}
                           onChange={(e) => setReason(e.target.value)}
                         />
-                        <Button loading={busy} onClick={() => void addBlock()}>
-                          Tạo block fixture
+                        <Button loading={busy} onClick={() => void addBlock()} disabled={realApiMode}>
+                          {realApiMode ? 'Chưa có API tạo block' : 'Tạo block fixture'}
                         </Button>
                         <InlineIssue
                           text={issue}

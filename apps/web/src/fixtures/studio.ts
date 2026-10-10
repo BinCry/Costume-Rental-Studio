@@ -12,6 +12,7 @@ import {
   hasAccessToken,
   listActiveRentals as listApiActiveRentals,
   listCustomerOrders as listApiCustomerOrders,
+  listInventoryUnits as listApiInventoryUnits,
 } from '../api/client';
 
 export type UnitStatus = 'INBOUND' | 'READY' | 'CLEANING' | 'REPAIR' | 'IN_TRANSFER' | 'RETIRED';
@@ -1043,7 +1044,21 @@ export const studioAdapter = {
     });
   },
   details: (scenario: DemoScenario) => list(details, scenario),
-  units: (scenario: DemoScenario) => list(units, scenario),
+  async units(scenario: DemoScenario) {
+    if (apiEnabled && hasAccessToken()) {
+      try {
+        return await listApiInventoryUnits();
+      } catch (error) {
+        throw error instanceof FixtureIssue
+          ? error
+          : new FixtureIssue(
+              'NETWORK',
+              error instanceof Error ? error.message : 'Không tải được danh sách bộ.',
+            );
+      }
+    }
+    return list(units, scenario);
+  },
   async activeUnits(scenario: DemoScenario) {
     if (apiEnabled && hasAccessToken()) {
       try {
@@ -1068,6 +1083,23 @@ export const studioAdapter = {
     return list(customerOrders, scenario);
   },
   async barcode(code: string, branch: string, scenario: DemoScenario) {
+    if (apiEnabled && hasAccessToken()) {
+      try {
+        const matches = await listApiInventoryUnits(branch, code.trim().toUpperCase());
+        const unit = matches[0];
+        if (!unit) throw new FixtureIssue('BARCODE_MISSING', 'Không tìm thấy barcode. Kiểm tra và quét/nhập lại.');
+        if (unit.status === 'CLEANING' || unit.status === 'REPAIR')
+          throw new FixtureIssue('UNIT_BLOCKED', 'Bộ đang bị chặn để vệ sinh/sửa chữa, chưa thể sử dụng.');
+        return unit;
+      } catch (error) {
+        throw error instanceof FixtureIssue
+          ? error
+          : new FixtureIssue(
+              'NETWORK',
+              error instanceof Error ? error.message : 'Không tra cứu được barcode.',
+            );
+      }
+    }
     await pause();
     check(scenario);
     if (scenario === 'barcodeMissing')
@@ -1095,6 +1127,11 @@ export const studioAdapter = {
   },
   addBlock: (code: string, block: UnitBlock, scenario: DemoScenario) =>
     mutate(scenario, () => {
+      if (apiEnabled && hasAccessToken())
+        throw new FixtureIssue(
+          'API_NOT_SUPPORTED',
+          'Backend hiện chưa có API tạo block theo khoảng thời gian; chưa ghi thay đổi nào.',
+        );
       const unit = units.find((u) => u.barcode === code);
       if (!unit) throw new FixtureIssue('NOT_FOUND', 'Không tìm thấy bộ.');
       unit.blocks.unshift(block);
