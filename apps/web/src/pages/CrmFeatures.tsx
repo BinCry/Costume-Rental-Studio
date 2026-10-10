@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   Button,
   ConfirmDialog,
@@ -20,6 +20,7 @@ import {
 } from '../components/studio';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { useMobileDetailReveal } from '../components/useMobileDetailReveal';
+import { apiEnabled, hasAccessToken } from '../api/client';
 import { studioAdapter, type Case, type Customer } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
 
@@ -45,8 +46,17 @@ export function CrmPage({
   branch: string;
   canManage: boolean;
 }) {
-  const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.customers);
-  const casesResource = useFixtureResource(scenario, studioAdapter.cases);
+  const realApiMode = apiEnabled && hasAccessToken();
+  const loadCustomers = useCallback(
+    (currentScenario: DemoScenario) => studioAdapter.customers(currentScenario, branch),
+    [branch],
+  );
+  const loadCases = useCallback(
+    (currentScenario: DemoScenario) => studioAdapter.cases(currentScenario, branch),
+    [branch],
+  );
+  const { loading, error, data, retry } = useFixtureResource(scenario, loadCustomers);
+  const casesResource = useFixtureResource(scenario, loadCases);
   const employeesResource = useFixtureResource(scenario, studioAdapter.employees);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState('KH-004');
@@ -111,10 +121,10 @@ export function CrmPage({
         : value.history.length
           ? value.history
           : ['03/10 · Tạo case'];
-      await studioAdapter.saveCase({ ...value, history }, scenario);
-      setCaseCode(value.code);
+      const saved = await studioAdapter.saveCase({ ...value, history }, scenario);
+      setCaseCode(saved.code);
       setDraft(undefined);
-      setNotice('Case đã được lưu trong fixture và ghi lịch sử.');
+      setNotice(realApiMode ? 'Case đã được lưu vào hệ thống CRM.' : 'Case đã được lưu trong dữ liệu mẫu và ghi lịch sử.');
       casesResource.retry();
     } catch (e) {
       setIssue(e instanceof Error ? e.message : 'Chưa thể lưu case.');
@@ -361,6 +371,7 @@ export function CrmPage({
                       <BranchSelector
                         label="Chi nhánh xử lý case"
                         value={editing.branch}
+                        disabled={realApiMode}
                         onChange={(v) => {
                           setIssue('');
                           setDraft({
@@ -370,6 +381,11 @@ export function CrmPage({
                           });
                         }}
                       />
+                      {realApiMode && (
+                        <p className="field-hint">
+                          Chi nhánh được khóa theo case trên máy chủ; API hiện chưa hỗ trợ chuyển case giữa chi nhánh.
+                        </p>
+                      )}
                       <SelectField
                         label="Trạng thái"
                         value={editing.status}
@@ -465,6 +481,10 @@ export function CrmPage({
                       setIssue('Nhập họ tên và số điện thoại hợp lệ.');
                       return;
                     }
+                    if (realApiMode && !/^\S+@\S+\.\S+$/.test(newCustomer.email.trim())) {
+                      setIssue('Nhập email hợp lệ để tạo hồ sơ khách trên hệ thống.');
+                      return;
+                    }
                     if (
                       customers.some(
                         (customer) =>
@@ -480,8 +500,8 @@ export function CrmPage({
                     setBusy(true);
                     setIssue('');
                     try {
-                      await studioAdapter.saveCustomer(newCustomer, scenario);
-                      setSelected(newCustomer.code);
+                      const saved = await studioAdapter.saveCustomer(newCustomer, scenario);
+                      setSelected(saved.code);
                       setNewCustomer(undefined);
                       retry();
                     } catch (e) {

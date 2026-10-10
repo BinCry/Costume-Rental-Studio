@@ -173,12 +173,18 @@ export function BranchSelector({
   all?: boolean;
   label?: string;
   options?: string[];
+  disabled?: boolean;
 }) {
   const branchOptions = options?.length
     ? options
     : ['Chi nhánh Quận 1', 'Chi nhánh Thủ Đức'];
   return (
-    <SelectField label={label} value={value} onChange={(e) => onChange(e.target.value)}>
+    <SelectField
+      label={label}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
+    >
       {all && <option value="">Tất cả chi nhánh</option>}
       {branchOptions.map((branch) => (
         <option key={branch}>{branch}</option>

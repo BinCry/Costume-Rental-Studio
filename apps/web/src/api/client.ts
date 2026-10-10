@@ -1,5 +1,14 @@
 import type { BookingDraft, CatalogItem, Order, QuoteSnapshot } from '../fixtures/types';
-import type { ActiveUnit, CustomerOrder, Employee, Permission, Role, Unit } from '../fixtures/studio';
+import type {
+  ActiveUnit,
+  Case,
+  Customer,
+  CustomerOrder,
+  Employee,
+  Permission,
+  Role,
+  Unit,
+} from '../fixtures/studio';
 
 type ApiEnvelope<T> = {
   success: boolean;
@@ -111,6 +120,44 @@ type ApiInventoryUnit = {
   } | null;
   currentBranch?: { name?: string } | null;
 };
+type ApiCustomer = {
+  userId: string;
+  customerCode: string;
+  displayName: string;
+  phone?: string | null;
+  email?: string | null;
+  preferredBranchId?: string | null;
+};
+type ApiCrmCase = {
+  id: string;
+  caseCode: string;
+  customerUserId: string;
+  branchId: string;
+  orderId?: string | null;
+  subject: string;
+  description?: string | null;
+  caseType?: string | null;
+  priority: Case['priority'];
+  status: Case['status'];
+  ownerUserId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  customer?: {
+    customerCode?: string;
+    user?: { id?: string; displayName?: string; phone?: string | null; email?: string | null };
+  } | null;
+  branch?: { id?: string; name?: string } | null;
+  order?: { id?: string; orderCode?: string } | null;
+  owner?: { user?: { id?: string; displayName?: string } | null } | null;
+};
+type ApiCaseHistory = {
+  occurredAt?: string;
+  eventType?: string;
+  note?: string | null;
+  fromStatus?: string | null;
+  toStatus?: string | null;
+  actorUserId?: string | null;
+};
 
 export type RentalEvidence = {
   uploadKey: string;
@@ -209,6 +256,18 @@ const quoteRefs = new Map<string, { variantId: string; branchId: string }>();
 const roleRefs = new Map<string, string>();
 const permissionRefs = new Map<string, string>();
 const staffRefs = new Map<string, { userId: string; assignments: Map<string, string> }>();
+const customerRefs = new Map<string, { userId: string; branchId?: string }>();
+const caseRefs = new Map<
+  string,
+  {
+    id: string;
+    customerUserId: string;
+    branchId: string;
+    orderId?: string;
+    ownerUserId?: string;
+    status: Case['status'];
+  }
+>();
 
 export async function login(email: string, password: string) {
   const data = await request<{ accessToken: string; user: { id: string; displayName?: string } }>(
@@ -698,6 +757,172 @@ export async function saveStaff(employee: Employee) {
   }
   staffRefs.delete(employee.code);
   return employee;
+}
+function branchNameById(branchId: string | null | undefined) {
+  if (!branchId) return 'Chưa chọn chi nhánh';
+  for (const [name, id] of branchIds) if (id === branchId) return name;
+  return 'Chi nhánh chưa xác định';
+}
+function customerFromApi(customer: ApiCustomer): Customer {
+  customerRefs.set(customer.customerCode, {
+    userId: customer.userId,
+    branchId: customer.preferredBranchId ?? undefined,
+  });
+  return {
+    code: customer.customerCode,
+    name: customer.displayName,
+    phone: customer.phone ?? '',
+    email: customer.email ?? '',
+    preferredBranch: branchNameById(customer.preferredBranchId),
+    history: [],
+    interactions: [],
+  };
+}
+export async function listCustomers(branchName?: string, search?: string): Promise<Customer[]> {
+  if (branchIds.size === 0 || (branchName && !branchIds.has(branchName))) await listBranches();
+  const query = new URLSearchParams({ page: '1', pageSize: '100' });
+  const branchId = branchName ? branchIds.get(branchName) : undefined;
+  if (branchId) query.set('branchId', branchId);
+  if (search?.trim()) query.set('search', search.trim());
+  const page = await request<Page<ApiCustomer>>('/api/v1/customers?' + query.toString());
+  return page.items.map(customerFromApi);
+}
+function historyLine(entry: ApiCaseHistory) {
+  const stamp = formatDate(entry.occurredAt);
+  const transition = entry.toStatus ? ` · ${entry.eventType ?? 'Cập nhật'} · ${entry.toStatus}` : '';
+  return `${stamp || 'Vừa cập nhật'}${transition}${entry.note ? ` · ${entry.note}` : ''}`;
+}
+function crmCaseFromApi(crmCase: ApiCrmCase): Case {
+  const customerCode = crmCase.customer?.customerCode ?? crmCase.customerUserId;
+  const branch = crmCase.branch?.name ?? branchNameById(crmCase.branchId);
+  const history = crmCase.createdAt ? [`${formatDate(crmCase.createdAt)} · Tạo case`] : [];
+  caseRefs.set(crmCase.caseCode, {
+    id: crmCase.id,
+    customerUserId: crmCase.customerUserId,
+    branchId: crmCase.branchId,
+    orderId: crmCase.orderId ?? crmCase.order?.id ?? undefined,
+    ownerUserId: crmCase.ownerUserId ?? crmCase.owner?.user?.id ?? undefined,
+    status: crmCase.status,
+  });
+  if (crmCase.customer?.customerCode && crmCase.customer?.user?.id) {
+    customerRefs.set(crmCase.customer.customerCode, {
+      userId: crmCase.customer.user.id,
+      branchId: crmCase.branchId,
+    });
+  }
+  return {
+    code: crmCase.caseCode,
+    customerCode,
+    branch,
+    orderId: crmCase.order?.orderCode ?? crmCase.orderId ?? undefined,
+    subject: crmCase.subject,
+    description: crmCase.description ?? '',
+    priority: crmCase.priority,
+    status: crmCase.status,
+    owner: crmCase.owner?.user?.displayName ?? undefined,
+    history,
+  };
+}
+export async function listCrmCases(branchName?: string, customerCode?: string): Promise<Case[]> {
+  if (branchIds.size === 0 || (branchName && !branchIds.has(branchName))) await listBranches();
+  if (customerCode && !customerRefs.has(customerCode)) await listCustomers(branchName);
+  const query = new URLSearchParams({ page: '1', pageSize: '100', sortBy: 'updatedAt', sortOrder: 'desc' });
+  const branchId = branchName ? branchIds.get(branchName) : undefined;
+  if (branchId) query.set('branchId', branchId);
+  const customerUserId = customerCode ? customerRefs.get(customerCode)?.userId : undefined;
+  if (customerUserId) query.set('customerUserId', customerUserId);
+  const page = await request<Page<ApiCrmCase>>('/api/v1/crm/cases?' + query.toString());
+  return page.items.map(crmCaseFromApi);
+}
+export async function listCrmCaseHistory(caseCode: string) {
+  const reference = caseRefs.get(caseCode);
+  if (!reference) return [];
+  const page = await request<Page<ApiCaseHistory>>(
+    `/api/v1/crm/cases/${encodeURIComponent(reference.id)}/history?page=1&pageSize=100`,
+  );
+  return page.items.map(historyLine);
+}
+async function ownerUserId(owner: string | undefined, branch: string) {
+  if (!owner) return null;
+  if (!staffRefs.has(owner)) await listStaff(branch);
+  return staffRefs.get(owner)?.userId ?? null;
+}
+export async function saveCrmCase(value: Case): Promise<Case> {
+  if (!branchIds.has(value.branch)) await listBranches();
+  const branchId = branchIds.get(value.branch);
+  if (!branchId) throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không tìm thấy chi nhánh xử lý case.');
+  const reference = caseRefs.get(value.code);
+  const customer = customerRefs.get(value.customerCode);
+  if (!reference) {
+    if (!customer) await listCustomers(value.branch);
+    const resolvedCustomer = customerRefs.get(value.customerCode);
+    if (!resolvedCustomer) throw new ApiClientError(422, 'CUSTOMER_CONTEXT_MISSING', 'Chưa tải được mã khách để tạo case.');
+    const created = await request<ApiCrmCase>('/api/v1/crm/cases', {
+      method: 'POST',
+      body: JSON.stringify({
+        customerUserId: resolvedCustomer.userId,
+        branchId,
+        subject: value.subject,
+        description: value.description || undefined,
+        caseType: 'GENERAL',
+        priority: value.priority,
+        ownerUserId: await ownerUserId(value.owner, value.branch) || undefined,
+        note: value.history[0],
+      }),
+    });
+    return crmCaseFromApi(created);
+  }
+  if (reference.branchId !== branchId)
+    throw new ApiClientError(422, 'CRM_BRANCH_CHANGE_UNSUPPORTED', 'API hiện chưa hỗ trợ chuyển case sang chi nhánh khác.');
+  let updated = await request<ApiCrmCase>(`/api/v1/crm/cases/${encodeURIComponent(reference.id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      subject: value.subject,
+      description: value.description || null,
+      priority: value.priority,
+    }),
+  });
+  const nextOwnerId = await ownerUserId(value.owner, value.branch);
+  if (nextOwnerId !== (reference.ownerUserId ?? null)) {
+    updated = await request<ApiCrmCase>(`/api/v1/crm/cases/${encodeURIComponent(reference.id)}/assign`, {
+      method: 'POST',
+      body: JSON.stringify({ ownerUserId: nextOwnerId, note: value.history[0] }),
+    });
+  }
+  if (value.status !== reference.status) {
+    updated = await request<ApiCrmCase>(`/api/v1/crm/cases/${encodeURIComponent(reference.id)}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ status: value.status, note: value.history[0] }),
+    });
+  }
+  return crmCaseFromApi(updated);
+}
+export async function saveCustomer(customer: Customer): Promise<Customer> {
+  if (!branchIds.has(customer.preferredBranch)) await listBranches();
+  const branchId = branchIds.get(customer.preferredBranch);
+  if (!branchId) throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không tìm thấy chi nhánh ưu tiên.');
+  const reference = customerRefs.get(customer.code);
+  if (!reference) {
+    const created = await request<{ created: boolean; customer: ApiCustomer }>('/api/v1/customers', {
+      method: 'POST',
+      body: JSON.stringify({
+        branchId,
+        displayName: customer.name,
+        phone: customer.phone,
+        email: customer.email,
+      }),
+    });
+    return customerFromApi(created.customer);
+  }
+  const updated = await request<ApiCustomer>(`/api/v1/customers/${encodeURIComponent(reference.userId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      displayName: customer.name,
+      email: customer.email,
+      preferredBranchId: branchId,
+    }),
+  });
+  return customerFromApi(updated);
 }
 export async function listInventoryUnits(branchName?: string, search?: string): Promise<Unit[]> {
   if (branchName && !branchIds.has(branchName)) await listBranches();

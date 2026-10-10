@@ -12,12 +12,16 @@ import {
   createUnitBlock as createApiUnitBlock,
   hasAccessToken,
   listActiveRentals as listApiActiveRentals,
+  listCustomers as listApiCustomers,
+  listCrmCases as listApiCrmCases,
   listCustomerOrders as listApiCustomerOrders,
   listInventoryUnits as listApiInventoryUnits,
   listRbacPermissions as listApiRbacPermissions,
   listRbacRoles as listApiRbacRoles,
   listStaff as listApiStaff,
   replaceRbacRolePermissions as replaceApiRolePermissions,
+  saveCrmCase as saveApiCrmCase,
+  saveCustomer as saveApiCustomer,
   saveStaff as saveApiStaff,
 } from '../api/client';
 
@@ -1077,7 +1081,18 @@ export const studioAdapter = {
     }
     return list(activeUnits(), scenario);
   },
-  customers: (scenario: DemoScenario) => list(customers, scenario),
+  async customers(scenario: DemoScenario, branch?: string) {
+    if (apiEnabled && hasAccessToken()) {
+      try {
+        return await listApiCustomers(branch);
+      } catch (error) {
+        throw error instanceof FixtureIssue
+          ? error
+          : new FixtureIssue('NETWORK', error instanceof Error ? error.message : 'Không tải được hồ sơ khách.');
+      }
+    }
+    return list(customers, scenario);
+  },
   async employees(scenario: DemoScenario) {
     if (apiEnabled && hasAccessToken()) {
       try {
@@ -1126,7 +1141,18 @@ export const studioAdapter = {
     return list(roles, scenario);
   },
   transfers: (scenario: DemoScenario) => list(transfers, scenario),
-  cases: (scenario: DemoScenario) => list(cases, scenario),
+  async cases(scenario: DemoScenario, branch?: string) {
+    if (apiEnabled && hasAccessToken()) {
+      try {
+        return await listApiCrmCases(branch);
+      } catch (error) {
+        throw error instanceof FixtureIssue
+          ? error
+          : new FixtureIssue('NETWORK', error instanceof Error ? error.message : 'Không tải được case CRM.');
+      }
+    }
+    return list(cases, scenario);
+  },
   policies: (scenario: DemoScenario) => list(policies, scenario),
   reports: (scenario: DemoScenario) => list(reports, scenario),
   async customerOrders(scenario: DemoScenario) {
@@ -1374,13 +1400,15 @@ export const studioAdapter = {
       transfer.history.unshift(`03/10 · ${actionLabels[next]}`);
       return transfer;
     }),
-  saveCase: (value: Case, scenario: DemoScenario) =>
-    mutate(scenario, () => {
+  async saveCase(value: Case, scenario: DemoScenario) {
+    if (apiEnabled && hasAccessToken()) return saveApiCrmCase(value);
+    return mutate(scenario, () => {
       const index = cases.findIndex((c) => c.code === value.code);
       if (index < 0) cases.unshift(value);
       else cases[index] = value;
       return value;
-    }),
+    });
+  },
   savePolicy: (value: Policy, scenario: DemoScenario) =>
     mutate(scenario, () => {
       if (policies.some((p) => p.code === value.code))
@@ -1388,14 +1416,16 @@ export const studioAdapter = {
       policies.unshift(value);
       return value;
     }),
-  saveCustomer: (value: Customer, scenario: DemoScenario) =>
-    mutate(scenario, () => {
+  async saveCustomer(value: Customer, scenario: DemoScenario) {
+    if (apiEnabled && hasAccessToken()) return saveApiCustomer(value);
+    return mutate(scenario, () => {
       const index = customers.findIndex((c) => c.code === value.code);
       if (index < 0) customers.unshift(value);
       else customers[index] = value;
       window.dispatchEvent(new Event('fixture-access-updated'));
       return value;
-    }),
+    });
+  },
   async cancelCustomerOrder(id: string, reason: string, scenario: DemoScenario) {
     if (apiEnabled && hasAccessToken()) {
       const current = (await listApiCustomerOrders()).find((order) => order.id === id);

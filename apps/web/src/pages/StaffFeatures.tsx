@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Navigate } from '../App';
 import { Button, Feedback, Field, SelectField, StatusLabel } from '../components/ui';
 import { money } from '../components/support';
@@ -31,7 +31,11 @@ export function CounterRentalPage({
   branch: string;
   canConfirm: boolean;
 }) {
-  const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.customers);
+  const loadCustomers = useCallback(
+    (currentScenario: DemoScenario) => studioAdapter.customers(currentScenario, branch),
+    [branch],
+  );
+  const { loading, error, data, retry } = useFixtureResource(scenario, loadCustomers);
   const [customerCode, setCustomerCode] = useState('KH-001');
   const [customerSearch, setCustomerSearch] = useState('');
   const [creating, setCreating] = useState(false);
