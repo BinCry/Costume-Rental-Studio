@@ -13,6 +13,12 @@ import {
   type AuthenticatedActor,
 } from '../auth/authorization.js';
 import { lockActiveBranch } from '../branches/branch.service.js';
+import {
+  damageDueVnd,
+  depositDueVnd,
+  rentalDueVnd,
+  successfulPaymentTotal,
+} from './rental-financials.js';
 import type {
   CompleteInput,
   ConfirmInput,
@@ -747,18 +753,10 @@ export async function pickupOrder(actor: AuthenticatedActor, id: string, input: 
     assertManage(actor, order);
     assertStatus(order.status, ['READY_FOR_PICKUP']);
     assertVersion(order.version, input.expectedVersion);
-    const rentalDue =
-      order.items.reduce(
-        (sum, item) => sum + item.unitDailyPriceVnd * BigInt(item.billableDays),
-        0n,
-      ) - order.promotionDiscountVnd;
-    const depositDue = order.items.reduce((sum, item) => sum + item.unitDepositVnd, 0n);
-    const paidRental = order.payments
-      .filter((payment) => payment.status === 'SUCCEEDED' && payment.purpose === 'RENTAL')
-      .reduce((sum, payment) => sum + payment.amountVnd, 0n);
-    const paidDeposit = order.payments
-      .filter((payment) => payment.status === 'SUCCEEDED' && payment.purpose === 'DEPOSIT')
-      .reduce((sum, payment) => sum + payment.amountVnd, 0n);
+    const rentalDue = rentalDueVnd(order.items, order.promotionDiscountVnd);
+    const depositDue = depositDueVnd(order.items);
+    const paidRental = successfulPaymentTotal(order.payments, 'RENTAL');
+    const paidDeposit = successfulPaymentTotal(order.payments, 'DEPOSIT');
     if (paidRental < rentalDue || paidDeposit < depositDue)
       throw new AppError(
         409,
@@ -933,36 +931,32 @@ export async function completeOrder(actor: AuthenticatedActor, id: string, input
     assertManage(actor, order);
     assertStatus(order.status, ['RETURN_INSPECTION']);
     assertVersion(order.version, input.expectedVersion);
-    const damage = order.items.reduce(
-      (sum, item) =>
-        sum +
-        item.damageFeeVnd +
-        item.missingFeeVnd +
-        item.accessories.reduce((a, x) => a + x.damageFeeVnd + x.missingFeeVnd, 0n),
-      0n,
-    );
-    const deposits = order.items.reduce((sum, item) => sum + item.unitDepositVnd, 0n);
+    const hasPreparedSettlement =
+      order.otherFeeVnd !== 0n || order.depositDeductionVnd !== 0n || order.settlementNote !== null;
+    if (
+      hasPreparedSettlement &&
+      (order.otherFeeVnd !== input.otherFeeVnd ||
+        order.depositDeductionVnd !== input.depositDeductionVnd ||
+        (order.settlementNote ?? null) !== (input.settlementNote ?? null))
+    )
+      throw new AppError(
+        409,
+        'SETTLEMENT_CONFLICT',
+        'Completion must use the prepared settlement values',
+      );
+    const damage = damageDueVnd(order.items);
+    const deposits = depositDueVnd(order.items);
     if (input.depositDeductionVnd > deposits)
       throw new AppError(
         400,
         'INVALID_DEPOSIT_DEDUCTION',
         'Deposit deduction exceeds order deposit',
       );
-    const rentalDue =
-      order.items.reduce(
-        (sum, item) => sum + item.unitDailyPriceVnd * BigInt(item.billableDays),
-        0n,
-      ) - order.promotionDiscountVnd;
+    const rentalDue = rentalDueVnd(order.items, order.promotionDiscountVnd);
     const extraDue = damage + order.lateFeeVnd + input.otherFeeVnd;
-    const paidRental = order.payments
-      .filter((payment) => payment.status === 'SUCCEEDED' && payment.purpose === 'RENTAL')
-      .reduce((sum, payment) => sum + payment.amountVnd, 0n);
-    const paidExtra = order.payments
-      .filter((payment) => payment.status === 'SUCCEEDED' && payment.purpose === 'EXTRA')
-      .reduce((sum, payment) => sum + payment.amountVnd, 0n);
-    const paidDeposit = order.payments
-      .filter((payment) => payment.status === 'SUCCEEDED' && payment.purpose === 'DEPOSIT')
-      .reduce((sum, payment) => sum + payment.amountVnd, 0n);
+    const paidRental = successfulPaymentTotal(order.payments, 'RENTAL');
+    const paidExtra = successfulPaymentTotal(order.payments, 'EXTRA');
+    const paidDeposit = successfulPaymentTotal(order.payments, 'DEPOSIT');
     if (
       paidRental < rentalDue ||
       input.depositDeductionVnd > paidDeposit ||
@@ -974,7 +968,7 @@ export async function completeOrder(actor: AuthenticatedActor, id: string, input
         'Successful payments do not cover the rental settlement',
       );
     const refunded = await tx.refund.aggregate({
-      where: { payment: { orderId: order.id }, status: 'COMPLETED' },
+      where: { payment: { orderId: order.id, purpose: 'DEPOSIT' }, status: 'COMPLETED' },
       _sum: { amountVnd: true },
     });
     const refundDue = paidDeposit - input.depositDeductionVnd;
@@ -983,6 +977,12 @@ export async function completeOrder(actor: AuthenticatedActor, id: string, input
         409,
         'SETTLEMENT_REQUIRED',
         'Deposit refund must be completed before closing the order',
+      );
+    if ((refunded._sum.amountVnd ?? 0n) > refundDue)
+      throw new AppError(
+        409,
+        'SETTLEMENT_INVALID',
+        'Completed deposit refunds exceed the amount due',
       );
     const result = await tx.rentalOrder.update({
       where: { id },

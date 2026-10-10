@@ -25,6 +25,7 @@ import { uploadRouter } from './modules/uploads/upload.route.js';
 import { inventoryRouter } from './modules/inventory/inventory.route.js';
 import { transferRouter } from './modules/transfers/transfer.route.js';
 import { rentalRouter } from './modules/rentals/rental.route.js';
+import { paymentRouter, paymentWebhookRouter } from './modules/payments/payment.route.js';
 import { openApiDocument } from './openapi.js';
 
 export function createApp() {
@@ -52,6 +53,18 @@ export function createApp() {
       credentials: true,
     }),
   );
+  app.use(express.json({ limit: '1mb' }));
+
+  app.use(
+    '/api/v1/webhooks/payments',
+    rateLimit({
+      windowMs: 15 * 60 * 1_000,
+      limit: 1_000,
+      standardHeaders: 'draft-8',
+      legacyHeaders: false,
+    }),
+    paymentWebhookRouter,
+  );
 
   app.use(
     '/api/v1',
@@ -65,7 +78,6 @@ export function createApp() {
       },
     }),
   );
-  app.use(express.json({ limit: '1mb' }));
 
   app.get('/api/openapi.json', (_request, response) => response.json(openApiDocument));
   app.use(
@@ -111,6 +123,7 @@ export function createApp() {
   app.use('/api/v1/inventory', inventoryRouter);
   app.use('/api/v1/inventory', transferRouter);
   app.use('/api/v1/rentals', rentalRouter);
+  app.use('/api/v1/payments', paymentRouter);
   app.use('/api/v1/uploads', uploadRouter);
   app.use('/api/v1/promotions', promotionRouter);
   app.use('/api/v1/rental-policies', policyRouter);

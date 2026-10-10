@@ -50,6 +50,9 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.1146.0
         version: 3.1146.0
+      '@payos/node':
+        specifier: ^2.0.5
+        version: 2.0.5
       '@prisma/adapter-pg':
         specifier: ^7.10.0
         version: 7.10.0
@@ -951,6 +954,9 @@ packages:
 
   '@paralleldrive/cuid2@2.3.1':
     resolution: {integrity: sha512-XO7cAxhnTZl0Yggq6jOgjiOHhbgcO4NqFqwSmQpjK3b6TEE6Uj/jfSk6wzYyemh3+I0sHirKSetjQwn5cZktFw==}
+
+  '@payos/node@2.0.5':
+    resolution: {integrity: sha512-y2dRfqVMerbBr0gapFqNA+QwzJmhC0Hi0+IaXhOsXEOBRjIe9ZgeFqI3JBF3mXSM3YSf5HAjTAAk2XYtCvMpBQ==}
 
   '@phc/format@1.0.0':
     resolution: {integrity: sha512-m7X9U6BG2+J+R1lSOdCiITLLrxm+cWlNI3HUFA92oLO77ObGNzaKdh8pMLqdZcshtkKuV84olNNXDfMc4FezBQ==}
@@ -4258,6 +4264,8 @@ snapshots:
   '@paralleldrive/cuid2@2.3.1':
     dependencies:
       '@noble/hashes': 1.8.0
+
+  '@payos/node@2.0.5': {}
 
   '@phc/format@1.0.0': {}
 

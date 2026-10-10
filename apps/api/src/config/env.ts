@@ -76,6 +76,13 @@ const envSchema = z
     MEDIA_ORPHAN_RETENTION_HOURS: optionalPositiveInteger.default(24),
     MEDIA_ORPHAN_CLEANUP_INTERVAL_SECONDS: optionalPositiveInteger.default(60 * 60),
     MEDIA_PUBLIC_BASE_URL: optionalUrl,
+    PAYOS_CLIENT_ID: optionalString,
+    PAYOS_API_KEY: optionalString,
+    PAYOS_CHECKSUM_KEY: optionalString,
+    PAYOS_ORDER_CODE_PREFIX: optionalPositiveInteger,
+    PAYOS_CHECKOUT_BASE_URL: optionalUrl.default('https://pay.payos.vn/web'),
+    PAYOS_RETURN_URL: optionalUrl,
+    PAYOS_CANCEL_URL: optionalUrl,
   })
   .superRefine((value, context) => {
     if (value.OTP_DELIVERY_MODE === 'smtp') {
@@ -113,6 +120,30 @@ const envSchema = z
         path: ['S3_ENDPOINT'],
         message:
           'S3_ENDPOINT, S3_REGION, S3_BUCKET, S3_ACCESS_KEY_ID, and S3_SECRET_ACCESS_KEY must be set together',
+      });
+    }
+
+    const payosKeys = [
+      'PAYOS_CLIENT_ID',
+      'PAYOS_API_KEY',
+      'PAYOS_CHECKSUM_KEY',
+      'PAYOS_ORDER_CODE_PREFIX',
+      'PAYOS_RETURN_URL',
+      'PAYOS_CANCEL_URL',
+    ] as const;
+    const configuredPayosKeys = payosKeys.filter((key) => value[key] !== undefined);
+    if (configuredPayosKeys.length > 0 && configuredPayosKeys.length !== payosKeys.length) {
+      context.addIssue({
+        code: 'custom',
+        path: ['PAYOS_CLIENT_ID'],
+        message: `${payosKeys.join(', ')} must be set together`,
+      });
+    }
+    if (value.PAYOS_ORDER_CODE_PREFIX !== undefined && value.PAYOS_ORDER_CODE_PREFIX > 999) {
+      context.addIssue({
+        code: 'custom',
+        path: ['PAYOS_ORDER_CODE_PREFIX'],
+        message: 'PAYOS_ORDER_CODE_PREFIX must be between 1 and 999',
       });
     }
   });

@@ -894,6 +894,11 @@ model Payment {
   status            PaymentStatus          @default(PENDING)
   provider          String?                @db.VarChar(100)
   providerPaymentId String?                @map("provider_payment_id") @db.VarChar(255)
+  providerOrderCode BigInt?                @map("provider_order_code")
+  providerStatus    String?                @map("provider_status") @db.VarChar(30)
+  checkoutUrl       String?                @map("checkout_url") @db.VarChar(1000)
+  qrCode            String?                @map("qr_code") @db.Text
+  expiresAt         DateTime?              @map("expires_at") @db.Timestamptz(6)
   idempotencyKey    String                 @unique @map("idempotency_key") @db.VarChar(255)
   recordedBy        String?                @map("recorded_by") @db.Uuid
   paidAt            DateTime?              @map("paid_at") @db.Timestamptz(6)
@@ -905,6 +910,8 @@ model Payment {
   refunds           Refund[]
   webhookEvents     ProviderWebhookEvent[]
 
+  @@unique([provider, providerPaymentId])
+  @@unique([provider, providerOrderCode])
   @@index([orderId, status])
   @@map("payments")
 }
@@ -914,6 +921,7 @@ model Refund {
   paymentId        String       @map("payment_id") @db.Uuid
   amountVnd        BigInt       @map("amount_vnd")
   reason           String       @db.Text
+  idempotencyKey   String?      @unique @map("idempotency_key") @db.VarChar(255)
   status           RefundStatus @default(REQUESTED)
   requestedBy      String       @map("requested_by") @db.Uuid
   approvedBy       String?      @map("approved_by") @db.Uuid

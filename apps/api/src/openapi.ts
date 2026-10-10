@@ -32,6 +32,11 @@ export const openApiDocument = {
       description:
         'Rental-order lifecycle. Orders are created as PENDING_CONFIRMATION; staff confirms with physical-unit allocation, then processes pickup, return, and settlement.',
     },
+    {
+      name: 'Payments',
+      description:
+        'Rental payment and deposit-refund operations. Staff record cash immediately; customers or staff create payOS QR checkouts that are confirmed by signed webhooks.',
+    },
   ],
   components: {
     securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },
@@ -553,6 +558,133 @@ export const openApiDocument = {
         summary: 'Complete settlement',
         responses: {
           '200': { description: 'Rental order completed' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/payments/orders/{orderId}/summary': {
+      get: {
+        tags: ['Payments'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Get rental payment and refund settlement summary',
+        parameters: [
+          {
+            name: 'orderId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: { '200': { description: 'Settlement loaded' } },
+      },
+    },
+    '/payments/orders/{orderId}': {
+      get: {
+        tags: ['Payments'],
+        security: [{ bearerAuth: [] }],
+        summary: 'List payments for a rental order',
+        responses: { '200': { description: 'Payments loaded' } },
+      },
+    },
+    '/payments/orders/{orderId}/cash': {
+      post: {
+        tags: ['Payments'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Record a successful cash payment (staff only)',
+        responses: {
+          '201': { description: 'Cash payment recorded' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/payments/orders/{orderId}/checkout': {
+      post: {
+        tags: ['Payments'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Create a pending payOS checkout and return its QR code',
+        responses: {
+          '201': { description: 'Checkout created' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/payments/orders/{orderId}/settlement': {
+      post: {
+        tags: ['Payments'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Prepare return settlement before collecting extra fees or refunding deposit',
+        responses: {
+          '200': { description: 'Settlement prepared' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/webhooks/payments/payos': {
+      post: {
+        tags: ['Payments'],
+        summary: 'Receive and verify a payOS payment notification',
+        responses: {
+          '200': { description: 'Webhook acknowledged' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+        },
+      },
+    },
+    '/payments/{paymentId}/refunds': {
+      post: {
+        tags: ['Payments'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Request a deposit refund from a successful payment',
+        responses: {
+          '201': { description: 'Refund requested' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/payments/{paymentId}': {
+      get: {
+        tags: ['Payments'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Get payment detail and refunds',
+        responses: { '200': { description: 'Payment loaded' } },
+      },
+    },
+    '/payments/{paymentId}/cancel': {
+      post: {
+        tags: ['Payments'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Cancel a pending payOS checkout',
+        responses: {
+          '200': { description: 'Payment cancelled' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/payments/orders/{orderId}/refunds': {
+      get: {
+        tags: ['Payments'],
+        security: [{ bearerAuth: [] }],
+        summary: 'List refunds for a rental order',
+        responses: { '200': { description: 'Refunds loaded' } },
+      },
+    },
+    '/payments/refunds/{refundId}/complete': {
+      post: {
+        tags: ['Payments'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Record a completed manual refund',
+        responses: {
+          '200': { description: 'Refund completed' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/payments/refunds/{refundId}/fail': {
+      post: {
+        tags: ['Payments'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Mark a requested refund as failed',
+        responses: {
+          '200': { description: 'Refund failed' },
           '409': { $ref: '#/components/responses/Conflict' },
         },
       },
