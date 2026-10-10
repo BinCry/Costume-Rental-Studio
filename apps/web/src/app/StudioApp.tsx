@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/ui';
-import { ApiSessionControl } from '../components/ApiSessionControl';
-import { apiEnabled, currentUser, hasAccessToken, listBranches, restoreSession } from '../api/client';
+import { apiEnabled, currentUser, hasAccessToken, listBranches, logout, restoreSession } from '../api/client';
 import type { DemoScenario } from '../fixtures/types';
 import { fixtureCustomers, fixtureEmployees, fixtureRoles } from '../fixtures/studio';
 import { CatalogPage } from '../pages/CatalogPage';
@@ -13,6 +12,7 @@ import { AccountPage, CostumeDetailPage, MyRentalsPage } from '../pages/Customer
 import { ActiveRentalsPage, CounterRentalPage } from '../pages/StaffFeatures';
 import { InventoryPage, TransfersPage } from '../pages/InventoryFeatures';
 import { CrmPage } from '../pages/CrmFeatures';
+import { AuthPage } from '../pages/AuthPage';
 import {
   BranchesPage,
   CatalogAdminPage,
@@ -62,7 +62,7 @@ const staffNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
   { screen: 'reports', label: 'Báo cáo', roles: ['ADMIN', 'SALES_STAFF'] },
 ];
 const isStaff = (screen: Screen) =>
-  !['catalog', 'detail', 'booking', 'myRentals', 'myRentalDetail', 'account'].includes(screen);
+  !['catalog', 'detail', 'booking', 'myRentals', 'myRentalDetail', 'account', 'login', 'register', 'forgotPassword'].includes(screen);
 const requiredPermissions: Partial<Record<Screen, string[]>> = {
   dashboard: ['rentals.read.branch', 'rentals.read.all'],
   orders: ['rentals.read.branch', 'rentals.read.all'],
@@ -161,6 +161,41 @@ export default function StudioApp() {
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
+  const finishAuthentication = async (next?: string) => {
+    const identity = await currentUser();
+    setApiIdentity(identity);
+    setApiSessionReady(true);
+    window.dispatchEvent(new Event('api-session-changed'));
+    const staffIdentity = identity.roles.some((entry) => entry.actorGroup === 'ADMIN' || entry.actorGroup === 'STAFF');
+    let destination = pathFor(staffIdentity ? 'dashboard' : 'account');
+    if (next) {
+      try {
+        const requested = new URL(next, window.location.origin);
+        const isAuthPath = ['/dang-nhap', '/dang-ky', '/quen-mat-khau', '/auth/google/callback'].includes(requested.pathname);
+        if (requested.origin === window.location.origin && requested.pathname.startsWith('/') && !requested.pathname.startsWith('//') && !isAuthPath) {
+          destination = requested.pathname + requested.search + requested.hash;
+        }
+      } catch {
+        // Ignore malformed or external redirect targets and use the role-based destination.
+      }
+    }
+    window.history.replaceState(null, '', destination);
+    setRoute(readRoute());
+    setMenuOpen(false);
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  };
+  const signOut = async () => {
+    try {
+      await logout();
+    } catch {
+      // The API client clears the local token even when the network request fails.
+    } finally {
+      setApiIdentity(undefined);
+      setApiSessionReady(true);
+      window.dispatchEvent(new Event('api-session-changed'));
+      go('catalog');
+    }
+  };
   const activeRole: DemoRole =
     (apiIdentity?.roles.find((entry) => entry.actorGroup === 'ADMIN' || entry.actorGroup === 'STAFF')
       ?.roleCode as DemoRole | undefined) ??
@@ -240,7 +275,8 @@ export default function StudioApp() {
     const permissions = requiredPermissions[screen];
     return !permissions || permissions.some((permission) => effectivePermissions.includes(permission));
   };
-  const nav = staff ? staffNav.filter((x) => canOpen(x.screen)) : customerNav;
+  const authScreen = ['login', 'register', 'forgotPassword'].includes(route.screen);
+  const nav = authScreen ? [] : staff ? staffNav.filter((x) => canOpen(x.screen)) : customerNav;
   const productionApiMode = apiEnabled && !import.meta.env.DEV;
   const requiresCustomerSession =
     route.screen === 'booking' || route.screen === 'myRentals' || route.screen === 'myRentalDetail';
@@ -252,6 +288,8 @@ export default function StudioApp() {
   const productionConfigurationMissing = !apiEnabled && !import.meta.env.DEV;
   const showFixtureControls = import.meta.env.DEV && !apiIdentity;
   const p = route.params;
+  const authHeaderTarget = route.screen === 'login' ? 'register' : 'login';
+  const authHeaderParams = p.get('next') ? { next: p.get('next')! } : undefined;
   return (
     <div className={`app ${staff ? 'app-staff' : 'app-customer'}`}>
       <a className="skip-link" href="#main-content">
@@ -267,7 +305,7 @@ export default function StudioApp() {
             : 'Bản demo giao diện · Dữ liệu fixture, thao tác không lưu lên máy chủ'
           : 'Danh mục công khai · Đăng nhập để đặt thuê hoặc vào khu vận hành'}
       </div>
-      <header className="site-header">
+      <header className={`site-header ${authScreen ? 'site-header-auth' : ''}`}>
         <div className="header-inner">
           <a
             href="/"
@@ -286,7 +324,7 @@ export default function StudioApp() {
           </a>
           <nav
             id="main-navigation"
-            className={`top-nav ${menuOpen ? 'open' : ''}`}
+            className={`top-nav ${menuOpen ? 'open' : ''} ${authScreen ? 'auth-nav-hidden' : ''}`}
             aria-label="Điều hướng chính"
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
@@ -308,28 +346,56 @@ export default function StudioApp() {
                 {item.label}
               </a>
             ))}
-            <a
-              className="mobile-area-switch"
-              href={staff ? '/' : '/van-hanh/tong-quan'}
-              onClick={(e) => {
-                e.preventDefault();
-                go(staff ? 'catalog' : 'dashboard');
-              }}
-            >
-              {staff ? 'Xem khu khách' : 'Khu vận hành'} <Icon name="arrow" size={16} />
-            </a>
+            {!authScreen && !apiIdentity && (
+              <>
+                <a className="mobile-auth-entry" href={pathFor('login')} onClick={(event) => { event.preventDefault(); go('login'); }}>
+                  Đăng nhập
+                </a>
+                <a className="mobile-auth-entry mobile-auth-entry-primary" href={pathFor('register')} onClick={(event) => { event.preventDefault(); go('register'); }}>
+                  Tạo tài khoản
+                </a>
+              </>
+            )}
+            {!authScreen && apiIdentity && staffApiRoles.length > 0 && !staff && (
+              <a className="mobile-staff-entry" href={pathFor('dashboard')} onClick={(event) => { event.preventDefault(); go('dashboard'); }}>
+                Khu vận hành <Icon name="arrow" size={16} />
+              </a>
+            )}
           </nav>
           <div className="header-actions">
-            <a
-              className="area-switch"
-              href={staff ? '/' : '/van-hanh/tong-quan'}
-              onClick={(e) => {
-                e.preventDefault();
-                go(staff ? 'catalog' : 'dashboard');
-              }}
-            >
-              {staff ? 'Xem khu khách' : 'Khu vận hành'} <Icon name="arrow" size={16} />
-            </a>
+            {authScreen ? (
+              <a
+                className="auth-header-link"
+                href={pathFor(authHeaderTarget, authHeaderParams)}
+                onClick={(event) => { event.preventDefault(); go(authHeaderTarget, authHeaderParams); }}
+              >
+                {route.screen === 'register'
+                  ? 'Đã có tài khoản? Đăng nhập'
+                  : route.screen === 'login'
+                    ? 'Tạo tài khoản'
+                    : 'Quay lại đăng nhập'}
+              </a>
+            ) : apiIdentity ? (
+              <>
+                {staffApiRoles.length > 0 && !staff && (
+                  <a className="area-switch" href="/van-hanh/tong-quan" onClick={(event) => { event.preventDefault(); go('dashboard'); }}>
+                    Khu vận hành <Icon name="arrow" size={16} />
+                  </a>
+                )}
+                <a className="header-account" href="/tai-khoan" onClick={(event) => { event.preventDefault(); go('account'); }}>
+                  {apiIdentity.displayName || 'Tài khoản'}
+                </a>
+              </>
+            ) : (
+              <div className="auth-header-actions">
+                <a className="auth-header-link" href="/dang-nhap" onClick={(event) => { event.preventDefault(); go('login'); }}>
+                  Đăng nhập
+                </a>
+                <a className="button button-primary auth-header-register" href="/dang-ky" onClick={(event) => { event.preventDefault(); go('register'); }}>
+                  Tạo tài khoản
+                </a>
+              </div>
+            )}
             <button
               ref={menuButtonRef}
               className="icon-button mobile-menu"
@@ -343,13 +409,6 @@ export default function StudioApp() {
           </div>
         </div>
       </header>
-      {apiEnabled && (
-        <div className="api-session-bar">
-          <div className="api-session-inner">
-            <ApiSessionControl />
-          </div>
-        </div>
-      )}
       {staff && (
         <nav ref={sectionNavRef} className="section-nav" aria-label="Khu vận hành và quản trị">
           {nav.map((item) => (
@@ -477,9 +536,9 @@ export default function StudioApp() {
               <div className="feedback feedback-warning" role="status">
                 <div>
                   <strong>Đăng nhập để tiếp tục</strong>
-                  <p>Đăng nhập bằng tài khoản khách hoặc nhân viên ở thanh phía trên. Dữ liệu mẫu không được dùng trong bản production.</p>
-                  <button type="button" className="button button-secondary" onClick={() => go('account')}>
-                    Mở trang tài khoản
+                  <p>Đăng nhập bằng tài khoản đã được cấp quyền. Trang sẽ đưa bạn trở lại đúng khu vực sau khi xác thực.</p>
+                  <button type="button" className="button button-secondary" onClick={() => go('login', { next: window.location.pathname + window.location.search })}>
+                    Đến trang đăng nhập
                   </button>
                 </div>
               </div>
@@ -556,9 +615,19 @@ export default function StudioApp() {
                 go={go}
                 apiIdentity={apiIdentity}
                 realApiMode={apiEnabled}
+                onSignOut={() => void signOut()}
                 onRoleChange={(nextRole) => {
                   if (!apiIdentity) setRole(nextRole);
                 }}
+              />
+            )}
+            {(route.screen === 'login' || route.screen === 'register' || route.screen === 'forgotPassword') && (
+              <AuthPage
+                mode={route.screen}
+                params={p}
+                apiIdentity={apiIdentity}
+                go={go}
+                onAuthenticated={finishAuthentication}
               />
             )}
             {route.screen === 'dashboard' && (

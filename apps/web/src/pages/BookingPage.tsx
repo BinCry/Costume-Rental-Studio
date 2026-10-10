@@ -460,17 +460,18 @@ export function BookingPage({
               {step === 4 && (
                 <div className="form-stack">
                   <div className="google-placeholder">
-                    <button
+                    <a
                       className="button button-secondary"
-                      type="button"
-                      disabled
-                      aria-label="Đăng nhập Google chưa kết nối trong prototype"
+                      href="/dang-nhap?next=%2Fdat-thue"
+                      onClick={(event) => { event.preventDefault(); go('login', { next: '/dat-thue' }); }}
                     >
-                      G&nbsp; Đăng nhập bằng Google
-                    </button>
+                      Đăng nhập
+                    </a>
                     <span>
-                      Đăng nhập Google sẽ được kết nối khi có dịch vụ xác thực. Bạn vẫn có thể nhập
-                      liên hệ để xem luồng demo.
+                      Đăng nhập để theo dõi đơn thuê. Trong bản demo, bạn vẫn có thể tiếp tục bằng thông tin liên hệ.{' '}
+                      <a href="/dang-ky" onClick={(event) => { event.preventDefault(); go('register', { next: '/dat-thue' }); }}>
+                        Tạo tài khoản
+                      </a>
                     </span>
                   </div>
                   <Field

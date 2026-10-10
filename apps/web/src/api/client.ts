@@ -353,6 +353,53 @@ export async function login(email: string, password: string) {
   saveToken(data.accessToken);
   return data.user;
 }
+export async function requestRegistrationOtp(email: string) {
+  return request<{ challengeId: string; expiresIn: number; retryAfter: number }>(
+    '/api/v1/auth/register/otp',
+    { method: 'POST', body: JSON.stringify({ email }) },
+    false,
+  );
+}
+export async function registerCustomer(input: {
+  email: string;
+  phone?: string;
+  challengeId: string;
+  otp: string;
+  displayName: string;
+  password: string;
+}) {
+  const data = await request<{
+    created: boolean;
+    accessToken: string;
+    customer: { userId: string; customerCode: string; displayName: string; email: string; phone?: string | null };
+  }>('/api/v1/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ ...input, deviceName: 'Studio web' }),
+  }, false);
+  saveToken(data.accessToken);
+  return data;
+}
+export async function requestPasswordResetOtp(email: string) {
+  return request<{ challengeId: string; expiresIn: number; retryAfter: number }>(
+    '/api/v1/auth/forgot-password',
+    { method: 'POST', body: JSON.stringify({ email }) },
+    false,
+  );
+}
+export async function verifyPasswordResetOtp(challengeId: string, otp: string) {
+  return request<{ resetToken: string; expiresIn: number }>(
+    '/api/v1/auth/verify-reset-otp',
+    { method: 'POST', body: JSON.stringify({ challengeId, otp }) },
+    false,
+  );
+}
+export async function resetPassword(resetToken: string, newPassword: string) {
+  return request<null>(
+    '/api/v1/auth/reset-password',
+    { method: 'POST', body: JSON.stringify({ resetToken, newPassword }) },
+    false,
+  );
+}
 export async function logout() {
   try { await request('/api/v1/auth/logout', { method: 'POST' }, false); } finally { saveToken(null); }
 }

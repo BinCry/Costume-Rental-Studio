@@ -26,7 +26,7 @@ import { useFixtureResource } from '../components/useFixtureResource';
 import { branches, fixturePeriod } from '../fixtures/adapter';
 import { studioAdapter, type CostumeDetail, type CustomerOrder } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
-import { apiEnabled, checkPublicAvailability, getPublicVariant, googleLoginUrl, hasAccessToken } from '../api/client';
+import { apiEnabled, checkPublicAvailability, getPublicVariant, hasAccessToken } from '../api/client';
 import { useBranchOptions } from '../components/useBranchOptions';
 
 const loadCostumeDetails = (id: string) => async (scenario: DemoScenario): Promise<CostumeDetail[]> => {
@@ -515,12 +515,14 @@ export function AccountPage({
   onRoleChange,
   apiIdentity,
   realApiMode = false,
+  onSignOut,
 }: {
   scenario: DemoScenario;
   go: Navigate;
   onRoleChange: (role: 'CUSTOMER' | 'SALES_STAFF' | 'INVENTORY_STAFF' | 'ADMIN') => void;
   apiIdentity?: { displayName: string; email: string; roles: Array<{ name: string; branchId: string | null }> };
   realApiMode?: boolean;
+  onSignOut?: () => void;
 }) {
   const [state, setState] = useState<
     'entry' | 'profile' | 'PENDING' | 'LOCKED' | 'INACTIVE' | 'unauthorized' | 'ready'
@@ -549,7 +551,12 @@ export function AccountPage({
           description="Phiên đăng nhập và quyền truy cập được xác minh bởi máy chủ."
         />
         <div className="feature-two-column">
-          <Panel title={apiIdentity ? 'Thông tin tài khoản' : 'Đăng nhập'}>
+          <Panel
+            title={apiIdentity ? 'Thông tin tài khoản' : 'Đăng nhập'}
+            action={apiIdentity && onSignOut ? (
+              <Button variant="quiet" onClick={onSignOut}>Đăng xuất</Button>
+            ) : undefined}
+          >
             {apiIdentity ? (
               <>
                 <KeyFacts
@@ -567,10 +574,11 @@ export function AccountPage({
               <div className="account-entry">
                 <span className="brand-mark">S</span>
                 <h2>Đăng nhập vào tài khoản</h2>
-                <p>Dùng biểu mẫu đăng nhập ở đầu trang hoặc tiếp tục bằng Google.</p>
-                <a className="button button-secondary" href={googleLoginUrl()}>
-                  Tiếp tục với Google
-                </a>
+                <p>Đăng nhập để theo dõi đơn thuê, cập nhật thông tin và tiếp tục đặt trang phục.</p>
+                <div className="account-entry-actions">
+                  <Button onClick={() => go('login')}>Đăng nhập</Button>
+                  <Button variant="secondary" onClick={() => go('register')}>Tạo tài khoản</Button>
+                </div>
               </div>
             )}
           </Panel>
@@ -594,7 +602,7 @@ export function AccountPage({
       <PageHeading
         eyebrow="TÀI KHOẢN"
         title="Đăng nhập & hồ sơ"
-        description="Trạng thái mô phỏng để xem hành trình xác thực; chưa kết nối Google OAuth."
+        description="Bản xem thử giao diện tài khoản trong môi trường fixture."
       />
       <div className="feature-two-column">
         <Panel title="Truy cập Studio">
@@ -602,11 +610,10 @@ export function AccountPage({
             <span className="brand-mark">S</span>
             <h2>Rất vui được gặp bạn</h2>
             <p>
-              Đăng nhập để theo dõi đơn thuê và hồ sơ. Google sign-in cần backend xác minh token
-              trước khi kích hoạt.
+              Đăng nhập để theo dõi đơn thuê và hồ sơ. Đây là trạng thái mô phỏng, không tạo phiên đăng nhập thật.
             </p>
             <Button variant="secondary" onClick={() => setState('profile')}>
-              Tiếp tục với Google · xem mô phỏng
+              Xem trạng thái hồ sơ mẫu
             </Button>
           </div>
           {state === 'profile' && (

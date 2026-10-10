@@ -5,6 +5,9 @@ export type Screen =
   | 'myRentals'
   | 'myRentalDetail'
   | 'account'
+  | 'login'
+  | 'register'
+  | 'forgotPassword'
   | 'dashboard'
   | 'orders'
   | 'handover'
@@ -32,6 +35,9 @@ export const paths: Record<Screen, string> = {
   myRentals: '/don-cua-toi',
   myRentalDetail: '/don-cua-toi/:order',
   account: '/tai-khoan',
+  login: '/dang-nhap',
+  register: '/dang-ky',
+  forgotPassword: '/quen-mat-khau',
   dashboard: '/van-hanh/tong-quan',
   orders: '/van-hanh/don-thue',
   handover: '/van-hanh/don-thue/:order/giao',
@@ -66,6 +72,7 @@ export function pathFor(screen: Screen, params?: Record<string, string>) {
 export function readRoute(): Route {
   const path = decodeURIComponent(window.location.pathname).replace(/\/$/, '') || '/';
   const params = new URLSearchParams(window.location.search);
+  if (path === '/auth/google/callback') return { screen: 'login', params };
   if (path.startsWith('/don-cua-toi/')) {
     params.set('order', path.split('/')[2] ?? '');
     return { screen: 'myRentalDetail', params };
