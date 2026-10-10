@@ -9,6 +9,7 @@ import {
 import {
   apiEnabled,
   cancelCustomerOrder as cancelApiCustomerOrder,
+  createUnitBlock as createApiUnitBlock,
   hasAccessToken,
   listActiveRentals as listApiActiveRentals,
   listCustomerOrders as listApiCustomerOrders,
@@ -49,6 +50,7 @@ export interface UnitBlock {
   status: 'PLANNED' | 'IN_PROGRESS' | 'COMPLETED';
 }
 export interface Unit {
+  apiId?: string;
   barcode: string;
   variantCode: string;
   model: string;
@@ -1126,21 +1128,25 @@ export const studioAdapter = {
     return structuredClone(unit);
   },
   addBlock: (code: string, block: UnitBlock, scenario: DemoScenario) =>
-    mutate(scenario, () => {
-      if (apiEnabled && hasAccessToken())
-        throw new FixtureIssue(
-          'API_NOT_SUPPORTED',
-          'Backend hiện chưa có API tạo block theo khoảng thời gian; chưa ghi thay đổi nào.',
-        );
-      const unit = units.find((u) => u.barcode === code);
-      if (!unit) throw new FixtureIssue('NOT_FOUND', 'Không tìm thấy bộ.');
-      unit.blocks.unshift(block);
-      unit.available = false;
-      unit.status =
-        block.type === 'CLEANING' ? 'CLEANING' : block.type === 'REPAIR' ? 'REPAIR' : unit.status;
-      unit.history.unshift(`03/10 · Tạo block ${block.type}: ${block.reason}`);
-      return unit;
-    }),
+    apiEnabled && hasAccessToken()
+      ? (async () => {
+          const matches = await listApiInventoryUnits(undefined, code.trim().toUpperCase());
+          const unit = matches[0];
+          if (!unit?.apiId)
+            throw new FixtureIssue('NOT_FOUND', 'Không tìm thấy bộ trên máy chủ.');
+          await createApiUnitBlock(unit.apiId, block);
+          return unit;
+        })()
+      : mutate(scenario, () => {
+          const unit = units.find((u) => u.barcode === code);
+          if (!unit) throw new FixtureIssue('NOT_FOUND', 'Không tìm thấy bộ.');
+          unit.blocks.unshift(block);
+          unit.available = false;
+          unit.status =
+            block.type === 'CLEANING' ? 'CLEANING' : block.type === 'REPAIR' ? 'REPAIR' : unit.status;
+          unit.history.unshift(`03/10 · Tạo block ${block.type}: ${block.reason}`);
+          return unit;
+        }),
   saveVariant: (variant: Variant, scenario: DemoScenario) =>
     mutate(scenario, () => {
       const model = details.find((d) => d.id === variant.modelId);

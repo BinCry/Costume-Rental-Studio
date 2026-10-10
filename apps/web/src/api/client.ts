@@ -538,6 +538,7 @@ export async function listInventoryUnits(branchName?: string, search?: string): 
   if (search?.trim()) query.set('search', search.trim());
   const page = await request<Page<ApiInventoryUnit>>('/api/v1/inventory/units?' + query.toString());
   return page.items.map((unit) => ({
+    apiId: unit.id,
     barcode: unit.unitCode,
     variantCode: unit.variant?.variantCode ?? '',
     model: unit.variant?.model?.name ?? 'Trang phục',
@@ -549,6 +550,21 @@ export async function listInventoryUnits(branchName?: string, search?: string): 
     blocks: [],
     history: [],
   }));
+}
+export async function createUnitBlock(
+  unitId: string,
+  block: { type: 'CLEANING' | 'REPAIR' | 'INSPECTION'; from: string; until: string; reason: string },
+) {
+  return request('/api/v1/scheduling/unit-blocks', {
+    method: 'POST',
+    body: JSON.stringify({
+      unitId,
+      blockType: block.type,
+      blockedFrom: new Date(block.from).toISOString(),
+      blockedUntil: new Date(block.until).toISOString(),
+      reason: block.reason,
+    }),
+  });
 }
 
 function idempotencyKey(prefix: string) {

@@ -79,7 +79,9 @@ export function InventoryPage({
       retry();
       setReason('');
       setNotice(
-        `Đã tạo block ${blockTypeLabels[blockType]} cho ${selected.barcode} trong fixture.`,
+        realApiMode
+          ? `Đã tạo block ${blockTypeLabels[blockType]} cho ${selected.barcode} trên hệ thống.`
+          : `Đã tạo block ${blockTypeLabels[blockType]} cho ${selected.barcode} trong fixture.`,
       );
     } catch (e) {
       setIssue(e instanceof Error ? e.message : 'Không tạo được block.');
@@ -206,7 +208,7 @@ export function InventoryPage({
                       <Panel title="Tạo block cho bộ">
                         <p className="muted">
                           {realApiMode
-                            ? 'API hiện cho phép xem trạng thái bộ. Tạo block theo khoảng thời gian cần backend bổ sung; thao tác này đang chỉ có ở chế độ fixture.'
+                            ? 'Tạo block sẽ gửi thời gian, loại block và lý do lên backend để giữ lịch khả dụng nhất quán.'
                             : 'Fixture hỗ trợ vệ sinh, sửa chữa và kiểm tra. Việc block có thể ảnh hưởng lịch còn bộ.'}
                         </p>
                         <SelectField
@@ -237,8 +239,8 @@ export function InventoryPage({
                           value={reason}
                           onChange={(e) => setReason(e.target.value)}
                         />
-                        <Button loading={busy} onClick={() => void addBlock()} disabled={realApiMode}>
-                          {realApiMode ? 'Chưa có API tạo block' : 'Tạo block fixture'}
+                        <Button loading={busy} onClick={() => void addBlock()}>
+                          {realApiMode ? 'Tạo block trên hệ thống' : 'Tạo block fixture'}
                         </Button>
                         <InlineIssue
                           text={issue}
