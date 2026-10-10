@@ -12,10 +12,12 @@ import {
   createUnitBlock as createApiUnitBlock,
   hasAccessToken,
   listActiveRentals as listApiActiveRentals,
+  listCatalogDetails as listApiCatalogDetails,
   listCustomers as listApiCustomers,
   listCrmCases as listApiCrmCases,
   listCustomerOrders as listApiCustomerOrders,
   listInventoryUnits as listApiInventoryUnits,
+  listManagedBranches as listApiManagedBranches,
   listPolicies as listApiPolicies,
   listReports as listApiReports,
   listTransfers as listApiTransfers,
@@ -25,6 +27,9 @@ import {
   replaceRbacRolePermissions as replaceApiRolePermissions,
   saveCrmCase as saveApiCrmCase,
   saveCustomer as saveApiCustomer,
+  saveBranch as saveApiBranch,
+  saveCatalogModel as saveApiCatalogModel,
+  saveCatalogVariant as saveApiCatalogVariant,
   savePolicy as saveApiPolicy,
   saveStaff as saveApiStaff,
   saveTransfer as saveApiTransfer,
@@ -1061,7 +1066,18 @@ export const studioAdapter = {
       return order;
     });
   },
-  details: (scenario: DemoScenario) => list(details, scenario),
+  async details(scenario: DemoScenario) {
+    if (apiEnabled && hasAccessToken()) {
+      try {
+        return await listApiCatalogDetails();
+      } catch (error) {
+        throw error instanceof FixtureIssue
+          ? error
+          : new FixtureIssue('NETWORK', error instanceof Error ? error.message : 'Không tải được danh mục trang phục.');
+      }
+    }
+    return list(details, scenario);
+  },
   async units(scenario: DemoScenario) {
     if (apiEnabled && hasAccessToken()) {
       try {
@@ -1114,7 +1130,18 @@ export const studioAdapter = {
     }
     return list(employees, scenario);
   },
-  branches: (scenario: DemoScenario) => list(branches, scenario),
+  async branches(scenario: DemoScenario) {
+    if (apiEnabled && hasAccessToken()) {
+      try {
+        return await listApiManagedBranches();
+      } catch (error) {
+        throw error instanceof FixtureIssue
+          ? error
+          : new FixtureIssue('NETWORK', error instanceof Error ? error.message : 'Không tải được chi nhánh.');
+      }
+    }
+    return list(branches, scenario);
+  },
   branchObligations,
   async permissions(scenario: DemoScenario) {
     if (apiEnabled && hasAccessToken()) {
@@ -1261,8 +1288,9 @@ export const studioAdapter = {
           unit.history.unshift(`03/10 · Tạo block ${block.type}: ${block.reason}`);
           return unit;
         }),
-  saveVariant: (variant: Variant, scenario: DemoScenario) =>
-    mutate(scenario, () => {
+  async saveVariant(variant: Variant, scenario: DemoScenario) {
+    if (apiEnabled && hasAccessToken()) return saveApiCatalogVariant(variant).then(() => variant);
+    return mutate(scenario, () => {
       const model = details.find((d) => d.id === variant.modelId);
       if (!model) throw new FixtureIssue('NOT_FOUND', 'Không tìm thấy mẫu.');
       const index = model.variants.findIndex((v) => v.code === variant.code);
@@ -1270,15 +1298,18 @@ export const studioAdapter = {
       else model.variants[index] = variant;
       syncCatalog(model);
       return model;
-    }),
-  saveModel: (detail: CostumeDetail, scenario: DemoScenario) =>
-    mutate(scenario, () => {
+    });
+  },
+  async saveModel(detail: CostumeDetail, scenario: DemoScenario) {
+    if (apiEnabled && hasAccessToken()) return saveApiCatalogModel(detail);
+    return mutate(scenario, () => {
       const index = details.findIndex((d) => d.id === detail.id);
       if (index < 0) details.push(detail);
       else details[index] = detail;
       syncCatalog(detail);
       return detail;
-    }),
+    });
+  },
   saveEmployee: (employee: Employee, scenario: DemoScenario) =>
     apiEnabled && hasAccessToken()
       ? saveApiStaff(employee)
@@ -1289,8 +1320,9 @@ export const studioAdapter = {
           window.dispatchEvent(new Event('fixture-access-updated'));
           return employee;
         }),
-  saveBranch: (branch: Branch, scenario: DemoScenario) =>
-    mutate(scenario, () => {
+  async saveBranch(branch: Branch, scenario: DemoScenario) {
+    if (apiEnabled && hasAccessToken()) return saveApiBranch(branch);
+    return mutate(scenario, () => {
       const index = branches.findIndex((b) => b.code === branch.code);
       if (index >= 0 && branches[index].status === 'ACTIVE' && branch.status === 'INACTIVE') {
         const obligations = branchObligations(branches[index].name);
@@ -1303,7 +1335,8 @@ export const studioAdapter = {
       if (index < 0) branches.push(branch);
       else branches[index] = branch;
       return branch;
-    }),
+    });
+  },
   saveRole: (role: Role, scenario: DemoScenario) =>
     apiEnabled && hasAccessToken()
       ? replaceApiRolePermissions(role.code, role.permissions).then(() => role)

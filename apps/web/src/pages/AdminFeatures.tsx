@@ -54,6 +54,7 @@ const staffRoleLabels: Record<string, string> = {
 };
 
 export function CatalogAdminPage({ scenario }: { scenario: DemoScenario }) {
+  const realApiMode = apiEnabled && hasAccessToken();
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.details);
   const [selected, setSelected] = useState('ao-dai-lina');
   const [model, setModel] = useState<CostumeDetail>();
@@ -70,7 +71,7 @@ export function CatalogAdminPage({ scenario }: { scenario: DemoScenario }) {
     setIssue('');
     try {
       await studioAdapter.saveModel(model, scenario);
-      setNotice('Đã lưu mẫu trong fixture.');
+      setNotice(realApiMode ? 'Đã lưu mẫu vào danh mục trên máy chủ.' : 'Đã lưu mẫu trong fixture.');
       retry();
     } catch (e) {
       setIssue(issueText(e));
@@ -93,7 +94,7 @@ export function CatalogAdminPage({ scenario }: { scenario: DemoScenario }) {
     setIssue('');
     try {
       await studioAdapter.saveVariant(variant, scenario);
-      setNotice('Đã lưu biến thể và giá hiện hành trong fixture. Đơn cũ giữ snapshot.');
+      setNotice(realApiMode ? 'Đã lưu biến thể và giá trên máy chủ. Đơn cũ vẫn giữ snapshot.' : 'Đã lưu biến thể và giá hiện hành trong fixture. Đơn cũ giữ snapshot.');
       retry();
     } catch (e) {
       setIssue(issueText(e));

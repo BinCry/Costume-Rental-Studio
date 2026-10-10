@@ -1,9 +1,11 @@
 import type { BookingDraft, CatalogItem, Order, QuoteSnapshot } from '../fixtures/types';
 import type {
   ActiveUnit,
+  Branch,
   Case,
   Customer,
   CustomerOrder,
+  CostumeDetail,
   Employee,
   Permission,
   Policy,
@@ -12,6 +14,7 @@ import type {
   Transfer,
   TransferStatus,
   Unit,
+  Variant,
 } from '../fixtures/studio';
 
 type ApiEnvelope<T> = {
@@ -30,9 +33,16 @@ type ApiModel = {
   category?: { name?: string | null } | null;
   media?: Array<{ mediaUrl?: string | null; altText?: string | null }>;
 };
+type ApiAdminModel = ApiModel & {
+  modelCode: string;
+  categoryId: string;
+  status?: 'ACTIVE' | 'INACTIVE' | string;
+  category?: { id?: string; name?: string | null } | null;
+};
 type ApiVariant = {
   id: string; modelId: string; variantCode: string; sizeCode: string; colorCode: string;
   dailyRentalPriceVnd: string | number | bigint; depositAmountVnd: string | number | bigint;
+  replacementValueVnd?: string | number | bigint;
   status?: string; editionLabel?: string | null; fitNotes?: string | null;
   media?: Array<{ mediaUrl?: string | null; altText?: string | null }>;
   model?: ApiModel | null;
@@ -296,7 +306,10 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
 }
 
 const branchIds = new Map<string, string>();
+const branchRefs = new Map<string, string>();
 const variants = new Map<string, ApiVariant>();
+const modelRefs = new Map<string, { id: string; categoryId: string; modelCode: string }>();
+const variantRefs = new Map<string, { id: string; modelId: string }>();
 const orderRefs = new Map<string, { id: string; itemIds: string[] }>();
 const unitRefs = new Map<string, Map<string, string>>();
 const quoteRefs = new Map<string, { variantId: string; branchId: string }>();
@@ -359,6 +372,50 @@ export async function listBranches() {
   page.items.forEach((branch) => branchIds.set(branch.name, branch.id));
   return page.items;
 }
+function branchFromApi(branch: ApiBranch): Branch {
+  if (branch.branchCode) branchRefs.set(branch.branchCode, branch.id);
+  branchIds.set(branch.name, branch.id);
+  return {
+    code: branch.branchCode ?? branch.id,
+    name: branch.name,
+    address: branch.address ?? '',
+    status: branch.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
+    timezone: 'Asia/Ho_Chi_Minh',
+  };
+}
+export async function listManagedBranches(): Promise<Branch[]> {
+  const page = await request<Page<ApiBranch>>(
+    '/api/v1/branches?page=1&pageSize=100&sortBy=name&sortOrder=asc',
+  );
+  return page.items.map(branchFromApi);
+}
+export async function saveBranch(branch: Branch): Promise<Branch> {
+  const reference = branchRefs.get(branch.code);
+  let saved: ApiBranch;
+  if (reference) {
+    saved = await request<ApiBranch>(`/api/v1/branches/${encodeURIComponent(reference)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name: branch.name, address: branch.address, timezone: branch.timezone }),
+    });
+    const desiredStatus = branch.status === 'ACTIVE' ? 'activate' : 'deactivate';
+    const currentStatus = saved.status === 'INACTIVE' ? 'deactivate' : 'activate';
+    if (desiredStatus !== currentStatus)
+      saved = await request<ApiBranch>(`/api/v1/branches/${encodeURIComponent(reference)}/${desiredStatus}`, {
+        method: 'POST',
+      });
+  } else {
+    saved = await request<ApiBranch>('/api/v1/branches', {
+      method: 'POST',
+      body: JSON.stringify({
+        branchCode: branch.code,
+        name: branch.name,
+        address: branch.address,
+        timezone: branch.timezone,
+      }),
+    });
+  }
+  return branchFromApi(saved);
+}
 export async function listCatalog(): Promise<CatalogItem[]> {
   const variantsPage = await request<Page<ApiVariant>>(
     '/api/v1/public/catalog/variants?page=1&pageSize=100&sortBy=variantCode&sortOrder=asc',
@@ -373,6 +430,96 @@ export async function listCatalog(): Promise<CatalogItem[]> {
       availableAtFixturePeriod: true, description: model?.shortDescription ?? model?.description ?? '',
     };
   });
+}
+function variantFromAdminApi(variant: ApiVariant): Variant {
+  variantRefs.set(variant.variantCode, { id: variant.id, modelId: variant.modelId });
+  return {
+    code: variant.variantCode,
+    modelId: variant.modelId,
+    size: variant.sizeCode,
+    color: variant.colorCode,
+    edition: variant.editionLabel ?? undefined,
+    fit: variant.fitNotes ?? '',
+    price: numberValue(variant.dailyRentalPriceVnd),
+    deposit: numberValue(variant.depositAmountVnd),
+    replacement: numberValue(variant.replacementValueVnd),
+  };
+}
+export async function listCatalogDetails(): Promise<CostumeDetail[]> {
+  const [models, variantsPage] = await Promise.all([
+    request<Page<ApiAdminModel>>('/api/v1/catalog/models?page=1&pageSize=100&sortBy=name&sortOrder=asc'),
+    request<Page<ApiVariant>>('/api/v1/catalog/variants?page=1&pageSize=100&sortBy=variantCode&sortOrder=asc'),
+  ]);
+  const byModel = new Map<string, Variant[]>();
+  variantsPage.items.forEach((variant) => {
+    variants.set(variant.id, variant);
+    const mapped = variantFromAdminApi(variant);
+    const list = byModel.get(variant.modelId) ?? [];
+    list.push(mapped);
+    byModel.set(variant.modelId, list);
+  });
+  return models.items.map((model) => {
+    modelRefs.set(model.id, {
+      id: model.id,
+      categoryId: model.categoryId,
+      modelCode: model.modelCode,
+    });
+    return {
+      id: model.id,
+      name: model.name,
+      category: model.category?.name ?? 'Trang phục',
+      description: model.description ?? model.shortDescription ?? '',
+      material: model.material ?? '',
+      accessories: [],
+      imagePosition: model.media?.length ? 'center' : 'missing',
+      variants: byModel.get(model.id) ?? [],
+    };
+  });
+}
+export async function saveCatalogModel(model: CostumeDetail): Promise<CostumeDetail> {
+  const reference = modelRefs.get(model.id);
+  if (!reference)
+    throw new ApiClientError(422, 'CATALOG_CONTEXT_MISSING', 'Mẫu mới cần mã danh mục và mã mẫu trên máy chủ trước khi tạo.');
+  const updated = await request<ApiAdminModel>(`/api/v1/catalog/models/${encodeURIComponent(reference.id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      name: model.name,
+      description: model.description || null,
+      material: model.material || null,
+    }),
+  });
+  modelRefs.set(updated.id, { id: updated.id, categoryId: updated.categoryId, modelCode: updated.modelCode });
+  return {
+    ...model,
+    id: updated.id,
+    name: updated.name,
+    description: updated.description ?? '',
+    material: updated.material ?? '',
+  };
+}
+export async function saveCatalogVariant(variant: Variant): Promise<Variant> {
+  const reference = variantRefs.get(variant.code);
+  const payload = {
+    modelId: variant.modelId,
+    variantCode: variant.code,
+    sizeCode: variant.size,
+    colorCode: variant.color,
+    editionLabel: variant.edition || undefined,
+    fitNotes: variant.fit || undefined,
+    dailyRentalPriceVnd: Math.round(variant.price),
+    depositAmountVnd: Math.round(variant.deposit),
+    replacementValueVnd: Math.max(Math.round(variant.replacement ?? 0), Math.round(variant.deposit)),
+  };
+  const saved = reference
+    ? await request<ApiVariant>(`/api/v1/catalog/variants/${encodeURIComponent(reference.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ ...payload, variantCode: undefined, modelId: undefined }),
+      })
+    : await request<ApiVariant>('/api/v1/catalog/variants', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+  return variantFromAdminApi(saved);
 }
 export async function getPublicVariant(id: string): Promise<ApiVariant> {
   const variant = await request<ApiVariant>(
