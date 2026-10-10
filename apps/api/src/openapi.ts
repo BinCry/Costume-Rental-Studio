@@ -37,6 +37,11 @@ export const openApiDocument = {
       description:
         'Rental payment and deposit-refund operations. Staff record cash immediately; customers or staff create payOS QR checkouts that are confirmed by signed webhooks.',
     },
+    {
+      name: 'Reports',
+      description:
+        'Read-only operational reports. Revenue includes only successful RENTAL and EXTRA payments; deposits are excluded.',
+    },
   ],
   components: {
     securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },
@@ -467,6 +472,80 @@ export const openApiDocument = {
     },
   },
   paths: {
+    '/reports/overview': {
+      get: {
+        tags: ['Reports'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Load report overview',
+        parameters: [
+          { name: 'from', in: 'query', schema: { type: 'string', format: 'date-time' } },
+          { name: 'to', in: 'query', schema: { type: 'string', format: 'date-time' } },
+          { name: 'branchId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          { name: 'channel', in: 'query', schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Report overview loaded' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+        },
+      },
+    },
+    '/reports/revenue': {
+      get: {
+        tags: ['Reports'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Load revenue report',
+        parameters: [
+          {
+            name: 'groupBy',
+            in: 'query',
+            schema: { type: 'string', enum: ['day', 'week', 'month'], default: 'day' },
+          },
+        ],
+        responses: {
+          '200': { description: 'Revenue report loaded' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+        },
+      },
+    },
+    '/reports/rentals': {
+      get: {
+        tags: ['Reports'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Load rental report',
+        responses: {
+          '200': { description: 'Rental report loaded' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+        },
+      },
+    },
+    '/reports/payments': {
+      get: {
+        tags: ['Reports'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Load payment report',
+        responses: {
+          '200': { description: 'Payment report loaded' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+        },
+      },
+    },
+    '/reports/inventory': {
+      get: {
+        tags: ['Reports'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Load inventory report',
+        responses: {
+          '200': { description: 'Inventory report loaded' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+        },
+      },
+    },
     '/rentals/availability': {
       get: {
         tags: ['Rentals'],

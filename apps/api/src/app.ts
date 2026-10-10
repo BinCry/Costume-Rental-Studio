@@ -26,6 +26,7 @@ import { inventoryRouter } from './modules/inventory/inventory.route.js';
 import { transferRouter } from './modules/transfers/transfer.route.js';
 import { rentalRouter } from './modules/rentals/rental.route.js';
 import { paymentRouter, paymentWebhookRouter } from './modules/payments/payment.route.js';
+import { reportRouter } from './modules/reports/report.route.js';
 import { openApiDocument } from './openapi.js';
 
 export function createApp() {
@@ -124,6 +125,7 @@ export function createApp() {
   app.use('/api/v1/inventory', transferRouter);
   app.use('/api/v1/rentals', rentalRouter);
   app.use('/api/v1/payments', paymentRouter);
+  app.use('/api/v1/reports', reportRouter);
   app.use('/api/v1/uploads', uploadRouter);
   app.use('/api/v1/promotions', promotionRouter);
   app.use('/api/v1/rental-policies', policyRouter);

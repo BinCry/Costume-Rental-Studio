@@ -28,6 +28,8 @@ describe('OpenAPI documentation', () => {
     expect(document.paths['/branches/{branchId}/deactivate']).toBeDefined();
     expect(document.paths['/inventory/transfers']).toBeDefined();
     expect(document.paths['/inventory/transfers/{transferId}/receive']).toBeDefined();
+    expect(document.paths['/reports/overview']).toBeDefined();
+    expect(document.paths['/reports/revenue']).toBeDefined();
     for (const path of [
       '/catalog/categories/{id}',
       '/catalog/models/{id}',
