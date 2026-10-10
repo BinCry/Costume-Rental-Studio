@@ -952,6 +952,7 @@ async function seedFinanceAndCrm(
       purpose: PaymentPurpose.DEPOSIT,
       method: PaymentMethod.BANK_TRANSFER,
       amountVnd: BigInt(1_500_000),
+      transactionReference: 'seed-bank-transfer-deposit-001',
       status: PaymentStatus.SUCCEEDED,
       idempotencyKey: 'seed-payment-deposit-completed',
       recordedBy: staff.salesQ1,

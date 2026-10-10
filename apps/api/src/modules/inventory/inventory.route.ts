@@ -6,6 +6,7 @@ import { sendSuccess } from '../../common/http/response.js';
 import { requireAuthentication } from '../auth/auth.middleware.js';
 import {
   changeUnitStatusSchema,
+  activeRentalListSchema,
   createUnitSchema,
   eventListSchema,
   inspectUnitSchema,
@@ -35,6 +36,16 @@ inventoryRouter.get('/units', async (req, res) =>
       parse(listUnitsSchema.safeParse(req.query), 'Invalid unit query'),
     ),
     'Units loaded',
+  ),
+);
+inventoryRouter.get('/active-rentals', async (req, res) =>
+  sendSuccess(
+    res,
+    await service.listActiveRentals(
+      res.locals.actor,
+      parse(activeRentalListSchema.safeParse(req.query), 'Invalid active rental query'),
+    ),
+    'Active rentals loaded',
   ),
 );
 inventoryRouter.post('/units', async (req, res) =>

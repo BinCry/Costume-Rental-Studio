@@ -126,7 +126,7 @@ export async function listCustomers(
 }
 
 export async function getCustomer(actor: CustomerActor, userId: string) {
-  assertPermission(actor, { module: 'customers', action: 'read' });
+  if (actor.id !== userId) assertPermission(actor, { module: 'customers', action: 'read' });
   const user = await prisma.user.findUnique({ where: { id: userId }, include: { customer: true } });
   if (!user?.customer) throw new AppError(404, 'CUSTOMER_NOT_FOUND', 'Customer not found');
   return summary(user, user.customer);
@@ -137,7 +137,9 @@ export async function updateCustomer(
   userId: string,
   input: UpdateCustomerInput,
 ) {
-  assertPermission(actor, { module: 'customers', action: 'update' });
+  if (actor.id !== userId) assertPermission(actor, { module: 'customers', action: 'update' });
+  if (actor.id === userId && input.internalNote !== undefined)
+    throw new AppError(403, 'FORBIDDEN', 'Customers cannot update internal notes');
   const existing = await prisma.user.findUnique({
     where: { id: userId },
     include: { customer: true, authIdentities: true },

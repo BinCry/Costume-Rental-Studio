@@ -29,6 +29,7 @@ import { paymentRouter, paymentWebhookRouter } from './modules/payments/payment.
 import { reportRouter } from './modules/reports/report.route.js';
 import { crmRouter } from './modules/crm/crm.route.js';
 import { schedulingRouter } from './modules/scheduling/scheduling.route.js';
+import { publicRouter } from './modules/public/public.route.js';
 import { openApiDocument } from './openapi.js';
 
 export function createApp() {
@@ -121,6 +122,7 @@ export function createApp() {
   });
 
   app.use('/api/v1/customers', customerRouter);
+  app.use('/api/v1/public', publicRouter);
   app.use('/api/v1/branches', branchRouter);
   app.use('/api/v1/catalog', catalogRouter);
   app.use('/api/v1/inventory', inventoryRouter);

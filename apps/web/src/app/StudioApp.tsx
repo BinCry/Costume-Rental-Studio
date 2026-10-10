@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/ui';
+import { ApiSessionControl } from '../components/ApiSessionControl';
+import { apiEnabled, currentUser, hasAccessToken, listBranches } from '../api/client';
 import type { DemoScenario } from '../fixtures/types';
 import { fixtureCustomers, fixtureEmployees, fixtureRoles } from '../fixtures/studio';
 import { CatalogPage } from '../pages/CatalogPage';
@@ -37,6 +39,7 @@ const scenarios: { value: DemoScenario; label: string }[] = [
   { value: 'unitBlocked', label: 'Bộ bị block' },
 ];
 type DemoRole = 'CUSTOMER' | 'SALES_STAFF' | 'INVENTORY_STAFF' | 'ADMIN';
+type ApiIdentity = Awaited<ReturnType<typeof currentUser>>;
 const customerNav: { screen: Screen; label: string }[] = [
   { screen: 'catalog', label: 'Khám phá' },
   { screen: 'booking', label: 'Đặt thuê' },
@@ -78,6 +81,8 @@ export default function StudioApp() {
   const [route, setRoute] = useState(readRoute);
   const [scenario, setScenario] = useState<DemoScenario>('normal');
   const [role, setRole] = useState<DemoRole>('ADMIN');
+  const [apiIdentity, setApiIdentity] = useState<ApiIdentity>();
+  const [apiBranchIds, setApiBranchIds] = useState<Record<string, string>>({});
   const [branch, setBranch] = useState('Chi nhánh Quận 1');
   const [customerCode, setCustomerCode] = useState('KH-001');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -106,42 +111,89 @@ export default function StudioApp() {
     return () => window.removeEventListener('fixture-access-updated', refresh);
   }, []);
   useEffect(() => {
+    if (!apiEnabled) return;
+    let active = true;
+    const syncIdentity = () => {
+      if (!hasAccessToken()) {
+        setApiIdentity(undefined);
+        return;
+      }
+      void currentUser()
+        .then((identity) => {
+          if (active) setApiIdentity(identity);
+        })
+        .catch(() => {
+          if (active) setApiIdentity(undefined);
+        });
+    };
+    syncIdentity();
+    void listBranches()
+      .then((items) => {
+        if (active) setApiBranchIds(Object.fromEntries(items.map((item) => [item.name, item.id])));
+      })
+      .catch(() => undefined);
+    window.addEventListener('api-session-changed', syncIdentity);
+    return () => {
+      active = false;
+      window.removeEventListener('api-session-changed', syncIdentity);
+    };
+  }, []);
+  useEffect(() => {
     sectionNavRef.current
       ?.querySelector<HTMLElement>('a.active')
       ?.scrollIntoView({ block: 'nearest', inline: 'center' });
-  }, [route.screen, role, branch]);
+  }, [route.screen, role, branch, apiIdentity]);
   const go: Navigate = (screen, params) => {
     window.history.pushState(null, '', pathFor(screen, params));
     setRoute(readRoute());
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
+  const activeRole: DemoRole =
+    (apiIdentity?.roles.find((entry) => entry.actorGroup === 'ADMIN' || entry.actorGroup === 'STAFF')
+      ?.roleCode as DemoRole | undefined) ??
+    (apiIdentity?.roles.find((entry) => entry.actorGroup === 'CUSTOMER')?.roleCode as
+      | DemoRole
+      | undefined) ??
+    role;
+  const activeBranchId = apiBranchIds[branch];
+  const serverPermissions = Array.from(
+    new Set(
+      apiIdentity?.roles
+        .filter((entry) => entry.branchId === null || entry.branchId === activeBranchId)
+        .flatMap((entry) => entry.permissions.map((permission) => permission.code)) ?? [],
+    ),
+  );
   const staff = isStaff(route.screen);
   const assigned =
-    role === 'ADMIN' ||
-    role === 'CUSTOMER' ||
-    fixtureEmployees.some(
-      (employee) =>
-        employee.accountStatus === 'ACTIVE' &&
-        employee.employmentStatus === 'ACTIVE' &&
-        employee.assignments.some(
-          (assignment) => assignment.branch === branch && assignment.roleCode === role,
-        ),
-    );
-  const effectivePermissions = fixtureRoles.find((item) => item.code === role)?.permissions ?? [];
+    apiIdentity
+      ? apiIdentity.roles.length > 0
+      : activeRole === 'ADMIN' ||
+        activeRole === 'CUSTOMER' ||
+        fixtureEmployees.some(
+          (employee) =>
+            employee.accountStatus === 'ACTIVE' &&
+            employee.employmentStatus === 'ACTIVE' &&
+            employee.assignments.some(
+              (assignment) => assignment.branch === branch && assignment.roleCode === activeRole,
+            ),
+        );
+  const effectivePermissions = apiIdentity
+    ? serverPermissions
+    : fixtureRoles.find((item) => item.code === activeRole)?.permissions ?? [];
   const canOpen = (screen: Screen) => {
     if (!assigned) return false;
     if (screen === 'handover' || screen === 'return')
       return (
-        (role === 'ADMIN' || role === 'SALES_STAFF') &&
+        (activeRole === 'ADMIN' || activeRole === 'SALES_STAFF') &&
         effectivePermissions.includes('rentals.manage.branch')
       );
     const item = staffNav.find((value) => value.screen === screen);
-    if (!item?.roles.includes(role)) return false;
-    if (screen === 'policies') return role === 'ADMIN';
+    if (!item?.roles.includes(activeRole)) return false;
+    if (screen === 'policies') return activeRole === 'ADMIN';
     if (screen === 'reports')
       return effectivePermissions.includes(
-        role === 'ADMIN' ? 'reports.read.all' : 'reports.read.branch',
+        activeRole === 'ADMIN' ? 'reports.read.all' : 'reports.read.branch',
       );
     const permission = requiredPermission[screen];
     return !permission || effectivePermissions.includes(permission);
@@ -155,8 +207,10 @@ export default function StudioApp() {
         Bỏ qua điều hướng
       </a>
       <div className="demo-banner">
-        <span className="demo-dot" /> Bản demo giao diện · Dữ liệu fixture, thao tác không lưu lên
-        máy chủ
+        <span className="demo-dot" />{' '}
+        {apiEnabled
+          ? 'Đã bật API · Đăng nhập để đọc và ghi dữ liệu máy chủ'
+          : 'Bản demo giao diện · Dữ liệu fixture, thao tác không lưu lên máy chủ'}
       </div>
       <header className="site-header">
         <div className="header-inner">
@@ -234,6 +288,13 @@ export default function StudioApp() {
           </div>
         </div>
       </header>
+      {apiEnabled && (
+        <div className="api-session-bar">
+          <div className="api-session-inner">
+            <ApiSessionControl />
+          </div>
+        </div>
+      )}
       {staff && (
         <nav ref={sectionNavRef} className="section-nav" aria-label="Khu vận hành và quản trị">
           {nav.map((item) => (
@@ -287,8 +348,9 @@ export default function StudioApp() {
                 <label htmlFor="demo-role">Vai trò</label>
                 <select
                   id="demo-role"
-                  value={role}
+                  value={activeRole}
                   onChange={(e) => setRole(e.target.value as DemoRole)}
+                  disabled={!!apiIdentity}
                 >
                   <option value="ADMIN">Quản trị</option>
                   <option value="SALES_STAFF">Nhân viên bán hàng</option>
@@ -317,7 +379,7 @@ export default function StudioApp() {
                   ))}
                 </select>
               </div>
-            </div>
+          </div>
           </div>
         </div>
       )}
@@ -376,7 +438,13 @@ export default function StudioApp() {
               />
             )}
             {route.screen === 'account' && (
-              <AccountPage scenario={scenario} go={go} onRoleChange={setRole} />
+              <AccountPage
+                scenario={scenario}
+                go={go}
+                onRoleChange={(nextRole) => {
+                  if (!apiIdentity) setRole(nextRole);
+                }}
+              />
             )}
             {route.screen === 'dashboard' && <DashboardPage scenario={scenario} go={go} />}
             {route.screen === 'orders' && (
@@ -440,14 +508,14 @@ export default function StudioApp() {
             {route.screen === 'branches' && <BranchesPage scenario={scenario} />}
             {route.screen === 'policies' && <PoliciesPage scenario={scenario} />}
             {route.screen === 'reports' && (
-              <ReportsPage scenario={scenario} branch={branch} allBranches={role === 'ADMIN'} />
+              <ReportsPage scenario={scenario} branch={branch} allBranches={activeRole === 'ADMIN'} />
             )}
           </>
         )}
       </main>
       <footer className="site-footer">
         <span>Studio Trang Phục · Prototype UI</span>
-        <span>Dữ liệu minh họa · Chưa kết nối API nghiệp vụ</span>
+        <span>{apiEnabled ? 'Dữ liệu từ API khi đã đăng nhập · Fixture là fallback' : 'Dữ liệu minh họa · Chưa kết nối API nghiệp vụ'}</span>
       </footer>
     </div>
   );

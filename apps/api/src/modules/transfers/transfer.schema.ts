@@ -91,6 +91,7 @@ const receiveItemSchema = z.object({
 export const receiveTransferSchema = z
   .object({
     expectedVersion: z.coerce.number().int().positive(),
+    partial: z.boolean().default(false),
     items: z.array(receiveItemSchema).min(1).max(100),
   })
   .strict()

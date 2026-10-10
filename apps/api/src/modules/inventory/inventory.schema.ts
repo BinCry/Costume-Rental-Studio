@@ -17,6 +17,15 @@ export const listUnitsSchema = z.object({
     .default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
 });
+export const activeRentalListSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  search: z.string().trim().max(100).optional(),
+  branchId: z.uuid().optional(),
+  overdue: z.coerce.boolean().optional(),
+  sortBy: z.enum(['plannedDueAt', 'plannedStartAt']).default('plannedDueAt'),
+  sortOrder: z.enum(['asc', 'desc']).default('asc'),
+});
 export const createUnitSchema = z
   .object({
     unitCode: z
@@ -61,6 +70,7 @@ export const eventListSchema = z.object({
 });
 
 export type ListUnitsInput = z.infer<typeof listUnitsSchema>;
+export type ActiveRentalListInput = z.infer<typeof activeRentalListSchema>;
 export type CreateUnitInput = z.infer<typeof createUnitSchema>;
 export type UpdateUnitInput = z.infer<typeof updateUnitSchema>;
 export type InspectUnitInput = z.infer<typeof inspectUnitSchema>;

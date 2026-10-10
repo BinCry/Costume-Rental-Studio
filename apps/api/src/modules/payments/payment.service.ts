@@ -16,6 +16,7 @@ import {
 } from '../auth/authorization.js';
 import type {
   CancelPaymentInput,
+  CreateBankTransferPaymentInput,
   CompleteRefundInput,
   CreatePaymentInput,
   CreateRefundInput,
@@ -82,6 +83,22 @@ function assertRead(
 function assertManage(actor: AuthenticatedActor, branchId: string) {
   requireEmployee(actor);
   return assertPermission(actor, { module: 'payments', action: 'manage', branchId });
+}
+function assertCollect(actor: AuthenticatedActor, branchId: string) {
+  requireEmployee(actor);
+  if (
+    !hasPermission(actor, { module: 'payments', action: 'collect', branchId }) &&
+    !hasPermission(actor, { module: 'payments', action: 'manage', branchId })
+  )
+    throw new AppError(403, 'FORBIDDEN', 'Permission denied for payment collection');
+}
+function assertRefundApproval(actor: AuthenticatedActor, branchId: string) {
+  requireEmployee(actor);
+  if (
+    !hasPermission(actor, { module: 'refunds', action: 'approve', branchId }) &&
+    !hasPermission(actor, { module: 'payments', action: 'manage', branchId })
+  )
+    throw new AppError(403, 'FORBIDDEN', 'Permission denied for refund approval');
 }
 
 function assertCheckout(
@@ -194,6 +211,27 @@ function assertSamePaymentRequest(
     idempotencyConflict();
 }
 
+function assertSameBankTransferRequest(
+  payment: {
+    orderId: string;
+    purpose: string;
+    method: string;
+    amountVnd: bigint;
+    transactionReference: string | null;
+  },
+  orderId: string,
+  input: CreateBankTransferPaymentInput,
+) {
+  if (
+    payment.orderId !== orderId ||
+    payment.purpose !== input.purpose ||
+    payment.method !== 'BANK_TRANSFER' ||
+    payment.amountVnd !== input.amountVnd ||
+    payment.transactionReference !== input.transactionReference
+  )
+    idempotencyConflict();
+}
+
 function assertSameRefundRequest(
   refund: { paymentId: string; amountVnd: bigint; reason: string },
   paymentId: string,
@@ -293,13 +331,13 @@ export async function createCashPayment(
   if (existing) {
     assertSamePaymentRequest(existing, orderId, input, 'CASH');
     const payment = await getPayment(actor, existing.id);
-    assertManage(actor, payment.order.pickupBranchId);
+    assertCollect(actor, payment.order.pickupBranchId);
     return payment;
   }
   try {
     return await prisma.$transaction(async (tx) => {
       const order = await lockOrder(tx, orderId);
-      assertManage(actor, order.pickupBranchId);
+      assertCollect(actor, order.pickupBranchId);
       assertPaymentOrderStatus(order.status, input.purpose);
       const due = paymentDue(order, input.purpose);
       const reserved = reservedForPurpose(order.payments, input.purpose);
@@ -330,6 +368,72 @@ export async function createCashPayment(
     });
     if (!payment) throw error;
     assertSamePaymentRequest(payment, orderId, input, 'CASH');
+    return getPayment(actor, payment.id);
+  }
+}
+
+export async function createBankTransferPayment(
+  actor: AuthenticatedActor,
+  orderId: string,
+  input: CreateBankTransferPaymentInput,
+) {
+  requireEmployee(actor);
+  const existing = await prisma.payment.findUnique({
+    where: { idempotencyKey: input.idempotencyKey },
+  });
+  if (existing) {
+    assertSameBankTransferRequest(existing, orderId, input);
+    const payment = await getPayment(actor, existing.id);
+    assertCollect(actor, payment.order.pickupBranchId);
+    return payment;
+  }
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const order = await lockOrder(tx, orderId);
+      assertCollect(actor, order.pickupBranchId);
+      assertPaymentOrderStatus(order.status, input.purpose);
+      const due = paymentDue(order, input.purpose);
+      const reserved = reservedForPurpose(order.payments, input.purpose);
+      if (due - reserved < input.amountVnd)
+        throw new AppError(
+          409,
+          'PAYMENT_AMOUNT_EXCEEDS_BALANCE',
+          'Payment exceeds the outstanding balance',
+        );
+      return tx.payment.create({
+        data: {
+          orderId,
+          purpose: input.purpose,
+          method: 'BANK_TRANSFER',
+          amountVnd: input.amountVnd,
+          transactionReference: input.transactionReference,
+          idempotencyKey: input.idempotencyKey,
+          status: 'SUCCEEDED',
+          recordedBy: actor.id,
+          paidAt: new Date(),
+        },
+        include: paymentInclude(),
+      });
+    }, transactionOptions);
+  } catch (error) {
+    if (!isUnique(error)) throw error;
+    const payment = await prisma.payment.findUnique({
+      where: { idempotencyKey: input.idempotencyKey },
+    });
+    if (!payment) {
+      const referenceConflict = await prisma.payment.findFirst({
+        where: { method: 'BANK_TRANSFER', transactionReference: input.transactionReference },
+        select: { id: true },
+      });
+      if (referenceConflict)
+        throw new AppError(
+          409,
+          'BANK_TRANSFER_REFERENCE_CONFLICT',
+          'Bank transfer transaction reference already exists',
+        );
+      throw error;
+    }
+    assertSameBankTransferRequest(payment, orderId, input);
     return getPayment(actor, payment.id);
   }
 }
@@ -857,7 +961,7 @@ export async function completeRefund(
     });
     if (!target) throw new AppError(404, 'REFUND_NOT_FOUND', 'Refund not found');
     const order = await lockOrder(tx, target.payment.orderId);
-    assertManage(actor, order.pickupBranchId);
+    assertRefundApproval(actor, order.pickupBranchId);
     const refund = await lockRefund(tx, refundId);
     if (!['REQUESTED', 'PROCESSING'].includes(refund.status))
       throw new AppError(
@@ -909,7 +1013,7 @@ export async function failRefund(
     });
     if (!target) throw new AppError(404, 'REFUND_NOT_FOUND', 'Refund not found');
     const order = await lockOrder(tx, target.payment.orderId);
-    assertManage(actor, order.pickupBranchId);
+    assertRefundApproval(actor, order.pickupBranchId);
     const refund = await lockRefund(tx, refundId);
     if (!['REQUESTED', 'PROCESSING'].includes(refund.status))
       throw new AppError(

@@ -57,3 +57,5 @@ export const updateCustomerSchema = z
   })
   .strict();
 export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
+export const updateOwnCustomerSchema = updateCustomerSchema.omit({ internalNote: true });
+export type UpdateOwnCustomerInput = z.infer<typeof updateOwnCustomerSchema>;

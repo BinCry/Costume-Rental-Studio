@@ -18,6 +18,14 @@ import { useFixtureResource } from '../components/useFixtureResource';
 import { branches, fixtureAdapter, fixtureCatalog } from '../fixtures/adapter';
 import { studioAdapter } from '../fixtures/studio';
 import type { DemoScenario, Order, OrderStatus } from '../fixtures/types';
+import {
+  apiEnabled,
+  cancelOrder as cancelApiOrder,
+  hasAccessToken,
+  prepareAndReadyOrder,
+  readyOrder as readyApiOrder,
+  rejectOrder as rejectApiOrder,
+} from '../api/client';
 
 const loadOrders = (scenario: DemoScenario) => fixtureAdapter.listOrders(scenario);
 const groupDefs: { label: string; statuses: OrderStatus[] }[] = [
@@ -163,9 +171,12 @@ export function OrdersPage({
       await fixtureAdapter.confirmOrder(order.id, order.version, selectedUnits, scenario);
       studioAdapter.reflectConfirmation(order.id, selectedUnits);
       setLocalConfirmed(true);
+      if (apiEnabled && hasAccessToken()) retry();
       setDialog(null);
       setNotice(
-        'Đã xem trước xác nhận và gán bộ trong phiên demo. Dữ liệu không được lưu lên máy chủ.',
+        apiEnabled && hasAccessToken()
+          ? 'Đã xác nhận đơn và gán bộ trên máy chủ.'
+          : 'Đã xem trước xác nhận và gán bộ trong phiên demo. Dữ liệu không được lưu lên máy chủ.',
       );
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'Chưa lưu được thay đổi.';
@@ -189,14 +200,21 @@ export function OrdersPage({
     if (!order || (dialog !== 'reject' && dialog !== 'cancel')) return;
     setBusy(true);
     try {
-      await studioAdapter.decideOrder(
-        order.id,
-        dialog === 'reject' ? 'REJECTED' : 'CANCELLED',
-        reason.trim(),
-        scenario,
-      );
+      if (apiEnabled && hasAccessToken()) {
+        if (dialog === 'reject') await rejectApiOrder(order.id, order.version, reason.trim());
+        else await cancelApiOrder(order.id, order.version, reason.trim());
+      } else {
+        await studioAdapter.decideOrder(
+          order.id,
+          dialog === 'reject' ? 'REJECTED' : 'CANCELLED',
+          reason.trim(),
+          scenario,
+        );
+      }
       setNotice(
-        `Đã ${dialog === 'reject' ? 'từ chối' : 'hủy'} đơn trong fixture; lý do hiển thị cho khách.`,
+        apiEnabled && hasAccessToken()
+          ? `Đã ${dialog === 'reject' ? 'từ chối' : 'hủy'} đơn trên máy chủ.`
+          : `Đã ${dialog === 'reject' ? 'từ chối' : 'hủy'} đơn trong fixture; lý do hiển thị cho khách.`,
       );
       setDialog(null);
       retry();
@@ -212,9 +230,14 @@ export function OrdersPage({
     setBusy(true);
     setNotice('');
     try {
-      await studioAdapter.markReadyForPickup(order.id, scenario);
+      if (apiEnabled && hasAccessToken()) {
+        if (order.status === 'CONFIRMED') await prepareAndReadyOrder(order.id, order.version);
+        else await readyApiOrder(order.id, order.version);
+      } else await studioAdapter.markReadyForPickup(order.id, scenario);
       setNotice(
-        'Đã kiểm đủ bộ và phụ kiện trong fixture; đơn sẵn sàng giao. Tiền thuê và cọc vẫn chưa thu.',
+        apiEnabled && hasAccessToken()
+          ? 'Đã chuyển đơn sang sẵn sàng giao trên máy chủ. Tiền thuê và cọc vẫn chưa thu.'
+          : 'Đã kiểm đủ bộ và phụ kiện trong fixture; đơn sẵn sàng giao. Tiền thuê và cọc vẫn chưa thu.',
       );
       retry();
     } catch (caught) {
@@ -272,7 +295,13 @@ export function OrdersPage({
         <div ref={noticeRef} tabIndex={-1} className="notice-focus-target">
           <Feedback
             tone={notice.startsWith('Đã ') ? 'success' : 'warning'}
-            title={notice.startsWith('Đã ') ? 'Thao tác fixture hoàn tất' : 'Cần kiểm tra lại'}
+            title={
+              notice.startsWith('Đã ')
+                ? apiEnabled && hasAccessToken()
+                  ? 'Thao tác đã lưu trên máy chủ'
+                  : 'Thao tác fixture hoàn tất'
+                : 'Cần kiểm tra lại'
+            }
             action={
               notice.includes('Đơn đã thay đổi') ? (
                 <Button variant="secondary" onClick={retry}>
@@ -622,7 +651,7 @@ export function OrdersPage({
                     <h3>Chuẩn bị từng bộ để giao</h3>
                     <p>
                       Kiểm đúng barcode và phụ kiện thực tế. Chỉ sau khi hoàn tất, đơn mới chuyển
-                      sang Sẵn sàng giao trong fixture.
+                      sang Sẵn sàng giao.
                     </p>
                     {order.items.map((item) => (
                       <div className="check-unit" key={item.id}>

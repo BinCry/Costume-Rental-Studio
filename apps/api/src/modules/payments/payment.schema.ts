@@ -15,6 +15,9 @@ const createPaymentBaseSchema = z
   .strict();
 
 export const createCashPaymentSchema = createPaymentBaseSchema;
+export const createBankTransferPaymentSchema = createPaymentBaseSchema.extend({
+  transactionReference: z.string().trim().min(1).max(255),
+});
 export const createCheckoutSchema = createPaymentBaseSchema;
 
 export const prepareSettlementSchema = z
@@ -45,6 +48,7 @@ export const completeRefundSchema = z
 export const failRefundSchema = z.object({ reason: z.string().trim().min(1).max(10_000) }).strict();
 
 export type CreatePaymentInput = z.infer<typeof createPaymentBaseSchema>;
+export type CreateBankTransferPaymentInput = z.infer<typeof createBankTransferPaymentSchema>;
 export type PrepareSettlementInput = z.infer<typeof prepareSettlementSchema>;
 export type CancelPaymentInput = z.infer<typeof cancelPaymentSchema>;
 export type CreateRefundInput = z.infer<typeof createRefundSchema>;

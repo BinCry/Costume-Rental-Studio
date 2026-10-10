@@ -8,6 +8,7 @@ import {
   customerIdSchema,
   customerListSchema,
   updateCustomerSchema,
+  updateOwnCustomerSchema,
 } from './customer.schema.js';
 import {
   createCustomer,
@@ -27,6 +28,28 @@ customerRouter.get('/', requireAuthentication, async (request, response) => {
     response,
     await listCustomers(response.locals.actor as CustomerActor, parsed.data),
     'Customers loaded',
+  );
+});
+
+customerRouter.get('/me', requireAuthentication, async (_request, response) =>
+  sendSuccess(
+    response,
+    await getCustomer(response.locals.actor as CustomerActor, response.locals.actor.id),
+    'Own customer profile loaded',
+  ),
+);
+
+customerRouter.patch('/me', requireAuthentication, async (request, response) => {
+  const body = updateOwnCustomerSchema.safeParse(request.body);
+  if (!body.success) throw new AppError(400, 'VALIDATION_ERROR', 'Invalid own customer profile');
+  return sendSuccess(
+    response,
+    await updateCustomer(
+      response.locals.actor as CustomerActor,
+      response.locals.actor.id,
+      body.data,
+    ),
+    'Own customer profile updated',
   );
 });
 

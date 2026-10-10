@@ -46,6 +46,7 @@ const orderBase = z
   });
 
 export const createOrderSchema = orderBase;
+export const quoteSchema = orderBase;
 export const updateOrderSchema = orderBase.extend({
   expectedVersion: z.coerce.number().int().positive(),
 });
@@ -140,6 +141,7 @@ export const pickupSchema = versionSchema
   .strict();
 export const returnSchema = versionSchema
   .extend({
+    partial: z.boolean().default(false),
     returnNotes: z.string().trim().max(10_000).nullable().optional(),
     items: z
       .array(
@@ -213,6 +215,7 @@ export const eventListSchema = z.object({
 });
 export { activeStatuses };
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
+export type QuoteInput = z.infer<typeof quoteSchema>;
 export type UpdateOrderInput = z.infer<typeof updateOrderSchema>;
 export type ListOrdersInput = z.infer<typeof listOrdersSchema>;
 export type ConfirmInput = z.infer<typeof confirmSchema>;

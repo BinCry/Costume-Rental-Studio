@@ -15,6 +15,8 @@ import { useFixtureResource } from '../components/useFixtureResource';
 import { branches, fixtureAdapter, fixtureCatalog, fixturePeriod } from '../fixtures/adapter';
 import { studioAdapter } from '../fixtures/studio';
 import type { BookingDraft, DemoScenario, QuoteSnapshot } from '../fixtures/types';
+import { apiEnabled } from '../api/client';
+import { useBranchOptions } from '../components/useBranchOptions';
 
 const steps = ['Trang phục', 'Lựa chọn', 'Nhận và trả', 'Báo giá', 'Người thuê', 'Xác nhận'];
 const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
@@ -42,8 +44,7 @@ const initialDraft = (costumeId?: string, context?: URLSearchParams): BookingDra
     variant: variants.includes(requestedVariant)
       ? requestedVariant
       : (variants[0] ?? baseDraft.variant),
-    branch:
-      requestedBranch && branches.includes(requestedBranch) ? requestedBranch : baseDraft.branch,
+    branch: requestedBranch?.trim() || baseDraft.branch,
     pickup: requestedPickup?.trim() ? requestedPickup : baseDraft.pickup,
     returnAt: requestedReturn?.trim() ? requestedReturn : baseDraft.returnAt,
   };
@@ -62,6 +63,7 @@ export function BookingPage({
   initialContext: URLSearchParams;
   onCustomerCreated?: (code: string) => void;
 }) {
+  const { options: branchOptions, ready: branchOptionsReady } = useBranchOptions();
   const [step, setStep] = useState(() => {
     const selected = fixtureCatalog.find((entry) => entry.id === costumeId);
     if (!selected) return 0;
@@ -98,8 +100,22 @@ export function BookingPage({
     if (submittedId) successHeadingRef.current?.focus();
   }, [submittedId]);
   const { loading, data, error, retry } = useFixtureResource(scenario, loadCatalog);
-  const item = fixtureCatalog.find((entry) => entry.id === draft.costumeId);
+  useEffect(() => {
+    if (branchOptionsReady && branchOptions.length && !branchOptions.includes(draft.branch))
+      setDraft((current) => ({ ...current, branch: branchOptions[0] }));
+  }, [branchOptions, branchOptionsReady, draft.branch]);
+  const item = (data ?? []).find((entry) => entry.id === draft.costumeId) ??
+    fixtureCatalog.find((entry) => entry.id === draft.costumeId);
   const choices = item ? item.sizes.map((size) => `${size} / ${item.colors[0]}`) : [];
+  useEffect(() => {
+    if (!item || step !== 0) return;
+    const requestedVariant = initialContext.get('variant');
+    if (requestedVariant && choices.includes(requestedVariant)) setStep(2);
+  }, [choices, initialContext, item, step]);
+  useEffect(() => {
+    if (!item || choices.includes(draft.variant)) return;
+    setDraft((current) => ({ ...current, variant: choices[0] ?? current.variant }));
+  }, [item, choices, draft.variant]);
   const update = <K extends keyof BookingDraft>(key: K, value: BookingDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
     if (['costumeId', 'variant', 'quantity', 'branch', 'pickup', 'returnAt'].includes(key)) {
@@ -115,13 +131,13 @@ export function BookingPage({
       step === 1 &&
       (!choices.includes(draft.variant) || draft.quantity < 1 || draft.quantity > 2)
     )
-      return 'Chọn size/màu và số bộ hợp lệ trong fixture (1–2 bộ).';
+      return 'Chọn size/màu và số bộ hợp lệ (1–2 bộ).';
     if (
       step === 2 &&
       (!draft.branch || !draft.pickup || !draft.returnAt || draft.returnAt <= draft.pickup)
     )
       return 'Chọn cùng chi nhánh và kỳ nhận/trả hợp lệ.';
-    if (step === 3 && !quote) return 'Cần tải báo giá fixture còn hiệu lực để tiếp tục.';
+    if (step === 3 && !quote) return 'Cần tải báo giá còn hiệu lực để tiếp tục.';
     if (step === 4 && (!draft.name.trim() || !/^0[0-9 ]{8,12}$/.test(draft.phone.trim())))
       return 'Nhập tên và số điện thoại liên hệ hợp lệ.';
     return '';
@@ -168,7 +184,8 @@ export function BookingPage({
     setIssue('');
     try {
       const id = await fixtureAdapter.submitBooking(draft, quote, scenario);
-      onCustomerCreated?.(studioAdapter.recordBooking(id, draft, quote));
+      if (apiEnabled) onCustomerCreated?.('');
+      else onCustomerCreated?.(studioAdapter.recordBooking(id, draft, quote));
       setSubmittedId(id);
     } catch (caught) {
       setIssue(caught instanceof Error ? caught.message : 'Chưa gửi được yêu cầu.');
@@ -184,16 +201,24 @@ export function BookingPage({
           <span className="success-symbol">
             <Icon name="check" size={32} />
           </span>
-          <p className="eyebrow">YÊU CẦU ĐÃ GỬI · FIXTURE</p>
+          <p className="eyebrow">YÊU CẦU ĐÃ GỬI · {apiEnabled ? 'API' : 'FIXTURE'}</p>
           <h1 tabIndex={-1} ref={successHeadingRef}>
-            Yêu cầu demo đã được tạo
+            {apiEnabled ? 'Yêu cầu đã được tạo' : 'Yêu cầu demo đã được tạo'}
           </h1>
           <p className="success-code">
             Mã yêu cầu <strong>{submittedId}</strong>
           </p>
-          <Feedback tone="warning" title="Yêu cầu chưa giữ trang phục cho đến khi studio xác nhận.">
-            Yêu cầu đã lưu trong bộ nhớ fixture để bạn xem ở “Đơn của tôi”. Studio thật chưa nhận
-            yêu cầu; cần API để lưu và xử lý trên máy chủ.
+          <Feedback
+            tone={apiEnabled ? 'info' : 'warning'}
+            title={
+              apiEnabled
+                ? 'Yêu cầu đã được gửi lên máy chủ; studio sẽ duyệt và gán bộ.'
+                : 'Yêu cầu chưa giữ trang phục cho đến khi studio xác nhận.'
+            }
+          >
+            {apiEnabled
+              ? 'Giá và khả dụng cuối cùng được máy chủ kiểm tra khi tạo đơn.'
+              : 'Yêu cầu đã lưu trong bộ nhớ fixture để bạn xem ở “Đơn của tôi”. Studio thật chưa nhận yêu cầu; cần API để lưu và xử lý trên máy chủ.'}
           </Feedback>
           <Button onClick={() => go('myRentalDetail', { order: submittedId })}>
             Theo dõi yêu cầu <Icon name="arrow" size={18} />
@@ -332,7 +357,7 @@ export function BookingPage({
                     value={draft.branch}
                     onChange={(event) => update('branch', event.target.value)}
                   >
-                    {branches.map((entry) => (
+                    {branchOptions.map((entry) => (
                       <option key={entry}>{entry}</option>
                     ))}
                   </SelectField>
@@ -364,9 +389,10 @@ export function BookingPage({
               )}
               {step === 3 && (
                 <div className="form-stack">
-                  <Feedback tone="info" title="Báo giá do fixture adapter cung cấp">
-                    Bản demo chỉ có snapshot cho kỳ thuê mẫu. Khi nối backend, API báo giá sẽ cung
-                    cấp số ngày, tiền và thời hạn.
+                  <Feedback tone="info" title={apiEnabled ? 'Báo giá từ máy chủ' : 'Báo giá minh họa'}>
+                    {apiEnabled
+                      ? 'Số ngày, giá thuê, tiền cọc và thời hạn được tính theo chính sách hiện hành trên máy chủ.'
+                      : 'Bản demo chỉ có snapshot cho kỳ thuê mẫu; giá thật sẽ được máy chủ xác nhận.'}
                   </Feedback>
                   <Button
                     variant="secondary"
@@ -376,7 +402,7 @@ export function BookingPage({
                     loading={busy}
                   >
                     <Icon name="refresh" size={18} />{' '}
-                    {quote ? 'Tải lại báo giá' : 'Tải báo giá minh họa'}
+                    {quote ? 'Tải lại báo giá' : apiEnabled ? 'Tải báo giá' : 'Tải báo giá minh họa'}
                   </Button>
                   {quote && (
                     <div className="quote-card">
@@ -568,7 +594,7 @@ export function BookingPage({
                   <span>Tiền cọc</span>
                   <strong>{money(quote.deposit)}</strong>
                 </div>
-                <small>Thu khi nhận đồ · Theo báo giá fixture</small>
+                <small>Thu khi nhận đồ · Theo báo giá {apiEnabled ? 'máy chủ' : 'minh họa'}</small>
               </>
             ) : (
               <small>Chưa có báo giá cho lựa chọn hiện tại.</small>

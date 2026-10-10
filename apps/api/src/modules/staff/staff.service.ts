@@ -65,6 +65,25 @@ export async function createStaff(actor: AuthenticatedActor, input: CreateStaffI
   assertPermission(actor, { module: 'staff', action: 'manage' });
   try {
     return await prisma.$transaction(async (tx) => {
+      const roles = await tx.role.findMany({
+        where: { id: { in: input.assignments.map((assignment) => assignment.roleId) } },
+      });
+      const rolesById = new Map(roles.map((role) => [role.id, role]));
+      const isGlobalAdmin = actor.roleAssignments.some(
+        (assignment) => assignment.role.roleCode === 'ADMIN' && assignment.branchId === null,
+      );
+      for (const assignment of input.assignments) {
+        const role = rolesById.get(assignment.roleId);
+        if (!role || !role.isActive || role.actorGroup === 'CUSTOMER')
+          throw new AppError(400, 'INVALID_ROLE', 'Role is not assignable to staff');
+        if (role.actorGroup === 'ADMIN' && (assignment.branchId || !isGlobalAdmin))
+          throw new AppError(
+            403,
+            'ADMIN_ROLE_RESTRICTED',
+            'Global admin role requires a global admin actor and no branch assignment',
+          );
+        if (assignment.branchId) await lockActiveBranch(tx, assignment.branchId);
+      }
       const user = await tx.user.create({
         data: {
           email: input.email.toLowerCase(),
@@ -82,7 +101,6 @@ export async function createStaff(actor: AuthenticatedActor, input: CreateStaffI
         include: { employee: true },
       });
       for (const assignment of input.assignments) {
-        if (assignment.branchId) await lockActiveBranch(tx, assignment.branchId);
         await tx.userRoleAssignment.create({
           data: {
             userId: user.id,
@@ -147,6 +165,8 @@ export async function assignRole(
   data: { roleId: string; branchId?: string | null },
 ) {
   assertPermission(actor, { module: 'staff', action: 'manage' });
+  const employee = await prisma.employee.findUnique({ where: { userId } });
+  if (!employee) throw new AppError(404, 'STAFF_NOT_FOUND', 'Staff member not found');
   const role = await prisma.role.findUnique({ where: { id: data.roleId } });
   if (!role || !role.isActive || role.actorGroup === 'CUSTOMER')
     throw new AppError(400, 'INVALID_ROLE', 'Role is not assignable to staff');

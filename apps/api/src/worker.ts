@@ -1,8 +1,10 @@
 import { logger } from './config/logger.js';
 import { prisma } from './database/prisma.js';
 import { startMediaMaintenance } from './modules/uploads/media-maintenance.service.js';
+import { startRentalMaintenance } from './modules/rentals/rental-maintenance.service.js';
 
 const mediaMaintenance = startMediaMaintenance();
+const rentalMaintenance = startRentalMaintenance();
 let isShuttingDown = false;
 
 function shutdown(signal: NodeJS.Signals) {
@@ -10,6 +12,7 @@ function shutdown(signal: NodeJS.Signals) {
   isShuttingDown = true;
   logger.info({ signal }, 'Shutting down background worker');
   mediaMaintenance.stop();
+  rentalMaintenance.stop();
 
   void prisma
     .$disconnect()

@@ -26,6 +26,7 @@ import type {
   AmendOrderItemInput,
   ConfirmInput,
   CreateOrderInput,
+  QuoteInput,
   ExtendOrderInput,
   ListOrdersInput,
   PickupInput,
@@ -109,6 +110,18 @@ function assertManage(
     !canBranch(actor, 'manage', order.pickupBranchId)
   )
     throw new AppError(403, 'FORBIDDEN', 'Permission denied for this rental order');
+}
+function assertRentalAction(
+  actor: AuthenticatedActor,
+  order: { customerUserId: string; pickupBranchId: string },
+  action: 'confirm' | 'prepare' | 'handover' | 'return' | 'assessment' | 'settlement',
+) {
+  requireEmployee(actor);
+  if (
+    !hasPermission(actor, { module: 'rentals', action, branchId: order.pickupBranchId }) &&
+    !hasPermission(actor, { module: 'rentals', action: 'manage', branchId: order.pickupBranchId })
+  )
+    throw new AppError(403, 'FORBIDDEN', `Permission denied for rental ${action}`);
 }
 
 async function lockOrder(tx: Prisma.TransactionClient, id: string) {
@@ -210,6 +223,115 @@ async function pricedItems(tx: Prisma.TransactionClient, input: CreateOrderInput
   if (days < policy.minRentalDays || (policy.maxRentalDays && days > policy.maxRentalDays))
     throw new AppError(400, 'INVALID_RENTAL_PERIOD', 'Rental duration violates the active policy');
   return { policy, days, variants };
+}
+
+async function availabilityForQuote(
+  tx: Prisma.TransactionClient,
+  input: QuoteInput,
+  variantIds: string[],
+) {
+  const rows = await Promise.all(
+    variantIds.map(async (variantId) => {
+      const availableUnits = await tx.costumeUnit.count({
+        where: {
+          variantId,
+          currentBranchId: input.pickupBranchId,
+          operationalStatus: 'READY',
+          orderItems: {
+            none: {
+              order: { status: { in: occupiedStatuses } },
+              occupiedFrom: { lt: input.plannedDueAt },
+              occupiedUntil: { gt: input.plannedStartAt },
+            },
+          },
+          blocks: {
+            none: {
+              status: { in: ['PLANNED', 'IN_PROGRESS'] },
+              blockedFrom: { lt: input.plannedDueAt },
+              blockedUntil: { gt: input.plannedStartAt },
+            },
+          },
+          transferItems: {
+            none: { transfer: { status: { in: ['REQUESTED', 'APPROVED', 'IN_TRANSIT'] } } },
+          },
+        },
+      });
+      return { variantId, availableUnits };
+    }),
+  );
+  return rows;
+}
+
+export async function createQuote(actor: AuthenticatedActor, input: QuoteInput) {
+  requireActor(actor);
+  if (actor.id !== input.customerUserId) {
+    requireEmployee(actor);
+    assertPermission(actor, {
+      module: 'rentals',
+      action: 'manage',
+      branchId: input.pickupBranchId,
+    });
+  } else assertPermission(actor, { module: 'rentals', action: 'manage', scope: 'OWN' });
+
+  return prisma.$transaction(async (tx) => {
+    await lockActiveBranch(tx, input.pickupBranchId);
+    const customer = await tx.customer.findUnique({
+      where: { userId: input.customerUserId },
+      select: { userId: true },
+    });
+    if (!customer) throw new AppError(404, 'CUSTOMER_NOT_FOUND', 'Customer not found');
+    const { policy, days, variants } = await pricedItems(tx, input);
+    const subtotalVnd = variants.reduce(
+      (total, variant) => total + variant.dailyRentalPriceVnd * BigInt(days),
+      0n,
+    );
+    const { promotion, discount } = await resolvePromotion(
+      tx,
+      input,
+      input.customerUserId,
+      subtotalVnd,
+    );
+    const depositVnd = variants.reduce((total, variant) => total + variant.depositAmountVnd, 0n);
+    const availability = await availabilityForQuote(
+      tx,
+      input,
+      variants.map((variant) => variant.id),
+    );
+    return {
+      quoteExpiresAt: new Date(Date.now() + policy.quoteValidHours * 3_600_000),
+      policy: {
+        id: policy.id,
+        versionCode: policy.versionCode,
+        billingDayMode: policy.billingDayMode,
+        minRentalDays: policy.minRentalDays,
+        maxRentalDays: policy.maxRentalDays,
+        quoteValidHours: policy.quoteValidHours,
+      },
+      period: {
+        plannedStartAt: input.plannedStartAt,
+        plannedDueAt: input.plannedDueAt,
+        billableDays: days,
+      },
+      items: variants.map((variant) => ({
+        variantId: variant.id,
+        variantCode: variant.variantCode,
+        modelId: variant.modelId,
+        dailyRentalPriceVnd: variant.dailyRentalPriceVnd,
+        depositAmountVnd: variant.depositAmountVnd,
+        rentalAmountVnd: variant.dailyRentalPriceVnd * BigInt(days),
+        availableUnits: availability.find((item) => item.variantId === variant.id)?.availableUnits ?? 0,
+      })),
+      promotion: promotion
+        ? { id: promotion.id, code: promotion.code, discountVnd: discount }
+        : null,
+      subtotalVnd,
+      discountVnd: discount,
+      rentalAmountVnd: subtotalVnd - discount,
+      depositVnd,
+      totalDueVnd: subtotalVnd - discount + depositVnd,
+      available: availability.every((item) => item.availableUnits > 0),
+    };
+  }, transactionOptions);
 }
 async function resolvePromotion(
   tx: Prisma.TransactionClient,
@@ -568,7 +690,7 @@ export async function confirmOrder(actor: AuthenticatedActor, id: string, input:
   requireEmployee(actor);
   return prisma.$transaction(async (tx) => {
     const order = await lockOrder(tx, id);
-    assertManage(actor, order);
+    assertRentalAction(actor, order, 'confirm');
     await lockActiveBranch(tx, order.pickupBranchId);
     assertStatus(order.status, [mutableStatus]);
     assertVersion(order.version, input.expectedVersion);
@@ -818,11 +940,12 @@ async function transition(
   from: OrderStatus[],
   to: OrderStatus,
   event: string,
+  permissionAction: 'prepare' = 'prepare',
 ) {
   requireEmployee(actor);
   return prisma.$transaction(async (tx) => {
     const order = await lockOrder(tx, id);
-    assertManage(actor, order);
+    assertRentalAction(actor, order, permissionAction);
     assertStatus(order.status, from);
     assertVersion(order.version, expectedVersion);
     await lockActiveBranch(tx, order.pickupBranchId);
@@ -836,9 +959,9 @@ async function transition(
   }, transactionOptions);
 }
 export const prepareOrder = (actor: AuthenticatedActor, id: string, expectedVersion: number) =>
-  transition(actor, id, expectedVersion, ['CONFIRMED'], 'PREPARING', 'PREPARATION_STARTED');
+  transition(actor, id, expectedVersion, ['CONFIRMED'], 'PREPARING', 'PREPARATION_STARTED', 'prepare');
 export const markOrderReady = (actor: AuthenticatedActor, id: string, expectedVersion: number) =>
-  transition(actor, id, expectedVersion, ['PREPARING'], 'READY_FOR_PICKUP', 'ORDER_READY');
+  transition(actor, id, expectedVersion, ['PREPARING'], 'READY_FOR_PICKUP', 'ORDER_READY', 'prepare');
 export async function rejectOrder(
   actor: AuthenticatedActor,
   id: string,
@@ -976,7 +1099,7 @@ export async function pickupOrder(actor: AuthenticatedActor, id: string, input: 
   requireEmployee(actor);
   return prisma.$transaction(async (tx) => {
     const order = await lockOrder(tx, id);
-    assertManage(actor, order);
+    assertRentalAction(actor, order, 'handover');
     assertStatus(order.status, ['READY_FOR_PICKUP']);
     assertVersion(order.version, input.expectedVersion);
     const rentalDue = rentalDueBeforeExtensionsVnd(
@@ -1028,18 +1151,37 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
   requireEmployee(actor);
   return prisma.$transaction(async (tx) => {
     const order = await lockOrder(tx, id);
-    assertManage(actor, order);
+    assertRentalAction(actor, order, 'return');
     assertStatus(order.status, ['ACTIVE']);
     assertVersion(order.version, input.expectedVersion);
-    const expected = order.items.map((x) => x.id).sort();
+    const activeItems = order.items.filter((item) =>
+      ['ACTIVE', 'CONFIRMED'].includes(item.allocationStatus),
+    );
+    const expected = activeItems.map((x) => x.id).sort();
     const received = input.items.map((x) => x.orderItemId).sort();
-    if (expected.length !== received.length || expected.some((v, i) => v !== received[i]))
+    const hasAllActiveItems =
+      expected.length === received.length && expected.every((v, i) => v === received[i]);
+    if (
+      (input.partial && (received.length === 0 || hasAllActiveItems)) ||
+      (!input.partial && !hasAllActiveItems)
+    )
       throw new AppError(
         400,
         'INVALID_RETURN_ITEMS',
-        'Every order item must be supplied exactly once',
+        input.partial
+          ? 'A partial return must contain at least one, but not all, active order items'
+          : 'Every active order item must be supplied exactly once',
       );
-    const units = await lockUnits(tx, order.items.map((item) => item.unitId!).filter(Boolean));
+    const units = await lockUnits(tx, input.items.map((inputItem) => {
+      const orderItem = order.items.find((item) => item.id === inputItem.orderItemId);
+      if (
+        !orderItem ||
+        !['ACTIVE', 'CONFIRMED'].includes(orderItem.allocationStatus) ||
+        !orderItem.unitId
+      )
+        throw new AppError(400, 'INVALID_RETURN_ITEMS', 'Only active order items can be returned');
+      return orderItem.unitId;
+    }));
     const returnedAt = new Date();
     for (const inputItem of input.items) {
       const orderItem = order.items.find((x) => x.id === inputItem.orderItemId)!;
@@ -1140,6 +1282,7 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
         });
       }
     }
+    const isFinalReturn = !input.partial;
     const graceEnd = order.plannedDueAt.getTime() + order.policyVersion.lateGraceMinutes * 60_000;
     const lateDays =
       returnedAt.getTime() <= graceEnd
@@ -1158,25 +1301,40 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
     const result = await tx.rentalOrder.update({
       where: { id },
       data: {
-        status: 'RETURN_INSPECTION',
-        returnedAt,
-        returnProcessedBy: actor.id,
-        returnNotes: input.returnNotes ?? null,
-        inspectionStatus: 'PENDING_ASSESSMENT',
-        lateFeeVnd: late,
+        ...(isFinalReturn
+          ? {
+              status: 'RETURN_INSPECTION' as const,
+              returnedAt,
+              returnProcessedBy: actor.id,
+              returnNotes: input.returnNotes ?? null,
+              inspectionStatus: 'PENDING_ASSESSMENT' as const,
+              lateFeeVnd: late,
+            }
+          : {
+              status: 'ACTIVE' as const,
+              returnNotes: input.returnNotes ?? order.returnNotes,
+            }),
         version: { increment: 1 },
         items: {
           updateMany: {
-            where: {},
+            where: { id: { in: input.items.map((item) => item.orderItemId) } },
             data: { allocationStatus: 'COMPLETED' },
           },
         },
       },
       include: includeOrder(),
     });
-    await addEvent(tx, id, 'RETURNED', actor.id, 'ACTIVE', 'RETURN_INSPECTION', {
-      inspectionStatus: 'PENDING_ASSESSMENT',
-    });
+    await addEvent(
+      tx,
+      id,
+      isFinalReturn ? 'RETURNED' : 'PARTIAL_RETURNED',
+      actor.id,
+      'ACTIVE',
+      isFinalReturn ? 'RETURN_INSPECTION' : 'ACTIVE',
+      isFinalReturn
+        ? { inspectionStatus: 'PENDING_ASSESSMENT' }
+        : { returnedItemIds: input.items.map((item) => item.orderItemId) },
+    );
     return result;
   }, transactionOptions);
 }
@@ -1256,7 +1414,7 @@ export async function assessReturn(actor: AuthenticatedActor, id: string, input:
   requireEmployee(actor);
   return prisma.$transaction(async (tx) => {
     const order = await lockOrder(tx, id);
-    assertManage(actor, order);
+    assertRentalAction(actor, order, 'assessment');
     assertStatus(order.status, ['RETURN_INSPECTION']);
     assertVersion(order.version, input.expectedVersion);
     const wasAssessed = order.inspectionStatus !== 'PENDING_ASSESSMENT';
@@ -1370,7 +1528,7 @@ export async function completeOrder(actor: AuthenticatedActor, id: string, input
   requireEmployee(actor);
   return prisma.$transaction(async (tx) => {
     const order = await lockOrder(tx, id);
-    assertManage(actor, order);
+    assertRentalAction(actor, order, 'settlement');
     assertStatus(order.status, ['RETURN_INSPECTION']);
     assertVersion(order.version, input.expectedVersion);
     if (order.inspectionStatus === 'PENDING_ASSESSMENT')

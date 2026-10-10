@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Navigate } from '../App';
 import {
   Button,
@@ -24,8 +24,41 @@ import {
 } from '../components/studio';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { branches, fixturePeriod } from '../fixtures/adapter';
-import { studioAdapter, type CustomerOrder } from '../fixtures/studio';
+import { studioAdapter, type CostumeDetail, type CustomerOrder } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
+import { apiEnabled, checkPublicAvailability, getPublicVariant, hasAccessToken } from '../api/client';
+import { useBranchOptions } from '../components/useBranchOptions';
+
+const loadCostumeDetails = (id: string) => async (scenario: DemoScenario): Promise<CostumeDetail[]> => {
+  if (!apiEnabled) return studioAdapter.details(scenario);
+  // The public detail endpoint is intentionally unauthenticated. It exposes only
+  // publishable catalog fields; private replacement values and unit identifiers stay
+  // out of the customer page.
+  const variant = await getPublicVariant(id);
+  return [
+    {
+      id: variant.id,
+      name: variant.model?.name ?? variant.variantCode,
+      category: variant.model?.category?.name ?? 'Trang phục',
+      description: variant.model?.shortDescription ?? variant.model?.description ?? '',
+      material: variant.model?.material ?? 'Thông tin chất liệu sẽ được xác nhận tại studio.',
+      accessories: [],
+      imagePosition: 'center',
+      variants: [
+        {
+          code: variant.variantCode,
+          modelId: variant.modelId,
+          size: variant.sizeCode,
+          color: variant.colorCode,
+          edition: variant.editionLabel ?? undefined,
+          fit: variant.fitNotes ?? 'Dáng và số đo được xác nhận khi nhận đồ.',
+          price: Number(variant.dailyRentalPriceVnd),
+          deposit: Number(variant.depositAmountVnd),
+        },
+      ],
+    },
+  ];
+};
 
 export function CostumeDetailPage({
   id,
@@ -38,13 +71,15 @@ export function CostumeDetailPage({
   go: Navigate;
   initialContext: URLSearchParams;
 }) {
-  const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.details);
+  const loadDetails = useMemo(() => loadCostumeDetails(id), [id]);
+  const { loading, error, data, retry } = useFixtureResource(scenario, loadDetails);
   const requestedPickup = initialContext.get('pickup');
   const requestedReturn = initialContext.get('returnAt');
   const requestedBranch = initialContext.get('branch');
+  const { options: branchOptions } = useBranchOptions();
   const [variantCode, setVariantCode] = useState(initialContext.get('variantCode') ?? '');
   const [branch, setBranch] = useState(
-    requestedBranch && branches.includes(requestedBranch) ? requestedBranch : branches[0],
+    requestedBranch ?? branches[0],
   );
   const [pickup, setPickup] = useState(
     requestedPickup?.trim() ? requestedPickup : fixturePeriod.pickup,
@@ -53,6 +88,26 @@ export function CostumeDetailPage({
     requestedReturn?.trim() ? requestedReturn : fixturePeriod.returnAt,
   );
   const [photo, setPhoto] = useState(0);
+  const [availability, setAvailability] = useState<
+    'idle' | 'loading' | 'available' | 'unavailable' | 'error'
+  >('idle');
+  useEffect(() => {
+    if (branchOptions.length && !branchOptions.includes(branch)) setBranch(branchOptions[0]);
+  }, [branch, branchOptions]);
+  useEffect(() => {
+    if (!apiEnabled || !branch || !pickup || !due || !id) {
+      setAvailability('idle');
+      return;
+    }
+    let active = true;
+    setAvailability('loading');
+    void checkPublicAvailability(id, branch, pickup, due)
+      .then((result) => active && setAvailability(result.available ? 'available' : 'unavailable'))
+      .catch(() => active && setAvailability('error'));
+    return () => {
+      active = false;
+    };
+  }, [branch, due, id, pickup]);
   const catalogContext = Object.fromEntries(
     [...initialContext.entries()].filter(([key]) => key !== 'id'),
   );
@@ -76,11 +131,16 @@ export function CostumeDetailPage({
           );
         const variant =
           item.variants.find((value) => value.code === variantCode) ?? item.variants[0];
-        const known =
+        const fixtureKnown =
           branch === 'Chi nhánh Quận 1' &&
           pickup === fixturePeriod.pickup &&
           due === fixturePeriod.returnAt;
-        const available = known && item.id !== 'dam-rouge' && scenario !== 'conflict';
+        const known = apiEnabled
+          ? availability !== 'idle' && availability !== 'loading'
+          : fixtureKnown;
+        const available = apiEnabled
+          ? availability === 'available'
+          : fixtureKnown && item.id !== 'dam-rouge' && scenario !== 'conflict';
         return (
           <div className="page">
             <button
@@ -123,7 +183,11 @@ export function CostumeDetailPage({
                 </div>
                 <div className="detail-rule">
                   <h2>Phụ kiện</h2>
-                  <p>{item.accessories.join(' · ')}</p>
+                  <p>
+                    {item.accessories.length
+                      ? item.accessories.join(' · ')
+                      : 'Chưa có thông tin phụ kiện công khai.'}
+                  </p>
                 </div>
                 <Panel title="Chọn size / màu">
                   <div className="variant-pills">
@@ -143,28 +207,35 @@ export function CostumeDetailPage({
                     rows={[
                       { label: 'Giá thuê / ngày', value: money(variant.price) },
                       { label: 'Tiền cọc', value: money(variant.deposit) },
-                      { label: 'Giá thay thế theo biến thể', value: money(variant.replacement) },
+                      ...(variant.replacement
+                        ? [{ label: 'Giá thay thế theo biến thể', value: money(variant.replacement) }]
+                        : []),
                     ]}
                   />
                 </Panel>
                 <Panel title="Kiểm tra khoảng thuê">
                   <div className="feature-filters">
-                    <BranchSelector value={branch} onChange={setBranch} />
+                    <BranchSelector value={branch} options={branchOptions} onChange={setBranch} />
                     <DateTimeField label="Nhận" value={pickup} onChange={setPickup} />
                     <DateTimeField label="Trả" value={due} onChange={setDue} />
                   </div>
                   <Feedback
                     tone={known ? (available ? 'success' : 'warning') : 'info'}
                     title={
-                      known
-                        ? available
-                          ? 'Có khả năng còn bộ theo kỳ mẫu'
-                          : 'Không có bộ phù hợp theo kỳ mẫu'
-                        : 'Chưa có dữ liệu khả dụng cho kỳ này'
+                      availability === 'loading'
+                        ? 'Đang kiểm tra khả dụng'
+                        : availability === 'error'
+                          ? 'Chưa kiểm tra được khả dụng'
+                          : known
+                            ? available
+                              ? 'Có khả năng còn bộ theo kỳ mẫu'
+                              : 'Không có bộ phù hợp theo kỳ mẫu'
+                            : 'Chưa có dữ liệu khả dụng cho kỳ này'
                     }
                   >
-                    Việc xem khả dụng không giữ bộ. Nhân viên sẽ duyệt và gán từng bộ sau khi bạn
-                    gửi yêu cầu.
+                    {availability === 'error'
+                      ? 'Hãy thử lại hoặc tiếp tục gửi yêu cầu để nhân viên kiểm tra trong bước duyệt.'
+                      : 'Việc xem khả dụng không giữ bộ. Nhân viên sẽ duyệt và gán từng bộ sau khi bạn gửi yêu cầu.'}
                   </Feedback>
                 </Panel>
                 <div className="feature-actions">
@@ -225,7 +296,13 @@ export function MyRentalsPage({
       emptyTitle="Bạn chưa có đơn thuê"
     >
       {(orders) => {
-        const ownOrders = orders.filter((order) => order.customerCode === customerCode);
+        // The authenticated API already scopes this collection to the current customer.
+        // Keep the fixture filter for the offline/demo adapter, where multiple customers
+        // intentionally exist in the same in-memory collection.
+        const ownOrders =
+          apiEnabled && hasAccessToken()
+            ? orders
+            : orders.filter((order) => order.customerCode === customerCode);
         const visible = ownOrders.filter((order) => filter === 'Tất cả' || order.status === filter);
         const selected = id
           ? local?.id === id
@@ -399,7 +476,9 @@ export function MyRentalsPage({
                 onClose={() => setDialog(false)}
                 onConfirm={() => void confirm()}
               >
-                <p>Hủy {selected.id} sẽ được lưu trong lịch sử đơn mẫu. Lý do là bắt buộc.</p>
+                <p>
+                  Hủy {selected.id} sẽ được lưu trong lịch sử đơn. Lý do là bắt buộc.
+                </p>
                 <Field
                   label="Lý do hủy"
                   value={reason}

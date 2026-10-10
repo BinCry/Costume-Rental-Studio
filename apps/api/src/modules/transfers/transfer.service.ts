@@ -446,10 +446,23 @@ export async function receiveTransfer(
     assertManage(actor, transfer.toBranchId);
     assertStatus(transfer.status, ['IN_TRANSIT']);
     assertVersion(transfer.version, input.expectedVersion);
-    assertExactItems(
-      transfer.items.map((item) => item.unitId),
-      input.items,
-    );
+    const pendingItems = transfer.items.filter((item) => item.conditionIn === null);
+    const expectedPendingIds = pendingItems.map((item) => item.unitId).sort();
+    const receivedIds = input.items.map((item) => item.unitId).sort();
+    const hasAllPendingItems =
+      expectedPendingIds.length === receivedIds.length &&
+      expectedPendingIds.every((id, index) => id === receivedIds[index]);
+    if (
+      (input.partial && (receivedIds.length === 0 || hasAllPendingItems)) ||
+      (!input.partial && !hasAllPendingItems)
+    )
+      throw new AppError(
+        400,
+        'INVALID_TRANSFER_ITEMS',
+        input.partial
+          ? 'A partial receipt must contain at least one, but not all, pending transfer items'
+          : 'Every pending transfer item must be supplied exactly once',
+      );
     const units = await lockUnits(
       transaction,
       input.items.map((item) => item.unitId),
@@ -485,11 +498,12 @@ export async function receiveTransfer(
         },
       });
     }
+    const isComplete = !input.partial;
     await transaction.unitEvent.createMany({
       data: input.items.map((item) => ({
         unitId: item.unitId,
         stockTransferId: transfer.id,
-        eventType: 'TRANSFER_RECEIVED',
+        eventType: isComplete ? 'TRANSFER_RECEIVED' : 'TRANSFER_PARTIAL_RECEIVED',
         fromBranchId: transfer.fromBranchId,
         toBranchId: transfer.toBranchId,
         recordedBy: actor.id,
@@ -499,9 +513,8 @@ export async function receiveTransfer(
     return transaction.stockTransfer.update({
       where: { id: transfer.id },
       data: {
-        status: 'RECEIVED',
-        receivedBy: actor.id,
-        receivedAt: new Date(),
+        status: isComplete ? 'RECEIVED' : 'IN_TRANSIT',
+        ...(isComplete ? { receivedBy: actor.id, receivedAt: new Date() } : {}),
         version: { increment: 1 },
       },
       include: transferInclude(),

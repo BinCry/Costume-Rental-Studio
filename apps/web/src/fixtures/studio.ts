@@ -6,6 +6,13 @@ import {
   type OrderStatus,
   type QuoteSnapshot,
 } from './types';
+import {
+  apiEnabled,
+  cancelCustomerOrder as cancelApiCustomerOrder,
+  hasAccessToken,
+  listActiveRentals as listApiActiveRentals,
+  listCustomerOrders as listApiCustomerOrders,
+} from '../api/client';
 
 export type UnitStatus = 'INBOUND' | 'READY' | 'CLEANING' | 'REPAIR' | 'IN_TRANSFER' | 'RETIRED';
 export type TransferStatus =
@@ -21,7 +28,7 @@ export interface Variant {
   fit: string;
   price: number;
   deposit: number;
-  replacement: number;
+  replacement?: number;
 }
 export interface CostumeDetail {
   id: string;
@@ -152,6 +159,7 @@ export interface CustomerOrder {
   history: string[];
   reason?: string;
   canCancel: boolean;
+  version?: number;
 }
 
 const details: CostumeDetail[] = fixtureCatalog.map((item, index) => ({
@@ -1036,7 +1044,16 @@ export const studioAdapter = {
   },
   details: (scenario: DemoScenario) => list(details, scenario),
   units: (scenario: DemoScenario) => list(units, scenario),
-  activeUnits: (scenario: DemoScenario) => list(activeUnits(), scenario),
+  async activeUnits(scenario: DemoScenario) {
+    if (apiEnabled && hasAccessToken()) {
+      try {
+        return await listApiActiveRentals();
+      } catch (error) {
+        throw error instanceof FixtureIssue ? error : new FixtureIssue('NETWORK', error instanceof Error ? error.message : 'Không tải được bộ đang thuê.');
+      }
+    }
+    return list(activeUnits(), scenario);
+  },
   customers: (scenario: DemoScenario) => list(customers, scenario),
   employees: (scenario: DemoScenario) => list(employees, scenario),
   branches: (scenario: DemoScenario) => list(branches, scenario),
@@ -1046,7 +1063,10 @@ export const studioAdapter = {
   cases: (scenario: DemoScenario) => list(cases, scenario),
   policies: (scenario: DemoScenario) => list(policies, scenario),
   reports: (scenario: DemoScenario) => list(reports, scenario),
-  customerOrders: (scenario: DemoScenario) => list(customerOrders, scenario),
+  async customerOrders(scenario: DemoScenario) {
+    if (apiEnabled && hasAccessToken()) return listApiCustomerOrders();
+    return list(customerOrders, scenario);
+  },
   async barcode(code: string, branch: string, scenario: DemoScenario) {
     await pause();
     check(scenario);
@@ -1280,8 +1300,13 @@ export const studioAdapter = {
       window.dispatchEvent(new Event('fixture-access-updated'));
       return value;
     }),
-  cancelCustomerOrder: (id: string, reason: string, scenario: DemoScenario) =>
-    mutate(scenario, () => {
+  async cancelCustomerOrder(id: string, reason: string, scenario: DemoScenario) {
+    if (apiEnabled && hasAccessToken()) {
+      const current = (await listApiCustomerOrders()).find((order) => order.id === id);
+      if (!current?.version) throw new FixtureIssue('ORDER_CONTEXT_MISSING', 'Chưa tải đủ phiên bản đơn.');
+      return cancelApiCustomerOrder(id, current.version, reason);
+    }
+    return mutate(scenario, () => {
       const order = customerOrders.find((o) => o.id === id);
       if (!order?.canCancel)
         throw new FixtureIssue(
@@ -1299,7 +1324,8 @@ export const studioAdapter = {
         staffOrder.history.unshift(`03/10 · Khách hủy: ${reason}`);
       }
       return order;
-    }),
+    });
+  },
   clock: fixtureClock,
 };
 export const fixtureCustomers = customers;

@@ -6,6 +6,7 @@ import { assertPermission, requireActor, type AuthenticatedActor } from '../auth
 import { lockActiveBranch } from '../branches/branch.service.js';
 import type {
   ChangeUnitStatusInput,
+  ActiveRentalListInput,
   CreateUnitInput,
   EventListInput,
   InspectUnitInput,
@@ -125,6 +126,83 @@ export async function listUnits(actor: AuthenticatedActor, query: ListUnitsInput
       ...pagination(query),
     }),
     prisma.costumeUnit.count({ where }),
+  ]);
+  return pageResult(items, totalItems, query);
+}
+
+export async function listActiveRentals(actor: AuthenticatedActor, query: ActiveRentalListInput) {
+  requireActor(actor);
+  const accessibleBranches = readableBranchIds(actor);
+  const canReadAll = hasGlobalInventoryRead(actor);
+  if (query.branchId) assertRead(actor, query.branchId);
+  else if (!canReadAll && accessibleBranches.length === 0) assertRead(actor);
+
+  const now = new Date();
+  const where: Prisma.RentalOrderItemWhereInput = {
+    unitId: { not: null },
+    allocationStatus: 'ACTIVE',
+    order: {
+      is: {
+        status: 'ACTIVE',
+        ...(query.branchId
+          ? { pickupBranchId: query.branchId }
+          : !canReadAll
+            ? { pickupBranchId: { in: accessibleBranches } }
+            : {}),
+        ...(query.overdue !== undefined
+          ? { plannedDueAt: query.overdue ? { lt: now } : { gte: now } }
+          : {}),
+      },
+    },
+    ...(query.search
+      ? {
+          OR: [
+            { order: { is: { orderCode: { contains: query.search, mode: 'insensitive' } } } },
+            {
+              order: {
+                is: {
+                  customer: {
+                    is: {
+                      user: {
+                        is: {
+                          OR: [
+                            { displayName: { contains: query.search, mode: 'insensitive' } },
+                            { phone: { contains: query.search, mode: 'insensitive' } },
+                            { email: { contains: query.search, mode: 'insensitive' } },
+                          ],
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            { unit: { is: { unitCode: { contains: query.search, mode: 'insensitive' } } } },
+          ],
+        }
+      : {}),
+  };
+  const [items, totalItems] = await prisma.$transaction([
+    prisma.rentalOrderItem.findMany({
+      where,
+      include: {
+        unit: { include: { variant: { include: { model: true } } } },
+        order: {
+          select: {
+            id: true,
+            orderCode: true,
+            status: true,
+            plannedStartAt: true,
+            plannedDueAt: true,
+            pickupBranch: true,
+            customer: { include: { user: { select: { id: true, displayName: true, phone: true, email: true } } } },
+          },
+        },
+      },
+      orderBy: [{ order: { [query.sortBy]: query.sortOrder } }, { id: 'asc' }],
+      ...pagination(query),
+    }),
+    prisma.rentalOrderItem.count({ where }),
   ]);
   return pageResult(items, totalItems, query);
 }

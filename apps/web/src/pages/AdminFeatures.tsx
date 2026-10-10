@@ -83,7 +83,7 @@ export function CatalogAdminPage({ scenario }: { scenario: DemoScenario }) {
       !variant.color ||
       variant.price < 0 ||
       variant.deposit < 0 ||
-      variant.replacement < 0
+      (variant.replacement ?? 0) < 0
     ) {
       setIssue('Kiểm tra size, màu và các khoản tiền.');
       return;

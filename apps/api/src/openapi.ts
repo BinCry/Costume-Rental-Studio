@@ -4,7 +4,7 @@ export const openApiDocument = {
     title: 'Costume Rental Studio API',
     version: '1.0.0',
     description:
-      'HTTP API for Costume Rental Studio. Catalog endpoints require a Bearer access token.',
+      'HTTP API for Costume Rental Studio. Public discovery routes expose active branches, catalog variants, and period availability; operational routes require a Bearer access token.',
   },
   servers: [{ url: '/api/v1', description: 'Current server' }],
   tags: [
@@ -52,6 +52,12 @@ export const openApiDocument = {
     securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },
     parameters: {
       id: { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      orderId: {
+        name: 'orderId',
+        in: 'path',
+        required: true,
+        schema: { type: 'string', format: 'uuid' },
+      },
       branchId: {
         name: 'branchId',
         in: 'path',
@@ -477,6 +483,122 @@ export const openApiDocument = {
     },
   },
   paths: {
+    '/public/branches': {
+      get: {
+        tags: ['Branches'],
+        summary: 'List active branches for public booking',
+        parameters: [
+          { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1, default: 1 } },
+          { name: 'pageSize', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 } },
+          { name: 'search', in: 'query', schema: { type: 'string' } },
+        ],
+        responses: { '200': { description: 'Public branches loaded' } },
+      },
+    },
+    '/public/catalog/variants': {
+      get: {
+        tags: ['Catalog'],
+        summary: 'List active costume variants for public discovery',
+        parameters: [
+          { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1, default: 1 } },
+          { name: 'pageSize', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 } },
+          { name: 'search', in: 'query', schema: { type: 'string' } },
+          { name: 'categoryId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          { name: 'modelId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          { name: 'sizeCode', in: 'query', schema: { type: 'string' } },
+          { name: 'colorCode', in: 'query', schema: { type: 'string' } },
+        ],
+        responses: { '200': { description: 'Public catalog loaded' } },
+      },
+    },
+    '/public/catalog/variants/{id}': {
+      get: {
+        tags: ['Catalog'],
+        summary: 'Get an active public variant',
+        parameters: [{ $ref: '#/components/parameters/id' }],
+        responses: {
+          '200': { description: 'Public variant loaded' },
+          '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+    },
+    '/public/catalog/availability': {
+      get: {
+        tags: ['Catalog'],
+        summary: 'Check public availability for a variant and rental period',
+        parameters: [
+          { name: 'variantId', in: 'query', required: true, schema: { type: 'string', format: 'uuid' } },
+          { name: 'pickupBranchId', in: 'query', required: true, schema: { type: 'string', format: 'uuid' } },
+          { name: 'plannedStartAt', in: 'query', required: true, schema: { type: 'string', format: 'date-time' } },
+          { name: 'plannedDueAt', in: 'query', required: true, schema: { type: 'string', format: 'date-time' } },
+        ],
+        responses: {
+          '200': { description: 'Public availability loaded' },
+          '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+    },
+    '/rentals/quotes': {
+      post: {
+        tags: ['Rentals'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Calculate a server-side rental quote without creating an order',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['customerUserId', 'pickupBranchId', 'plannedStartAt', 'plannedDueAt', 'items'],
+                properties: {
+                  customerUserId: { type: 'string', format: 'uuid' },
+                  pickupBranchId: { type: 'string', format: 'uuid' },
+                  channel: { type: 'string', example: 'ONLINE' },
+                  plannedStartAt: { type: 'string', format: 'date-time' },
+                  plannedDueAt: { type: 'string', format: 'date-time' },
+                  promotionCode: { type: 'string' },
+                  items: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      required: ['variantId'],
+                      properties: {
+                        variantId: { type: 'string', format: 'uuid' },
+                        accessories: { type: 'array', items: { type: 'object' } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Rental quote calculated' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/inventory/active-rentals': {
+      get: {
+        tags: ['Inventory'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Find active rentals with renter, due date, branch, and unit information',
+        parameters: [
+          { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1, default: 1 } },
+          { name: 'pageSize', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 } },
+          { name: 'search', in: 'query', schema: { type: 'string' } },
+          { name: 'branchId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          { name: 'overdue', in: 'query', schema: { type: 'boolean' } },
+        ],
+        responses: {
+          '200': { description: 'Active rentals loaded' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+        },
+      },
+    },
     '/crm/cases': {
       get: {
         tags: ['CRM'],
@@ -846,6 +968,36 @@ export const openApiDocument = {
         summary: 'Prepare return settlement before collecting extra fees or refunding deposit',
         responses: {
           '200': { description: 'Settlement prepared' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/payments/orders/{orderId}/bank-transfer': {
+      post: {
+        tags: ['Payments'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Record a successful manual bank transfer with its transaction reference',
+        parameters: [{ $ref: '#/components/parameters/orderId' }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['purpose', 'amountVnd', 'idempotencyKey', 'transactionReference'],
+                properties: {
+                  purpose: { type: 'string', enum: ['RENTAL', 'DEPOSIT', 'EXTRA'] },
+                  amountVnd: { type: 'string' },
+                  idempotencyKey: { type: 'string' },
+                  transactionReference: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '201': { description: 'Bank transfer payment recorded' },
+          '400': { $ref: '#/components/responses/BadRequest' },
           '409': { $ref: '#/components/responses/Conflict' },
         },
       },

@@ -11,6 +11,7 @@ import {
   completeSchema,
   confirmSchema,
   createOrderSchema,
+  quoteSchema,
   debtListSchema,
   eventListSchema,
   extendOrderSchema,
@@ -53,6 +54,16 @@ rentalRouter.get('/orders', async (req, res) =>
       parse(listOrdersSchema.safeParse(req.query), 'Invalid rental order query'),
     ),
     'Rental orders loaded',
+  ),
+);
+rentalRouter.post('/quotes', async (req, res) =>
+  sendSuccess(
+    res,
+    await service.createQuote(
+      res.locals.actor,
+      parse(quoteSchema.safeParse(req.body), 'Invalid rental quote'),
+    ),
+    'Rental quote calculated',
   ),
 );
 rentalRouter.post('/orders', async (req, res) =>

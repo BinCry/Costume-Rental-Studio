@@ -8,6 +8,16 @@ import type {
   UnitOption,
 } from './types';
 import { FixtureIssue } from './types';
+import {
+  ApiClientError,
+  apiEnabled,
+  confirmOrder as confirmApiOrder,
+  createOrder as createApiOrder,
+  getQuote as getApiQuote,
+  hasAccessToken,
+  listCatalog as listApiCatalog,
+  listOrders as listApiOrders,
+} from '../api/client';
 
 export const fixturePeriod = { pickup: '2026-10-10T09:00', returnAt: '2026-10-12T09:00' };
 export const fixtureClock = new Date('2026-10-03T15:30:00+07:00');
@@ -336,9 +346,23 @@ const failNetwork = (scenario: DemoScenario) => {
       'Không tải được dữ liệu fixture. Bộ lọc và dữ liệu đang nhập vẫn được giữ.',
     );
 };
+const asFixtureIssue = (error: unknown) => {
+  if (error instanceof FixtureIssue) return error;
+  if (error instanceof ApiClientError) return new FixtureIssue(error.code, error.message);
+  return error;
+};
 
 export const fixtureAdapter = {
   async listCatalog(scenario: DemoScenario): Promise<CatalogItem[]> {
+    // Public catalog discovery does not require a session. Authenticated
+    // endpoints below still remain gated by hasAccessToken().
+    if (apiEnabled) {
+      try {
+        return await listApiCatalog();
+      } catch (error) {
+        throw asFixtureIssue(error);
+      }
+    }
     await pause();
     failNetwork(scenario);
     return scenario === 'empty' ? [] : catalog;
@@ -349,11 +373,25 @@ export const fixtureAdapter = {
     return scenario === 'empty' ? [] : queue;
   },
   async listOrders(scenario: DemoScenario): Promise<Order[]> {
+    if (apiEnabled && hasAccessToken()) {
+      try {
+        return await listApiOrders();
+      } catch (error) {
+        throw asFixtureIssue(error);
+      }
+    }
     await pause();
     failNetwork(scenario);
     return scenario === 'empty' ? [] : orders;
   },
   async getQuote(draft: BookingDraft, scenario: DemoScenario): Promise<QuoteSnapshot> {
+    if (apiEnabled && hasAccessToken()) {
+      try {
+        return await getApiQuote(draft);
+      } catch (error) {
+        throw asFixtureIssue(error);
+      }
+    }
     await pause();
     failNetwork(scenario);
     if (scenario === 'conflict')
@@ -415,10 +453,17 @@ export const fixtureAdapter = {
     };
   },
   async submitBooking(
-    _draft: BookingDraft,
+    draft: BookingDraft,
     quote: QuoteSnapshot,
     scenario: DemoScenario,
   ): Promise<string> {
+    if (apiEnabled && hasAccessToken()) {
+      try {
+        return await createApiOrder(draft, quote);
+      } catch (error) {
+        throw asFixtureIssue(error);
+      }
+    }
     await pause(680);
     failNetwork(scenario);
     if (scenario === 'conflict')
@@ -436,6 +481,14 @@ export const fixtureAdapter = {
     units: string[],
     scenario: DemoScenario,
   ): Promise<void> {
+    if (apiEnabled && hasAccessToken()) {
+      try {
+        await confirmApiOrder(orderId, version, units);
+        return;
+      } catch (error) {
+        throw asFixtureIssue(error);
+      }
+    }
     await pause(680);
     failNetwork(scenario);
     if (scenario === 'permission')

@@ -313,6 +313,50 @@ small {
   color: var(--text-primary);
   font-size: 12px;
 }
+.api-session-control {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.api-session-control label {
+  display: grid;
+  gap: 3px;
+}
+.api-session-control input {
+  width: 150px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0 8px;
+  font: inherit;
+}
+.api-session-control .button {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.api-session-control small {
+  align-self: center;
+  color: var(--brand-primary);
+}
+.api-session-bar {
+  background: var(--surface-subtle, #fafafa);
+  border-bottom: 1px solid var(--border);
+}
+.api-session-inner {
+  width: min(100% - 48px, 1440px);
+  min-height: 48px;
+  margin: auto;
+  display: flex;
+  align-items: center;
+}
+.api-session-bar .api-session-control {
+  margin-left: auto;
+  padding: 7px 0;
+}
 @media (max-width: 1199px) {
   .demo-controls-inner {
     flex-wrap: wrap;
@@ -323,6 +367,9 @@ small {
   }
   .demo-control {
     flex: 1 1 300px;
+  }
+  .api-session-inner {
+    width: min(100% - 32px, 1440px);
   }
 }
 .site-footer {

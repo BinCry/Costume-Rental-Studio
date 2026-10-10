@@ -14,6 +14,8 @@ import { money } from '../components/support';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { branches, fixtureAdapter, fixturePeriod } from '../fixtures/adapter';
 import type { CatalogItem, DemoScenario } from '../fixtures/types';
+import { apiEnabled, checkPublicAvailability } from '../api/client';
+import { useBranchOptions } from '../components/useBranchOptions';
 
 const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
 
@@ -200,17 +202,20 @@ function CostumeCard({
   periodSelected,
   fixtureAvailabilityKnown,
   conflict,
+  availabilityOverride,
   onView,
 }: {
   item: CatalogItem;
   periodSelected: boolean;
   fixtureAvailabilityKnown: boolean;
   conflict: boolean;
+  availabilityOverride?: boolean;
   onView: (trigger: HTMLButtonElement) => void;
 }) {
+  const available = availabilityOverride ?? item.availableAtFixturePeriod;
   const availability =
     periodSelected && fixtureAvailabilityKnown
-      ? item.availableAtFixturePeriod && !conflict
+      ? available && !conflict
         ? 'Còn theo kỳ chọn'
         : 'Không còn theo kỳ chọn'
       : undefined;
@@ -281,8 +286,9 @@ export function CatalogPage({
   initialContext: URLSearchParams;
 }) {
   const requestedBranch = initialContext.get('branch');
+  const { options: branchOptions, ready: branchOptionsReady } = useBranchOptions();
   const [branch, setBranch] = useState(() =>
-    requestedBranch && branches.includes(requestedBranch) ? requestedBranch : branches[0],
+    requestedBranch?.trim() || branches[0],
   );
   const [pickup, setPickup] = useState(initialContext.get('pickup') ?? '');
   const [returnAt, setReturnAt] = useState(initialContext.get('returnAt') ?? '');
@@ -292,10 +298,15 @@ export function CatalogPage({
   const [search, setSearch] = useState(initialContext.get('search') ?? '');
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<CatalogItem | null>(null);
+  const [apiAvailability, setApiAvailability] = useState<Record<string, boolean>>({});
   const previewRef = useRef<HTMLElement>(null);
   const previewTriggerRef = useRef<HTMLButtonElement>(null);
   const { loading, data, error, retry } = useFixtureResource(scenario, loadCatalog);
   const context = { branch, pickup, returnAt, category, size, color, search };
+  useEffect(() => {
+    if (branchOptionsReady && branchOptions.length && !branchOptions.includes(branch))
+      setBranch(branchOptions[0]);
+  }, [branch, branchOptions, branchOptionsReady]);
   useEffect(() => {
     if (window.location.pathname !== '/') return;
     const params = new URLSearchParams();
@@ -309,10 +320,36 @@ export function CatalogPage({
     window.history.replaceState(null, '', `/${params.toString() ? `?${params}` : ''}`);
   }, [branch, pickup, returnAt, category, size, color, search]);
   const periodSelected = !!pickup && !!returnAt;
-  const fixtureAvailabilityKnown =
-    pickup === fixturePeriod.pickup &&
-    returnAt === fixturePeriod.returnAt &&
-    branch === branches[0];
+  useEffect(() => {
+    if (!apiEnabled || !periodSelected || !data?.length) {
+      setApiAvailability({});
+      return;
+    }
+    let cancelled = false;
+    void Promise.all(
+      data.map(async (item) => {
+        try {
+          const result = await checkPublicAvailability(item.id, branch, pickup, returnAt);
+          return [item.id, result.available] as const;
+        } catch {
+          return [item.id, undefined] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setApiAvailability(
+        Object.fromEntries(
+          entries.filter((entry): entry is readonly [string, boolean] => entry[1] !== undefined),
+        ),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [branch, data, periodSelected, pickup, returnAt]);
+  const fixtureAvailabilityKnown = apiEnabled
+    ? periodSelected && Boolean(data?.length) && (data?.every((item) => apiAvailability[item.id] !== undefined) ?? false)
+    : pickup === fixturePeriod.pickup && returnAt === fixturePeriod.returnAt && branch === branches[0];
   const filtered = (data ?? []).filter(
     (item) =>
       (category === 'Tất cả' || item.category === category) &&
@@ -375,7 +412,7 @@ export function CatalogPage({
           value={branch}
           onChange={(event) => setBranch(event.target.value)}
         >
-          {branches.map((entry) => (
+          {branchOptions.map((entry) => (
             <option key={entry}>{entry}</option>
           ))}
         </SelectField>
@@ -395,7 +432,7 @@ export function CatalogPage({
           type="button"
           className="sample-date"
           onClick={() => {
-            setBranch(branches[0]);
+            setBranch(branchOptions[0] ?? branches[0]);
             setPickup(fixturePeriod.pickup);
             setReturnAt(fixturePeriod.returnAt);
           }}
@@ -596,6 +633,7 @@ export function CatalogPage({
                       periodSelected={periodSelected}
                       fixtureAvailabilityKnown={fixtureAvailabilityKnown}
                       conflict={scenario === 'conflict'}
+                      availabilityOverride={apiAvailability[item.id]}
                       onView={(trigger) => openPreview(item, trigger)}
                     />
                   ))}

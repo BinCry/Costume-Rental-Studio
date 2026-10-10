@@ -8,6 +8,7 @@ import {
   cancelPaymentSchema,
   completeRefundSchema,
   createCashPaymentSchema,
+  createBankTransferPaymentSchema,
   createCheckoutSchema,
   createRefundSchema,
   failRefundSchema,
@@ -59,6 +60,21 @@ paymentRouter.post('/orders/:orderId/cash', async (req, res) =>
       parse(createCashPaymentSchema.safeParse(req.body), 'Invalid cash payment'),
     ),
     'Cash payment recorded',
+    201,
+  ),
+);
+paymentRouter.post('/orders/:orderId/bank-transfer', async (req, res) =>
+  sendSuccess(
+    res,
+    await service.createBankTransferPayment(
+      res.locals.actor,
+      orderId(req.params),
+      parse(
+        createBankTransferPaymentSchema.safeParse(req.body),
+        'Invalid bank transfer payment',
+      ),
+    ),
+    'Bank transfer payment recorded',
     201,
   ),
 );

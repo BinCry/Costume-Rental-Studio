@@ -897,6 +897,7 @@ model Payment {
   providerPaymentId String?                @map("provider_payment_id") @db.VarChar(255)
   providerOrderCode BigInt?                @map("provider_order_code")
   providerStatus    String?                @map("provider_status") @db.VarChar(30)
+  transactionReference String?             @map("transaction_reference") @db.VarChar(255)
   checkoutUrl       String?                @map("checkout_url") @db.VarChar(1000)
   qrCode            String?                @map("qr_code") @db.Text
   expiresAt         DateTime?              @map("expires_at") @db.Timestamptz(6)

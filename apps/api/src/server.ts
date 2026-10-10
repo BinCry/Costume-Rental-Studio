@@ -3,11 +3,13 @@ import { env } from './config/env.js';
 import { logger } from './config/logger.js';
 import { prisma } from './database/prisma.js';
 import { startMediaMaintenance } from './modules/uploads/media-maintenance.service.js';
+import { startRentalMaintenance } from './modules/rentals/rental-maintenance.service.js';
 
 const server = app.listen(env.PORT, () => {
   logger.info({ port: env.PORT }, 'API server started');
 });
 const mediaMaintenance = env.BACKGROUND_WORKER_ENABLED ? startMediaMaintenance() : undefined;
+const rentalMaintenance = env.BACKGROUND_WORKER_ENABLED ? startRentalMaintenance() : undefined;
 
 let isShuttingDown = false;
 
@@ -19,6 +21,7 @@ function shutdown(signal: NodeJS.Signals) {
   isShuttingDown = true;
   logger.info({ signal }, 'Shutting down API server');
   mediaMaintenance?.stop();
+  rentalMaintenance?.stop();
 
   server.close((error) => {
     if (error) {

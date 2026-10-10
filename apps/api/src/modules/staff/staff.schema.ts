@@ -15,7 +15,13 @@ export const createStaffSchema = z.object({
   joinedAt: z.coerce.date(),
   assignments: z
     .array(z.object({ roleId: z.uuid(), branchId: z.uuid().nullable().optional() }))
-    .default([]),
+    .default([])
+    .refine(
+      (assignments) =>
+        new Set(assignments.map((assignment) => `${assignment.roleId}:${assignment.branchId ?? ''}`))
+          .size === assignments.length,
+      'Duplicate role and branch assignments are not allowed',
+    ),
 });
 export const updateStaffSchema = z.object({
   displayName: z.string().trim().min(1).max(255).optional(),
