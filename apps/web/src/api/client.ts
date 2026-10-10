@@ -39,6 +39,7 @@ type ApiAdminModel = ApiModel & {
   status?: 'ACTIVE' | 'INACTIVE' | string;
   category?: { id?: string; name?: string | null } | null;
 };
+type ApiCategory = { id: string; name: string; status?: string };
 type ApiVariant = {
   id: string; modelId: string; variantCode: string; sizeCode: string; colorCode: string;
   dailyRentalPriceVnd: string | number | bigint; depositAmountVnd: string | number | bigint;
@@ -172,6 +173,12 @@ type ApiCaseHistory = {
   toStatus?: string | null;
   actorUserId?: string | null;
 };
+type ApiInteraction = {
+  occurredAt?: string;
+  interactionType?: string;
+  channel?: string;
+  summary?: string;
+};
 type ApiTransfer = {
   id: string;
   transferCode: string;
@@ -209,6 +216,7 @@ type ApiOverviewReport = {
   overdueOrders: number;
   rentalRevenueVnd: string | number | bigint;
   depositsHeldVnd: string | number | bigint;
+  completedRefundVnd?: string | number | bigint;
 };
 type ApiRentalReport = { totalOrders: number; overdueOrders: number };
 type ApiPaymentReport = {
@@ -389,6 +397,14 @@ export async function listManagedBranches(): Promise<Branch[]> {
   );
   return page.items.map(branchFromApi);
 }
+export async function listCatalogCategories(): Promise<Array<{ id: string; name: string }>> {
+  const page = await request<Page<ApiCategory>>(
+    '/api/v1/catalog/categories?page=1&pageSize=100&sortBy=name&sortOrder=asc',
+  );
+  return page.items
+    .filter((category) => category.status !== 'INACTIVE')
+    .map((category) => ({ id: category.id, name: category.name }));
+}
 export async function saveBranch(branch: Branch): Promise<Branch> {
   const reference = branchRefs.get(branch.code);
   let saved: ApiBranch;
@@ -467,6 +483,8 @@ export async function listCatalogDetails(): Promise<CostumeDetail[]> {
     return {
       id: model.id,
       name: model.name,
+      modelCode: model.modelCode,
+      categoryId: model.categoryId,
       category: model.category?.name ?? 'Trang phục',
       description: model.description ?? model.shortDescription ?? '',
       material: model.material ?? '',
@@ -478,20 +496,32 @@ export async function listCatalogDetails(): Promise<CostumeDetail[]> {
 }
 export async function saveCatalogModel(model: CostumeDetail): Promise<CostumeDetail> {
   const reference = modelRefs.get(model.id);
-  if (!reference)
-    throw new ApiClientError(422, 'CATALOG_CONTEXT_MISSING', 'Mẫu mới cần mã danh mục và mã mẫu trên máy chủ trước khi tạo.');
-  const updated = await request<ApiAdminModel>(`/api/v1/catalog/models/${encodeURIComponent(reference.id)}`, {
-    method: 'PATCH',
-    body: JSON.stringify({
-      name: model.name,
-      description: model.description || null,
-      material: model.material || null,
-    }),
-  });
+  const updated = reference
+    ? await request<ApiAdminModel>(`/api/v1/catalog/models/${encodeURIComponent(reference.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: model.name,
+          description: model.description || null,
+          material: model.material || null,
+        }),
+      })
+    : await request<ApiAdminModel>('/api/v1/catalog/models', {
+        method: 'POST',
+        body: JSON.stringify({
+          categoryId: model.categoryId,
+          modelCode: model.modelCode,
+          name: model.name,
+          description: model.description || undefined,
+          material: model.material || undefined,
+        }),
+      });
   modelRefs.set(updated.id, { id: updated.id, categoryId: updated.categoryId, modelCode: updated.modelCode });
   return {
     ...model,
     id: updated.id,
+    modelCode: updated.modelCode,
+    categoryId: updated.categoryId,
+    category: updated.category?.name ?? model.category,
     name: updated.name,
     description: updated.description ?? '',
     material: updated.material ?? '',
@@ -987,6 +1017,12 @@ function historyLine(entry: ApiCaseHistory) {
   const transition = entry.toStatus ? ` · ${entry.eventType ?? 'Cập nhật'} · ${entry.toStatus}` : '';
   return `${stamp || 'Vừa cập nhật'}${transition}${entry.note ? ` · ${entry.note}` : ''}`;
 }
+function interactionLine(entry: ApiInteraction) {
+  const stamp = formatDate(entry.occurredAt);
+  const kind = entry.interactionType ? ` · ${entry.interactionType}` : '';
+  const channel = entry.channel ? ` · ${entry.channel}` : '';
+  return `${stamp || 'Vừa cập nhật'}${kind}${channel}${entry.summary ? ` · ${entry.summary}` : ''}`;
+}
 function crmCaseFromApi(crmCase: ApiCrmCase): Case {
   const customerCode = crmCase.customer?.customerCode ?? crmCase.customerUserId;
   const branch = crmCase.branch?.name ?? branchNameById(crmCase.branchId);
@@ -1036,6 +1072,39 @@ export async function listCrmCaseHistory(caseCode: string) {
     `/api/v1/crm/cases/${encodeURIComponent(reference.id)}/history?page=1&pageSize=100`,
   );
   return page.items.map(historyLine);
+}
+export async function listCustomerInteractions(customerCode: string, branchName?: string) {
+  if (!customerRefs.has(customerCode)) await listCustomers(branchName);
+  const reference = customerRefs.get(customerCode);
+  if (!reference) return [];
+  const page = await request<Page<ApiInteraction>>(
+    `/api/v1/crm/customers/${encodeURIComponent(reference.userId)}/interactions?page=1&pageSize=100`,
+  );
+  return page.items.map(interactionLine);
+}
+export async function createCustomerInteraction(
+  customerCode: string,
+  branchName: string,
+  input: {
+    summary: string;
+    interactionType: 'INQUIRY' | 'CONSULTATION' | 'COMPLAINT' | 'FOLLOW_UP' | 'NOTE';
+    channel: 'IN_PERSON' | 'PHONE' | 'EMAIL' | 'CHAT' | 'SOCIAL';
+  },
+) {
+  if (!branchIds.has(branchName)) await listBranches();
+  if (!customerRefs.has(customerCode)) await listCustomers(branchName);
+  const customerUserId = customerRefs.get(customerCode)?.userId;
+  const branchId = branchIds.get(branchName);
+  if (!customerUserId) throw new ApiClientError(422, 'CUSTOMER_CONTEXT_MISSING', 'Chưa tải được mã khách để ghi tương tác.');
+  if (!branchId) throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không tìm thấy chi nhánh xử lý tương tác.');
+  const created = await request<ApiInteraction>(
+    `/api/v1/crm/customers/${encodeURIComponent(customerUserId)}/interactions`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ ...input, branchId }),
+    },
+  );
+  return interactionLine(created);
 }
 async function ownerUserId(owner: string | undefined, branch: string) {
   if (!owner) return null;
@@ -1300,10 +1369,14 @@ export async function listReports(branchName?: string): Promise<ReportSnapshot[]
     rentalCount: overview.ordersCreated,
     rentalRevenue: numberValue(overview.rentalRevenueVnd),
     depositsHeld: numberValue(overview.depositsHeldVnd),
-    // The report API exposes overdue orders, while the fixture label is legacy.
-    overdueUnits: rentals.overdueOrders,
+    // Keep the legacy fixture field for compatibility, but expose API semantics explicitly.
+    overdueUnits: 0,
+    overdueOrders: rentals.overdueOrders,
+    completedRefund: numberValue(overview.completedRefundVnd ?? 0),
     transactions: payments.byStatus,
-    refunds: [],
+    refunds: overview.completedRefundVnd && numberValue(overview.completedRefundVnd) > 0
+      ? [{ status: 'Đã hoàn', count: 1 }]
+      : [],
   }];
 }
 export async function listInventoryUnits(branchName?: string, search?: string): Promise<Unit[]> {
@@ -1376,6 +1449,41 @@ export async function uploadRentalEvidence(
   if (!uploaded.ok)
     throw new ApiClientError(uploaded.status, 'EVIDENCE_UPLOAD_FAILED', 'Không tải được ảnh bằng chứng');
   return { uploadKey: presigned.objectKey, contentType: file.type as RentalEvidence['contentType'], size: file.size, capturedAt: new Date().toISOString() };
+}
+
+export async function uploadCatalogMedia(
+  ownerType: 'model' | 'variant',
+  ownerId: string,
+  file: File,
+  altText?: string,
+) {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type))
+    throw new ApiClientError(400, 'INVALID_CATALOG_MEDIA', 'Ảnh phải là JPEG, PNG hoặc WebP');
+  const presigned = await request<{
+    objectKey: string;
+    uploadUrl: string;
+    fields: Record<string, string>;
+  }>('/api/v1/uploads/presign', {
+    method: 'POST',
+    body: JSON.stringify({
+      purpose: 'catalog-media',
+      ownerType,
+      ownerId,
+      contentType: file.type,
+      size: file.size,
+    }),
+  });
+  const form = new FormData();
+  Object.entries(presigned.fields).forEach(([key, value]) => form.append(key, value));
+  form.append('file', file);
+  const uploaded = await fetch(presigned.uploadUrl, { method: 'POST', body: form });
+  if (!uploaded.ok)
+    throw new ApiClientError(uploaded.status, 'CATALOG_MEDIA_UPLOAD_FAILED', 'Không tải được ảnh danh mục');
+  const path = ownerType === 'model' ? 'models' : 'variants';
+  return request(`/api/v1/catalog/${path}/${encodeURIComponent(ownerId)}/media`, {
+    method: 'POST',
+    body: JSON.stringify({ uploadKey: presigned.objectKey, sortOrder: 0, altText: altText || undefined }),
+  });
 }
 
 function orderApiId(orderCode: string) {

@@ -33,7 +33,12 @@ import {
   type Variant,
 } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
-import { apiEnabled, hasAccessToken } from '../api/client';
+import {
+  apiEnabled,
+  hasAccessToken,
+  listCatalogCategories,
+  uploadCatalogMedia,
+} from '../api/client';
 
 const issueText = (error: unknown) =>
   error instanceof Error ? error.message : 'Thao tác chưa hoàn tất.';
@@ -56,22 +61,52 @@ const staffRoleLabels: Record<string, string> = {
 export function CatalogAdminPage({ scenario }: { scenario: DemoScenario }) {
   const realApiMode = apiEnabled && hasAccessToken();
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.details);
+  const loadCategories = useCallback(
+    async (_currentScenario: DemoScenario) => (realApiMode ? listCatalogCategories() : []),
+    [realApiMode],
+  );
+  const categoriesResource = useFixtureResource(scenario, loadCategories);
   const [selected, setSelected] = useState('ao-dai-lina');
   const [model, setModel] = useState<CostumeDetail>();
   const [variant, setVariant] = useState<Variant>();
   const [issue, setIssue] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [mediaFile, setMediaFile] = useState<File>();
   const saveModel = async () => {
     if (!model?.name.trim()) {
       setIssue('Nhập tên mẫu.');
       return;
     }
+    if (realApiMode && (!model.modelCode?.trim() || !model.categoryId)) {
+      setIssue('Mẫu mới cần mã mẫu và danh mục trên máy chủ.');
+      return;
+    }
     setBusy(true);
     setIssue('');
     try {
-      await studioAdapter.saveModel(model, scenario);
+      const saved = await studioAdapter.saveModel(model, scenario);
+      setModel(saved);
+      setSelected(saved.id);
       setNotice(realApiMode ? 'Đã lưu mẫu vào danh mục trên máy chủ.' : 'Đã lưu mẫu trong fixture.');
+      retry();
+    } catch (e) {
+      setIssue(issueText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const saveMedia = async () => {
+    if (!realApiMode || !model?.modelCode || !mediaFile) {
+      setIssue('Chọn ảnh và lưu mẫu trước khi tải media lên máy chủ.');
+      return;
+    }
+    setBusy(true);
+    setIssue('');
+    try {
+      await uploadCatalogMedia('model', model.id, mediaFile, model.name);
+      setMediaFile(undefined);
+      setNotice('Đã tải ảnh và gắn vào mẫu trên máy chủ.');
       retry();
     } catch (e) {
       setIssue(issueText(e));
@@ -104,8 +139,8 @@ export function CatalogAdminPage({ scenario }: { scenario: DemoScenario }) {
   };
   return (
     <StateGate
-      loading={loading}
-      error={error}
+      loading={loading || categoriesResource.loading}
+      error={error ?? categoriesResource.error}
       data={data}
       retry={retry}
       emptyTitle="Chưa có mẫu trang phục"
@@ -129,6 +164,8 @@ export function CatalogAdminPage({ scenario }: { scenario: DemoScenario }) {
                     setModel({
                       id,
                       name: '',
+                      modelCode: '',
+                      categoryId: '',
                       category: 'Trang phục',
                       description: '',
                       material: '',
@@ -169,15 +206,41 @@ export function CatalogAdminPage({ scenario }: { scenario: DemoScenario }) {
                 <Panel title="Thông tin mẫu">
                   <div className="feature-filters">
                     <Field
+                      label="Mã mẫu"
+                      value={editing.modelCode ?? ''}
+                      disabled={realApiMode && Boolean(editing.modelCode)}
+                      onChange={(e) => setModel({ ...editing, modelCode: e.target.value.toUpperCase() })}
+                      hint={realApiMode ? 'Mã duy nhất trên toàn hệ thống.' : undefined}
+                    />
+                    <Field
                       label="Tên mẫu"
                       value={editing.name}
                       onChange={(e) => setModel({ ...editing, name: e.target.value })}
                     />
-                    <Field
-                      label="Loại trang phục"
-                      value={editing.category}
-                      onChange={(e) => setModel({ ...editing, category: e.target.value })}
-                    />
+                    {realApiMode ? (
+                      <SelectField
+                        label="Danh mục"
+                        value={editing.categoryId ?? ''}
+                        onChange={(e) => {
+                          const categoryId = e.target.value;
+                          const category = categoriesResource.data?.find((item) => item.id === categoryId);
+                          setModel({ ...editing, categoryId, category: category?.name ?? editing.category });
+                        }}
+                      >
+                        <option value="">Chọn danh mục</option>
+                        {(categoriesResource.data ?? []).map((category) => (
+                          <option key={category.id} value={category.id}>
+                            {category.name}
+                          </option>
+                        ))}
+                      </SelectField>
+                    ) : (
+                      <Field
+                        label="Loại trang phục"
+                        value={editing.category}
+                        onChange={(e) => setModel({ ...editing, category: e.target.value })}
+                      />
+                    )}
                     <Field
                       label="Chất liệu"
                       value={editing.material}
@@ -202,10 +265,26 @@ export function CatalogAdminPage({ scenario }: { scenario: DemoScenario }) {
                       })
                     }
                   />
-                  <p className="muted small-note">
-                    Ảnh hiện dùng media fixture. Tải ảnh, sắp xếp và lưu media phụ thuộc dịch vụ lưu
-                    trữ/backend.
-                  </p>
+                  {realApiMode && !editing.modelCode && (
+                    <p className="muted small-note">
+                      Mẫu mới sẽ được tạo với mã mẫu và danh mục đã chọn. Media sẽ được bổ sung ở bước
+                      upload riêng sau khi máy chủ trả về mã mẫu.
+                    </p>
+                  )}
+                  {realApiMode && editing.modelCode && (
+                    <div className="stack-form">
+                      <Field
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        label="Ảnh đại diện mẫu"
+                        onChange={(e) => setMediaFile(e.target.files?.[0])}
+                        hint="JPEG, PNG hoặc WebP; ảnh sẽ được lưu qua dịch vụ media của máy chủ."
+                      />
+                      <Button variant="secondary" loading={busy} disabled={!mediaFile} onClick={() => void saveMedia()}>
+                        Tải ảnh lên
+                      </Button>
+                    </div>
+                  )}
                   <Button loading={busy} onClick={() => void saveModel()}>
                     Lưu mẫu
                   </Button>
@@ -1207,9 +1286,18 @@ export function ReportsPage({
                     <strong className="report-number">{money(report.depositsHeld)}</strong>
                     <p className="muted">Khoản phải hoàn/đối soát; không là doanh thu.</p>
                   </Panel>
-                  <Panel title="Bộ quá hạn">
-                    <strong className="report-number">{report.overdueUnits}</strong>
+                  <Panel title={realApiMode ? 'Đơn quá hạn' : 'Bộ quá hạn'}>
+                    <strong className="report-number">
+                      {realApiMode ? report.overdueOrders ?? 0 : report.overdueUnits}
+                    </strong>
+                    {realApiMode && <p className="muted">Đơn có hạn trả đã qua theo dữ liệu báo cáo.</p>}
                   </Panel>
+                  {realApiMode && (
+                    <Panel title="Đã hoàn cọc">
+                      <strong className="report-number">{money(report.completedRefund ?? 0)}</strong>
+                      <p className="muted">Tổng tiền hoàn cọc đã ghi nhận trong kỳ.</p>
+                    </Panel>
+                  )}
                 </div>
                 <div className="feature-two-column">
                   <Panel title="Giao dịch">

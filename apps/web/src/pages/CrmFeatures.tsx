@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Button,
   ConfirmDialog,
@@ -20,7 +20,13 @@ import {
 } from '../components/studio';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { useMobileDetailReveal } from '../components/useMobileDetailReveal';
-import { apiEnabled, hasAccessToken } from '../api/client';
+import {
+  apiEnabled,
+  createCustomerInteraction,
+  hasAccessToken,
+  listCrmCaseHistory,
+  listCustomerInteractions,
+} from '../api/client';
 import { studioAdapter, type Case, type Customer } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
 
@@ -66,6 +72,15 @@ export function CrmPage({
   const [issue, setIssue] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [apiInteractions, setApiInteractions] = useState<Record<string, string[]>>({});
+  const [apiCaseHistory, setApiCaseHistory] = useState<Record<string, string[]>>({});
+  const [interactionNote, setInteractionNote] = useState('');
+  const [interactionType, setInteractionType] = useState<
+    'INQUIRY' | 'CONSULTATION' | 'COMPLAINT' | 'FOLLOW_UP' | 'NOTE'
+  >('NOTE');
+  const [interactionChannel, setInteractionChannel] = useState<
+    'IN_PERSON' | 'PHONE' | 'EMAIL' | 'CHAT' | 'SOCIAL'
+  >('IN_PERSON');
   const [pendingView, setPendingView] = useState<
     { kind: 'customer' | 'case' | 'newCase'; code: string } | undefined
   >();
@@ -73,6 +88,38 @@ export function CrmPage({
     useMobileDetailReveal<HTMLDivElement>();
   const { detailRef: caseDetailRef, revealDetail: revealCase } =
     useMobileDetailReveal<HTMLDivElement>();
+  useEffect(() => {
+    if (!realApiMode || !data?.length) return;
+    if (!data.some((customer) => customer.code === selected)) setSelected(data[0].code);
+  }, [data, realApiMode, selected]);
+  useEffect(() => {
+    if (!realApiMode || !selected) return;
+    let active = true;
+    void listCustomerInteractions(selected, branch)
+      .then((items) => {
+        if (active) setApiInteractions((current) => ({ ...current, [selected]: items }));
+      })
+      .catch(() => {
+        if (active) setApiInteractions((current) => ({ ...current, [selected]: [] }));
+      });
+    return () => {
+      active = false;
+    };
+  }, [branch, realApiMode, selected]);
+  useEffect(() => {
+    if (!realApiMode || !caseCode || !casesResource.data?.some((item) => item.code === caseCode)) return;
+    let active = true;
+    void listCrmCaseHistory(caseCode)
+      .then((items) => {
+        if (active) setApiCaseHistory((current) => ({ ...current, [caseCode]: items }));
+      })
+      .catch(() => {
+        if (active) setApiCaseHistory((current) => ({ ...current, [caseCode]: [] }));
+      });
+    return () => {
+      active = false;
+    };
+  }, [caseCode, casesResource.data, realApiMode]);
   const switchView = (kind: 'customer' | 'case' | 'newCase', code: string) => {
     if (draft) {
       setPendingView({ kind, code });
@@ -132,6 +179,31 @@ export function CrmPage({
       setBusy(false);
     }
   };
+  const saveInteraction = async (customerCode: string) => {
+    if (!interactionNote.trim()) {
+      setIssue('Nhập nội dung tương tác trước khi ghi.');
+      return;
+    }
+    setBusy(true);
+    setIssue('');
+    try {
+      const line = await createCustomerInteraction(customerCode, branch, {
+        summary: interactionNote.trim(),
+        interactionType,
+        channel: interactionChannel,
+      });
+      setApiInteractions((current) => ({
+        ...current,
+        [customerCode]: [line, ...(current[customerCode] ?? [])],
+      }));
+      setInteractionNote('');
+      setNotice('Đã ghi tương tác vào hồ sơ khách.');
+    } catch (e) {
+      setIssue(e instanceof Error ? e.message : 'Chưa thể ghi tương tác.');
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <StateGate
       loading={loading || casesResource.loading || employeesResource.loading}
@@ -154,6 +226,12 @@ export function CrmPage({
         const related = (casesResource.data ?? []).filter((c) => c.customerCode === person?.code);
         const current = related.find((c) => c.code === caseCode) ?? related[0];
         const editing = draft ?? current;
+        const personInteractions = person
+          ? apiInteractions[person.code] ?? person.interactions
+          : [];
+        const currentHistory = current
+          ? apiCaseHistory[current.code] ?? current.history
+          : [];
         const eligibleOwners = (employeesResource.data ?? []).filter(
           (employee) =>
             employee.employmentStatus === 'ACTIVE' &&
@@ -235,7 +313,42 @@ export function CrmPage({
                     <h3>Lịch sử thuê</h3>
                     <Timeline items={person.history} />
                     <h3>Tương tác</h3>
-                    <Timeline items={person.interactions} />
+                    <Timeline items={personInteractions} />
+                    {realApiMode && canManage && (
+                      <div className="stack-form">
+                        <SelectField
+                          label="Loại tương tác"
+                          value={interactionType}
+                          onChange={(e) => setInteractionType(e.target.value as typeof interactionType)}
+                        >
+                          <option value="NOTE">Ghi chú</option>
+                          <option value="INQUIRY">Hỏi thông tin</option>
+                          <option value="CONSULTATION">Tư vấn</option>
+                          <option value="COMPLAINT">Khiếu nại</option>
+                          <option value="FOLLOW_UP">Theo dõi sau thuê</option>
+                        </SelectField>
+                        <SelectField
+                          label="Kênh"
+                          value={interactionChannel}
+                          onChange={(e) => setInteractionChannel(e.target.value as typeof interactionChannel)}
+                        >
+                          <option value="IN_PERSON">Tại quầy</option>
+                          <option value="PHONE">Điện thoại</option>
+                          <option value="EMAIL">Email</option>
+                          <option value="CHAT">Chat</option>
+                          <option value="SOCIAL">Mạng xã hội</option>
+                        </SelectField>
+                        <TextAreaField
+                          label="Nội dung tương tác"
+                          value={interactionNote}
+                          onChange={(e) => setInteractionNote(e.target.value)}
+                          placeholder="Ghi ngắn gọn nhu cầu hoặc kết quả trao đổi"
+                        />
+                        <Button loading={busy} onClick={() => void saveInteraction(person.code)}>
+                          Ghi tương tác
+                        </Button>
+                      </div>
+                    )}
                   </Panel>
                   <Panel
                     title="Case liên quan"
@@ -452,7 +565,9 @@ export function CrmPage({
                       )}
                     </fieldset>
                     <h3>Lịch sử case</h3>
-                    <Timeline items={editing.history} />
+                    <Timeline items={
+                      editing === current ? currentHistory : editing.history
+                    } />
                   </Panel>
                 ) : (
                   <Panel title="Chi tiết case">

@@ -55,6 +55,8 @@ export interface Variant {
 export interface CostumeDetail {
   id: string;
   name: string;
+  modelCode?: string;
+  categoryId?: string;
   category: string;
   description: string;
   material: string;
@@ -160,6 +162,10 @@ export interface ReportSnapshot {
   rentalRevenue: number;
   depositsHeld: number;
   overdueUnits: number;
+  /** API mode reports overdue orders; kept optional so fixture snapshots stay compatible. */
+  overdueOrders?: number;
+  /** Completed deposit refunds reported by the API, in VND. */
+  completedRefund?: number;
   transactions: { status: string; count: number }[];
   refunds: { status: string; count: number }[];
 }
