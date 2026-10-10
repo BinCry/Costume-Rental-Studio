@@ -1059,7 +1059,9 @@ export async function saveCrmCase(value: Case): Promise<Case> {
         branchId,
         subject: value.subject,
         description: value.description || undefined,
-        caseType: 'GENERAL',
+        // The existing CRM screen has no case-type field; SUPPORT is the backend's
+        // neutral seed category for customer support cases.
+        caseType: 'SUPPORT',
         priority: value.priority,
         ownerUserId: await ownerUserId(value.owner, value.branch) || undefined,
         note: value.history[0],
