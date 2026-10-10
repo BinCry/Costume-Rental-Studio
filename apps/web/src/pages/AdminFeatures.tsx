@@ -33,6 +33,7 @@ import {
   type Variant,
 } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
+import { apiEnabled, hasAccessToken } from '../api/client';
 
 const issueText = (error: unknown) =>
   error instanceof Error ? error.message : 'Thao tác chưa hoàn tất.';
@@ -726,7 +727,9 @@ export function BranchesPage({ scenario }: { scenario: DemoScenario }) {
 }
 
 export function RolesPage({ scenario }: { scenario: DemoScenario }) {
+  const realApiMode = apiEnabled && hasAccessToken();
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.roles);
+  const permissionsResource = useFixtureResource(scenario, studioAdapter.permissions);
   const [selected, setSelected] = useState('SALES_STAFF');
   const [draft, setDraft] = useState<string[]>();
   const [issue, setIssue] = useState('');
@@ -737,13 +740,17 @@ export function RolesPage({ scenario }: { scenario: DemoScenario }) {
   const { detailRef, revealDetail } = useMobileDetailReveal<HTMLDivElement>();
   return (
     <StateGate
-      loading={loading}
-      error={error}
+      loading={loading || permissionsResource.loading}
+      error={error ?? permissionsResource.error}
       data={data}
-      retry={retry}
+      retry={() => {
+        retry();
+        permissionsResource.retry();
+      }}
       emptyTitle="Chưa có vai trò"
     >
       {(roles) => {
+        const availablePermissions = permissionsResource.data ?? permissions;
         const role = roles.find((r) => r.code === selected) ?? roles[0];
         const checked = draft ?? role.permissions;
         const changed =
@@ -812,7 +819,7 @@ export function RolesPage({ scenario }: { scenario: DemoScenario }) {
                 </Panel>
                 <div className="permission-groups">
                   {groups.map((group) => {
-                    const matching = permissions.filter(
+                    const matching = availablePermissions.filter(
                       (p) =>
                         p.group === group &&
                         `${p.label} ${p.code} ${p.description}`
@@ -846,7 +853,7 @@ export function RolesPage({ scenario }: { scenario: DemoScenario }) {
                   })}
                 </div>
                 {permissionSearch &&
-                  !permissions.some((p) =>
+                  !availablePermissions.some((p) =>
                     `${p.label} ${p.code} ${p.description}`
                       .toLocaleLowerCase('vi')
                       .includes(permissionSearch.toLocaleLowerCase('vi')),
@@ -865,14 +872,14 @@ export function RolesPage({ scenario }: { scenario: DemoScenario }) {
                     {addedPermissions.map((code) => (
                       <p className="permission-change" key={`add-${code}`}>
                         <strong>Thêm</strong>{' '}
-                        {permissions.find((item) => item.code === code)?.label ?? code}
+                        {availablePermissions.find((item) => item.code === code)?.label ?? code}
                         <code>{code}</code>
                       </p>
                     ))}
                     {removedPermissions.map((code) => (
                       <p className="permission-change" key={`remove-${code}`}>
                         <strong>Bỏ</strong>{' '}
-                        {permissions.find((item) => item.code === code)?.label ?? code}
+                        {availablePermissions.find((item) => item.code === code)?.label ?? code}
                         <code>{code}</code>
                       </p>
                     ))}
@@ -897,7 +904,9 @@ export function RolesPage({ scenario }: { scenario: DemoScenario }) {
                             );
                             setDraft(undefined);
                             setNotice(
-                              'Đã lưu quyền vào fixture. API sau này phải kiểm quyền mỗi thao tác.',
+                              realApiMode
+                                ? 'Đã lưu quyền trên hệ thống. Các thao tác tiếp theo sẽ được backend kiểm theo quyền và chi nhánh.'
+                                : 'Đã lưu quyền vào fixture. API sau này phải kiểm quyền mỗi thao tác.',
                             );
                             retry();
                           } catch (e) {

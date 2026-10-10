@@ -1,5 +1,5 @@
 import type { BookingDraft, CatalogItem, Order, QuoteSnapshot } from '../fixtures/types';
-import type { ActiveUnit, CustomerOrder, Unit } from '../fixtures/studio';
+import type { ActiveUnit, CustomerOrder, Permission, Role, Unit } from '../fixtures/studio';
 
 type ApiEnvelope<T> = {
   success: boolean;
@@ -206,6 +206,8 @@ const variants = new Map<string, ApiVariant>();
 const orderRefs = new Map<string, { id: string; itemIds: string[] }>();
 const unitRefs = new Map<string, Map<string, string>>();
 const quoteRefs = new Map<string, { variantId: string; branchId: string }>();
+const roleRefs = new Map<string, string>();
+const permissionRefs = new Map<string, string>();
 
 export async function login(email: string, password: string) {
   const data = await request<{ accessToken: string; user: { id: string; displayName?: string } }>(
@@ -529,6 +531,77 @@ export async function cancelCustomerOrder(orderCode: string, version: number, re
   const updated = (await listCustomerOrders()).find((order) => order.id === orderCode);
   if (!updated) throw new ApiClientError(404, 'RENTAL_ORDER_NOT_FOUND', 'Không tìm thấy đơn vừa hủy');
   return updated;
+}
+type ApiPermission = {
+  id: string;
+  code: string;
+  module: string;
+  action: string;
+  scope: Permission['scope'];
+  description?: string | null;
+};
+type ApiRole = {
+  id: string;
+  roleCode: string;
+  name: string;
+  actorGroup: Role['group'];
+  rolePermissions?: Array<{ permission: ApiPermission }>;
+};
+export async function listRbacRoles(): Promise<Role[]> {
+  const [page, permissions] = await Promise.all([
+    request<ApiRole[]>('/api/v1/rbac/roles'),
+    request<ApiPermission[]>('/api/v1/rbac/permissions'),
+  ]);
+  page.forEach((role) => roleRefs.set(role.roleCode, role.id));
+  permissions.forEach((permission) => permissionRefs.set(permission.code, permission.id));
+  return page.map((role) => ({
+    apiId: role.id,
+    code: role.roleCode,
+    name: role.name,
+    group: role.actorGroup,
+    permissions: (role.rolePermissions ?? []).map(({ permission }) => permission.code),
+  }));
+}
+export async function listRbacPermissions(): Promise<Permission[]> {
+  const page = await request<ApiPermission[]>('/api/v1/rbac/permissions');
+  page.forEach((permission) => permissionRefs.set(permission.code, permission.id));
+  const groups: Record<string, string> = {
+    rentals: 'Đơn thuê',
+    payments: 'Thanh toán',
+    refunds: 'Thanh toán',
+    inventory: 'Kho',
+    transfers: 'Kho',
+    crm: 'CRM',
+    branches: 'Quản trị',
+    staff: 'Quản trị',
+    rbac: 'Quản trị',
+    catalog: 'Quản trị',
+    reports: 'Quản trị',
+    customers: 'CRM',
+    policies: 'Quản trị',
+    promotions: 'Quản trị',
+  };
+  return page.map((permission) => ({
+    code: permission.code,
+    group:
+      permission.module === 'rentals' &&
+      ['handover', 'return', 'assessment', 'settlement'].includes(permission.action)
+        ? 'Giao / trả'
+        : groups[permission.module] ?? permission.module,
+    label: `${permission.action} · ${permission.scope}`,
+    description: permission.description ?? `${permission.action} · ${permission.scope}`,
+    scope: permission.scope,
+  }));
+}
+export async function replaceRbacRolePermissions(roleCode: string, permissionCodes: string[]) {
+  const roleId = roleRefs.get(roleCode);
+  const permissionIds = permissionCodes.map((code) => permissionRefs.get(code)).filter(Boolean) as string[];
+  if (!roleId || permissionIds.length !== permissionCodes.length)
+    throw new ApiClientError(422, 'RBAC_CONTEXT_MISSING', 'Chưa tải đủ vai trò và quyền để lưu.');
+  return request<ApiRole>(`/api/v1/rbac/roles/${encodeURIComponent(roleId)}/permissions`, {
+    method: 'PUT',
+    body: JSON.stringify({ permissionIds }),
+  });
 }
 export async function listInventoryUnits(branchName?: string, search?: string): Promise<Unit[]> {
   if (branchName && !branchIds.has(branchName)) await listBranches();

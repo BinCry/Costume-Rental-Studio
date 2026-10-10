@@ -14,6 +14,9 @@ import {
   listActiveRentals as listApiActiveRentals,
   listCustomerOrders as listApiCustomerOrders,
   listInventoryUnits as listApiInventoryUnits,
+  listRbacPermissions as listApiRbacPermissions,
+  listRbacRoles as listApiRbacRoles,
+  replaceRbacRolePermissions as replaceApiRolePermissions,
 } from '../api/client';
 
 export type UnitStatus = 'INBOUND' | 'READY' | 'CLEANING' | 'REPAIR' | 'IN_TRANSFER' | 'RETIRED';
@@ -87,6 +90,7 @@ export interface Permission {
   scope: 'OWN' | 'BRANCH' | 'ALL';
 }
 export interface Role {
+  apiId?: string;
   code: string;
   name: string;
   group: 'ADMIN' | 'STAFF' | 'CUSTOMER';
@@ -1075,7 +1079,36 @@ export const studioAdapter = {
   employees: (scenario: DemoScenario) => list(employees, scenario),
   branches: (scenario: DemoScenario) => list(branches, scenario),
   branchObligations,
-  roles: (scenario: DemoScenario) => list(roles, scenario),
+  async permissions(scenario: DemoScenario) {
+    if (apiEnabled && hasAccessToken()) {
+      try {
+        return await listApiRbacPermissions();
+      } catch (error) {
+        throw error instanceof FixtureIssue
+          ? error
+          : new FixtureIssue(
+              'NETWORK',
+              error instanceof Error ? error.message : 'Không tải được danh sách quyền.',
+            );
+      }
+    }
+    return list(permissions, scenario);
+  },
+  async roles(scenario: DemoScenario) {
+    if (apiEnabled && hasAccessToken()) {
+      try {
+        return await listApiRbacRoles();
+      } catch (error) {
+        throw error instanceof FixtureIssue
+          ? error
+          : new FixtureIssue(
+              'NETWORK',
+              error instanceof Error ? error.message : 'Không tải được vai trò.',
+            );
+      }
+    }
+    return list(roles, scenario);
+  },
   transfers: (scenario: DemoScenario) => list(transfers, scenario),
   cases: (scenario: DemoScenario) => list(cases, scenario),
   policies: (scenario: DemoScenario) => list(policies, scenario),
@@ -1189,13 +1222,15 @@ export const studioAdapter = {
       return branch;
     }),
   saveRole: (role: Role, scenario: DemoScenario) =>
-    mutate(scenario, () => {
-      const index = roles.findIndex((r) => r.code === role.code);
-      if (index < 0) throw new FixtureIssue('NOT_FOUND', 'Không tìm thấy vai trò.');
-      roles[index] = role;
-      window.dispatchEvent(new Event('fixture-access-updated'));
-      return role;
-    }),
+    apiEnabled && hasAccessToken()
+      ? replaceApiRolePermissions(role.code, role.permissions).then(() => role)
+      : mutate(scenario, () => {
+          const index = roles.findIndex((r) => r.code === role.code);
+          if (index < 0) throw new FixtureIssue('NOT_FOUND', 'Không tìm thấy vai trò.');
+          roles[index] = role;
+          window.dispatchEvent(new Event('fixture-access-updated'));
+          return role;
+        }),
   saveTransfer: (transfer: Transfer, scenario: DemoScenario) =>
     mutate(scenario, () => {
       if (transfer.from === transfer.to || !transfer.note.trim() || !transfer.units.length)
