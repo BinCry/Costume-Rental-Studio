@@ -1,5 +1,5 @@
 import type { BookingDraft, CatalogItem, Order, QuoteSnapshot } from '../fixtures/types';
-import type { ActiveUnit, CustomerOrder, Permission, Role, Unit } from '../fixtures/studio';
+import type { ActiveUnit, CustomerOrder, Employee, Permission, Role, Unit } from '../fixtures/studio';
 
 type ApiEnvelope<T> = {
   success: boolean;
@@ -208,6 +208,7 @@ const unitRefs = new Map<string, Map<string, string>>();
 const quoteRefs = new Map<string, { variantId: string; branchId: string }>();
 const roleRefs = new Map<string, string>();
 const permissionRefs = new Map<string, string>();
+const staffRefs = new Map<string, { userId: string; assignments: Map<string, string> }>();
 
 export async function login(email: string, password: string) {
   const data = await request<{ accessToken: string; user: { id: string; displayName?: string } }>(
@@ -602,6 +603,101 @@ export async function replaceRbacRolePermissions(roleCode: string, permissionCod
     method: 'PUT',
     body: JSON.stringify({ permissionIds }),
   });
+}
+type ApiStaff = {
+  id: string;
+  email: string;
+  displayName: string;
+  status: Employee['accountStatus'];
+  employee?: { employeeCode: string; employmentStatus: Employee['employmentStatus'] } | null;
+  roleAssignments?: Array<{
+    id: string;
+    role: { roleCode: string };
+    branch?: { name?: string } | null;
+    branchId?: string | null;
+  }>;
+};
+function mapStaff(staff: ApiStaff): Employee {
+  const code = staff.employee?.employeeCode ?? staff.id;
+  const assignments = new Map<string, string>();
+  const mappedAssignments = (staff.roleAssignments ?? []).map((assignment) => {
+    const branch = assignment.branch?.name ?? 'Toàn chuỗi';
+    assignments.set(`${branch}|${assignment.role.roleCode}`, assignment.id);
+    return { branch, roleCode: assignment.role.roleCode };
+  });
+  staffRefs.set(code, { userId: staff.id, assignments });
+  return {
+    code,
+    name: staff.displayName,
+    email: staff.email,
+    accountStatus: staff.status,
+    employmentStatus: staff.employee?.employmentStatus ?? 'ACTIVE',
+    assignments: mappedAssignments,
+  };
+}
+export async function listStaff(branchName?: string, search?: string): Promise<Employee[]> {
+  if (branchName && !branchIds.has(branchName)) await listBranches();
+  const query = new URLSearchParams({ page: '1', pageSize: '100' });
+  const branchId = branchName ? branchIds.get(branchName) : undefined;
+  if (branchId) query.set('branchId', branchId);
+  if (search?.trim()) query.set('search', search.trim());
+  const page = await request<Page<ApiStaff>>('/api/v1/staff?' + query.toString());
+  return page.items.map(mapStaff);
+}
+export async function saveStaff(employee: Employee) {
+  let reference = staffRefs.get(employee.code);
+  if (!reference) {
+    if (roleRefs.size === 0) await listRbacRoles();
+    if (branchIds.size === 0) await listBranches();
+    const assignments = employee.assignments.map((assignment) => ({
+      roleId: roleRefs.get(assignment.roleCode),
+      branchId: assignment.branch === 'Toàn chuỗi' ? null : branchIds.get(assignment.branch),
+    }));
+    if (assignments.some((assignment) => !assignment.roleId || (assignment.branchId === undefined && employee.assignments.length > 0)))
+      throw new ApiClientError(422, 'STAFF_CONTEXT_MISSING', 'Chưa tải đủ role hoặc chi nhánh để tạo nhân viên.');
+    const created = await request<ApiStaff>('/api/v1/staff', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: employee.email,
+        displayName: employee.name,
+        employeeCode: employee.code,
+        joinedAt: new Date().toISOString(),
+        assignments,
+      }),
+    });
+    return mapStaff(created);
+  }
+  await request(`/api/v1/staff/${encodeURIComponent(reference.userId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      displayName: employee.name,
+      employmentStatus: employee.employmentStatus === 'TERMINATED' ? undefined : employee.employmentStatus,
+    }),
+  });
+  if (employee.employmentStatus === 'TERMINATED') {
+    await request(`/api/v1/staff/${encodeURIComponent(reference.userId)}/terminate`, { method: 'POST' });
+    return employee;
+  }
+  if (roleRefs.size === 0) await listRbacRoles();
+  if (branchIds.size === 0) await listBranches();
+  const desired = new Map(employee.assignments.map((assignment) => [`${assignment.branch}|${assignment.roleCode}`, assignment]));
+  for (const [key, assignmentId] of reference.assignments) {
+    if (!desired.has(key))
+      await request(`/api/v1/staff/${encodeURIComponent(reference.userId)}/role-assignments/${encodeURIComponent(assignmentId)}`, { method: 'DELETE' });
+  }
+  for (const [key, assignment] of desired) {
+    if (reference.assignments.has(key)) continue;
+    const roleId = roleRefs.get(assignment.roleCode);
+    const branchId = assignment.branch === 'Toàn chuỗi' ? null : branchIds.get(assignment.branch);
+    if (!roleId || (branchId === undefined && assignment.branch !== 'Toàn chuỗi'))
+      throw new ApiClientError(422, 'STAFF_CONTEXT_MISSING', 'Chưa tải đủ role hoặc chi nhánh để gán quyền.');
+    await request(`/api/v1/staff/${encodeURIComponent(reference.userId)}/role-assignments`, {
+      method: 'POST',
+      body: JSON.stringify({ roleId, branchId }),
+    });
+  }
+  staffRefs.delete(employee.code);
+  return employee;
 }
 export async function listInventoryUnits(branchName?: string, search?: string): Promise<Unit[]> {
   if (branchName && !branchIds.has(branchName)) await listBranches();

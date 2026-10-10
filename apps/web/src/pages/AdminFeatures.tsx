@@ -325,6 +325,7 @@ export function CatalogAdminPage({ scenario }: { scenario: DemoScenario }) {
 }
 
 export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
+  const realApiMode = apiEnabled && hasAccessToken();
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.employees);
   const [selected, setSelected] = useState('NV-001');
   const [editing, setEditing] = useState<Employee>();
@@ -345,7 +346,11 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
     setIssue('');
     try {
       await studioAdapter.saveEmployee(editing, scenario);
-      setNotice('Đã lưu nhân viên và phân công trong fixture.');
+      setNotice(
+        realApiMode
+          ? 'Đã lưu hồ sơ nhân viên và các phân công role theo chi nhánh trên hệ thống.'
+          : 'Đã lưu nhân viên và phân công trong fixture.',
+      );
       setEditing(undefined);
       retry();
     } catch (e) {
@@ -448,6 +453,7 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
                     <SelectField
                       label="Trạng thái tài khoản"
                       value={person.accountStatus}
+                      disabled={realApiMode}
                       onChange={(e) =>
                         setEditing({
                           ...person,
@@ -461,6 +467,9 @@ export function EmployeesPage({ scenario }: { scenario: DemoScenario }) {
                         </option>
                       ))}
                     </SelectField>
+                    {realApiMode && (
+                      <p className="field-hint">Trạng thái đăng nhập được quản lý qua luồng xác thực; màn hình này chỉ cập nhật hồ sơ và trạng thái làm việc.</p>
+                    )}
                     <SelectField
                       label="Trạng thái làm việc"
                       value={person.employmentStatus}

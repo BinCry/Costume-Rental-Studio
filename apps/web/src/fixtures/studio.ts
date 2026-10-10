@@ -16,7 +16,9 @@ import {
   listInventoryUnits as listApiInventoryUnits,
   listRbacPermissions as listApiRbacPermissions,
   listRbacRoles as listApiRbacRoles,
+  listStaff as listApiStaff,
   replaceRbacRolePermissions as replaceApiRolePermissions,
+  saveStaff as saveApiStaff,
 } from '../api/client';
 
 export type UnitStatus = 'INBOUND' | 'READY' | 'CLEANING' | 'REPAIR' | 'IN_TRANSFER' | 'RETIRED';
@@ -1076,7 +1078,21 @@ export const studioAdapter = {
     return list(activeUnits(), scenario);
   },
   customers: (scenario: DemoScenario) => list(customers, scenario),
-  employees: (scenario: DemoScenario) => list(employees, scenario),
+  async employees(scenario: DemoScenario) {
+    if (apiEnabled && hasAccessToken()) {
+      try {
+        return await listApiStaff();
+      } catch (error) {
+        throw error instanceof FixtureIssue
+          ? error
+          : new FixtureIssue(
+              'NETWORK',
+              error instanceof Error ? error.message : 'Không tải được danh sách nhân viên.',
+            );
+      }
+    }
+    return list(employees, scenario);
+  },
   branches: (scenario: DemoScenario) => list(branches, scenario),
   branchObligations,
   async permissions(scenario: DemoScenario) {
@@ -1199,13 +1215,15 @@ export const studioAdapter = {
       return detail;
     }),
   saveEmployee: (employee: Employee, scenario: DemoScenario) =>
-    mutate(scenario, () => {
-      const index = employees.findIndex((e) => e.code === employee.code);
-      if (index < 0) employees.push(employee);
-      else employees[index] = employee;
-      window.dispatchEvent(new Event('fixture-access-updated'));
-      return employee;
-    }),
+    apiEnabled && hasAccessToken()
+      ? saveApiStaff(employee)
+      : mutate(scenario, () => {
+          const index = employees.findIndex((e) => e.code === employee.code);
+          if (index < 0) employees.push(employee);
+          else employees[index] = employee;
+          window.dispatchEvent(new Event('fixture-access-updated'));
+          return employee;
+        }),
   saveBranch: (branch: Branch, scenario: DemoScenario) =>
     mutate(scenario, () => {
       const index = branches.findIndex((b) => b.code === branch.code);
