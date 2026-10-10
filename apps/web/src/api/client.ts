@@ -21,7 +21,7 @@ type ApiEnvelope<T> = {
   success: boolean;
   data: T;
   message?: string;
-  error?: { code?: string; message?: string };
+  error?: { code?: string; message?: string; details?: Record<string, unknown> };
 };
 type Page<T> = { items: T[]; pagination?: { page: number; pageSize: number; totalItems: number; totalPages: number } };
 type ApiModel = {
@@ -270,11 +270,13 @@ const accessTokenKey = 'costume-rental.access-token';
 export class ApiClientError extends Error {
   readonly status: number;
   readonly code: string;
-  constructor(status: number, code: string, message: string) {
+  readonly details?: Record<string, unknown>;
+  constructor(status: number, code: string, message: string, details?: Record<string, unknown>) {
     super(message);
     this.name = 'ApiClientError';
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 function token() { return window.sessionStorage.getItem(accessTokenKey); }
@@ -308,7 +310,12 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   if (response.status === 401 && retry && await refreshAccessToken()) return request<T>(path, init, false);
   const body = response.status === 204 ? null : await response.json() as ApiEnvelope<T>;
   if (!response.ok || !body?.success) {
-    throw new ApiClientError(response.status, body?.error?.code ?? 'API_REQUEST_FAILED', body?.error?.message ?? ('API request failed: ' + response.status));
+    throw new ApiClientError(
+      response.status,
+      body?.error?.code ?? 'API_REQUEST_FAILED',
+      body?.error?.message ?? ('API request failed: ' + response.status),
+      body?.error?.details,
+    );
   }
   return body.data;
 }
@@ -409,6 +416,7 @@ export async function currentUser() {
     id: string;
     displayName: string;
     email: string;
+    phone?: string | null;
     roles: Array<{
       roleCode: string;
       name: string;
@@ -418,6 +426,20 @@ export async function currentUser() {
     }>;
   }>('/api/v1/auth/me');
 }
+
+export async function getOwnCustomerProfile() {
+  return request<ApiCustomer>('/api/v1/customers/me');
+}
+export async function updateOwnCustomerProfile(input: {
+  displayName: string;
+  phone: string | null;
+}) {
+  return request<ApiCustomer>('/api/v1/customers/me', {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
 export async function restoreSession() {
   if (!apiEnabled) return undefined;
   if (!hasAccessToken() && !(await refreshAccessToken())) return undefined;

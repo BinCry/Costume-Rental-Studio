@@ -145,7 +145,7 @@ export async function updateCustomer(
     include: { customer: true, authIdentities: true },
   });
   if (!existing?.customer) throw new AppError(404, 'CUSTOMER_NOT_FOUND', 'Customer not found');
-  const { displayName, email, birthday, ...profile } = input;
+  const { displayName, email, phone, birthday, ...profile } = input;
   if (
     email !== undefined &&
     email !== existing.email &&
@@ -162,7 +162,10 @@ export async function updateCustomer(
       if (input.preferredBranchId) {
         await lockActiveBranch(tx, input.preferredBranchId);
       }
-      const user = await tx.user.update({ where: { id: userId }, data: { displayName, email } });
+      const user = await tx.user.update({
+        where: { id: userId },
+        data: { displayName, email, phone },
+      });
       const customer = await tx.customer.update({
         where: { userId },
         data: {
@@ -175,7 +178,7 @@ export async function updateCustomer(
     });
   } catch (error) {
     if (isUniqueConflict(error))
-      throw new AppError(409, 'CONTACT_CONFLICT', 'Email is already in use');
+      throw new AppError(409, 'CONTACT_CONFLICT', 'Email or phone is already in use');
     throw error;
   }
 }

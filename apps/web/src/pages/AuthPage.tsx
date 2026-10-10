@@ -15,6 +15,15 @@ import { pathFor, type Navigate } from '../app/routes';
 
 type AuthMode = 'login' | 'register' | 'forgotPassword';
 const googleNextKey = 'costume-rental.auth-next';
+const pendingRegistrationKey = 'costume-rental.pending-registration';
+interface PendingRegistration {
+  challengeId: string;
+  email: string;
+  displayName: string;
+  phone: string;
+  expiresAt: number;
+  retryAt: number;
+}
 interface ApiIdentity {
   displayName: string;
   email: string;
@@ -29,16 +38,105 @@ const authErrorMessage = (error: unknown) => {
     INVALID_CREDENTIALS: 'Email hoặc mật khẩu chưa chính xác. Hãy kiểm tra lại thông tin.',
     OTP_COOLDOWN: 'Bạn vừa yêu cầu mã. Vui lòng đợi trước khi gửi mã mới.',
     INVALID_OTP: 'Mã không đúng hoặc đã hết hạn. Hãy kiểm tra email và thử lại.',
-    OTP_DELIVERY_UNAVAILABLE: 'Chưa thể gửi email xác thực lúc này. Vui lòng thử lại sau.',
+    OTP_DELIVERY_UNAVAILABLE:
+      'Studio chưa gửi được email xác thực. Bạn có thể thử đăng ký bằng Google hoặc liên hệ studio.',
     AUTH_NOT_CONFIGURED: 'Dịch vụ xác thực chưa được cấu hình. Vui lòng liên hệ studio.',
     ACCOUNT_NOT_ELIGIBLE: 'Email này đã có tài khoản. Hãy đăng nhập hoặc khôi phục mật khẩu.',
-    ACCOUNT_CONFLICT: 'Thông tin tài khoản vừa thay đổi. Hãy yêu cầu mã mới rồi thử lại.',
+    ACCOUNT_CONFLICT:
+      'Email hoặc số điện thoại vừa được dùng cho tài khoản khác. Hãy kiểm tra thông tin rồi thử lại.',
+    CONTACT_CONFLICT: 'Email hoặc số điện thoại này đã được dùng cho tài khoản khác.',
+    REGISTRATION_UNAVAILABLE: 'Studio chưa thể tạo tài khoản lúc này. Vui lòng thử lại sau.',
+    GOOGLE_REGISTRATION_UNAVAILABLE: 'Đăng ký bằng Google đang tạm thời gián đoạn.',
+    GOOGLE_AUTH_NOT_CONFIGURED: 'Đăng nhập Google chưa được cấu hình. Hãy thử bằng email.',
+    GOOGLE_AUTH_CANCELLED: 'Bạn đã hủy đăng nhập Google. Hãy thử lại hoặc đăng nhập bằng email.',
+    GOOGLE_AUTH_FAILED: 'Google chưa xác nhận được tài khoản. Hãy thử lại hoặc dùng email.',
+    INVALID_GOOGLE_OAUTH_FLOW:
+      'Phiên đăng nhập Google đã hết hạn. Hãy bắt đầu lại từ trang đăng nhập.',
+    INVALID_GOOGLE_OAUTH_CALLBACK:
+      'Google chưa hoàn tất đăng nhập. Hãy thử lại hoặc dùng email.',
+    ACCOUNT_UNAVAILABLE:
+      'Tài khoản này chưa thể liên kết với Google. Hãy đăng nhập bằng phương thức đã dùng trước đó.',
     AUTH_RATE_LIMITED: 'Bạn đã thử quá nhiều lần. Vui lòng đợi một lúc rồi thử lại.',
     INVALID_PASSWORD_RESET: 'Yêu cầu khôi phục đã hết hạn. Hãy bắt đầu lại.',
     UNTRUSTED_ORIGIN: 'Yêu cầu chưa được chấp nhận từ địa chỉ trang hiện tại.',
   };
+  if (error.code === 'VALIDATION_ERROR') {
+    const fields = error.details?.fields;
+    if (Array.isArray(fields)) {
+      const firstField = fields.find(
+        (entry): entry is { field: string } =>
+          typeof entry === 'object' && entry !== null && 'field' in entry,
+      )?.field;
+      if (firstField === 'displayName') return 'Hãy nhập họ và tên hợp lệ.';
+      if (firstField === 'phone') return 'Số điện thoại chưa đúng định dạng.';
+      if (firstField === 'email') return 'Email chưa đúng định dạng.';
+      if (firstField === 'password') return 'Mật khẩu cần có từ 12 đến 128 ký tự.';
+    }
+  }
   return messages[error.code] ?? 'Không thể hoàn tất yêu cầu. Vui lòng thử lại sau.';
 };
+
+const googleCallbackMessage = (code: string | null) => {
+  const messages: Record<string, string> = {
+    GOOGLE_AUTH_CANCELLED: 'Bạn đã hủy đăng nhập Google. Hãy thử lại hoặc đăng nhập bằng email.',
+    GOOGLE_AUTH_NOT_CONFIGURED: 'Đăng nhập Google chưa được cấu hình. Hãy thử bằng email.',
+    GOOGLE_AUTH_FAILED: 'Google chưa xác nhận được tài khoản. Hãy thử lại hoặc dùng email.',
+    INVALID_GOOGLE_OAUTH_FLOW: 'Phiên Google đã hết hạn. Hãy bắt đầu lại từ trang đăng nhập.',
+    INVALID_GOOGLE_OAUTH_CALLBACK: 'Google chưa hoàn tất đăng nhập. Hãy thử lại hoặc dùng email.',
+    ACCOUNT_UNAVAILABLE:
+      'Tài khoản này chưa thể liên kết với Google. Hãy dùng phương thức đăng nhập trước đó.',
+    GOOGLE_REGISTRATION_UNAVAILABLE: 'Đăng ký bằng Google đang tạm thời gián đoạn.',
+  };
+  return messages[code ?? ''] ?? 'Phiên xác thực đã bị hủy hoặc hết hạn. Hãy thử lại bằng email.';
+};
+
+function readPendingRegistration(): PendingRegistration | undefined {
+  try {
+    const raw = window.sessionStorage.getItem(pendingRegistrationKey);
+    if (!raw) return undefined;
+    const value = JSON.parse(raw) as Partial<PendingRegistration>;
+    if (
+      typeof value.challengeId !== 'string' ||
+      typeof value.email !== 'string' ||
+      typeof value.displayName !== 'string' ||
+      typeof value.phone !== 'string' ||
+      typeof value.expiresAt !== 'number' ||
+      typeof value.retryAt !== 'number'
+    ) {
+      window.sessionStorage.removeItem(pendingRegistrationKey);
+      return undefined;
+    }
+    return value as PendingRegistration;
+  } catch {
+    return undefined;
+  }
+}
+
+function savePendingRegistration(value: PendingRegistration) {
+  try {
+    window.sessionStorage.setItem(pendingRegistrationKey, JSON.stringify(value));
+  } catch {
+    // Registration remains usable when browser storage is unavailable.
+  }
+}
+
+function clearPendingRegistration() {
+  try {
+    window.sessionStorage.removeItem(pendingRegistrationKey);
+  } catch {
+    // Nothing else is required to complete the current registration session.
+  }
+}
+
+function validPhone(value: string) {
+  const compact = value.trim().replace(/[\s()-]/g, '');
+  return (
+    !compact ||
+    /^0\d{9}$/.test(compact) ||
+    /^84\d{9}$/.test(compact) ||
+    /^\+[1-9]\d{7,14}$/.test(compact)
+  );
+}
 
 export function AuthPage({
   mode,
@@ -53,19 +151,37 @@ export function AuthPage({
   go: Navigate;
   onAuthenticated: (next?: string) => Promise<void>;
 }) {
+  const [savedRegistration] = useState(() =>
+    mode === 'register' ? readPendingRegistration() : undefined,
+  );
   const [busy, setBusy] = useState(false);
   const [issue, setIssue] = useState('');
   const [notice, setNotice] = useState('');
   const callbackHandled = useRef(false);
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(savedRegistration?.email ?? '');
   const [password, setPassword] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [phone, setPhone] = useState('');
+  const [displayName, setDisplayName] = useState(savedRegistration?.displayName ?? '');
+  const [phone, setPhone] = useState(savedRegistration?.phone ?? '');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [registrationStep, setRegistrationStep] = useState<'email' | 'details'>('email');
-  const [registrationChallenge, setRegistrationChallenge] = useState('');
+  const [registrationStep, setRegistrationStep] = useState<'details' | 'verify'>(
+    savedRegistration ? 'verify' : 'details',
+  );
+  const [registrationChallenge, setRegistrationChallenge] = useState(
+    savedRegistration?.challengeId ?? '',
+  );
+  const [registrationChallengeEmail, setRegistrationChallengeEmail] = useState(
+    savedRegistration?.email ?? '',
+  );
+  const [registrationExpiresAt, setRegistrationExpiresAt] = useState(
+    savedRegistration?.expiresAt ?? 0,
+  );
+  const [passwordRequiredAtVerify, setPasswordRequiredAtVerify] = useState(
+    Boolean(savedRegistration),
+  );
+  const [registrationRetryAt, setRegistrationRetryAt] = useState(savedRegistration?.retryAt ?? 0);
   const [registrationOtp, setRegistrationOtp] = useState('');
-  const [resendSeconds, setResendSeconds] = useState(0);
+  const [registrationResendSeconds, setRegistrationResendSeconds] = useState(0);
+  const [resetResendSeconds, setResetResendSeconds] = useState(0);
   const [resetStep, setResetStep] = useState<'email' | 'otp' | 'password' | 'complete'>('email');
   const [resetChallenge, setResetChallenge] = useState('');
   const [resetOtp, setResetOtp] = useState('');
@@ -81,13 +197,28 @@ export function AuthPage({
   };
 
   useEffect(() => {
-    if (resendSeconds <= 0) return;
+    if (!registrationRetryAt) return;
+    const updateCountdown = (timerId: number) => {
+      const remaining = Math.max(0, Math.ceil((registrationRetryAt - Date.now()) / 1000));
+      setRegistrationResendSeconds(remaining);
+      if (remaining === 0) window.clearInterval(timerId);
+    };
+    const interval = window.setInterval(() => updateCountdown(interval), 1000);
+    const initialTick = window.setTimeout(() => updateCountdown(interval), 0);
+    return () => {
+      window.clearTimeout(initialTick);
+      window.clearInterval(interval);
+    };
+  }, [registrationRetryAt]);
+
+  useEffect(() => {
+    if (resetResendSeconds <= 0) return;
     const timer = window.setTimeout(
-      () => setResendSeconds((seconds) => Math.max(0, seconds - 1)),
+      () => setResetResendSeconds((seconds) => Math.max(0, seconds - 1)),
       1000,
     );
     return () => window.clearTimeout(timer);
-  }, [resendSeconds]);
+  }, [resetResendSeconds]);
 
   useEffect(() => {
     if (
@@ -121,14 +252,66 @@ export function AuthPage({
 
   const sendRegistrationCode = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setBusy(true);
     setIssue('');
     setNotice('');
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!displayName.trim()) {
+      setIssue('Hãy nhập họ và tên của bạn.');
+      return;
+    }
+    if (!validPhone(phone)) {
+      setIssue('Số điện thoại chưa đúng. Dùng số Việt Nam 10 chữ số hoặc số quốc tế có mã quốc gia.');
+      return;
+    }
+    if (password.length < 12 || password.length > 128) {
+      setIssue('Mật khẩu cần có từ 12 đến 128 ký tự.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setIssue('Mật khẩu xác nhận chưa khớp.');
+      return;
+    }
+    if (
+      registrationChallenge &&
+      registrationChallengeEmail === normalizedEmail &&
+      registrationExpiresAt > Date.now()
+    ) {
+      const retryAt = Date.now() + registrationResendSeconds * 1000;
+      savePendingRegistration({
+        challengeId: registrationChallenge,
+        email: normalizedEmail,
+        displayName: displayName.trim(),
+        phone: phone.trim(),
+        expiresAt: registrationExpiresAt,
+        retryAt,
+      });
+      setRegistrationRetryAt(retryAt);
+      setRegistrationStep('verify');
+      setPasswordRequiredAtVerify(false);
+      setNotice('Dùng mã đã gửi đến email để hoàn tất đăng ký.');
+      return;
+    }
+    setBusy(true);
     try {
-      const result = await requestRegistrationOtp(email.trim());
+      const result = await requestRegistrationOtp(normalizedEmail);
+      const expiresAt = Date.now() + result.expiresIn * 1000;
       setRegistrationChallenge(result.challengeId);
-      setResendSeconds(result.retryAfter);
-      setRegistrationStep('details');
+      setRegistrationChallengeEmail(normalizedEmail);
+      setRegistrationExpiresAt(expiresAt);
+      setRegistrationResendSeconds(result.retryAfter);
+      const retryAt = Date.now() + result.retryAfter * 1000;
+      setRegistrationRetryAt(retryAt);
+      setRegistrationStep('verify');
+      setPasswordRequiredAtVerify(false);
+      setRegistrationOtp('');
+      savePendingRegistration({
+        challengeId: result.challengeId,
+        email: normalizedEmail,
+        displayName: displayName.trim(),
+        phone: phone.trim(),
+        expiresAt,
+        retryAt,
+      });
       setNotice('Mã xác nhận có hiệu lực trong 5 phút. Hãy kiểm tra hộp thư đến và thư rác.');
     } catch (error) {
       setIssue(authErrorMessage(error));
@@ -142,10 +325,23 @@ export function AuthPage({
     setIssue('');
     setNotice('');
     try {
-      const result = await requestRegistrationOtp(email.trim());
+      const result = await requestRegistrationOtp(registrationChallengeEmail || email.trim());
+      const expiresAt = Date.now() + result.expiresIn * 1000;
       setRegistrationChallenge(result.challengeId);
+      setRegistrationChallengeEmail(registrationChallengeEmail || email.trim().toLowerCase());
+      setRegistrationExpiresAt(expiresAt);
       setRegistrationOtp('');
-      setResendSeconds(result.retryAfter);
+      setRegistrationResendSeconds(result.retryAfter);
+      const retryAt = Date.now() + result.retryAfter * 1000;
+      setRegistrationRetryAt(retryAt);
+      savePendingRegistration({
+        challengeId: result.challengeId,
+        email: registrationChallengeEmail || email.trim().toLowerCase(),
+        displayName: displayName.trim(),
+        phone: phone.trim(),
+        expiresAt,
+        retryAt,
+      });
       setNotice('Mã mới đã được gửi. Mã trước đó không còn dùng được.');
     } catch (error) {
       setIssue(authErrorMessage(error));
@@ -157,18 +353,12 @@ export function AuthPage({
   const finishRegistration = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIssue('');
-    const compactPhone = phone.trim().replace(/[\s()-]/g, '');
-    if (
-      compactPhone &&
-      !(
-        /^0\d{9}$/.test(compactPhone) ||
-        /^84\d{9}$/.test(compactPhone) ||
-        /^\+[1-9]\d{7,14}$/.test(compactPhone)
-      )
-    ) {
-      setIssue(
-        'Số điện thoại chưa đúng. Dùng số Việt Nam 10 chữ số hoặc số quốc tế có mã quốc gia.',
-      );
+    if (!validPhone(phone)) {
+      setIssue('Số điện thoại chưa đúng. Dùng số Việt Nam 10 chữ số hoặc số quốc tế có mã quốc gia.');
+      return;
+    }
+    if (password.length < 12 || password.length > 128) {
+      setIssue('Mật khẩu cần có từ 12 đến 128 ký tự.');
       return;
     }
     if (password !== confirmPassword) {
@@ -178,13 +368,14 @@ export function AuthPage({
     setBusy(true);
     try {
       await registerCustomer({
-        email: email.trim(),
+        email: registrationChallengeEmail || email.trim().toLowerCase(),
         phone: phone.trim() || undefined,
         challengeId: registrationChallenge,
         otp: registrationOtp.trim(),
         displayName: displayName.trim(),
         password,
       });
+      clearPendingRegistration();
       window.dispatchEvent(new Event('api-session-changed'));
       await onAuthenticated(params.get('next') ?? undefined);
     } catch (error) {
@@ -202,7 +393,7 @@ export function AuthPage({
     try {
       const result = await requestPasswordResetOtp(email.trim());
       setResetChallenge(result.challengeId);
-      setResendSeconds(result.retryAfter);
+      setResetResendSeconds(result.retryAfter);
       setResetStep('otp');
       setNotice('Nếu email đủ điều kiện khôi phục, mã xác nhận sẽ được gửi đến hộp thư của bạn.');
     } catch (error) {
@@ -220,7 +411,7 @@ export function AuthPage({
       const result = await requestPasswordResetOtp(email.trim());
       setResetChallenge(result.challengeId);
       setResetOtp('');
-      setResendSeconds(result.retryAfter);
+      setResetResendSeconds(result.retryAfter);
       setNotice('Nếu email đủ điều kiện khôi phục, mã xác nhận mới sẽ được gửi.');
     } catch (error) {
       setIssue(authErrorMessage(error));
@@ -329,7 +520,7 @@ export function AuthPage({
                 <div className="feedback feedback-warning auth-feedback" role="status">
                   <div>
                     <strong>Chưa đăng nhập được bằng Google</strong>
-                    <p>Phiên xác thực đã bị hủy hoặc hết hạn. Bạn có thể thử lại bằng email.</p>
+                    <p>{googleCallbackMessage(params.get('error'))}</p>
                   </div>
                 </div>
               )}
@@ -402,31 +593,78 @@ export function AuthPage({
             </>
           )}
 
-          {registerMode && registrationStep === 'email' && (
+          {registerMode && registrationStep === 'details' && (
             <>
               <form className="auth-form" onSubmit={(event) => void sendRegistrationCode(event)}>
+                <Field
+                  label="Họ và tên"
+                  autoComplete="name"
+                  placeholder="Nguyễn Minh Anh"
+                  maxLength={255}
+                  value={displayName}
+                  onChange={(event) => setDisplayName(event.target.value)}
+                  required
+                  disabled={disabled || busy}
+                />
                 <Field
                   label="Email"
                   type="email"
                   autoComplete="email"
                   inputMode="email"
                   placeholder="ten@email.com"
+                  maxLength={255}
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   required
                   disabled={disabled || busy}
                 />
+                <Field
+                  label="Số điện thoại (có thể bổ sung sau)"
+                  type="tel"
+                  autoComplete="tel"
+                  inputMode="tel"
+                  placeholder="09xx xxx xxx"
+                  hint="Studio dùng số này để liên hệ xác nhận đơn thuê."
+                  value={phone}
+                  onChange={(event) => setPhone(event.target.value)}
+                  disabled={disabled || busy}
+                />
+                <Field
+                  label="Mật khẩu"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={12}
+                  maxLength={128}
+                  hint="Tối thiểu 12 ký tự."
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                  disabled={disabled || busy}
+                />
+                <Field
+                  label="Nhập lại mật khẩu"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={12}
+                  maxLength={128}
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  required
+                  disabled={disabled || busy}
+                />
                 <p className="auth-help-copy">
-                  Studio sẽ gửi mã 6 số đến email để xác nhận tài khoản.
+                  Nhập thông tin trước. Studio sẽ gửi mã 6 số để xác minh email và hoàn tất tài khoản.
                 </p>
                 <Button type="submit" loading={busy} disabled={disabled} className="auth-submit">
-                  Gửi mã xác nhận
+                  {registrationChallenge && registrationChallengeEmail === email.trim().toLowerCase()
+                    ? 'Tiếp tục xác minh'
+                    : 'Gửi mã xác nhận'}
                 </Button>
               </form>
               {apiEnabled && (
                 <>
                   <div className="auth-divider">
-                    <span>hoặc tiếp tục với</span>
+                    <span>hoặc đăng ký bằng</span>
                   </div>
                   <a
                     className="button button-secondary auth-google"
@@ -440,36 +678,25 @@ export function AuthPage({
                   </a>
                 </>
               )}
-              <p className="auth-switch-copy">
-                Đã có tài khoản?{' '}
-                <a
-                  href={authHref('login')}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    goAuth('login');
-                  }}
-                >
-                  Đăng nhập
-                </a>
-              </p>
             </>
           )}
 
-          {registerMode && registrationStep === 'details' && (
+          {registerMode && registrationStep === 'verify' && (
             <form className="auth-form" onSubmit={(event) => void finishRegistration(event)}>
               <div className="auth-verified-email">
-                <span>Email nhận mã</span>
-                <strong>{email}</strong>
+                <span>Mã xác nhận đã gửi đến</span>
+                <strong>{registrationChallengeEmail || email}</strong>
                 <button
                   type="button"
                   className="text-button"
                   onClick={() => {
-                    setRegistrationStep('email');
+                    setRegistrationStep('details');
                     setNotice('');
                     setIssue('');
                   }}
+                  disabled={busy}
                 >
-                  Đổi email
+                  Sửa thông tin
                 </button>
               </div>
               <Field
@@ -491,54 +718,44 @@ export function AuthPage({
                 type="button"
                 className="text-button auth-resend"
                 onClick={() => void resendRegistrationCode()}
-                disabled={busy || resendSeconds > 0}
+                disabled={busy || registrationResendSeconds > 0}
               >
-                {resendSeconds > 0 ? `Gửi lại mã sau ${resendSeconds} giây` : 'Gửi lại mã'}
+                {registrationResendSeconds > 0
+                  ? `Gửi lại mã sau ${registrationResendSeconds} giây`
+                  : 'Gửi lại mã'}
               </button>
-              <Field
-                label="Họ và tên"
-                autoComplete="name"
-                placeholder="Nguyễn Minh Anh"
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
-                required
-                disabled={busy}
-              />
-              <Field
-                label="Số điện thoại (không bắt buộc)"
-                type="tel"
-                autoComplete="tel"
-                placeholder="09xx xxx xxx"
-                hint="Số Việt Nam 10 chữ số hoặc số quốc tế có mã quốc gia."
-                value={phone}
-                onChange={(event) => setPhone(event.target.value)}
-                disabled={busy}
-              />
-              <Field
-                label="Mật khẩu"
-                type="password"
-                autoComplete="new-password"
-                minLength={12}
-                maxLength={128}
-                hint="Tối thiểu 12 ký tự."
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-                disabled={busy}
-              />
-              <Field
-                label="Nhập lại mật khẩu"
-                type="password"
-                autoComplete="new-password"
-                minLength={12}
-                maxLength={128}
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                required
-                disabled={busy}
-              />
+              {passwordRequiredAtVerify && (
+                <>
+                  <p className="auth-help-copy">
+                    Vì lý do bảo mật, hãy nhập lại mật khẩu để tiếp tục sau khi tải lại trang.
+                  </p>
+                  <Field
+                    label="Mật khẩu"
+                    type="password"
+                    autoComplete="new-password"
+                    minLength={12}
+                    maxLength={128}
+                    hint="Tối thiểu 12 ký tự."
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    required
+                    disabled={busy}
+                  />
+                  <Field
+                    label="Nhập lại mật khẩu"
+                    type="password"
+                    autoComplete="new-password"
+                    minLength={12}
+                    maxLength={128}
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    required
+                    disabled={busy}
+                  />
+                </>
+              )}
               <Button type="submit" loading={busy} disabled={busy} className="auth-submit">
-                Tạo tài khoản
+                Xác nhận mã và tạo tài khoản
               </Button>
             </form>
           )}
@@ -581,9 +798,11 @@ export function AuthPage({
                 type="button"
                 className="text-button auth-resend"
                 onClick={() => void resendResetCode()}
-                disabled={busy || resendSeconds > 0}
+                disabled={busy || resetResendSeconds > 0}
               >
-                {resendSeconds > 0 ? `Gửi lại mã sau ${resendSeconds} giây` : 'Gửi lại mã'}
+                {resetResendSeconds > 0
+                  ? `Gửi lại mã sau ${resetResendSeconds} giây`
+                  : 'Gửi lại mã'}
               </button>
               <Button type="submit" loading={busy} disabled={busy} className="auth-submit">
                 Xác nhận mã
@@ -649,7 +868,7 @@ export function AuthPage({
               </a>
             </p>
           )}
-          {registerMode && registrationStep === 'details' && (
+          {registerMode && (
             <p className="auth-switch-copy">
               Đã có tài khoản?{' '}
               <a

@@ -2913,6 +2913,15 @@ small {
 .account-page {
   max-width: 1060px;
 }
+.account-profile-editor {
+  margin-top: 22px;
+  padding-top: 2px;
+  border-top: 1px solid var(--border);
+}
+.account-profile-editor > .muted {
+  margin: -4px 0 14px;
+  font-size: 13px;
+}
 .account-entry {
   text-align: center;
   display: grid;

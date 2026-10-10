@@ -39,6 +39,7 @@ export const updateCustomerSchema = z
   .object({
     displayName: z.string().trim().min(1).max(255).optional(),
     email: emailSchema.optional(),
+    phone: phoneSchema.nullable().optional(),
     preferredBranchId: z.uuid().nullable().optional(),
     birthday: z.iso
       .date()

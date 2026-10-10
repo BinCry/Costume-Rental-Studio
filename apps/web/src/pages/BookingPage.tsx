@@ -15,7 +15,7 @@ import { useFixtureResource } from '../components/useFixtureResource';
 import { branches, fixtureAdapter, fixtureCatalog, fixturePeriod } from '../fixtures/adapter';
 import { studioAdapter } from '../fixtures/studio';
 import type { BookingDraft, DemoScenario, QuoteSnapshot } from '../fixtures/types';
-import { apiEnabled, hasAccessToken } from '../api/client';
+import { apiEnabled, getOwnCustomerProfile, hasAccessToken } from '../api/client';
 import { useBranchOptions } from '../components/useBranchOptions';
 
 const steps = ['Trang phục', 'Lựa chọn', 'Nhận và trả', 'Báo giá', 'Người thuê', 'Xác nhận'];
@@ -102,6 +102,25 @@ export function BookingPage({
     if (submittedId) successHeadingRef.current?.focus();
   }, [submittedId]);
   const { loading, data, error, retry } = useFixtureResource(scenario, loadCatalog);
+  useEffect(() => {
+    if (!apiMode || !hasAccessToken()) return;
+    let active = true;
+    void getOwnCustomerProfile()
+      .then((profile) => {
+        if (!active) return;
+        setDraft((current) => ({
+          ...current,
+          name: current.name.trim() ? current.name : profile.displayName,
+          phone: current.phone.trim() ? current.phone : profile.phone ?? '',
+        }));
+      })
+      .catch(() => {
+        // The order form remains editable when a profile is unavailable.
+      });
+    return () => {
+      active = false;
+    };
+  }, [apiMode]);
   const draft = {
     ...draftState,
     branch: branchOptions.includes(draftState.branch)
@@ -478,6 +497,7 @@ export function BookingPage({
                     label="Họ và tên người thuê"
                     placeholder="Ví dụ: Nguyễn An"
                     autoComplete="name"
+                    hint="Được điền từ hồ sơ của bạn nếu đã lưu; bạn có thể sửa cho riêng đơn này."
                     value={draft.name}
                     onChange={(event) => update('name', event.target.value)}
                     error={issue && !draft.name.trim() ? 'Nhập tên người thuê.' : undefined}
@@ -487,6 +507,7 @@ export function BookingPage({
                     placeholder="09xx xxx xxx"
                     type="tel"
                     autoComplete="tel"
+                    hint="Studio dùng số này để xác nhận đơn. Lưu trong Tài khoản để tự điền lần sau."
                     value={draft.phone}
                     onChange={(event) => update('phone', event.target.value)}
                     error={

@@ -623,6 +623,7 @@ export default function StudioApp() {
             )}
             {(route.screen === 'login' || route.screen === 'register' || route.screen === 'forgotPassword') && (
               <AuthPage
+                key={route.screen}
                 mode={route.screen}
                 params={p}
                 apiIdentity={apiIdentity}

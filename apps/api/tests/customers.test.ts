@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   queryRaw: vi.fn(),
   findUser: vi.fn(),
   createUser: vi.fn(),
+  updateUser: vi.fn(),
+  updateCustomer: vi.fn(),
 }));
 vi.mock('../src/database/prisma.js', () => ({
   prisma: {
@@ -49,7 +51,12 @@ interface ResultBody {
 interface MockTransaction {
   $queryRaw: typeof mocks.queryRaw;
   branch: { findUnique: typeof mocks.branch };
-  user: { findUnique: typeof mocks.findUser; create: typeof mocks.createUser };
+  user: {
+    findUnique: typeof mocks.findUser;
+    create: typeof mocks.createUser;
+    update: typeof mocks.updateUser;
+  };
+  customer: { update: typeof mocks.updateCustomer };
 }
 
 async function token(options: { expired?: boolean; secret?: string; audience?: string } = {}) {
@@ -95,11 +102,14 @@ beforeEach(() => {
   });
   mocks.findUser.mockResolvedValue(null);
   mocks.createUser.mockResolvedValue({ ...existing, displayName: 'Customer' });
+  mocks.updateUser.mockResolvedValue({ ...existing, displayName: 'Updated name' });
+  mocks.updateCustomer.mockResolvedValue(existing.customer);
   mocks.transaction.mockImplementation((callback: (tx: MockTransaction) => Promise<unknown>) =>
     callback({
       $queryRaw: mocks.queryRaw,
       branch: { findUnique: mocks.branch },
-      user: { findUnique: mocks.findUser, create: mocks.createUser },
+      user: { findUnique: mocks.findUser, create: mocks.createUser, update: mocks.updateUser },
+      customer: { update: mocks.updateCustomer },
     }),
   );
 });
@@ -221,5 +231,38 @@ describe('POST /api/v1/customers', () => {
       .expect(200);
     expect((response.body as ResultBody).data.created).toBe(false);
     expect(mocks.transaction).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('PATCH /api/v1/customers/me', () => {
+  it('saves a customer phone and normalizes it for future rental forms', async () => {
+    const ownProfile = {
+      ...existing,
+      id: actorId,
+      authIdentities: [],
+      customer: { customerCode: 'CUS-SELF', preferredBranchId: branchId },
+    };
+    mocks.actor.mockResolvedValueOnce(actor()).mockResolvedValueOnce(ownProfile);
+    mocks.updateUser.mockResolvedValue({
+      ...ownProfile,
+      displayName: 'Updated name',
+      phone: '+84901234567',
+    });
+
+    const response = await request(createApp())
+      .patch('/api/v1/customers/me')
+      .auth(await token(), { type: 'bearer' })
+      .send({ displayName: 'Updated name', phone: '0901234567' })
+      .expect(200);
+
+    expect(response.body.data).toMatchObject({
+      displayName: 'Updated name',
+      phone: '+84901234567',
+      email: 'customer@example.com',
+    });
+    expect(mocks.updateUser).toHaveBeenCalledWith({
+      where: { id: actorId },
+      data: { displayName: 'Updated name', email: undefined, phone: '+84901234567' },
+    });
   });
 });

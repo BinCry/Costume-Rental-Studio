@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { Navigate } from '../App';
 import {
   Button,
@@ -26,7 +26,15 @@ import { useFixtureResource } from '../components/useFixtureResource';
 import { branches, fixturePeriod } from '../fixtures/adapter';
 import { studioAdapter, type CostumeDetail, type CustomerOrder } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
-import { apiEnabled, checkPublicAvailability, getPublicVariant, hasAccessToken } from '../api/client';
+import {
+  ApiClientError,
+  apiEnabled,
+  checkPublicAvailability,
+  getOwnCustomerProfile,
+  getPublicVariant,
+  hasAccessToken,
+  updateOwnCustomerProfile,
+} from '../api/client';
 import { useBranchOptions } from '../components/useBranchOptions';
 
 const loadCostumeDetails = (id: string) => async (scenario: DemoScenario): Promise<CostumeDetail[]> => {
@@ -520,7 +528,11 @@ export function AccountPage({
   scenario: DemoScenario;
   go: Navigate;
   onRoleChange: (role: 'CUSTOMER' | 'SALES_STAFF' | 'INVENTORY_STAFF' | 'ADMIN') => void;
-  apiIdentity?: { displayName: string; email: string; roles: Array<{ name: string; branchId: string | null }> };
+  apiIdentity?: {
+    displayName: string;
+    email: string;
+    roles: Array<{ name: string; branchId: string | null; actorGroup?: string }>;
+  };
   realApiMode?: boolean;
   onSignOut?: () => void;
 }) {
@@ -533,6 +545,16 @@ export function AccountPage({
     'CUSTOMER',
   );
   const [attempted, setAttempted] = useState(false);
+  const [accountName, setAccountName] = useState(apiIdentity?.displayName ?? '');
+  const [accountPhone, setAccountPhone] = useState('');
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileIssue, setProfileIssue] = useState('');
+  const [profileNotice, setProfileNotice] = useState('');
+  const [profileAvailable, setProfileAvailable] = useState(false);
+  const isApiCustomer = Boolean(
+    realApiMode && apiIdentity?.roles.some((assignedRole) => assignedRole.actorGroup === 'CUSTOMER'),
+  );
   const profileRef = useRef<HTMLDivElement>(null);
   const successRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -542,6 +564,67 @@ export function AccountPage({
   useEffect(() => {
     if (attempted) profileRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
   }, [attempted]);
+  useEffect(() => {
+    if (!isApiCustomer) return;
+    let active = true;
+    void getOwnCustomerProfile()
+      .then((profile) => {
+        if (!active) return;
+        setAccountName(profile.displayName);
+        setAccountPhone(profile.phone ?? '');
+        setProfileIssue('');
+        setProfileAvailable(true);
+      })
+      .catch(() => {
+        if (active) setProfileIssue('Chưa tải được thông tin liên hệ. Hãy thử tải lại.');
+      })
+      .finally(() => {
+        if (active) setProfileLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [apiIdentity?.email, isApiCustomer]);
+
+  const saveAccountProfile = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setProfileIssue('');
+    setProfileNotice('');
+    const compactPhone = accountPhone.trim().replace(/[\s()-]/g, '');
+    const phoneIsValid =
+      !compactPhone ||
+      /^0\d{9}$/.test(compactPhone) ||
+      /^84\d{9}$/.test(compactPhone) ||
+      /^\+[1-9]\d{7,14}$/.test(compactPhone);
+    if (!accountName.trim()) {
+      setProfileIssue('Hãy nhập họ và tên.');
+      return;
+    }
+    if (!phoneIsValid) {
+      setProfileIssue('Số điện thoại chưa đúng định dạng.');
+      return;
+    }
+    setProfileSaving(true);
+    try {
+      const updated = await updateOwnCustomerProfile({
+        displayName: accountName.trim(),
+        phone: accountPhone.trim() || null,
+      });
+      setAccountName(updated.displayName);
+      setAccountPhone(updated.phone ?? '');
+      setProfileNotice('Thông tin liên hệ đã được lưu. Sẽ được điền sẵn vào đơn thuê tiếp theo.');
+      setProfileAvailable(true);
+      window.dispatchEvent(new Event('api-session-changed'));
+    } catch (error) {
+      if (error instanceof ApiClientError && error.code === 'CONTACT_CONFLICT') {
+        setProfileIssue('Số điện thoại này đã được dùng cho tài khoản khác.');
+      } else {
+        setProfileIssue('Chưa lưu được thông tin. Hãy kiểm tra kết nối rồi thử lại.');
+      }
+    } finally {
+      setProfileSaving(false);
+    }
+  };
   if (realApiMode) {
     return (
       <div className="page account-page">
@@ -569,6 +652,56 @@ export function AccountPage({
                 <Feedback tone="info" title="Phiên được quản lý bởi máy chủ">
                   Quyền của tài khoản được kiểm tra theo vai trò và chi nhánh khi thực hiện từng thao tác.
                 </Feedback>
+                {isApiCustomer && (
+                  <div className="account-profile-editor">
+                    <h3>Thông tin liên hệ</h3>
+                    <p className="muted">
+                      Lưu tên và số điện thoại để lần đặt thuê sau không phải nhập lại.
+                    </p>
+                    {profileLoading && (
+                      <Feedback tone="info" title="Đang tải hồ sơ">
+                        Đang lấy thông tin liên hệ đã lưu.
+                      </Feedback>
+                    )}
+                    {profileIssue && (
+                      <Feedback tone="danger" title="Chưa hoàn tất được thao tác">
+                        {profileIssue}
+                      </Feedback>
+                    )}
+                    {profileNotice && (
+                      <Feedback tone="success" title="Đã lưu hồ sơ">
+                        {profileNotice}
+                      </Feedback>
+                    )}
+                    {profileAvailable && (
+                      <form className="stack-form" onSubmit={(event) => void saveAccountProfile(event)}>
+                        <Field
+                          label="Họ và tên"
+                          autoComplete="name"
+                          maxLength={255}
+                          value={accountName}
+                          onChange={(event) => setAccountName(event.target.value)}
+                          required
+                          disabled={profileSaving}
+                        />
+                        <Field
+                          label="Số điện thoại liên hệ (không bắt buộc)"
+                          type="tel"
+                          autoComplete="tel"
+                          inputMode="tel"
+                          placeholder="09xx xxx xxx"
+                          hint="Số điện thoại sẽ được điền sẵn khi bạn tạo đơn thuê."
+                          value={accountPhone}
+                          onChange={(event) => setAccountPhone(event.target.value)}
+                          disabled={profileSaving}
+                        />
+                        <Button type="submit" loading={profileSaving} disabled={profileLoading}>
+                          Lưu thông tin liên hệ
+                        </Button>
+                      </form>
+                    )}
+                  </div>
+                )}
               </>
             ) : (
               <div className="account-entry">
