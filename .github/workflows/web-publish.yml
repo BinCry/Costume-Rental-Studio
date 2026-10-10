@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: web-staging-publish
+  group: web-staging-deploy
   cancel-in-progress: true
 
 jobs:
@@ -89,8 +89,32 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Explain image output
+      - name: Trigger Coolify deploy
+        if: ${{ secrets.COOLIFY_WEB_DEPLOY_WEBHOOK != '' }}
+        env:
+          COOLIFY_WEB_DEPLOY_WEBHOOK: ${{ secrets.COOLIFY_WEB_DEPLOY_WEBHOOK }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+        run: |
+          if [ -n "$COOLIFY_API_TOKEN" ]; then
+            if curl --fail --show-error --silent --request POST \
+              -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              "$COOLIFY_WEB_DEPLOY_WEBHOOK"; then
+              exit 0
+            fi
+
+            echo "Bearer-authenticated webhook failed; retrying URL-authenticated webhook"
+          fi
+
+          curl --fail --show-error --silent --request POST \
+            "$COOLIFY_WEB_DEPLOY_WEBHOOK"
+
+      - name: Explain deploy output
         run: |
           echo "Published image:"
           echo "- ${{ env.IMAGE_NAME }}:${{ env.STAGING_TAG }}"
           echo "- ${{ env.IMAGE_NAME }}:staging-${{ steps.meta.outputs.short_sha }}"
+          if [ -n "${{ secrets.COOLIFY_WEB_DEPLOY_WEBHOOK }}" ]; then
+            echo "Coolify deploy webhook was triggered."
+          else
+            echo "COOLIFY_WEB_DEPLOY_WEBHOOK is not configured; image publish completed without Coolify deployment."
+          fi
