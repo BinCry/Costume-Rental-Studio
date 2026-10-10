@@ -1,7 +1,7 @@
 import type { CookieOptions, Request, RequestHandler, Response } from 'express';
 
 import { AppError } from '../../../common/errors/app-error.js';
-import { env } from '../../../config/env.js';
+import { env, webAllowedOrigins } from '../../../config/env.js';
 import { refreshSchema } from './session.schema.js';
 
 const refreshCookieName = 'refreshToken';
@@ -18,8 +18,17 @@ export function refreshCookieOptions(): CookieOptions {
 // CORS alone does not prevent another origin from submitting cookie-authenticated requests.
 export const requireTrustedOrigin: RequestHandler = (request, _response, next) => {
   const origin = request.get('origin');
+  const trusted = origin
+    ? (() => {
+        try {
+          return webAllowedOrigins.includes(new URL(origin).origin);
+        } catch {
+          return false;
+        }
+      })()
+    : false;
   if (
-    (origin && origin !== new URL(env.WEB_URL).origin) ||
+    (origin && !trusted) ||
     (!origin && request.get('sec-fetch-site') === 'cross-site')
   ) {
     throw new AppError(403, 'UNTRUSTED_ORIGIN', 'Authentication request origin is not allowed');
