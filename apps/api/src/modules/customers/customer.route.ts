@@ -31,24 +31,22 @@ customerRouter.get('/', requireAuthentication, async (request, response) => {
   );
 });
 
-customerRouter.get('/me', requireAuthentication, async (_request, response) =>
-  sendSuccess(
+customerRouter.get('/me', requireAuthentication, async (_request, response) => {
+  const actor = response.locals.actor as CustomerActor;
+  return sendSuccess(
     response,
-    await getCustomer(response.locals.actor as CustomerActor, response.locals.actor.id),
+    await getCustomer(actor, actor.id),
     'Own customer profile loaded',
-  ),
-);
+  );
+});
 
 customerRouter.patch('/me', requireAuthentication, async (request, response) => {
   const body = updateOwnCustomerSchema.safeParse(request.body);
   if (!body.success) throw new AppError(400, 'VALIDATION_ERROR', 'Invalid own customer profile');
+  const actor = response.locals.actor as CustomerActor;
   return sendSuccess(
     response,
-    await updateCustomer(
-      response.locals.actor as CustomerActor,
-      response.locals.actor.id,
-      body.data,
-    ),
+    await updateCustomer(actor, actor.id, body.data),
     'Own customer profile updated',
   );
 });

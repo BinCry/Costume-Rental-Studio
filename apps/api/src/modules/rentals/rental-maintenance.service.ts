@@ -33,8 +33,8 @@ export async function processAutomaticNoShows(now = new Date(), limit = 50) {
           policyVersion: { select: { noShowGraceMinutes: true } },
         },
       });
+      if (!order) return false;
       if (
-        !order ||
         order.status !== 'READY_FOR_PICKUP' ||
         now.getTime() < order.plannedStartAt.getTime() + order.policyVersion.noShowGraceMinutes * 60_000
       )
