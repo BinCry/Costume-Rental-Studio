@@ -149,9 +149,8 @@ export const returnSchema = versionSchema
             returnConditionGrade: z.enum(grade),
             isMissing: z.boolean().default(false),
             damageNotes: z.string().trim().max(10_000).nullable().optional(),
-            damageFeeVnd: z.coerce.bigint().min(0n).default(0n),
-            missingFeeVnd: z.coerce.bigint().min(0n).default(0n),
             nextOperationalStatus: z.enum(['CLEANING', 'REPAIR']),
+            repairBlockedUntil: z.coerce.date().optional(),
             evidence: z.array(evidenceSchema).min(1).max(10),
             accessories: z
               .array(
@@ -160,8 +159,6 @@ export const returnSchema = versionSchema
                     accessoryId: z.uuid(),
                     quantityReturned: z.coerce.number().int().min(0).max(100),
                     conditionIn: z.enum(grade).nullable().optional(),
-                    damageFeeVnd: z.coerce.bigint().min(0n).default(0n),
-                    missingFeeVnd: z.coerce.bigint().min(0n).default(0n),
                   })
                   .strict(),
               )
@@ -173,6 +170,36 @@ export const returnSchema = versionSchema
       .max(50),
   })
   .strict();
+const assessmentAccessorySchema = z
+  .object({
+    accessoryId: z.uuid(),
+    damageFeeVnd: z.coerce.bigint().min(0n).default(0n),
+    missingFeeVnd: z.coerce.bigint().min(0n).default(0n),
+  })
+  .strict();
+export const assessmentSchema = versionSchema
+  .extend({
+    items: z
+      .array(
+        z
+          .object({
+            orderItemId: z.uuid(),
+            damageFeeVnd: z.coerce.bigint().min(0n).default(0n),
+            missingFeeVnd: z.coerce.bigint().min(0n).default(0n),
+            accessories: z.array(assessmentAccessorySchema).default([]),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(50),
+  })
+  .strict();
+export const debtListSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  pickupBranchId: z.uuid().optional(),
+  customerUserId: z.uuid().optional(),
+});
 export const completeSchema = versionSchema
   .extend({
     otherFeeVnd: z.coerce.bigint().min(0n).default(0n),
@@ -194,4 +221,6 @@ export type ExtendOrderInput = z.infer<typeof extendOrderSchema>;
 export type AmendOrderItemInput = z.infer<typeof amendOrderItemSchema>;
 export type PickupInput = z.infer<typeof pickupSchema>;
 export type ReturnInput = z.infer<typeof returnSchema>;
+export type AssessmentInput = z.infer<typeof assessmentSchema>;
+export type DebtListInput = z.infer<typeof debtListSchema>;
 export type CompleteInput = z.infer<typeof completeSchema>;

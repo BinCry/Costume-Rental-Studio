@@ -21,6 +21,8 @@ import {
 } from './rental-financials.js';
 import type {
   CompleteInput,
+  AssessmentInput,
+  DebtListInput,
   AmendOrderItemInput,
   ConfirmInput,
   CreateOrderInput,
@@ -59,7 +61,7 @@ function includeOrder() {
       },
       orderBy: { createdAt: 'asc' },
     },
-    payments: { orderBy: { createdAt: 'asc' } },
+    payments: { include: { refunds: true }, orderBy: { createdAt: 'asc' } },
   } satisfies Prisma.RentalOrderInclude;
 }
 
@@ -1037,7 +1039,8 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
         'INVALID_RETURN_ITEMS',
         'Every order item must be supplied exactly once',
       );
-    await lockUnits(tx, order.items.map((item) => item.unitId!).filter(Boolean));
+    const units = await lockUnits(tx, order.items.map((item) => item.unitId!).filter(Boolean));
+    const returnedAt = new Date();
     for (const inputItem of input.items) {
       const orderItem = order.items.find((x) => x.id === inputItem.orderItemId)!;
       if (
@@ -1070,6 +1073,15 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
             'Returned quantity exceeds quantity out',
           );
       }
+      if (
+        inputItem.nextOperationalStatus === 'REPAIR' &&
+        (!inputItem.repairBlockedUntil || inputItem.repairBlockedUntil <= returnedAt)
+      )
+        throw new AppError(
+          400,
+          'REPAIR_BLOCK_UNTIL_REQUIRED',
+          'Repair requires a future blocked-until time',
+        );
       await storeEvidence(tx, orderItem.id, 'RETURN', inputItem.evidence, actor.id);
       await tx.rentalOrderItem.update({
         where: { id: orderItem.id },
@@ -1077,8 +1089,6 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
           returnConditionGrade: inputItem.returnConditionGrade,
           isMissing: inputItem.isMissing,
           damageNotes: inputItem.damageNotes ?? null,
-          damageFeeVnd: inputItem.damageFeeVnd,
-          missingFeeVnd: inputItem.missingFeeVnd,
           returnEvidenceKey: null,
           accessories: {
             update: inputItem.accessories.map((a) => ({
@@ -1086,8 +1096,6 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
               data: {
                 quantityReturned: a.quantityReturned,
                 conditionIn: a.conditionIn ?? null,
-                damageFeeVnd: a.damageFeeVnd,
-                missingFeeVnd: a.missingFeeVnd,
               },
             })),
           },
@@ -1112,8 +1120,26 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
             operationalStatus: inputItem.nextOperationalStatus,
           },
         });
+      if (!inputItem.isMissing) {
+        const unit = units.find((value) => value.id === orderItem.unitId)!;
+        const blockType = inputItem.nextOperationalStatus === 'REPAIR' ? 'REPAIR' : 'CLEANING';
+        const cleaningMinutes = unit.variant.cleaningBufferMinutes ?? 0;
+        const blockedUntil =
+          blockType === 'REPAIR'
+            ? inputItem.repairBlockedUntil!
+            : new Date(returnedAt.getTime() + Math.max(cleaningMinutes, 1) * 60_000);
+        await tx.unitBlock.create({
+          data: {
+            unitId: unit.id,
+            blockType,
+            blockedFrom: returnedAt,
+            blockedUntil,
+            reason: `Automatic ${blockType.toLowerCase()} after return ${order.orderCode}`,
+            createdBy: actor.id,
+          },
+        });
+      }
     }
-    const returnedAt = new Date();
     const graceEnd = order.plannedDueAt.getTime() + order.policyVersion.lateGraceMinutes * 60_000;
     const lateDays =
       returnedAt.getTime() <= graceEnd
@@ -1136,7 +1162,7 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
         returnedAt,
         returnProcessedBy: actor.id,
         returnNotes: input.returnNotes ?? null,
-        inspectionStatus: 'COMPLETED',
+        inspectionStatus: 'PENDING_ASSESSMENT',
         lateFeeVnd: late,
         version: { increment: 1 },
         items: {
@@ -1148,9 +1174,197 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
       },
       include: includeOrder(),
     });
-    await addEvent(tx, id, 'RETURNED', actor.id, 'ACTIVE', 'RETURN_INSPECTION');
+    await addEvent(tx, id, 'RETURNED', actor.id, 'ACTIVE', 'RETURN_INSPECTION', {
+      inspectionStatus: 'PENDING_ASSESSMENT',
+    });
     return result;
   }, transactionOptions);
+}
+
+function outstanding(order: Awaited<ReturnType<typeof lockOrder>>) {
+  const rentalDue = rentalDueBeforeExtensionsVnd(
+    order.items,
+    order.promotionDiscountVnd,
+    order.additionalRentalFeeVnd,
+  );
+  const depositDue = depositDueVnd(order.items);
+  const extraDue =
+    order.additionalRentalFeeVnd + damageDueVnd(order.items) + order.lateFeeVnd + order.otherFeeVnd;
+  const paidRental = successfulPaymentTotal(order.payments, 'RENTAL');
+  const paidDeposit = successfulPaymentTotal(order.payments, 'DEPOSIT');
+  const paidExtra = successfulPaymentTotal(order.payments, 'EXTRA');
+  const refunds = order.payments.flatMap((payment) => payment.refunds);
+  const refundedVnd = refunds
+    .filter((refund) => refund.status === 'COMPLETED')
+    .reduce((sum, refund) => sum + refund.amountVnd, 0n);
+  const refundInProgressVnd = refunds
+    .filter((refund) => ['REQUESTED', 'PROCESSING'].includes(refund.status))
+    .reduce((sum, refund) => sum + refund.amountVnd, 0n);
+  const rentalRemainingVnd = rentalDue - paidRental;
+  const extraRemainingVnd = extraDue - paidExtra - order.depositDeductionVnd;
+  const refundRemainingVnd = paidDeposit - order.depositDeductionVnd - refundedVnd;
+  return {
+    rental: { dueVnd: rentalDue, paidVnd: paidRental, remainingVnd: rentalRemainingVnd },
+    deposit: {
+      dueVnd: depositDue,
+      paidVnd: paidDeposit,
+      deductionVnd: order.depositDeductionVnd,
+      refundedVnd,
+      refundRemainingVnd,
+      refundInProgressVnd,
+    },
+    extra: { dueVnd: extraDue, paidVnd: paidExtra, remainingVnd: extraRemainingVnd },
+    outstandingVnd:
+      (rentalRemainingVnd > 0n ? rentalRemainingVnd : 0n) +
+      (extraRemainingVnd > 0n ? extraRemainingVnd : 0n),
+    canComplete: rentalRemainingVnd <= 0n && extraRemainingVnd <= 0n && refundRemainingVnd === 0n,
+  };
+}
+
+function assertAssessmentItems(
+  order: Awaited<ReturnType<typeof lockOrder>>,
+  input: AssessmentInput,
+) {
+  const expected = order.items.map((item) => item.id).sort();
+  const received = input.items.map((item) => item.orderItemId).sort();
+  if (
+    expected.length !== received.length ||
+    expected.some((value, index) => value !== received[index])
+  )
+    throw new AppError(
+      400,
+      'INVALID_ASSESSMENT_ITEMS',
+      'Every order item must be assessed exactly once',
+    );
+  for (const item of input.items) {
+    const orderItem = order.items.find((value) => value.id === item.orderItemId)!;
+    const expectedAccessories = orderItem.accessories.map((accessory) => accessory.id).sort();
+    const assessedAccessories = item.accessories.map((accessory) => accessory.accessoryId).sort();
+    if (
+      expectedAccessories.length !== assessedAccessories.length ||
+      expectedAccessories.some((value, index) => value !== assessedAccessories[index])
+    )
+      throw new AppError(
+        400,
+        'INVALID_ASSESSMENT_ACCESSORIES',
+        'Every returned accessory must be assessed exactly once',
+      );
+  }
+}
+
+export async function assessReturn(actor: AuthenticatedActor, id: string, input: AssessmentInput) {
+  requireEmployee(actor);
+  return prisma.$transaction(async (tx) => {
+    const order = await lockOrder(tx, id);
+    assertManage(actor, order);
+    assertStatus(order.status, ['RETURN_INSPECTION']);
+    assertVersion(order.version, input.expectedVersion);
+    const wasAssessed = order.inspectionStatus !== 'PENDING_ASSESSMENT';
+    if (order.financiallySettledAt)
+      throw new AppError(409, 'ASSESSMENT_LOCKED', 'Settlement is already completed');
+    if (
+      order.payments.some(
+        (payment) =>
+          payment.purpose === 'EXTRA' && ['PENDING', 'SUCCEEDED'].includes(payment.status),
+      ) ||
+      order.payments.some((payment) => payment.refunds.length > 0)
+    )
+      throw new AppError(
+        409,
+        'ASSESSMENT_LOCKED',
+        'Cancel pending extra payments and resolve refunds before changing assessment',
+      );
+    assertAssessmentItems(order, input);
+    const before = damageDueVnd(order.items);
+    for (const item of input.items) {
+      await tx.rentalOrderItem.update({
+        where: { id: item.orderItemId },
+        data: {
+          damageFeeVnd: item.damageFeeVnd,
+          missingFeeVnd: item.missingFeeVnd,
+          accessories: {
+            update: item.accessories.map((accessory) => ({
+              where: { id: accessory.accessoryId },
+              data: {
+                damageFeeVnd: accessory.damageFeeVnd,
+                missingFeeVnd: accessory.missingFeeVnd,
+              },
+            })),
+          },
+        },
+      });
+    }
+    const status = order.items.some((item) => item.isMissing)
+      ? 'HAS_MISSING_ITEM'
+      : input.items.some(
+            (item) =>
+              item.damageFeeVnd > 0n ||
+              item.missingFeeVnd > 0n ||
+              item.accessories.some(
+                (accessory) => accessory.damageFeeVnd > 0n || accessory.missingFeeVnd > 0n,
+              ),
+          )
+        ? 'HAS_DAMAGE'
+        : 'PASSED';
+    const result = await tx.rentalOrder.update({
+      where: { id },
+      data: { inspectionStatus: status, version: { increment: 1 } },
+      include: includeOrder(),
+    });
+    await addEvent(
+      tx,
+      id,
+      wasAssessed ? 'RETURN_ASSESSMENT_AMENDED' : 'RETURN_ASSESSED',
+      actor.id,
+      undefined,
+      undefined,
+      { beforeDamageFeesVnd: before.toString(), assessmentStatus: status },
+    );
+    return result;
+  }, transactionOptions);
+}
+
+export async function getOutstanding(actor: AuthenticatedActor, id: string) {
+  const order = await prisma.rentalOrder.findUnique({ where: { id }, include: includeOrder() });
+  if (!order) throw new AppError(404, 'RENTAL_ORDER_NOT_FOUND', 'Rental order not found');
+  assertRead(actor, order);
+  return { orderId: order.id, status: order.status, ...outstanding(order) };
+}
+
+export async function listDebts(actor: AuthenticatedActor, query: DebtListInput) {
+  requireEmployee(actor);
+  const orders = await prisma.rentalOrder.findMany({
+    where: {
+      status: 'RETURN_INSPECTION',
+      ...(query.pickupBranchId ? { pickupBranchId: query.pickupBranchId } : {}),
+      ...(query.customerUserId ? { customerUserId: query.customerUserId } : {}),
+    },
+    include: includeOrder(),
+    orderBy: { returnedAt: 'asc' },
+  });
+  const visible = orders
+    .filter((order) => {
+      try {
+        assertRead(actor, order);
+        return true;
+      } catch {
+        return false;
+      }
+    })
+    .map((order) => ({
+      orderId: order.id,
+      orderCode: order.orderCode,
+      customerUserId: order.customerUserId,
+      pickupBranchId: order.pickupBranchId,
+      ...outstanding(order),
+    }))
+    .filter((row) => row.outstandingVnd > 0n || row.deposit.refundRemainingVnd > 0n);
+  const start = (query.page - 1) * query.pageSize;
+  return pageResult(visible.slice(start, start + query.pageSize), visible.length, {
+    ...query,
+    sortBy: 'returnedAt',
+    sortOrder: 'asc',
+  });
 }
 export async function completeOrder(actor: AuthenticatedActor, id: string, input: CompleteInput) {
   requireEmployee(actor);
@@ -1159,6 +1373,12 @@ export async function completeOrder(actor: AuthenticatedActor, id: string, input
     assertManage(actor, order);
     assertStatus(order.status, ['RETURN_INSPECTION']);
     assertVersion(order.version, input.expectedVersion);
+    if (order.inspectionStatus === 'PENDING_ASSESSMENT')
+      throw new AppError(
+        409,
+        'ASSESSMENT_REQUIRED',
+        'Return assessment must be completed before settlement',
+      );
     const hasPreparedSettlement =
       order.otherFeeVnd !== 0n || order.depositDeductionVnd !== 0n || order.settlementNote !== null;
     if (

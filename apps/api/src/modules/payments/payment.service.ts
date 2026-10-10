@@ -516,6 +516,12 @@ export async function prepareSettlement(
         'SETTLEMENT_NOT_ALLOWED',
         'Settlement can be prepared after return inspection',
       );
+    if (order.inspectionStatus === 'PENDING_ASSESSMENT')
+      throw new AppError(
+        409,
+        'ASSESSMENT_REQUIRED',
+        'Return assessment must be completed before settlement',
+      );
     assertVersion(order.version, input.expectedVersion);
     const deposits = depositDueVnd(order.items);
     const paidDeposit = successfulPaymentTotal(order.payments, 'DEPOSIT');

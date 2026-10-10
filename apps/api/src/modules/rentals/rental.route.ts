@@ -7,9 +7,11 @@ import { requireAuthentication } from '../auth/auth.middleware.js';
 import {
   availabilitySchema,
   amendOrderItemSchema,
+  assessmentSchema,
   completeSchema,
   confirmSchema,
   createOrderSchema,
+  debtListSchema,
   eventListSchema,
   extendOrderSchema,
   listOrdersSchema,
@@ -179,6 +181,45 @@ rentalRouter.post('/orders/:orderId/return', async (req, res) =>
       parse(returnSchema.safeParse(req.body), 'Invalid return'),
     ),
     'Rental order returned',
+  ),
+);
+rentalRouter.post('/orders/:orderId/assessment', async (req, res) =>
+  sendSuccess(
+    res,
+    await service.assessReturn(
+      res.locals.actor,
+      orderId(req.params),
+      parse(assessmentSchema.safeParse(req.body), 'Invalid return assessment'),
+    ),
+    'Return assessed',
+  ),
+);
+rentalRouter.patch('/orders/:orderId/assessment', async (req, res) =>
+  sendSuccess(
+    res,
+    await service.assessReturn(
+      res.locals.actor,
+      orderId(req.params),
+      parse(assessmentSchema.safeParse(req.body), 'Invalid return assessment'),
+    ),
+    'Return assessment updated',
+  ),
+);
+rentalRouter.get('/orders/:orderId/outstanding', async (req, res) =>
+  sendSuccess(
+    res,
+    await service.getOutstanding(res.locals.actor, orderId(req.params)),
+    'Outstanding balance loaded',
+  ),
+);
+rentalRouter.get('/debts', async (req, res) =>
+  sendSuccess(
+    res,
+    await service.listDebts(
+      res.locals.actor,
+      parse(debtListSchema.safeParse(req.query), 'Invalid debt query'),
+    ),
+    'Debts loaded',
   ),
 );
 rentalRouter.post('/orders/:orderId/complete', async (req, res) =>
