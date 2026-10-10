@@ -11,7 +11,8 @@ import { logger } from '../../config/logger.js';
 import { prisma } from '../../database/prisma.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { assertPermission, type AuthenticatedActor } from '../auth/authorization.js';
-import { mediaDeleteEventType } from '../uploads/media-maintenance.service.js';
+import { outboxEventTypes } from '../outbox/outbox.events.js';
+import { enqueueOutboxEvent } from '../outbox/outbox.service.js';
 import { catalogMediaKey } from '../uploads/upload.service.js';
 import type {
   AccessoryInput,
@@ -685,14 +686,13 @@ export async function deleteMedia(actor: AuthenticatedActor, id: string) {
   if (!item) throw new AppError(404, 'MEDIA_NOT_FOUND', 'Media not found');
   const event = await prisma.$transaction(async (transaction) => {
     await transaction.costumeMedia.delete({ where: { id } });
-    return transaction.outboxEvent.create({
-      data: {
-        eventType: mediaDeleteEventType,
-        aggregateType: 'CostumeMedia',
-        aggregateId: item.id,
-        payloadJson: { objectKey: item.objectKey },
-        availableAt: new Date(Date.now() + 30_000),
-      },
+    return enqueueOutboxEvent(transaction, {
+      eventType: outboxEventTypes.mediaObjectDeleteRequested,
+      aggregateType: 'CostumeMedia',
+      aggregateId: item.id,
+      payloadJson: { objectKey: item.objectKey },
+      availableAt: new Date(Date.now() + 30_000),
+      deduplicationKey: `costume-media-delete:${item.id}`,
     });
   });
 

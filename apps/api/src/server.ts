@@ -7,7 +7,7 @@ import { startMediaMaintenance } from './modules/uploads/media-maintenance.servi
 const server = app.listen(env.PORT, () => {
   logger.info({ port: env.PORT }, 'API server started');
 });
-const mediaMaintenance = startMediaMaintenance();
+const mediaMaintenance = env.BACKGROUND_WORKER_ENABLED ? startMediaMaintenance() : undefined;
 
 let isShuttingDown = false;
 
@@ -18,7 +18,7 @@ function shutdown(signal: NodeJS.Signals) {
 
   isShuttingDown = true;
   logger.info({ signal }, 'Shutting down API server');
-  mediaMaintenance.stop();
+  mediaMaintenance?.stop();
 
   server.close((error) => {
     if (error) {

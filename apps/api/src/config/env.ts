@@ -75,6 +75,8 @@ const envSchema = z
     MEDIA_OUTBOX_RETENTION_DAYS: optionalPositiveInteger.default(30),
     MEDIA_ORPHAN_RETENTION_HOURS: optionalPositiveInteger.default(24),
     MEDIA_ORPHAN_CLEANUP_INTERVAL_SECONDS: optionalPositiveInteger.default(60 * 60),
+    // Keep this enabled until a dedicated `start:worker` process is deployed.
+    BACKGROUND_WORKER_ENABLED: optionalBoolean.default(true),
     MEDIA_PUBLIC_BASE_URL: optionalUrl,
     PAYOS_CLIENT_ID: optionalString,
     PAYOS_API_KEY: optionalString,

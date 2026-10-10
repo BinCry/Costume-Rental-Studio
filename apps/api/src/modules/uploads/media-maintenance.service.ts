@@ -1,22 +1,20 @@
 import { env } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 import { prisma } from '../../database/prisma.js';
+import { outboxEventTypes } from '../outbox/outbox.events.js';
+import {
+  PermanentOutboxError,
+  processPendingOutboxEvents,
+  startOutboxWorker,
+  type OutboxEventHandler,
+} from '../outbox/outbox.worker.js';
 import {
   deleteStoredObject,
   isObjectStorageConfigured,
   listStoredObjectsPage,
 } from '../../common/storage/s3.js';
 
-export const mediaDeleteEventType = 'MEDIA_OBJECT_DELETE_REQUESTED';
-
-const deleteLeaseMilliseconds = 60_000;
-const retryBaseMilliseconds = 5_000;
-const retryMaximumMilliseconds = 60 * 60 * 1_000;
-
-function errorMessage(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.slice(0, 2_000);
-}
+export const mediaDeleteEventType = outboxEventTypes.mediaObjectDeleteRequested;
 
 function objectKeyFromPayload(payload: unknown) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return undefined;
@@ -24,89 +22,20 @@ function objectKeyFromPayload(payload: unknown) {
   return typeof objectKey === 'string' && objectKey.length > 0 ? objectKey : undefined;
 }
 
-function nextRetryAt(retryCount: number, now = Date.now()) {
-  const delay = Math.min(
-    retryBaseMilliseconds * 2 ** Math.min(retryCount, 10),
-    retryMaximumMilliseconds,
-  );
-  return new Date(now + delay);
-}
-
-export async function processPendingMediaDeleteEvents(limit = 25) {
-  const now = new Date();
-  await prisma.outboxEvent.updateMany({
-    where: {
-      eventType: mediaDeleteEventType,
-      status: 'PROCESSING',
-      availableAt: { lte: now },
-    },
-    data: { status: 'PENDING' },
-  });
-
-  const events = await prisma.outboxEvent.findMany({
-    where: {
-      eventType: mediaDeleteEventType,
-      status: 'PENDING',
-      availableAt: { lte: now },
-    },
-    orderBy: { createdAt: 'asc' },
-    take: limit,
-  });
-
-  let processed = 0;
-  for (const event of events) {
-    const claimed = await prisma.outboxEvent.updateMany({
-      where: { id: event.id, status: 'PENDING' },
-      data: {
-        status: 'PROCESSING',
-        availableAt: new Date(Date.now() + deleteLeaseMilliseconds),
-      },
-    });
-    if (claimed.count !== 1) continue;
-
+const mediaDeleteHandler: OutboxEventHandler = {
+  eventType: mediaDeleteEventType,
+  maxRetries: env.MEDIA_DELETE_MAX_RETRIES,
+  async handle(event) {
     const objectKey = objectKeyFromPayload(event.payloadJson);
     if (!objectKey) {
-      await prisma.outboxEvent.update({
-        where: { id: event.id },
-        data: {
-          status: 'FAILED',
-          lastError: 'Outbox payload does not contain a valid objectKey',
-        },
-      });
-      continue;
+      throw new PermanentOutboxError('Outbox payload does not contain a valid objectKey');
     }
+    await deleteStoredObject(objectKey);
+  },
+};
 
-    try {
-      await deleteStoredObject(objectKey);
-      await prisma.outboxEvent.update({
-        where: { id: event.id },
-        data: {
-          status: 'PROCESSED',
-          processedAt: new Date(),
-          lastError: null,
-        },
-      });
-      processed += 1;
-    } catch (error: unknown) {
-      const retryCount = event.retryCount + 1;
-      const exhausted = retryCount >= env.MEDIA_DELETE_MAX_RETRIES;
-      await prisma.outboxEvent.update({
-        where: { id: event.id },
-        data: {
-          status: exhausted ? 'FAILED' : 'PENDING',
-          retryCount,
-          availableAt: nextRetryAt(retryCount),
-          lastError: errorMessage(error),
-        },
-      });
-      logger.warn(
-        { err: error, eventId: event.id, objectKey, retryCount, exhausted },
-        'Could not delete media object from outbox',
-      );
-    }
-  }
-
-  return { found: events.length, processed };
+export async function processPendingMediaDeleteEvents(limit = 25) {
+  return processPendingOutboxEvents([mediaDeleteHandler], { limit });
 }
 
 export async function cleanupOrphanedCatalogMedia(now = new Date()) {
@@ -173,20 +102,10 @@ export function startMediaMaintenance() {
     return { stop: () => undefined };
   }
 
-  let deleteWorkerRunning = false;
   let orphanCleanupRunning = false;
-
-  const runDeleteWorker = async () => {
-    if (deleteWorkerRunning) return;
-    deleteWorkerRunning = true;
-    try {
-      await processPendingMediaDeleteEvents();
-    } catch (error: unknown) {
-      logger.error({ err: error }, 'Media delete worker failed');
-    } finally {
-      deleteWorkerRunning = false;
-    }
-  };
+  const outboxWorker = startOutboxWorker([mediaDeleteHandler], {
+    intervalMilliseconds: env.MEDIA_DELETE_WORKER_INTERVAL_SECONDS * 1_000,
+  });
 
   const runOrphanCleanup = async () => {
     if (orphanCleanupRunning) return;
@@ -207,22 +126,16 @@ export function startMediaMaintenance() {
     }
   };
 
-  void runDeleteWorker();
   void runOrphanCleanup();
-  const deleteTimer = setInterval(
-    () => void runDeleteWorker(),
-    env.MEDIA_DELETE_WORKER_INTERVAL_SECONDS * 1_000,
-  );
   const orphanTimer = setInterval(
     () => void runOrphanCleanup(),
     env.MEDIA_ORPHAN_CLEANUP_INTERVAL_SECONDS * 1_000,
   );
-  deleteTimer.unref();
   orphanTimer.unref();
 
   return {
     stop() {
-      clearInterval(deleteTimer);
+      outboxWorker.stop();
       clearInterval(orphanTimer);
     },
   };

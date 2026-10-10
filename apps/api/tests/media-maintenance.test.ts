@@ -50,6 +50,7 @@ describe('media maintenance', () => {
   it('claims and processes pending object deletion events', async () => {
     const event = {
       id: '10000000-0000-4000-8000-000000000001',
+      eventType: 'MEDIA_OBJECT_DELETE_REQUESTED',
       payloadJson: { objectKey: 'catalog/models/model/image.jpg' },
       retryCount: 0,
     };
@@ -68,6 +69,7 @@ describe('media maintenance', () => {
   it('returns failed storage deletion events to the retry queue', async () => {
     const event = {
       id: '10000000-0000-4000-8000-000000000001',
+      eventType: 'MEDIA_OBJECT_DELETE_REQUESTED',
       payloadJson: { objectKey: 'catalog/models/model/image.jpg' },
       retryCount: 0,
     };

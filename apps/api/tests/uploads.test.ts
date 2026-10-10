@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   model: { findUnique: vi.fn() },
   variant: { findUnique: vi.fn() },
   media: { findUnique: vi.fn(), count: vi.fn(), create: vi.fn(), delete: vi.fn() },
-  outbox: { create: vi.fn(), update: vi.fn() },
+  outbox: { create: vi.fn(), upsert: vi.fn(), update: vi.fn() },
   presign: vi.fn(),
   promoteStoredImage: vi.fn(),
   deleteStoredObject: vi.fn(),
@@ -366,7 +366,7 @@ describe('Upload API', () => {
     const eventId = '10000000-0000-4000-8000-000000000009';
     const objectKey = `catalog/models/${modelId}/10000000-0000-4000-8000-000000000007.jpg`;
     mocks.media.findUnique.mockResolvedValue({ id: mediaId, modelId, objectKey });
-    mocks.outbox.create.mockResolvedValue({ id: eventId });
+    mocks.outbox.upsert.mockResolvedValue({ id: eventId });
 
     await request(createApp())
       .delete(`/api/v1/catalog/media/${mediaId}`)
@@ -374,9 +374,10 @@ describe('Upload API', () => {
       .expect(204);
 
     expect(mocks.media.delete).toHaveBeenCalledWith({ where: { id: mediaId } });
-    expect(mocks.outbox.create).toHaveBeenCalledWith(
+    expect(mocks.outbox.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({
+        where: { deduplicationKey: `costume-media-delete:${mediaId}` },
+        create: expect.objectContaining({
           eventType: 'MEDIA_OBJECT_DELETE_REQUESTED',
           aggregateId: mediaId,
           payloadJson: { objectKey },
