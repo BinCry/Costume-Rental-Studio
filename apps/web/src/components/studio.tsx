@@ -167,6 +167,7 @@ export function BranchSelector({
   all = false,
   label = 'Chi nhánh',
   options,
+  disabled = false,
 }: {
   value: string;
   onChange: (value: string) => void;
