@@ -1374,9 +1374,9 @@ export async function listReports(branchName?: string): Promise<ReportSnapshot[]
     overdueOrders: rentals.overdueOrders,
     completedRefund: numberValue(overview.completedRefundVnd ?? 0),
     transactions: payments.byStatus,
-    refunds: overview.completedRefundVnd && numberValue(overview.completedRefundVnd) > 0
-      ? [{ status: 'Đã hoàn', count: 1 }]
-      : [],
+    // The overview endpoint returns the exact amount, but not a refund count.
+    // Keep the count list empty instead of presenting an invented quantity.
+    refunds: [],
   }];
 }
 export async function listInventoryUnits(branchName?: string, search?: string): Promise<Unit[]> {

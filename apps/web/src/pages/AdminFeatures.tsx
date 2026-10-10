@@ -1311,9 +1311,15 @@ export function ReportsPage({
                     )}
                   </Panel>
                   <Panel title="Hoàn cọc">
-                    <KeyFacts
-                      rows={report.refunds.map((t) => ({ label: t.status, value: t.count }))}
-                    />
+                    {realApiMode ? (
+                      <p className="muted">
+                        API hiện trả số tiền hoàn chính xác ở chỉ số “Đã hoàn cọc”, chưa trả số lượng giao dịch.
+                      </p>
+                    ) : (
+                      <KeyFacts
+                        rows={report.refunds.map((t) => ({ label: t.status, value: t.count }))}
+                      />
+                    )}
                     {scenario === 'refundFailed' && (
                       <Feedback tone="danger" title="Hoàn cọc thất bại">
                         Cần đối soát trạng thái; không tự thử lại giao dịch tài chính.
