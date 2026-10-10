@@ -30,6 +30,10 @@ describe('OpenAPI documentation', () => {
     expect(document.paths['/inventory/transfers/{transferId}/receive']).toBeDefined();
     expect(document.paths['/reports/overview']).toBeDefined();
     expect(document.paths['/reports/revenue']).toBeDefined();
+    expect(document.paths['/rentals/orders/{orderId}/extend']?.post).toBeDefined();
+    expect(
+      document.paths['/rentals/orders/{orderId}/items/{orderItemId}/amend']?.post,
+    ).toBeDefined();
     for (const path of [
       '/catalog/categories/{id}',
       '/catalog/models/{id}',

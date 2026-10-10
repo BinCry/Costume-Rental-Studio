@@ -16,13 +16,15 @@ import { lockActiveBranch } from '../branches/branch.service.js';
 import {
   damageDueVnd,
   depositDueVnd,
-  rentalDueVnd,
+  rentalDueBeforeExtensionsVnd,
   successfulPaymentTotal,
 } from './rental-financials.js';
 import type {
   CompleteInput,
+  AmendOrderItemInput,
   ConfirmInput,
   CreateOrderInput,
+  ExtendOrderInput,
   ListOrdersInput,
   PickupInput,
   ReallocateInput,
@@ -146,6 +148,41 @@ function billableDays(start: Date, due: Date, mode: string) {
         ),
       )
     : Math.max(1, Math.ceil(hours / 24));
+}
+async function assertUnitAvailableForPeriod(
+  tx: Prisma.TransactionClient,
+  unitId: string,
+  occupiedFrom: Date,
+  occupiedUntil: Date,
+  excludedItemId: string,
+) {
+  const [overlap, blocked, transfer] = await Promise.all([
+    tx.rentalOrderItem.findFirst({
+      where: {
+        unitId,
+        id: { not: excludedItemId },
+        order: { status: { in: occupiedStatuses } },
+        occupiedFrom: { lt: occupiedUntil },
+        occupiedUntil: { gt: occupiedFrom },
+      },
+      select: { id: true },
+    }),
+    tx.unitBlock.findFirst({
+      where: {
+        unitId,
+        status: { in: ['PLANNED', 'IN_PROGRESS'] },
+        blockedFrom: { lt: occupiedUntil },
+        blockedUntil: { gt: occupiedFrom },
+      },
+      select: { id: true },
+    }),
+    tx.stockTransferItem.findFirst({
+      where: { unitId, transfer: { status: { in: ['REQUESTED', 'APPROVED', 'IN_TRANSIT'] } } },
+      select: { id: true },
+    }),
+  ]);
+  if (overlap || blocked || transfer)
+    throw new AppError(409, 'UNIT_UNAVAILABLE', 'Unit is already reserved or unavailable');
 }
 async function pricedItems(tx: Prisma.TransactionClient, input: CreateOrderInput) {
   const ids = input.items.map((item) => item.variantId);
@@ -561,7 +598,8 @@ export async function reallocateOrder(
     assertManage(actor, order);
     assertStatus(order.status, ['CONFIRMED', 'PREPARING']);
     assertVersion(order.version, input.expectedVersion);
-    if (!order.items.some((item) => item.id === input.orderItemId))
+    const previousItem = order.items.find((item) => item.id === input.orderItemId);
+    if (!previousItem)
       throw new AppError(404, 'ORDER_ITEM_NOT_FOUND', 'Rental order item not found');
     await assertAllocations(
       tx,
@@ -581,7 +619,193 @@ export async function reallocateOrder(
       },
       include: includeOrder(),
     });
-    await addEvent(tx, id, 'UNIT_REALLOCATED', actor.id, order.status, order.status);
+    await addEvent(tx, id, 'UNIT_REALLOCATED', actor.id, order.status, order.status, {
+      orderItemId: input.orderItemId,
+      previousUnitId: previousItem.unitId,
+      newUnitId: input.unitId,
+      variantId: previousItem.variantId,
+      reason: input.reason,
+    });
+    return result;
+  }, transactionOptions);
+}
+export async function extendOrder(actor: AuthenticatedActor, id: string, input: ExtendOrderInput) {
+  requireEmployee(actor);
+  return prisma.$transaction(async (tx) => {
+    const order = await lockOrder(tx, id);
+    assertManage(actor, order);
+    assertStatus(order.status, ['ACTIVE']);
+    assertVersion(order.version, input.expectedVersion);
+    if (input.newDueAt <= order.plannedDueAt)
+      throw new AppError(
+        400,
+        'INVALID_EXTENSION_PERIOD',
+        'newDueAt must be after the current due date',
+      );
+    const totalDays = billableDays(
+      order.plannedStartAt,
+      input.newDueAt,
+      order.policyVersion.billingDayMode,
+    );
+    if (order.policyVersion.maxRentalDays && totalDays > order.policyVersion.maxRentalDays)
+      throw new AppError(
+        400,
+        'INVALID_RENTAL_PERIOD',
+        'Extension exceeds the maximum rental duration',
+      );
+    const unitIds = order.items
+      .map((item) => item.unitId)
+      .filter((unitId): unitId is string => Boolean(unitId));
+    if (unitIds.length !== order.items.length)
+      throw new AppError(
+        409,
+        'INVALID_ALLOCATION',
+        'An active order must have every unit allocated',
+      );
+    await lockUnits(tx, unitIds);
+    for (const item of order.items)
+      await assertUnitAvailableForPeriod(
+        tx,
+        item.unitId!,
+        order.plannedDueAt,
+        input.newDueAt,
+        item.id,
+      );
+    const additionalFeeVnd = order.items.reduce(
+      (sum, item) => sum + item.unitDailyPriceVnd * BigInt(totalDays - item.billableDays),
+      0n,
+    );
+    const result = await tx.rentalOrder.update({
+      where: { id },
+      data: {
+        plannedDueAt: input.newDueAt,
+        additionalRentalFeeVnd: { increment: additionalFeeVnd },
+        version: { increment: 1 },
+        items: {
+          updateMany: {
+            where: {},
+            data: { occupiedUntil: input.newDueAt, billableDays: totalDays },
+          },
+        },
+      },
+      include: includeOrder(),
+    });
+    await addEvent(tx, id, 'ORDER_EXTENDED', actor.id, 'ACTIVE', 'ACTIVE', {
+      previousDueAt: order.plannedDueAt.toISOString(),
+      newDueAt: input.newDueAt.toISOString(),
+      previousBillableDays: order.items[0]?.billableDays ?? 0,
+      billableDays: totalDays,
+      additionalFeeVnd: additionalFeeVnd.toString(),
+      reason: input.reason,
+    });
+    return result;
+  }, transactionOptions);
+}
+export async function amendOrderItem(
+  actor: AuthenticatedActor,
+  id: string,
+  orderItemId: string,
+  input: AmendOrderItemInput,
+) {
+  requireEmployee(actor);
+  return prisma.$transaction(async (tx) => {
+    const order = await lockOrder(tx, id);
+    assertManage(actor, order);
+    assertStatus(order.status, ['CONFIRMED', 'PREPARING']);
+    assertVersion(order.version, input.expectedVersion);
+    if (
+      order.payments.some(
+        (payment) => payment.status === 'PENDING' && payment.method === 'PAYMENT_GATEWAY',
+      )
+    )
+      throw new AppError(
+        409,
+        'PENDING_PAYMENT_REQUIRES_CANCELLATION',
+        'Cancel pending payment gateway links before amending this order',
+      );
+    const item = order.items.find((value) => value.id === orderItemId);
+    if (!item) throw new AppError(404, 'ORDER_ITEM_NOT_FOUND', 'Rental order item not found');
+    const variants = await tx.costumeVariant.findMany({
+      where: { id: { in: [item.variantId, input.newVariantId] } },
+      include: { model: { include: { category: true } } },
+    });
+    const nextVariant = variants.find((variant) => variant.id === input.newVariantId);
+    if (!nextVariant) throw new AppError(404, 'VARIANT_NOT_FOUND', 'Replacement variant not found');
+    if (
+      nextVariant.status !== 'ACTIVE' ||
+      nextVariant.model.status !== 'ACTIVE' ||
+      nextVariant.model.category.status !== 'ACTIVE'
+    )
+      throw new AppError(
+        409,
+        'VARIANT_INACTIVE',
+        'Replacement variant and its hierarchy must be active',
+      );
+    if (item.accessories.length > 0 && item.variant.modelId !== nextVariant.modelId)
+      throw new AppError(
+        409,
+        'AMENDMENT_ACCESSORIES_REQUIRE_REVIEW',
+        'Items with accessories can only change size or variant within the same costume model',
+      );
+    const unitIds = [item.unitId, input.newUnitId].filter((unitId): unitId is string =>
+      Boolean(unitId),
+    );
+    const units = await lockUnits(tx, unitIds);
+    const newUnit = units.find((unit) => unit.id === input.newUnitId)!;
+    if (
+      newUnit.variantId !== nextVariant.id ||
+      newUnit.currentBranchId !== order.pickupBranchId ||
+      newUnit.operationalStatus !== 'READY'
+    )
+      throw new AppError(
+        409,
+        'UNIT_UNAVAILABLE',
+        'Replacement unit does not match an available variant',
+      );
+    await assertUnitAvailableForPeriod(
+      tx,
+      newUnit.id,
+      item.occupiedFrom,
+      item.occupiedUntil,
+      item.id,
+    );
+    const rentalDeltaVnd =
+      (nextVariant.dailyRentalPriceVnd - item.unitDailyPriceVnd) * BigInt(item.billableDays);
+    const depositDeltaVnd = nextVariant.depositAmountVnd - item.unitDepositVnd;
+    const result = await tx.rentalOrder.update({
+      where: { id },
+      data: {
+        items: {
+          update: {
+            where: { id: item.id },
+            data: {
+              variantId: nextVariant.id,
+              unitId: newUnit.id,
+              allocationStatus: 'CONFIRMED',
+              allocatedBy: actor.id,
+              unitDailyPriceVnd: nextVariant.dailyRentalPriceVnd,
+              unitDepositVnd: nextVariant.depositAmountVnd,
+            },
+          },
+        },
+        version: { increment: 1 },
+      },
+      include: includeOrder(),
+    });
+    await addEvent(tx, id, 'ORDER_ITEM_AMENDED', actor.id, order.status, order.status, {
+      orderItemId: item.id,
+      previousVariantId: item.variantId,
+      newVariantId: nextVariant.id,
+      previousUnitId: item.unitId,
+      newUnitId: newUnit.id,
+      previousUnitDailyPriceVnd: item.unitDailyPriceVnd.toString(),
+      newUnitDailyPriceVnd: nextVariant.dailyRentalPriceVnd.toString(),
+      previousUnitDepositVnd: item.unitDepositVnd.toString(),
+      newUnitDepositVnd: nextVariant.depositAmountVnd.toString(),
+      rentalDeltaVnd: rentalDeltaVnd.toString(),
+      depositDeltaVnd: depositDeltaVnd.toString(),
+      reason: input.reason,
+    });
     return result;
   }, transactionOptions);
 }
@@ -753,7 +977,11 @@ export async function pickupOrder(actor: AuthenticatedActor, id: string, input: 
     assertManage(actor, order);
     assertStatus(order.status, ['READY_FOR_PICKUP']);
     assertVersion(order.version, input.expectedVersion);
-    const rentalDue = rentalDueVnd(order.items, order.promotionDiscountVnd);
+    const rentalDue = rentalDueBeforeExtensionsVnd(
+      order.items,
+      order.promotionDiscountVnd,
+      order.additionalRentalFeeVnd,
+    );
     const depositDue = depositDueVnd(order.items);
     const paidRental = successfulPaymentTotal(order.payments, 'RENTAL');
     const paidDeposit = successfulPaymentTotal(order.payments, 'DEPOSIT');
@@ -952,8 +1180,12 @@ export async function completeOrder(actor: AuthenticatedActor, id: string, input
         'INVALID_DEPOSIT_DEDUCTION',
         'Deposit deduction exceeds order deposit',
       );
-    const rentalDue = rentalDueVnd(order.items, order.promotionDiscountVnd);
-    const extraDue = damage + order.lateFeeVnd + input.otherFeeVnd;
+    const rentalDue = rentalDueBeforeExtensionsVnd(
+      order.items,
+      order.promotionDiscountVnd,
+      order.additionalRentalFeeVnd,
+    );
+    const extraDue = order.additionalRentalFeeVnd + damage + order.lateFeeVnd + input.otherFeeVnd;
     const paidRental = successfulPaymentTotal(order.payments, 'RENTAL');
     const paidExtra = successfulPaymentTotal(order.payments, 'EXTRA');
     const paidDeposit = successfulPaymentTotal(order.payments, 'DEPOSIT');

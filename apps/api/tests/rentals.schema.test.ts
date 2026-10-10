@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   confirmSchema,
   createOrderSchema,
+  amendOrderItemSchema,
+  extendOrderSchema,
   pickupSchema,
   returnSchema,
 } from '../src/modules/rentals/rental.schema.js';
@@ -66,6 +68,27 @@ describe('rental order schemas', () => {
             evidence: [{ uploadKey: 'rental-staging/a.jpg', contentType: 'image/jpeg', size: 10 }],
           },
         ],
+      }).success,
+    ).toBe(true);
+  });
+
+  it('validates optimistic extension and amendment payloads', () => {
+    expect(
+      extendOrderSchema.safeParse({
+        expectedVersion: 4,
+        newDueAt: '2026-10-20T08:00:00.000Z',
+        reason: 'Customer requested more time',
+      }).success,
+    ).toBe(true);
+    expect(
+      extendOrderSchema.safeParse({ expectedVersion: 0, reason: 'Missing date' }).success,
+    ).toBe(false);
+    expect(
+      amendOrderItemSchema.safeParse({
+        expectedVersion: 4,
+        newVariantId: variantId,
+        newUnitId: unitId,
+        reason: 'Size exchange',
       }).success,
     ).toBe(true);
   });

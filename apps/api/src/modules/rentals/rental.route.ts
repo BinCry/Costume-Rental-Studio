@@ -6,10 +6,12 @@ import { sendSuccess } from '../../common/http/response.js';
 import { requireAuthentication } from '../auth/auth.middleware.js';
 import {
   availabilitySchema,
+  amendOrderItemSchema,
   completeSchema,
   confirmSchema,
   createOrderSchema,
   eventListSchema,
+  extendOrderSchema,
   listOrdersSchema,
   orderIdSchema,
   pickupSchema,
@@ -113,6 +115,32 @@ rentalRouter.post('/orders/:orderId/reallocate', async (req, res) =>
       parse(reallocateSchema.safeParse(req.body), 'Invalid reallocation'),
     ),
     'Rental unit reallocated',
+  ),
+);
+rentalRouter.post('/orders/:orderId/extend', async (req, res) =>
+  sendSuccess(
+    res,
+    await service.extendOrder(
+      res.locals.actor,
+      orderId(req.params),
+      parse(extendOrderSchema.safeParse(req.body), 'Invalid rental extension'),
+    ),
+    'Rental order extended',
+  ),
+);
+rentalRouter.post('/orders/:orderId/items/:orderItemId/amend', async (req, res) =>
+  sendSuccess(
+    res,
+    await service.amendOrderItem(
+      res.locals.actor,
+      orderId(req.params),
+      parse(
+        orderIdSchema.safeParse({ orderId: req.params.orderItemId }),
+        'Invalid rental order item id',
+      ).orderId,
+      parse(amendOrderItemSchema.safeParse(req.body), 'Invalid rental item amendment'),
+    ),
+    'Rental order item amended',
   ),
 );
 rentalRouter.post('/orders/:orderId/prepare', async (req, res) => {

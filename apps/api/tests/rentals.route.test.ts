@@ -26,6 +26,8 @@ const mocks = vi.hoisted(() => ({
   reject: vi.fn(),
   noShow: vi.fn(),
   reallocate: vi.fn(),
+  extend: vi.fn(),
+  amend: vi.fn(),
   events: vi.fn(),
 }));
 vi.mock('../src/database/prisma.js', () => ({
@@ -47,6 +49,8 @@ vi.mock('../src/modules/rentals/rental.service.js', () => ({
   rejectOrder: mocks.reject,
   markNoShow: mocks.noShow,
   reallocateOrder: mocks.reallocate,
+  extendOrder: mocks.extend,
+  amendOrderItem: mocks.amend,
   listOrderEvents: mocks.events,
 }));
 
@@ -131,11 +135,32 @@ describe('Rental order HTTP routes', () => {
       .set(auth(bearer))
       .send({ expectedVersion: 3 })
       .expect(200);
+    await request(createApp())
+      .post(`/api/v1/rentals/orders/${orderId}/extend`)
+      .set(auth(bearer))
+      .send({
+        expectedVersion: 4,
+        newDueAt: '2026-10-20T08:00:00.000Z',
+        reason: 'Customer requested more time',
+      })
+      .expect(200);
+    await request(createApp())
+      .post(`/api/v1/rentals/orders/${orderId}/items/${itemId}/amend`)
+      .set(auth(bearer))
+      .send({
+        expectedVersion: 4,
+        newVariantId: variantId,
+        newUnitId: unitId,
+        reason: 'Size exchange',
+      })
+      .expect(200);
     expect(mocks.availability).toHaveBeenCalledOnce();
     expect(mocks.create).toHaveBeenCalledOnce();
     expect(mocks.update).toHaveBeenCalledOnce();
     expect(mocks.confirm).toHaveBeenCalledOnce();
     expect(mocks.prepare).toHaveBeenCalledOnce();
     expect(mocks.ready).toHaveBeenCalledOnce();
+    expect(mocks.extend).toHaveBeenCalledOnce();
+    expect(mocks.amend).toHaveBeenCalledOnce();
   });
 });

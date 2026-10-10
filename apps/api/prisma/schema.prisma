@@ -770,6 +770,7 @@ model RentalOrder {
   inspectionStatus     InspectionStatus?     @map("inspection_status")
   returnNotes          String?               @map("return_notes") @db.Text
   lateFeeVnd           BigInt                @default(0) @map("late_fee_vnd")
+  additionalRentalFeeVnd BigInt              @default(0) @map("additional_rental_fee_vnd")
   otherFeeVnd          BigInt                @default(0) @map("other_fee_vnd")
   depositDeductionVnd  BigInt                @default(0) @map("deposit_deduction_vnd")
   settlementNote       String?               @map("settlement_note") @db.Text

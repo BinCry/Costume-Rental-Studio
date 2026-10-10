@@ -17,6 +17,18 @@ export function rentalDueVnd(items: PricedRentalItem[], promotionDiscountVnd: bi
   );
 }
 
+/**
+ * Extension days remain in item snapshots for operational scheduling, while their price is
+ * collected as EXTRA. This keeps the original rental payment balance stable.
+ */
+export function rentalDueBeforeExtensionsVnd(
+  items: PricedRentalItem[],
+  promotionDiscountVnd: bigint,
+  additionalRentalFeeVnd: bigint,
+) {
+  return rentalDueVnd(items, promotionDiscountVnd) - additionalRentalFeeVnd;
+}
+
 export function depositDueVnd(items: PricedRentalItem[]) {
   return items.reduce((sum, item) => sum + item.unitDepositVnd, 0n);
 }

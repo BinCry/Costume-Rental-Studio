@@ -732,6 +732,34 @@ export const openApiDocument = {
         },
       },
     },
+    '/rentals/orders/{orderId}/extend': {
+      post: {
+        tags: ['Rentals'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Extend an active rental order and create an EXTRA balance',
+        description:
+          'Requires expectedVersion, newDueAt, and reason. Every allocated unit is locked and checked for conflicts.',
+        responses: {
+          '200': { description: 'Rental order extended' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/rentals/orders/{orderId}/items/{orderItemId}/amend': {
+      post: {
+        tags: ['Rentals'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Change an allocated item variant or size before pickup',
+        description:
+          'Allowed only while CONFIRMED or PREPARING. Pending payment-gateway links must be cancelled first.',
+        responses: {
+          '200': { description: 'Rental order item amended' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
     '/rentals/orders/{orderId}/pickup': {
       post: {
         tags: ['Rentals'],

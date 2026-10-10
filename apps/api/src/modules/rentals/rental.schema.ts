@@ -100,6 +100,19 @@ export const confirmSchema = versionSchema
 export const reallocateSchema = versionSchema
   .extend({ orderItemId: z.uuid(), unitId: z.uuid(), reason: z.string().trim().min(1).max(10_000) })
   .strict();
+export const extendOrderSchema = versionSchema
+  .extend({
+    newDueAt: z.coerce.date(),
+    reason: z.string().trim().min(1).max(10_000),
+  })
+  .strict();
+export const amendOrderItemSchema = versionSchema
+  .extend({
+    newVariantId: z.uuid(),
+    newUnitId: z.uuid(),
+    reason: z.string().trim().min(1).max(10_000),
+  })
+  .strict();
 const evidenceSchema = z
   .object({
     uploadKey: z.string().trim().min(1).max(500),
@@ -177,6 +190,8 @@ export type UpdateOrderInput = z.infer<typeof updateOrderSchema>;
 export type ListOrdersInput = z.infer<typeof listOrdersSchema>;
 export type ConfirmInput = z.infer<typeof confirmSchema>;
 export type ReallocateInput = z.infer<typeof reallocateSchema>;
+export type ExtendOrderInput = z.infer<typeof extendOrderSchema>;
+export type AmendOrderItemInput = z.infer<typeof amendOrderItemSchema>;
 export type PickupInput = z.infer<typeof pickupSchema>;
 export type ReturnInput = z.infer<typeof returnSchema>;
 export type CompleteInput = z.infer<typeof completeSchema>;

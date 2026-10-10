@@ -5,7 +5,7 @@ import type { Prisma } from '../../generated/prisma/client.js';
 import {
   damageDueVnd,
   depositDueVnd,
-  rentalDueVnd,
+  rentalDueBeforeExtensionsVnd,
   successfulPaymentTotal,
 } from '../rentals/rental-financials.js';
 import {
@@ -131,11 +131,11 @@ function assertPaymentOrderStatus(status: string, purpose: CreatePaymentInput['p
     throw new AppError(409, 'PAYMENT_NOT_ALLOWED', 'Payments are not allowed for a terminal order');
   if (!paymentOrderStatuses.includes(status))
     throw new AppError(409, 'PAYMENT_NOT_ALLOWED', 'The rental order is not ready for payment');
-  if (purpose === 'EXTRA' && status !== 'RETURN_INSPECTION')
+  if (purpose === 'EXTRA' && !['ACTIVE', 'RETURN_INSPECTION'].includes(status))
     throw new AppError(
       409,
       'PAYMENT_NOT_ALLOWED',
-      'Extra payments are allowed after return inspection',
+      'Extra payments are allowed for an active rental or after return inspection',
     );
 }
 
@@ -148,9 +148,16 @@ function paymentDue(
   order: Prisma.RentalOrderGetPayload<{ include: ReturnType<typeof orderInclude> }>,
   purpose: CreatePaymentInput['purpose'],
 ) {
-  if (purpose === 'RENTAL') return rentalDueVnd(order.items, order.promotionDiscountVnd);
+  if (purpose === 'RENTAL')
+    return rentalDueBeforeExtensionsVnd(
+      order.items,
+      order.promotionDiscountVnd,
+      order.additionalRentalFeeVnd,
+    );
   if (purpose === 'DEPOSIT') return depositDueVnd(order.items);
-  return damageDueVnd(order.items) + order.lateFeeVnd + order.otherFeeVnd;
+  return (
+    order.additionalRentalFeeVnd + damageDueVnd(order.items) + order.lateFeeVnd + order.otherFeeVnd
+  );
 }
 
 function reservedForPurpose(
@@ -203,9 +210,14 @@ function assertSameRefundRequest(
 function settlement(
   order: Prisma.RentalOrderGetPayload<{ include: ReturnType<typeof orderInclude> }>,
 ) {
-  const rentalDue = rentalDueVnd(order.items, order.promotionDiscountVnd);
+  const rentalDue = rentalDueBeforeExtensionsVnd(
+    order.items,
+    order.promotionDiscountVnd,
+    order.additionalRentalFeeVnd,
+  );
   const depositDue = depositDueVnd(order.items);
-  const extraDue = damageDueVnd(order.items) + order.lateFeeVnd + order.otherFeeVnd;
+  const extraDue =
+    order.additionalRentalFeeVnd + damageDueVnd(order.items) + order.lateFeeVnd + order.otherFeeVnd;
   const paidRental = successfulPaymentTotal(order.payments, 'RENTAL');
   const paidDeposit = successfulPaymentTotal(order.payments, 'DEPOSIT');
   const paidExtra = successfulPaymentTotal(order.payments, 'EXTRA');
