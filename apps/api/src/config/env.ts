@@ -40,6 +40,9 @@ const envSchema = z
     NODE_ENV: z.enum(['development', 'test', 'production']),
     PORT: z.coerce.number().int().min(1).max(65_535),
     WEB_URL: z.string().url(),
+    // Comma-separated browser origins allowed for CORS and trusted auth requests.
+    // WEB_URL remains the canonical origin used for OAuth callbacks.
+    WEB_ALLOWED_ORIGINS: optionalString,
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']),
     DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
     JWT_ACCESS_SECRET: z.string().min(32).optional(),
@@ -108,6 +111,30 @@ const envSchema = z
       }
     }
 
+    if (value.WEB_ALLOWED_ORIGINS) {
+      for (const rawOrigin of value.WEB_ALLOWED_ORIGINS.split(',')) {
+        const origin = rawOrigin.trim();
+        if (!origin) continue;
+        try {
+          const parsed = new URL(origin);
+          if (
+            !['http:', 'https:'].includes(parsed.protocol) ||
+            parsed.pathname !== '/' ||
+            parsed.search ||
+            parsed.hash
+          ) {
+            throw new Error('Origin must not include a path, query, or hash');
+          }
+        } catch {
+          context.addIssue({
+            code: 'custom',
+            path: ['WEB_ALLOWED_ORIGINS'],
+            message: `Invalid browser origin: ${origin}`,
+          });
+        }
+      }
+    }
+
     const storageKeys = [
       'S3_ENDPOINT',
       'S3_REGION',
@@ -158,3 +185,12 @@ if (!result.success) {
 }
 
 export const env = result.data;
+
+export const webAllowedOrigins = Array.from(
+  new Set(
+    [env.WEB_URL, ...(env.WEB_ALLOWED_ORIGINS?.split(',') ?? [])]
+      .map((origin) => origin.trim())
+      .filter(Boolean)
+      .map((origin) => new URL(origin).origin),
+  ),
+);
