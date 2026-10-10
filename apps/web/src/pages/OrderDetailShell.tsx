@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Navigate } from '../App';
 import {
   Button,
@@ -15,6 +15,19 @@ import { money, orderStatus } from '../components/support';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { branches, fixtureAdapter, returnSnapshots } from '../fixtures/adapter';
 import type { DemoScenario, Order } from '../fixtures/types';
+import {
+  ApiClientError,
+  apiEnabled,
+  getOrderSettlement,
+  hasAccessToken,
+  listOrderPayments,
+  pickupOrder as pickupApiOrder,
+  recordBankTransferPayment,
+  recordCashPayment,
+  returnOrder as returnApiOrder,
+  type SettlementSnapshot,
+  uploadRentalEvidence,
+} from '../api/client';
 
 const loadOrders = (scenario: DemoScenario) => fixtureAdapter.listOrders(scenario);
 
@@ -31,6 +44,7 @@ export function OrderDetailShell({
   initialOrderId: string;
   initialBranch: string;
 }) {
+  const realApiMode = apiEnabled && hasAccessToken();
   const [branch, setBranch] = useState(initialBranch);
   const [orderId, setOrderId] = useState(initialOrderId);
   const [barcode, setBarcode] = useState('');
@@ -46,6 +60,13 @@ export function OrderDetailShell({
   const [rentPreview, setRentPreview] = useState(false);
   const [depositPreview, setDepositPreview] = useState(false);
   const [note, setNote] = useState('');
+  const [transactionReference, setTransactionReference] = useState('');
+  const [evidenceFiles, setEvidenceFiles] = useState<Record<string, File[]>>({});
+  const [operationBusy, setOperationBusy] = useState(false);
+  const [operationIssue, setOperationIssue] = useState('');
+  const [backendSettlement, setBackendSettlement] = useState<SettlementSnapshot>();
+  const [settlementLoading, setSettlementLoading] = useState(false);
+  const [settlementError, setSettlementError] = useState('');
   const [result, setResult] = useState<{ text: string; signature: string } | null>(null);
   const { loading, data, error, retry } = useFixtureResource(scenario, loadOrders);
   const eligible = (data ?? []).filter(
@@ -58,7 +79,7 @@ export function OrderDetailShell({
   const order: Order | undefined = eligible.find((entry) => entry.id === orderId);
   const rental = order?.money.find((line) => line.label === 'Tiền thuê');
   const deposit = order?.money.find((line) => line.label === 'Tiền cọc');
-  const settlement = order ? returnSnapshots[order.id] : undefined;
+  const settlement = realApiMode ? undefined : order ? returnSnapshots[order.id] : undefined;
   const scannedItems =
     order?.items.filter((item) => !!item.unitCode && matchedCodes.includes(item.unitCode)) ?? [];
   const allReturnItemsScanned = !!order && scannedItems.length === order.items.length;
@@ -77,6 +98,11 @@ export function OrderDetailShell({
     mode === 'return' &&
     scannedItems.some((item) => returnConditions[item.id] === 'PENDING_ASSESSMENT');
   const needsAssessmentNote = needsAssessment && !note.trim();
+  const evidenceItems = mode === 'handover' ? order?.items ?? [] : scannedItems;
+  const allEvidenceSelected =
+    !realApiMode || evidenceItems.every((item) => (evidenceFiles[item.id]?.length ?? 0) > 0);
+  const backendReturnReady = realApiMode && mode === 'return' && order?.status === 'RETURN_INSPECTION';
+  const settlementReady = realApiMode ? !!backendSettlement : !!settlement;
   const snapshotConditionMismatch =
     mode === 'return' &&
     !!settlement &&
@@ -84,6 +110,33 @@ export function OrderDetailShell({
     allChecked &&
     scannedItems.every((item) => returnConditions[item.id] === 'PASSED') &&
     (settlement.damageFee > 0 || settlement.missingFee > 0);
+  useEffect(() => {
+    let active = true;
+    if (!realApiMode || mode !== 'return' || !order) {
+      setBackendSettlement(undefined);
+      setSettlementError('');
+      setSettlementLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+    setSettlementLoading(true);
+    setSettlementError('');
+    void getOrderSettlement(order.id)
+      .then((snapshot) => {
+        if (active) setBackendSettlement(snapshot);
+      })
+      .catch((caught: unknown) => {
+        if (active)
+          setSettlementError(caught instanceof Error ? caught.message : 'Không tải được quyết toán.');
+      })
+      .finally(() => {
+        if (active) setSettlementLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [mode, order?.id, realApiMode]);
   const onOrderChange = (id: string) => {
     setOrderId(id);
     setBarcode('');
@@ -94,6 +147,10 @@ export function OrderDetailShell({
     setRentPreview(false);
     setDepositPreview(false);
     setNote('');
+    setTransactionReference('');
+    setEvidenceFiles({});
+    setOperationIssue('');
+    setBackendSettlement(undefined);
     setScanIssue('');
     setResult(null);
     if (id)
@@ -109,8 +166,24 @@ export function OrderDetailShell({
     setMatchedCode('');
     setResult(null);
     try {
-      const hit = await fixtureAdapter.lookupBarcode(barcode, branch, scenario);
-      if (hit.order.id !== order?.id) {
+      const normalizedBarcode = barcode.trim().toUpperCase();
+      const hit = realApiMode
+        ? (() => {
+            const hitOrder = (data ?? []).find((entry) =>
+              entry.items.some((item) => item.unitCode === normalizedBarcode),
+            );
+            if (!hitOrder) throw new ApiClientError(404, 'BARCODE_NOT_FOUND', 'Không tìm thấy mã bộ trong dữ liệu đơn đang tải.');
+            return {
+              order: hitOrder,
+              itemIndex: hitOrder.items.findIndex((item) => item.unitCode === normalizedBarcode),
+            };
+          })()
+        : await fixtureAdapter.lookupBarcode(barcode, branch, scenario);
+      if (hit.order.branch !== branch) {
+        setScanIssue(
+          `Mã ${barcode.toUpperCase()} thuộc ${hit.order.branch}, không thuộc chi nhánh đang mở. Chưa ghi nhận giao/trả.`,
+        );
+      } else if (hit.order.id !== order?.id) {
         setScanIssue(
           `Mã ${barcode.toUpperCase()} thuộc đơn ${hit.order.id}, không khớp đơn ${order?.id}. Chưa ghi nhận giao/trả.`,
         );
@@ -174,6 +247,108 @@ export function OrderDetailShell({
           : 'Đã xem trước quyết toán. Backend cần xác nhận cấn trừ, hoàn cọc và điều kiện hoàn tất; bản demo chưa ghi giao dịch.',
       signature: previewSignature,
     });
+  };
+  const uploadEvidence = async (itemId: string, phase: 'PICKUP' | 'RETURN') => {
+    const files = evidenceFiles[itemId] ?? [];
+    if (files.length === 0) throw new ApiClientError(400, 'EVIDENCE_REQUIRED', 'Mỗi bộ cần ít nhất một ảnh bằng chứng.');
+    return Promise.all(files.slice(0, 10).map((file) => uploadRentalEvidence(itemId, phase, file)));
+  };
+  const ensurePayment = async (
+    purpose: 'RENTAL' | 'DEPOSIT',
+    amount: number,
+    transactionRef?: string,
+  ) => {
+    if (amount <= 0) return;
+    const existing = await listOrderPayments(order?.id ?? '');
+    const alreadyRecorded = existing.some(
+      (payment) =>
+        payment.purpose === purpose &&
+        Number(payment.amountVnd) === Math.round(amount) &&
+        ['SUCCEEDED', 'PAID'].includes(payment.status),
+    );
+    if (alreadyRecorded) return;
+    if (effectiveMethod === 'CASH') await recordCashPayment(order?.id ?? '', purpose, amount);
+    else await recordBankTransferPayment(order?.id ?? '', purpose, amount, transactionRef ?? '');
+  };
+  const performHandover = async () => {
+    if (!realApiMode) {
+      previewHandover();
+      return;
+    }
+    if (!order || !allScanned || !allChecked || !allEvidenceSelected || restricted) return;
+    if (effectiveMethod === 'BANK_TRANSFER' && !transactionReference.trim()) {
+      setOperationIssue('Nhập mã giao dịch chuyển khoản trước khi xác nhận thu tiền.');
+      return;
+    }
+    setOperationBusy(true);
+    setOperationIssue('');
+    setResult(null);
+    try {
+      const evidence = await Promise.all(
+        order.items.map(async (item) => ({
+          orderItemId: item.id,
+          conditionGrade: 'GOOD' as const,
+          conditionNotes: note.trim() || undefined,
+          evidence: await uploadEvidence(item.id, 'PICKUP'),
+        })),
+      );
+      await ensurePayment('RENTAL', rental?.amount ?? 0, transactionReference.trim());
+      await ensurePayment('DEPOSIT', deposit?.amount ?? 0, transactionReference.trim());
+      await pickupApiOrder(order.id, order.version, evidence);
+      setResult({
+        text: 'Đã ghi nhận bằng chứng, thanh toán và giao trang phục. Đơn đã được chuyển sang trạng thái đang thuê.',
+        signature: previewSignature,
+      });
+      retry();
+    } catch (caught) {
+      setOperationIssue(caught instanceof Error ? caught.message : 'Không thể hoàn tất giao trang phục.');
+    } finally {
+      setOperationBusy(false);
+    }
+  };
+  const performReturn = async () => {
+    if (!realApiMode) {
+      previewReturn();
+      return;
+    }
+    if (!order || !scannedEnough || !allChecked || !allEvidenceSelected || restricted) return;
+    if (order.status !== 'ACTIVE') {
+      setOperationIssue('Đơn đã ở bước kiểm tra/quyết toán. Không gửi lại thao tác nhận trả; hãy xử lý biên bản và hoàn cọc theo quyền được cấp.');
+      return;
+    }
+    setOperationBusy(true);
+    setOperationIssue('');
+    setResult(null);
+    try {
+      const items = await Promise.all(
+        scannedItems.map(async (item) => ({
+          orderItemId: item.id,
+          returnConditionGrade: returnConditions[item.id] === 'PENDING_ASSESSMENT' ? ('FAIR' as const) : ('GOOD' as const),
+          isMissing: false,
+          damageNotes: returnConditions[item.id] === 'PENDING_ASSESSMENT' ? note.trim() : undefined,
+          nextOperationalStatus: 'CLEANING' as const,
+          evidence: await uploadEvidence(item.id, 'RETURN'),
+          accessories: (item.accessories ?? []).map((accessory) => ({
+            accessoryId: accessory.id,
+            quantityReturned: accessory.quantityOut,
+            conditionIn: 'GOOD' as const,
+          })),
+        })),
+      );
+      await returnApiOrder(order.id, order.version, scannedItems.length < order.items.length, note.trim(), items);
+      setResult({
+        text:
+          scannedItems.length < order.items.length
+            ? `Đã ghi nhận trả ${scannedItems.length}/${order.items.length} bộ. Cọc vẫn được giữ để xử lý phần còn lại hoặc quyết toán.`
+            : 'Đã ghi nhận trả đủ bộ. Đơn đang chờ kiểm tra và quyết toán cọc theo quy trình.',
+        signature: previewSignature,
+      });
+      retry();
+    } catch (caught) {
+      setOperationIssue(caught instanceof Error ? caught.message : 'Không thể hoàn tất nhận trả.');
+    } finally {
+      setOperationBusy(false);
+    }
   };
   return (
     <div className="page staff-page task-page">
@@ -448,6 +623,28 @@ export function OrderDetailShell({
                         : 'Đã đối chiếu phụ kiện thiếu/hỏng'}
                     </span>
                   </label>
+                  {((mode === 'handover' && matchedCodes.includes(item.unitCode ?? '')) ||
+                    (mode === 'return' && matchedCodes.includes(item.unitCode ?? ''))) && (
+                    <label className="field file-field">
+                      <span>Ảnh bằng chứng {realApiMode ? '(bắt buộc)' : '(tuỳ chọn)'}</span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        multiple
+                        onChange={(event) =>
+                          setEvidenceFiles((current) => ({
+                            ...current,
+                            [item.id]: Array.from(event.target.files ?? []).slice(0, 10),
+                          }))
+                        }
+                      />
+                      <small>
+                        {(evidenceFiles[item.id]?.length ?? 0) > 0
+                          ? `Đã chọn ${evidenceFiles[item.id]?.length ?? 0} ảnh`
+                          : 'Chọn ảnh tình trạng thực tế của bộ'}
+                      </small>
+                    </label>
+                  )}
                   {mode === 'return' && matchedCodes.includes(item.unitCode ?? '') && (
                     <SelectField
                       label={`Kết quả kiểm ${item.unitCode ?? item.costume}`}
@@ -485,7 +682,9 @@ export function OrderDetailShell({
                 </Feedback>
               )}
               <p className="section-help">
-                Ảnh bằng chứng cần dịch vụ lưu trữ và quyền truy cập; prototype chưa tải ảnh lên.
+                {realApiMode
+                  ? 'Ảnh sẽ được tải lên kho lưu trữ của hệ thống và gắn với từng bộ khi xác nhận thao tác.'
+                  : 'Ảnh bằng chứng chỉ là lựa chọn xem trước; khi có API, ảnh sẽ được gắn với từng bộ.'}
               </p>
             </section>
             <section className="task-card" id="task-money">
@@ -501,7 +700,7 @@ export function OrderDetailShell({
               {mode === 'handover' ? (
                 <>
                   <SelectField
-                    label="Phương thức thu (bản xem trước)"
+                    label={`Phương thức thu ${realApiMode ? '' : '(bản xem trước)'}`}
                     value={effectiveMethod}
                     disabled={scenario === 'bankPending'}
                     onChange={(event) => {
@@ -562,7 +761,9 @@ export function OrderDetailShell({
                   {effectiveMethod === 'CASH' ? (
                     <div className="cash-checks">
                       <p className="section-help">
-                        Chỉ xem trước việc đối chiếu tiền mặt; chưa ghi giao dịch hoặc giao bộ.
+                        {realApiMode
+                          ? 'Đánh dấu sau khi đã nhận đủ từng khoản tiền mặt tại quầy.'
+                          : 'Chỉ xem trước việc đối chiếu tiền mặt; chưa ghi giao dịch hoặc giao bộ.'}
                       </p>
                       <label className="check-row">
                         <input
@@ -570,7 +771,7 @@ export function OrderDetailShell({
                           checked={rentPreview}
                           onChange={(event) => setRentPreview(event.target.checked)}
                         />
-                        <span>Xem trước: đã nhận tiền thuê bằng tiền mặt</span>
+                        <span>{realApiMode ? 'Đã nhận tiền thuê bằng tiền mặt' : 'Xem trước: đã nhận tiền thuê bằng tiền mặt'}</span>
                       </label>
                       <label className="check-row">
                         <input
@@ -578,14 +779,25 @@ export function OrderDetailShell({
                           checked={depositPreview}
                           onChange={(event) => setDepositPreview(event.target.checked)}
                         />
-                        <span>Xem trước: đã nhận tiền cọc bằng tiền mặt</span>
+                        <span>{realApiMode ? 'Đã nhận tiền cọc bằng tiền mặt' : 'Xem trước: đã nhận tiền cọc bằng tiền mặt'}</span>
                       </label>
                     </div>
                   ) : (
-                    <Feedback tone="warning" title="Chuyển khoản chưa đối soát">
-                      Chưa xác nhận tiền đã nhận. Kiểm tra giao dịch và chỉ ghi nhận sau đối soát;
-                      bản demo không kết nối ngân hàng.
-                    </Feedback>
+                    <>
+                      {realApiMode && (
+                        <Field
+                          label="Mã giao dịch chuyển khoản"
+                          placeholder="Ví dụ: FT240930001"
+                          value={transactionReference}
+                          onChange={(event) => setTransactionReference(event.target.value)}
+                        />
+                      )}
+                      <Feedback tone="warning" title="Chuyển khoản cần mã đối soát">
+                        {realApiMode
+                          ? 'Mã giao dịch được lưu cùng khoản thu để đối soát và tránh ghi nhận nhầm.'
+                          : 'Chưa xác nhận tiền đã nhận. Kiểm tra giao dịch và chỉ ghi nhận sau đối soát; bản demo không kết nối ngân hàng.'}
+                      </Feedback>
+                    </>
                   )}
                   {scenario === 'bankPending' && (
                     <Feedback tone="warning" title="Giao dịch đang chờ xác minh">
@@ -594,7 +806,56 @@ export function OrderDetailShell({
                   )}
                 </>
               ) : (
-                settlement &&
+                <>
+                  {realApiMode && settlementLoading && (
+                    <Feedback title="Đang tải quyết toán từ máy chủ">
+                      Đang đối chiếu khoản đã thu, cấn trừ và trạng thái hoàn cọc.
+                    </Feedback>
+                  )}
+                  {realApiMode && settlementError && (
+                    <Feedback tone="danger" title="Không tải được quyết toán">
+                      {settlementError}
+                    </Feedback>
+                  )}
+                  {realApiMode && backendSettlement && (
+                    <>
+                      <div className="settlement-table">
+                        <div>
+                          <span>Cọc phải thu</span>
+                          <strong>{money(Number(backendSettlement.deposit.dueVnd))}</strong>
+                        </div>
+                        <div>
+                          <span>Cọc đã cấn trừ</span>
+                          <strong>{money(Number(backendSettlement.deposit.deductionVnd))}</strong>
+                        </div>
+                        <div>
+                          <span>Đã hoàn / còn có thể hoàn</span>
+                          <strong>
+                            {money(Number(backendSettlement.deposit.refundedVnd))} /{' '}
+                            {money(Number(backendSettlement.deposit.refundAvailableVnd ?? backendSettlement.deposit.refundRemainingVnd))}
+                          </strong>
+                        </div>
+                        <div>
+                          <span>Còn phải thu khác</span>
+                          <strong>{money(Number(backendSettlement.extra.remainingVnd))}</strong>
+                        </div>
+                        <div className="settlement-total">
+                          <span>Trạng thái máy chủ</span>
+                          <strong>{backendSettlement.status}</strong>
+                        </div>
+                      </div>
+                      <Feedback
+                        tone={backendSettlement.canComplete ? 'success' : 'info'}
+                        title={backendSettlement.canComplete ? 'Đủ điều kiện hoàn tất' : 'Chưa đủ điều kiện hoàn tất'}
+                      >
+                        Còn phải thu: {money(Number(backendSettlement.outstandingVnd))}. Việc hoàn cọc
+                        qua SePay chỉ được thực hiện theo giao dịch và quyền được cấp; giao diện không
+                        tự suy ra đã hoàn từ số dự kiến.
+                      </Feedback>
+                    </>
+                  )}
+                  {!realApiMode &&
+                    settlement &&
                 allReturnItemsScanned &&
                 allChecked &&
                 !needsAssessment && (
@@ -641,11 +902,12 @@ export function OrderDetailShell({
                       </Feedback>
                     )}
                   </>
-                )
+                )}
+                </>
               )}
               {mode === 'return' &&
                 !needsAssessment &&
-                (!settlement || !allReturnItemsScanned || !allChecked) && (
+                (!settlementReady || !allReturnItemsScanned || !allChecked) && (
                   <Feedback
                     title={
                       !allReturnItemsScanned
@@ -671,14 +933,15 @@ export function OrderDetailShell({
                 </p>
               )}
               {result?.signature === previewSignature && !restricted && (
-                <Feedback tone="success" title="Đã kiểm tra điều kiện trong phiên demo">
+                <Feedback tone="success" title={realApiMode ? 'Đã cập nhật đơn trên máy chủ' : 'Đã kiểm tra điều kiện trong phiên demo'}>
                   {result.text}
                 </Feedback>
               )}
+              {operationIssue && <Feedback tone="danger" title="Chưa hoàn tất thao tác">{operationIssue}</Feedback>}
               {mode === 'return' && result?.signature === previewSignature && !restricted && (
                 <div
                   className="return-review"
-                  aria-label="Tóm tắt các bộ đã kiểm trong bản xem trước"
+                  aria-label={realApiMode ? 'Tóm tắt các bộ đã cập nhật' : 'Tóm tắt các bộ đã kiểm trong bản xem trước'}
                 >
                   <strong>
                     Đã kiểm {scannedItems.length}/{order.items.length} bộ
@@ -704,21 +967,33 @@ export function OrderDetailShell({
               )}
               <div className="task-final">
                 <Button
-                  onClick={mode === 'handover' ? previewHandover : previewReturn}
+                  onClick={mode === 'handover' ? performHandover : performReturn}
+                  loading={operationBusy}
                   disabled={
                     !scannedEnough ||
                     !allChecked ||
+                    !allEvidenceSelected ||
                     needsAssessmentNote ||
                     restricted ||
+                    backendReturnReady ||
                     (mode === 'handover' &&
-                      (!rentPreview || !depositPreview || effectiveMethod === 'BANK_TRANSFER'))
+                      (!rentPreview ||
+                        !depositPreview ||
+                        (!realApiMode && effectiveMethod === 'BANK_TRANSFER') ||
+                        (realApiMode && effectiveMethod === 'BANK_TRANSFER' && !transactionReference.trim())))
                   }
                 >
                   {mode === 'handover'
-                    ? 'Kiểm tra điều kiện giao'
+                    ? realApiMode
+                      ? 'Xác nhận thu tiền và giao đồ'
+                      : 'Kiểm tra điều kiện giao'
                     : order.status === 'ACTIVE'
-                      ? `Xem trước nhận ${scannedItems.length}/${order.items.length} bộ`
-                      : 'Xem trước quyết toán'}
+                      ? realApiMode
+                        ? `Xác nhận nhận ${scannedItems.length}/${order.items.length} bộ`
+                        : `Xem trước nhận ${scannedItems.length}/${order.items.length} bộ`
+                      : realApiMode
+                        ? 'Đang chờ xử lý quyết toán'
+                        : 'Xem trước quyết toán'}
                 </Button>
                 {!scannedEnough && (
                   <p role="status">
@@ -737,6 +1012,12 @@ export function OrderDetailShell({
                 {needsAssessmentNote && (
                   <p role="status">Mô tả vấn đề cần đánh giá trước khi xem kết quả nhận trả.</p>
                 )}
+                {realApiMode && !allEvidenceSelected && (
+                  <p role="status">Chọn ít nhất một ảnh bằng chứng cho mỗi bộ đã đối chiếu trước khi xác nhận.</p>
+                )}
+                {realApiMode && backendReturnReady && (
+                  <p role="status">Đơn đã ở bước kiểm tra trả. Hãy dùng quyền quyết toán/hoàn cọc riêng; không gửi lại nhận trả.</p>
+                )}
                 {mode === 'handover' &&
                   scannedEnough &&
                   allChecked &&
@@ -748,8 +1029,12 @@ export function OrderDetailShell({
                   )}
                 <p>
                   {mode === 'handover'
-                    ? 'Chỉ backend có thể xác nhận thu tiền và chuyển đơn sang Đang thuê.'
-                    : 'Cọc chỉ hoàn sau kiểm tra và quyết toán được xác nhận.'}
+                    ? realApiMode
+                      ? 'Hệ thống sẽ lưu ảnh, khoản thu và phiên bản đơn trong một quy trình có kiểm tra xung đột.'
+                      : 'Chỉ backend có thể xác nhận thu tiền và chuyển đơn sang Đang thuê.'
+                    : realApiMode
+                      ? 'Sau khi nhận trả, đơn chuyển sang kiểm tra và chờ quyết toán cọc theo quyền được cấp.'
+                      : 'Cọc chỉ hoàn sau kiểm tra và quyết toán được xác nhận.'}
                 </p>
               </div>
             </section>

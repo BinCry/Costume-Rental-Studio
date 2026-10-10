@@ -54,6 +54,12 @@ export interface OrderItem {
   variant: string;
   unitCode?: string;
   unitStatus?: string;
+  apiUnitId?: string;
+  accessories?: Array<{
+    id: string;
+    quantityOut: number;
+    quantityReturned?: number | null;
+  }>;
 }
 
 export interface MoneyLine {

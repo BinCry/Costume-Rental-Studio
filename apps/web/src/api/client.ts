@@ -64,10 +64,15 @@ type ApiOrder = {
     id: string;
     variantId?: string;
     variant?: { sizeCode?: string; colorCode?: string; model?: { name?: string } };
-    unit?: { unitCode?: string; operationalStatus?: string };
+    unit?: { id?: string; unitCode?: string; operationalStatus?: string };
     unitDailyPriceVnd?: string | number | bigint;
     unitDepositVnd?: string | number | bigint;
     billableDays?: number;
+    accessories?: Array<{
+      id: string;
+      quantityOut: number;
+      quantityReturned?: number | null;
+    }>;
   }>;
   payments?: Array<{ purpose: string; amountVnd: string | number | bigint; status: string }>;
   lateFeeVnd?: string | number | bigint;
@@ -92,6 +97,41 @@ type ApiActiveRental = {
     pickupBranch?: { name?: string } | null;
     customer?: { user?: { displayName?: string; phone?: string | null } | null } | null;
   };
+};
+
+export type RentalEvidence = {
+  uploadKey: string;
+  contentType: 'image/jpeg' | 'image/png' | 'image/webp';
+  size: number;
+  capturedAt?: string;
+};
+
+export type SettlementSnapshot = {
+  orderId: string;
+  status: string;
+  rental: { dueVnd: string; paidVnd: string; remainingVnd: string };
+  deposit: {
+    dueVnd: string;
+    paidVnd: string;
+    deductionVnd: string;
+    refundedVnd: string;
+    refundRemainingVnd: string;
+    refundAvailableVnd?: string;
+    refundInProgressVnd: string;
+  };
+  extra: { dueVnd: string; paidVnd: string; remainingVnd: string };
+  outstandingVnd: string;
+  canPickup: boolean;
+  canComplete: boolean;
+};
+
+export type PaymentRecord = {
+  id: string;
+  purpose: 'RENTAL' | 'DEPOSIT' | 'EXTRA' | string;
+  method: string;
+  amountVnd: string | number;
+  status: string;
+  transactionReference?: string | null;
 };
 
 const configuredBaseUrl =
@@ -248,6 +288,8 @@ function mapOrder(order: ApiOrder): Order {
     id: item.id ?? String(index + 1), costume: item.variant?.model?.name ?? 'Trang phục',
     variant: [item.variant?.sizeCode, item.variant?.colorCode].filter(Boolean).join(' / '),
     unitCode: item.unit?.unitCode, unitStatus: item.unit?.operationalStatus,
+    apiUnitId: item.unit?.id,
+    accessories: item.accessories,
   }));
   const rental = (order.items ?? []).reduce(
     (sum, item) => sum + numberValue(item.unitDailyPriceVnd) * (item.billableDays ?? 1),
@@ -474,4 +516,131 @@ export async function cancelCustomerOrder(orderCode: string, version: number, re
   const updated = (await listCustomerOrders()).find((order) => order.id === orderCode);
   if (!updated) throw new ApiClientError(404, 'RENTAL_ORDER_NOT_FOUND', 'Không tìm thấy đơn vừa hủy');
   return updated;
+}
+
+function idempotencyKey(prefix: string) {
+  return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36)}`;
+}
+
+export async function uploadRentalEvidence(
+  orderItemId: string,
+  phase: 'PICKUP' | 'RETURN',
+  file: File,
+): Promise<RentalEvidence> {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type))
+    throw new ApiClientError(400, 'INVALID_EVIDENCE', 'Ảnh phải là JPEG, PNG hoặc WebP');
+  const presigned = await request<{
+    objectKey: string;
+    uploadUrl: string;
+    fields: Record<string, string>;
+  }>('/api/v1/uploads/presign', {
+    method: 'POST',
+    body: JSON.stringify({
+      purpose: 'rental-evidence',
+      ownerType: 'rental-item',
+      ownerId: orderItemId,
+      phase,
+      contentType: file.type,
+      size: file.size,
+    }),
+  });
+  const form = new FormData();
+  Object.entries(presigned.fields).forEach(([key, value]) => form.append(key, value));
+  form.append('file', file);
+  const uploaded = await fetch(presigned.uploadUrl, { method: 'POST', body: form });
+  if (!uploaded.ok)
+    throw new ApiClientError(uploaded.status, 'EVIDENCE_UPLOAD_FAILED', 'Không tải được ảnh bằng chứng');
+  return { uploadKey: presigned.objectKey, contentType: file.type as RentalEvidence['contentType'], size: file.size, capturedAt: new Date().toISOString() };
+}
+
+function orderApiId(orderCode: string) {
+  return orderReference(orderCode).id;
+}
+
+export async function recordCashPayment(
+  orderCode: string,
+  purpose: 'RENTAL' | 'DEPOSIT' | 'EXTRA',
+  amountVnd: number,
+) {
+  return request<PaymentRecord>(`/api/v1/payments/orders/${encodeURIComponent(orderApiId(orderCode))}/cash`, {
+    method: 'POST',
+    body: JSON.stringify({ purpose, amountVnd: String(Math.round(amountVnd)), idempotencyKey: idempotencyKey('cash') }),
+  });
+}
+
+export async function recordBankTransferPayment(
+  orderCode: string,
+  purpose: 'RENTAL' | 'DEPOSIT' | 'EXTRA',
+  amountVnd: number,
+  transactionReference: string,
+) {
+  return request<PaymentRecord>(`/api/v1/payments/orders/${encodeURIComponent(orderApiId(orderCode))}/bank-transfer`, {
+    method: 'POST',
+    body: JSON.stringify({ purpose, amountVnd: String(Math.round(amountVnd)), transactionReference, idempotencyKey: idempotencyKey('bank') }),
+  });
+}
+
+export async function listOrderPayments(orderCode: string) {
+  return request<PaymentRecord[]>(`/api/v1/payments/orders/${encodeURIComponent(orderApiId(orderCode))}`);
+}
+
+export async function getOrderSettlement(orderCode: string) {
+  return request<SettlementSnapshot>(`/api/v1/payments/orders/${encodeURIComponent(orderApiId(orderCode))}/summary`);
+}
+
+export async function pickupOrder(
+  orderCode: string,
+  expectedVersion: number,
+  items: Array<{ orderItemId: string; conditionGrade: 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED'; conditionNotes?: string; evidence: RentalEvidence[] }>,
+) {
+  return request<ApiOrder>(`/api/v1/rentals/orders/${encodeURIComponent(orderApiId(orderCode))}/pickup`, {
+    method: 'POST',
+    body: JSON.stringify({ expectedVersion, items }),
+  });
+}
+
+export async function returnOrder(
+  orderCode: string,
+  expectedVersion: number,
+  partial: boolean,
+  returnNotes: string,
+  items: Array<{
+    orderItemId: string;
+    returnConditionGrade: 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED';
+    isMissing: boolean;
+    damageNotes?: string;
+    nextOperationalStatus: 'CLEANING' | 'REPAIR';
+    repairBlockedUntil?: string;
+    evidence: RentalEvidence[];
+    accessories: Array<{ accessoryId: string; quantityReturned: number; conditionIn?: 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED' | null }>;
+  }>,
+) {
+  return request<ApiOrder>(`/api/v1/rentals/orders/${encodeURIComponent(orderApiId(orderCode))}/return`, {
+    method: 'POST',
+    body: JSON.stringify({ expectedVersion, partial, returnNotes: returnNotes || undefined, items }),
+  });
+}
+
+export async function assessOrderReturn(
+  orderCode: string,
+  expectedVersion: number,
+  items: Array<{ orderItemId: string; damageFeeVnd: number; missingFeeVnd: number; accessories: Array<{ accessoryId: string; damageFeeVnd: number; missingFeeVnd: number }> }>,
+) {
+  return request<ApiOrder>(`/api/v1/rentals/orders/${encodeURIComponent(orderApiId(orderCode))}/assessment`, {
+    method: 'POST',
+    body: JSON.stringify({ expectedVersion, items }),
+  });
+}
+
+export async function prepareOrderSettlement(
+  orderCode: string,
+  expectedVersion: number,
+  depositDeductionVnd = 0,
+  otherFeeVnd = 0,
+  settlementNote = '',
+) {
+  return request<ApiOrder>(`/api/v1/payments/orders/${encodeURIComponent(orderApiId(orderCode))}/settlement`, {
+    method: 'POST',
+    body: JSON.stringify({ expectedVersion, depositDeductionVnd: String(Math.round(depositDeductionVnd)), otherFeeVnd: String(Math.round(otherFeeVnd)), settlementNote: settlementNote || undefined }),
+  });
 }
