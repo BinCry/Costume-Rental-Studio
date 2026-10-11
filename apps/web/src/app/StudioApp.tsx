@@ -61,15 +61,15 @@ const staffNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
   { screen: 'policies', label: 'Chính sách', roles: ['ADMIN'] },
   { screen: 'reports', label: 'Báo cáo', roles: ['ADMIN', 'SALES_STAFF'] },
 ];
-const staffNavGroups: { label: string; screens: Screen[] }[] = [
-  { label: 'Tổng quan', screens: ['dashboard'] },
-  { label: 'Vận hành', screens: ['orders', 'counter', 'active'] },
-  { label: 'Kho', screens: ['inventory', 'transfers'] },
-  { label: 'Khách hàng', screens: ['crm'] },
-  { label: 'Danh mục', screens: ['adminCatalog'] },
-  { label: 'Tổ chức', screens: ['employees', 'roles', 'branches'] },
-  { label: 'Chính sách', screens: ['policies'] },
-  { label: 'Báo cáo', screens: ['reports'] },
+const staffNavGroups: { id: string; label: string; screens: Screen[] }[] = [
+  { id: 'overview', label: 'Tổng quan', screens: ['dashboard'] },
+  { id: 'operations', label: 'Vận hành', screens: ['orders', 'counter', 'active'] },
+  { id: 'inventory', label: 'Kho', screens: ['inventory', 'transfers'] },
+  { id: 'customers', label: 'Khách hàng', screens: ['crm'] },
+  { id: 'catalog', label: 'Danh mục', screens: ['adminCatalog'] },
+  { id: 'organization', label: 'Tổ chức', screens: ['employees', 'roles', 'branches'] },
+  { id: 'policies', label: 'Chính sách', screens: ['policies'] },
+  { id: 'reports', label: 'Báo cáo', screens: ['reports'] },
 ];
 const isStaff = (screen: Screen) =>
   !['catalog', 'detail', 'booking', 'myRentals', 'myRentalDetail', 'account', 'login', 'register', 'forgotPassword'].includes(screen);
@@ -101,6 +101,9 @@ export default function StudioApp() {
   const [branch, setBranch] = useState('Chi nhánh Quận 1');
   const [customerCode, setCustomerCode] = useState('KH-001');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [expandedStaffGroup, setExpandedStaffGroup] = useState<string | null>(() =>
+    staffNavGroups.find((group) => group.screens.includes(route.screen))?.id ?? null,
+  );
   const [demoControlsOpen, setDemoControlsOpen] = useState(false);
   const [, setAccessRevision] = useState(0);
   const mainRef = useRef<HTMLElement>(null);
@@ -112,6 +115,10 @@ export default function StudioApp() {
     previousRouteRef.current = route;
     mainRef.current?.focus({ preventScroll: true });
   }, [route]);
+  useEffect(() => {
+    const activeGroup = staffNavGroups.find((group) => group.screens.includes(route.screen));
+    if (activeGroup) setExpandedStaffGroup(activeGroup.id);
+  }, [route.screen]);
   useEffect(() => {
     const onPop = () => {
       setRoute(readRoute());
@@ -505,23 +512,39 @@ export default function StudioApp() {
                   return item ? [item] : [];
                 });
                 if (!groupItems.length) return null;
+                const expanded = expandedStaffGroup === group.id;
                 return (
-                  <div className="staff-nav-group" key={group.label}>
-                    <span className="staff-nav-heading">{group.label}</span>
-                    {groupItems.map((item) => (
-                      <a
-                        key={item.screen}
-                        href={pathFor(item.screen)}
-                        className={route.screen === item.screen ? 'active' : ''}
-                        aria-current={route.screen === item.screen ? 'page' : undefined}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          go(item.screen);
-                        }}
-                      >
-                        {item.label}
-                      </a>
-                    ))}
+                  <div className="staff-nav-group" key={group.id}>
+                    <button
+                      type="button"
+                      className="staff-nav-heading"
+                      aria-expanded={expanded}
+                      aria-controls={`staff-nav-items-${group.id}`}
+                      onClick={() => setExpandedStaffGroup((current) => current === group.id ? null : group.id)}
+                    >
+                      <span>{group.label}</span>
+                      <span className="staff-nav-chevron" aria-hidden="true">⌄</span>
+                    </button>
+                    <div
+                      className="staff-nav-items"
+                      id={`staff-nav-items-${group.id}`}
+                      hidden={!expanded}
+                    >
+                      {groupItems.map((item) => (
+                        <a
+                          key={item.screen}
+                          href={pathFor(item.screen)}
+                          className={route.screen === item.screen ? 'active' : ''}
+                          aria-current={route.screen === item.screen ? 'page' : undefined}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            go(item.screen);
+                          }}
+                        >
+                          {item.label}
+                        </a>
+                      ))}
+                    </div>
                   </div>
                 );
               })}
