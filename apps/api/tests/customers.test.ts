@@ -48,6 +48,10 @@ const existing = {
 interface ResultBody {
   data: { created: boolean; customer: { displayName: string } };
 }
+
+interface ProfileUpdateResultBody {
+  data: { displayName: string; phone: string; email: string };
+}
 interface MockTransaction {
   $queryRaw: typeof mocks.queryRaw;
   branch: { findUnique: typeof mocks.branch };
@@ -255,7 +259,7 @@ describe('PATCH /api/v1/customers/me', () => {
       .send({ displayName: 'Updated name', phone: '0901234567' })
       .expect(200);
 
-    expect(response.body.data).toMatchObject({
+    expect((response.body as ProfileUpdateResultBody).data).toMatchObject({
       displayName: 'Updated name',
       phone: '+84901234567',
       email: 'customer@example.com',
