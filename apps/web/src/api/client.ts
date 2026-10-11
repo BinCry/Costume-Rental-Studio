@@ -710,9 +710,27 @@ async function availableForOrder(order: ApiOrder) {
   );
   return result.units;
 }
-export async function listOrders() {
+export async function listOrders(
+  options: { loadPendingAvailability?: boolean } = {},
+) {
   const page = await request<Page<ApiOrder>>('/api/v1/rentals/orders?page=1&pageSize=100&sortBy=createdAt&sortOrder=desc');
-  return Promise.all(page.items.map(async (order) => enrichOrder(order, await availableForOrder(order))));
+  const loadPendingAvailability = options.loadPendingAvailability ?? true;
+  return Promise.all(
+    page.items.map(async (order) => {
+      let availableUnits: ApiUnit[] = [];
+      let availabilityError: string | undefined;
+      if (loadPendingAvailability && order.status === 'PENDING_CONFIRMATION') {
+        try {
+          availableUnits = await availableForOrder(order);
+        } catch {
+          availabilityError = 'Không tải được bộ khả dụng. Hãy thử tải lại trước khi xác nhận đơn.';
+        }
+      }
+      const mapped = enrichOrder(order, availableUnits);
+      if (availabilityError) mapped.availabilityError = availabilityError;
+      return mapped;
+    }),
+  );
 }
 function customerOrderFromOrder(order: Order, customerCode: string): CustomerOrder {
   const rental = order.money.find((line) => line.label === 'Tiền thuê');
@@ -742,7 +760,7 @@ function customerOrderFromOrder(order: Order, customerCode: string): CustomerOrd
 }
 export async function listCustomerOrders(): Promise<CustomerOrder[]> {
   const [orders, profile] = await Promise.all([
-    listOrders(),
+    listOrders({ loadPendingAvailability: false }),
     request<{ customerCode: string }>('/api/v1/customers/me'),
   ]);
   return orders.map((order) => customerOrderFromOrder(order, profile.customerCode));

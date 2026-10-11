@@ -540,6 +540,19 @@ export function OrdersPage({
                         {selectedUnits.length}/{order.items.length}
                       </span>
                     </div>
+                    {order.availabilityError && (
+                      <Feedback
+                        tone="danger"
+                        title="Không tải được bộ khả dụng"
+                        action={
+                          <Button variant="secondary" onClick={retry}>
+                            Thử lại
+                          </Button>
+                        }
+                      >
+                        {order.availabilityError}
+                      </Feedback>
+                    )}
                     <DataTable
                       filterDisplay={(value) =>
                         value === 'READY'
@@ -606,7 +619,11 @@ export function OrdersPage({
                           ),
                         },
                       ]}
-                      emptyText="Không có bộ khả dụng trong fixture này"
+                      emptyText={
+                        order.availabilityError
+                          ? 'Chưa tải được bộ để xác nhận đơn.'
+                          : 'Không có bộ phù hợp trong kỳ thuê này.'
+                      }
                     />
                     {unavailableUnits.length > 0 && (
                       <Button variant="secondary" className="refresh-units" onClick={retry}>
@@ -624,7 +641,9 @@ export function OrdersPage({
                           <Button
                             onClick={() => setDialog('confirm')}
                             disabled={
-                              selectedUnits.length !== order.items.length || scenario === 'permission'
+                              selectedUnits.length !== order.items.length ||
+                              scenario === 'permission' ||
+                              !!order.availabilityError
                             }
                           >
                             Xác nhận và gán {order.items.length} bộ

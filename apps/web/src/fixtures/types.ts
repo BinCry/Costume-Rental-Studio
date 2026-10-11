@@ -84,6 +84,7 @@ export interface Order {
   history: string[];
   note: string;
   eligibleUnits: UnitOption[];
+  availabilityError?: string;
 }
 
 export interface QueueTask {
