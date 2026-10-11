@@ -166,9 +166,9 @@ export default function StudioApp() {
       ?.scrollIntoView({ block: 'nearest' });
   }, [route.screen, role, branch, apiIdentity, apiBranchIds]);
   useEffect(() => {
-    if (!menuOpen || !staff) return;
+    if (!menuOpen || !isStaff(route.screen)) return;
     sectionNavRef.current?.querySelector<HTMLButtonElement>('.staff-nav-close')?.focus();
-  }, [menuOpen, staff]);
+  }, [menuOpen, route.screen]);
   const go: Navigate = (screen, params) => {
     window.history.pushState(null, '', pathFor(screen, params));
     setRoute(readRoute());
