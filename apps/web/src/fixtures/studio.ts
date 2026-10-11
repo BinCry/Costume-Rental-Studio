@@ -94,7 +94,9 @@ export interface Customer {
   interactions: string[];
 }
 export interface Employee {
+  /** Internal lookup key; may be a UUID and must not be shown to users. */
   code: string;
+  employeeCode?: string;
   name: string;
   email: string;
   accountStatus: UserStatus;

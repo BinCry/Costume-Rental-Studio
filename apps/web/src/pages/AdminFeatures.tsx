@@ -54,6 +54,12 @@ const employmentLabels: Record<Employee['employmentStatus'], string> = {
   ON_LEAVE: 'Tạm nghỉ',
   TERMINATED: 'Đã nghỉ',
 };
+const uuidIdentifierPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+const employeeDisplayCode = (employee: Employee) => {
+  const explicitCode = employee.employeeCode?.trim();
+  if (explicitCode && !uuidIdentifierPattern.test(explicitCode)) return explicitCode;
+  return /^NV-[A-Z0-9-]+$/i.test(employee.code) ? employee.code : 'Chưa cấp mã';
+};
 const staffRoleLabels: Record<string, string> = {
   SALES_STAFF: 'Nhân viên bán hàng',
   INVENTORY_STAFF: 'Nhân viên kho',
@@ -423,6 +429,9 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
+  const [employmentFilter, setEmploymentFilter] = useState<'ALL' | Employee['employmentStatus']>('ALL');
+  const [branchFilter, setBranchFilter] = useState('ALL');
+  const [roleFilter, setRoleFilter] = useState('ALL');
   const [assignmentBranchSelection, setAssignmentBranchSelection] = useState(realApiMode ? '' : 'Chi nhánh Quận 1');
   const [assignmentRole, setAssignmentRole] = useState('SALES_STAFF');
   const assignmentBranch = realApiMode
@@ -474,6 +483,19 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
       {(items) => {
         const current = items.find((x) => x.code === selected) ?? items[0];
         const person = editing?.code === selected ? editing : current;
+        const visibleEmployees = items.filter((employee) => {
+          const query = search.trim().toLocaleLowerCase('vi');
+          const searchable = `${employee.name} ${employee.email} ${employeeDisplayCode(employee)}`
+            .toLocaleLowerCase('vi');
+          return (
+            searchable.includes(query) &&
+            (employmentFilter === 'ALL' || employee.employmentStatus === employmentFilter) &&
+            (branchFilter === 'ALL' ||
+              employee.assignments.some((assignment) => assignment.branch === branchFilter)) &&
+            (roleFilter === 'ALL' ||
+              employee.assignments.some((assignment) => assignment.roleCode === roleFilter))
+          );
+        });
         return (
           <div className="page">
             <PageHeading
@@ -504,13 +526,60 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
             />
             <div className="feature-two-column">
               <Panel title="Danh sách nhân viên">
-                <SearchField label="Tìm tên hoặc email" value={search} onChange={setSearch} />
+                <SearchField
+                  label="Tìm theo tên, email hoặc mã nhân viên"
+                  value={search}
+                  onChange={setSearch}
+                />
+                <div className="feature-filters">
+                  <SelectField
+                    label="Trạng thái làm việc"
+                    value={employmentFilter}
+                    onChange={(event) => setEmploymentFilter(event.target.value as typeof employmentFilter)}
+                  >
+                    <option value="ALL">Tất cả trạng thái</option>
+                    {(['ACTIVE', 'ON_LEAVE', 'TERMINATED'] as const).map((status) => (
+                      <option value={status} key={status}>{employmentLabels[status]}</option>
+                    ))}
+                  </SelectField>
+                  <SelectField
+                    label="Chi nhánh"
+                    value={branchFilter}
+                    onChange={(event) => setBranchFilter(event.target.value)}
+                  >
+                    <option value="ALL">Tất cả chi nhánh</option>
+                    {branchOptions.map((branch) => <option value={branch} key={branch}>{branch}</option>)}
+                  </SelectField>
+                  <SelectField
+                    label="Vai trò"
+                    value={roleFilter}
+                    onChange={(event) => setRoleFilter(event.target.value)}
+                  >
+                    <option value="ALL">Tất cả vai trò</option>
+                    {staffRoles.map((role) => <option value={role.code} key={role.code}>{role.name}</option>)}
+                  </SelectField>
+                </div>
+                <p className="muted small-note" role="status">
+                  Hiển thị {visibleEmployees.length} / {items.length} nhân viên
+                </p>
                 <div className="feature-card-list">
-                  {items
-                    .filter((x) =>
-                      `${x.name} ${x.email}`.toLowerCase().includes(search.toLowerCase()),
-                    )
-                    .map((x) => (
+                  {visibleEmployees.length === 0 ? (
+                    <div className="empty-filter-state">
+                      <p>Không tìm thấy nhân viên phù hợp.</p>
+                      <Button
+                        type="button"
+                        variant="quiet"
+                        onClick={() => {
+                          setSearch('');
+                          setEmploymentFilter('ALL');
+                          setBranchFilter('ALL');
+                          setRoleFilter('ALL');
+                        }}
+                      >
+                        Xóa bộ lọc
+                      </Button>
+                    </div>
+                  ) : visibleEmployees.map((x) => (
                       <button
                         className={`feature-list-row selectable ${person.code === x.code ? 'selected' : ''}`}
                         key={x.code}
@@ -524,12 +593,11 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                           revealDetail();
                         }}
                       >
-                        <strong>
-                          {x.name} · {x.code}
-                        </strong>
+                        <strong>{x.name}</strong>
                         <span>{x.email}</span>
                         <small>
-                          Tài khoản: {accountLabels[x.accountStatus]} · Việc làm:{' '}
+                          Mã nhân viên: {employeeDisplayCode(x)}
+                          {' · '}Tài khoản: {accountLabels[x.accountStatus]} · Việc làm:{' '}
                           {employmentLabels[x.employmentStatus]}
                         </small>
                       </button>
@@ -542,7 +610,7 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                 role="region"
                 aria-label="Hồ sơ nhân viên đang chọn"
               >
-                <Panel title={`Hồ sơ ${person.code}`}>
+                <Panel title={`Hồ sơ ${employeeDisplayCode(person)}`}>
                   <fieldset className="permission-fieldset" disabled={!canManage}>
                   <div className="feature-filters">
                     <Field
@@ -659,7 +727,7 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                       : '+ Gán vai trò'}
                   </Button>
                   <p className="muted small-note">
-                    Quyền thực tế được backend tính từ các role của nhân viên ở chi nhánh đang chọn.
+                    Quyền nhân viên có được xác định bởi vai trò được gán tại chi nhánh.
                   </p>
                   {realApiMode && branchesError && (
                     <Feedback tone="danger" title="Chưa tải được danh sách chi nhánh">

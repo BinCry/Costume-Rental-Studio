@@ -61,6 +61,16 @@ const staffNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
   { screen: 'policies', label: 'Chính sách', roles: ['ADMIN'] },
   { screen: 'reports', label: 'Báo cáo', roles: ['ADMIN', 'SALES_STAFF'] },
 ];
+const staffNavGroups: { label: string; screens: Screen[] }[] = [
+  { label: 'Tổng quan', screens: ['dashboard'] },
+  { label: 'Vận hành', screens: ['orders', 'counter', 'active'] },
+  { label: 'Kho', screens: ['inventory', 'transfers'] },
+  { label: 'Khách hàng', screens: ['crm'] },
+  { label: 'Danh mục', screens: ['adminCatalog'] },
+  { label: 'Tổ chức', screens: ['employees', 'roles', 'branches'] },
+  { label: 'Chính sách', screens: ['policies'] },
+  { label: 'Báo cáo', screens: ['reports'] },
+];
 const isStaff = (screen: Screen) =>
   !['catalog', 'detail', 'booking', 'myRentals', 'myRentalDetail', 'account', 'login', 'register', 'forgotPassword'].includes(screen);
 const requiredPermissions: Partial<Record<Screen, string[]>> = {
@@ -153,8 +163,12 @@ export default function StudioApp() {
   useEffect(() => {
     sectionNavRef.current
       ?.querySelector<HTMLElement>('a.active')
-      ?.scrollIntoView({ block: 'nearest', inline: 'center' });
+      ?.scrollIntoView({ block: 'nearest' });
   }, [route.screen, role, branch, apiIdentity, apiBranchIds]);
+  useEffect(() => {
+    if (!menuOpen || !staff) return;
+    sectionNavRef.current?.querySelector<HTMLButtonElement>('.staff-nav-close')?.focus();
+  }, [menuOpen, staff]);
   const go: Navigate = (screen, params) => {
     window.history.pushState(null, '', pathFor(screen, params));
     setRoute(readRoute());
@@ -322,6 +336,7 @@ export default function StudioApp() {
               <small>TRANG PHỤC</small>
             </span>
           </a>
+          {!staff && (
           <nav
             id="main-navigation"
             className={`top-nav ${menuOpen ? 'open' : ''} ${authScreen ? 'auth-nav-hidden' : ''}`}
@@ -362,6 +377,7 @@ export default function StudioApp() {
               </a>
             )}
           </nav>
+          )}
           <div className="header-actions">
             {authScreen ? (
               <a
@@ -377,6 +393,22 @@ export default function StudioApp() {
               </a>
             ) : apiIdentity ? (
               <>
+                {staff && activeRole !== 'CUSTOMER' && (
+                  <label className="header-branch">
+                    <span>Chi nhánh</span>
+                    <select
+                      id="header-branch-select"
+                      aria-label="Chi nhánh làm việc"
+                      value={activeBranch}
+                      onChange={(event) => setBranch(event.target.value)}
+                      disabled={!apiBranchesReady || apiBranchOptions.length === 0}
+                    >
+                      {apiBranchOptions.length === 0 ? (
+                        <option value="">Không có chi nhánh được gán</option>
+                      ) : apiBranchOptions.map((name) => <option value={name} key={name}>{name}</option>)}
+                    </select>
+                  </label>
+                )}
                 {staffApiRoles.length > 0 && !staff && (
                   <a className="area-switch" href="/van-hanh/tong-quan" onClick={(event) => { event.preventDefault(); go('dashboard'); }}>
                     Khu vận hành <Icon name="arrow" size={16} />
@@ -401,7 +433,7 @@ export default function StudioApp() {
               className="icon-button mobile-menu"
               aria-label={menuOpen ? 'Đóng điều hướng' : 'Mở điều hướng'}
               aria-expanded={menuOpen}
-              aria-controls="main-navigation"
+              aria-controls={staff ? 'staff-navigation' : 'main-navigation'}
               onClick={() => setMenuOpen(!menuOpen)}
             >
               <Icon name="menu" />
@@ -410,37 +442,111 @@ export default function StudioApp() {
         </div>
       </header>
       {staff && (
-        <nav ref={sectionNavRef} className="section-nav" aria-label="Khu vận hành và quản trị">
-          {nav.map((item) => (
-            <a
-              key={item.screen}
-              href={pathFor(item.screen)}
-              className={route.screen === item.screen ? 'active' : ''}
-              onClick={(e) => {
-                e.preventDefault();
-                go(item.screen);
+        <>
+          <aside
+            ref={sectionNavRef}
+            id="staff-navigation"
+            className={`section-nav ${menuOpen ? 'open' : ''}`}
+            role={menuOpen ? 'dialog' : undefined}
+            aria-modal={menuOpen ? true : undefined}
+            aria-label="Điều hướng khu vận hành"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                setMenuOpen(false);
+                menuButtonRef.current?.focus();
+              } else if (event.key === 'Tab' && menuOpen) {
+                const focusable = Array.from(
+                  event.currentTarget.querySelectorAll<HTMLElement>(
+                    'a[href], button:not(:disabled), select:not(:disabled)',
+                  ),
+                );
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                if (event.shiftKey && document.activeElement === first) {
+                  event.preventDefault();
+                  last?.focus();
+                } else if (!event.shiftKey && document.activeElement === last) {
+                  event.preventDefault();
+                  first?.focus();
+                }
+              }
+            }}
+          >
+            <button
+              type="button"
+              className="staff-nav-close"
+              onClick={() => {
+                setMenuOpen(false);
+                menuButtonRef.current?.focus();
               }}
             >
-              {item.label}
-            </a>
-          ))}
-          {apiIdentity && activeRole !== 'CUSTOMER' && (
-            <label className="section-nav-branch">
-              <span>Chi nhánh làm việc</span>
-              <select
-                aria-label="Chi nhánh làm việc"
-                value={activeBranch}
-                onChange={(event) => setBranch(event.target.value)}
-                disabled={!apiBranchesReady || apiBranchOptions.length === 0}
-              >
-                {apiBranchOptions.length === 0 ? (
-                  <option value="">Không có chi nhánh được gán</option>
-                ) : apiBranchOptions.map((name) => <option value={name} key={name}>{name}</option>)}
-              </select>
-            </label>
+              Đóng menu
+            </button>
+            {apiIdentity && activeRole !== 'CUSTOMER' && (
+              <label className="sidebar-branch">
+                <span>Chi nhánh làm việc</span>
+                <select
+                  id="sidebar-branch-select"
+                  aria-label="Chi nhánh làm việc"
+                  value={activeBranch}
+                  onChange={(event) => setBranch(event.target.value)}
+                  disabled={!apiBranchesReady || apiBranchOptions.length === 0}
+                >
+                  {apiBranchOptions.length === 0 ? (
+                    <option value="">Không có chi nhánh được gán</option>
+                  ) : apiBranchOptions.map((name) => <option value={name} key={name}>{name}</option>)}
+                </select>
+              </label>
+            )}
+            <nav aria-label="Chức năng khu vận hành">
+              {staffNavGroups.map((group) => {
+                const groupItems = group.screens.flatMap((screen) => {
+                  const item = nav.find((entry) => entry.screen === screen);
+                  return item ? [item] : [];
+                });
+                if (!groupItems.length) return null;
+                return (
+                  <div className="staff-nav-group" key={group.label}>
+                    <span className="staff-nav-heading">{group.label}</span>
+                    {groupItems.map((item) => (
+                      <a
+                        key={item.screen}
+                        href={pathFor(item.screen)}
+                        className={route.screen === item.screen ? 'active' : ''}
+                        aria-current={route.screen === item.screen ? 'page' : undefined}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          go(item.screen);
+                        }}
+                      >
+                        {item.label}
+                      </a>
+                    ))}
+                  </div>
+                );
+              })}
+            </nav>
+          </aside>
+          {menuOpen && (
+            <button
+              type="button"
+              className="staff-nav-backdrop"
+              aria-label="Đóng điều hướng"
+              onClick={() => {
+                setMenuOpen(false);
+                menuButtonRef.current?.focus();
+              }}
+            />
           )}
-        </nav>
+        </>
       )}
+      <main
+        id="main-content"
+        className="main-content"
+        ref={mainRef}
+        tabIndex={-1}
+        key={`${route.screen}:${activeBranch}:${p.get('order') ?? ''}`}
+      >
       {showFixtureControls && (
         <div className="demo-controls">
           <div className="demo-controls-inner">
@@ -512,13 +618,7 @@ export default function StudioApp() {
           </div>
         </div>
       )}
-      <main
-        id="main-content"
-        className="main-content"
-        ref={mainRef}
-        tabIndex={-1}
-        key={`${route.screen}:${activeBranch}:${p.get('order') ?? ''}`}
-      >
+
         {productionConfigurationMissing ? (
           <div className="page">
             <div className="feedback feedback-danger" role="alert">

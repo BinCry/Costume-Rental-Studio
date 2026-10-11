@@ -1140,6 +1140,7 @@ function mapStaff(staff: ApiStaff): Employee {
   staffRefs.set(code, { userId: staff.id, assignments });
   return {
     code,
+    employeeCode: staff.employee?.employeeCode,
     name: staff.displayName,
     email: staff.email,
     accountStatus: staff.status,
@@ -1172,7 +1173,7 @@ export async function saveStaff(employee: Employee) {
       body: JSON.stringify({
         email: employee.email,
         displayName: employee.name,
-        employeeCode: employee.code,
+        employeeCode: employee.employeeCode?.trim() || employee.code,
         joinedAt: new Date().toISOString(),
         assignments,
       }),
