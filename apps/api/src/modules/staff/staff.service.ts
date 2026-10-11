@@ -20,8 +20,12 @@ export async function listStaff(
   assertPermission(actor, { module: 'staff', action: 'manage' });
   const where: Prisma.UserWhereInput = {
     employee: query.employmentStatus
-      ? { employmentStatus: query.employmentStatus as 'ACTIVE' | 'ON_LEAVE' | 'TERMINATED' }
-      : {},
+      ? {
+          is: {
+            employmentStatus: query.employmentStatus as 'ACTIVE' | 'ON_LEAVE' | 'TERMINATED',
+          },
+        }
+      : { isNot: null },
     ...(query.branchId ? { roleAssignments: { some: { branchId: query.branchId } } } : {}),
     ...(query.search
       ? {

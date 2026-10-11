@@ -272,6 +272,9 @@ function settlement(
   const rentalRemainingVnd = rentalDue - paidRental;
   const depositRemainingVnd = depositDue - paidDeposit;
   const extraRemainingVnd = extraDue - paidExtra - order.depositDeductionVnd;
+  const outstandingVnd =
+    (rentalRemainingVnd > 0n ? rentalRemainingVnd : 0n) +
+    (extraRemainingVnd > 0n ? extraRemainingVnd : 0n);
 
   return {
     rental: { dueVnd: rentalDue, paidVnd: paidRental, remainingVnd: rentalRemainingVnd },
@@ -284,6 +287,7 @@ function settlement(
       refundAvailableVnd: refundAvailableVnd > 0n ? refundAvailableVnd : 0n,
     },
     extra: { dueVnd: extraDue, paidVnd: paidExtra, remainingVnd: extraRemainingVnd },
+    outstandingVnd,
     canPickup: rentalRemainingVnd <= 0n && depositRemainingVnd <= 0n,
     canComplete: rentalRemainingVnd <= 0n && extraRemainingVnd <= 0n && refundRemainingVnd === 0n,
   };

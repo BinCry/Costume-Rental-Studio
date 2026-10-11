@@ -29,6 +29,18 @@ import {
   uploadRentalEvidence,
 } from '../api/client';
 
+function parseVndAmount(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : null;
+}
+
+function settlementMoney(value: unknown): string {
+  const amount = parseVndAmount(value);
+  return amount === null ? 'Chưa có dữ liệu' : money(amount);
+}
+
 const loadOrders = (scenario: DemoScenario) => fixtureAdapter.listOrders(scenario);
 
 export function OrderDetailShell({
@@ -107,6 +119,19 @@ export function OrderDetailShell({
     !realApiMode || evidenceItems.every((item) => (evidenceFiles[item.id]?.length ?? 0) > 0);
   const backendReturnReady = realApiMode && mode === 'return' && order?.status === 'RETURN_INSPECTION';
   const settlementReady = realApiMode ? !!backendSettlement : !!settlement;
+  const settlementAmountsValid =
+    !!backendSettlement &&
+    [
+      backendSettlement.deposit.dueVnd,
+      backendSettlement.deposit.deductionVnd,
+      backendSettlement.deposit.refundedVnd,
+      backendSettlement.deposit.refundAvailableVnd ??
+        backendSettlement.deposit.refundRemainingVnd,
+      backendSettlement.extra.remainingVnd,
+      backendSettlement.outstandingVnd,
+    ].every((value) => parseVndAmount(value) !== null);
+  const backendSettlementCanComplete =
+    settlementAmountsValid && backendSettlement?.canComplete === true;
   const snapshotConditionMismatch =
     mode === 'return' &&
     !!settlement &&
@@ -114,6 +139,21 @@ export function OrderDetailShell({
     allChecked &&
     scannedItems.every((item) => returnConditions[item.id] === 'PASSED') &&
     (settlement.damageFee > 0 || settlement.missingFee > 0);
+  const refreshSettlement = async () => {
+    if (!realApiMode || mode !== 'return' || !order || !canReadPayments) return;
+    const targetOrderId = order.id;
+    setSettlementLoading(true);
+    setSettlementError('');
+    try {
+      const snapshot = await getOrderSettlement(targetOrderId);
+      if (orderId === targetOrderId) setBackendSettlement(snapshot);
+    } catch (caught: unknown) {
+      if (orderId === targetOrderId)
+        setSettlementError(caught instanceof Error ? caught.message : 'Không tải được quyết toán.');
+    } finally {
+      if (orderId === targetOrderId) setSettlementLoading(false);
+    }
+  };
   useEffect(() => {
     let active = true;
     if (!realApiMode || mode !== 'return' || !order || !canReadPayments) {
@@ -838,22 +878,22 @@ export function OrderDetailShell({
                       <div className="settlement-table">
                         <div>
                           <span>Cọc phải thu</span>
-                          <strong>{money(Number(backendSettlement.deposit.dueVnd))}</strong>
+                          <strong>{settlementMoney(backendSettlement.deposit.dueVnd)}</strong>
                         </div>
                         <div>
                           <span>Cọc đã cấn trừ</span>
-                          <strong>{money(Number(backendSettlement.deposit.deductionVnd))}</strong>
+                          <strong>{settlementMoney(backendSettlement.deposit.deductionVnd)}</strong>
                         </div>
                         <div>
                           <span>Đã hoàn / còn có thể hoàn</span>
                           <strong>
-                            {money(Number(backendSettlement.deposit.refundedVnd))} /{' '}
-                            {money(Number(backendSettlement.deposit.refundAvailableVnd ?? backendSettlement.deposit.refundRemainingVnd))}
+                            {settlementMoney(backendSettlement.deposit.refundedVnd)} /{' '}
+                            {settlementMoney(backendSettlement.deposit.refundAvailableVnd ?? backendSettlement.deposit.refundRemainingVnd)}
                           </strong>
                         </div>
                         <div>
                           <span>Còn phải thu khác</span>
-                          <strong>{money(Number(backendSettlement.extra.remainingVnd))}</strong>
+                          <strong>{settlementMoney(backendSettlement.extra.remainingVnd)}</strong>
                         </div>
                         <div className="settlement-total">
                           <span>Trạng thái máy chủ</span>
@@ -861,12 +901,41 @@ export function OrderDetailShell({
                         </div>
                       </div>
                       <Feedback
-                        tone={backendSettlement.canComplete ? 'success' : 'info'}
-                        title={backendSettlement.canComplete ? 'Đủ điều kiện hoàn tất' : 'Chưa đủ điều kiện hoàn tất'}
+                        tone={
+                          !settlementAmountsValid
+                            ? 'warning'
+                            : backendSettlementCanComplete
+                              ? 'success'
+                              : 'info'
+                        }
+                        title={
+                          !settlementAmountsValid
+                            ? 'Thiếu dữ liệu quyết toán'
+                            : backendSettlementCanComplete
+                              ? 'Đủ điều kiện hoàn tất'
+                              : 'Chưa đủ điều kiện hoàn tất'
+                        }
+                        action={
+                          !settlementAmountsValid ? (
+                            <Button
+                              variant="secondary"
+                              disabled={settlementLoading}
+                              onClick={() => void refreshSettlement()}
+                            >
+                              {settlementLoading ? 'Đang tải...' : 'Tải lại quyết toán'}
+                            </Button>
+                          ) : undefined
+                        }
                       >
-                        Còn phải thu: {money(Number(backendSettlement.outstandingVnd))}. Việc hoàn cọc
-                        qua SePay chỉ được thực hiện theo giao dịch và quyền được cấp; giao diện không
-                        tự suy ra đã hoàn từ số dự kiến.
+                        {settlementAmountsValid ? (
+                          <>
+                            Còn phải thu: {settlementMoney(backendSettlement.outstandingVnd)}. Việc hoàn cọc
+                            qua SePay chỉ được thực hiện theo giao dịch và quyền được cấp; giao diện không
+                            tự suy ra đã hoàn từ số dự kiến.
+                          </>
+                        ) : (
+                          'Máy chủ chưa trả đủ hoặc trả sai dữ liệu tiền. Chưa thể xác nhận điều kiện hoàn tất; hãy tải lại sau khi dịch vụ quyết toán được cập nhật.'
+                        )}
                       </Feedback>
                     </>
                   )}

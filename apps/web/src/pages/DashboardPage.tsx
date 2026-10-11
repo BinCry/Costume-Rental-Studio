@@ -58,7 +58,7 @@ export function DashboardPage({
       (kind === 'all' || task.kind === kind) &&
       (priority === 'all' || task.group === priority) &&
       (taskStatus === 'all' || task.status === taskStatus) &&
-      (!workDate || task.workDate === workDate) &&
+      (!workDate || task.workDate === workDate || task.kind === 'overdue') &&
       `${task.orderId} ${task.customer} ${task.phone} ${task.barcode ?? ''} ${task.task}`
         .toLocaleLowerCase('vi')
         .includes(search.toLocaleLowerCase('vi')),

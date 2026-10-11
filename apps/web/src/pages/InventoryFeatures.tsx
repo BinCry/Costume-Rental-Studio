@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Navigate } from '../App';
 import { Button, Feedback, Field, SelectField, TextAreaField, StatusLabel } from '../components/ui';
 import {
@@ -280,7 +280,10 @@ export function TransfersPage({ scenario, branch, canManage = true }: { scenario
   const [selected, setSelected] = useState('DC-001');
   const [from, setFrom] = useState(branch);
   const [to, setTo] = useState(realApiMode ? '' : branch === 'Chi nhánh Quận 1' ? 'Chi nhánh Thủ Đức' : 'Chi nhánh Quận 1');
-  const [unitCode, setUnitCode] = useState('BC-012');
+  const [unitCode, setUnitCode] = useState(realApiMode ? '' : 'BC-012');
+  useEffect(() => {
+    if (realApiMode) setUnitCode('');
+  }, [realApiMode]);
   const [note, setNote] = useState('');
   const [checks, setChecks] = useState<Record<string, string>>({});
   const [reason, setReason] = useState('');
@@ -400,6 +403,10 @@ export function TransfersPage({ scenario, branch, canManage = true }: { scenario
                   <Button
                     disabled={busy || (realApiMode && (!branchesReady || branchesError || !destinationBranch))}
                     onClick={() => {
+                      if (!unitCode.trim()) {
+                        setIssue('Nhập barcode bộ cần điều chuyển.');
+                        return;
+                      }
                       if (sourceBranch === destinationBranch || !destinationBranch || !note.trim()) {
                         setIssue('Chọn hai chi nhánh khác nhau và nhập lý do.');
                         return;
@@ -409,7 +416,7 @@ export function TransfersPage({ scenario, branch, canManage = true }: { scenario
                         from: sourceBranch,
                         to: destinationBranch,
                         status: 'REQUESTED',
-                        units: [{ barcode: unitCode }],
+                        units: [{ barcode: unitCode.trim() }],
                         note,
                         version: 1,
                         history: ['03/10 · Tạo yêu cầu fixture'],

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   paymentFindUnique: vi.fn(),
+  rentalOrderFindUnique: vi.fn(),
   paymentFindFirst: vi.fn(),
   paymentUpdate: vi.fn(),
   eventFindFirst: vi.fn(),
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../src/database/prisma.js', () => ({
   prisma: {
+    rentalOrder: { findUnique: mocks.rentalOrderFindUnique },
     payment: {
       findUnique: mocks.paymentFindUnique,
       findFirst: mocks.paymentFindFirst,
@@ -116,6 +118,41 @@ function verifiedWebhook() {
 }
 
 beforeEach(() => vi.resetAllMocks());
+
+describe('payment service settlement snapshot', () => {
+  it('returns the outstanding rental and extra balance', async () => {
+    mocks.rentalOrderFindUnique.mockResolvedValue({
+      id: orderId,
+      status: 'RETURN_INSPECTION',
+      customerUserId: customerId,
+      pickupBranchId: 'branch-1',
+      items: [
+        {
+          billableDays: 1,
+          unitDailyPriceVnd: 1_500n,
+          unitDepositVnd: 500n,
+          damageFeeVnd: 0n,
+          missingFeeVnd: 0n,
+          accessories: [],
+        },
+      ],
+      promotionDiscountVnd: 0n,
+      additionalRentalFeeVnd: 0n,
+      lateFeeVnd: 250n,
+      otherFeeVnd: 0n,
+      depositDeductionVnd: 0n,
+      payments: [
+        { purpose: 'RENTAL', amountVnd: 1_500n, status: 'SUCCEEDED', refunds: [] },
+        { purpose: 'DEPOSIT', amountVnd: 500n, status: 'SUCCEEDED', refunds: [] },
+      ],
+    });
+
+    await expect(service.getSettlement(customerActor, orderId)).resolves.toMatchObject({
+      extra: { remainingVnd: 250n },
+      outstandingVnd: 250n,
+    });
+  });
+});
 
 describe('payment service payOS flow', () => {
   it('allows an own-order customer to replay checkout, but rejects another customer order', async () => {
