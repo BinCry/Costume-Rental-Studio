@@ -1480,7 +1480,7 @@ export async function listTransfers(branchName?: string): Promise<Transfer[]> {
   const query = new URLSearchParams({ page: '1', pageSize: '100', sortBy: 'createdAt', sortOrder: 'desc' });
   const branchId = branchName ? branchIds.get(branchName) : undefined;
   if (branchId) query.set('branchId', branchId);
-  const page = await request<Page<ApiTransfer>>('/api/v1/transfers?' + query.toString());
+  const page = await request<Page<ApiTransfer>>('/api/v1/inventory/transfers?' + query.toString());
   return page.items.map(transferFromApi);
 }
 async function transferUnitIds(transfer: Transfer) {
@@ -1501,7 +1501,7 @@ export async function saveTransfer(transfer: Transfer): Promise<Transfer> {
   const reference = await transferUnitIds(transfer);
   const unitIds = transfer.units.map((item) => reference.unitIds.get(item.barcode)!);
   if (!reference.id) {
-    const created = await request<ApiTransfer>('/api/v1/transfers', {
+    const created = await request<ApiTransfer>('/api/v1/inventory/transfers', {
       method: 'POST',
       body: JSON.stringify({
         fromBranchId: reference.fromBranchId,
@@ -1512,7 +1512,7 @@ export async function saveTransfer(transfer: Transfer): Promise<Transfer> {
     });
     return transferFromApi(created);
   }
-  const updated = await request<ApiTransfer>(`/api/v1/transfers/${encodeURIComponent(reference.id)}`, {
+  const updated = await request<ApiTransfer>(`/api/v1/inventory/transfers/${encodeURIComponent(reference.id)}`, {
     method: 'PATCH',
     body: JSON.stringify({ expectedVersion: transfer.version, requestNote: transfer.note, unitIds }),
   });
@@ -1527,7 +1527,7 @@ export async function advanceTransfer(
 ): Promise<Transfer> {
   const reference = transferRefs.get(code);
   if (!reference) throw new ApiClientError(422, 'TRANSFER_CONTEXT_MISSING', 'Chưa tải đủ phiếu điều chuyển.');
-  const path = `/api/v1/transfers/${encodeURIComponent(reference.id)}`;
+  const path = `/api/v1/inventory/transfers/${encodeURIComponent(reference.id)}`;
   let updated: ApiTransfer;
   if (next === 'APPROVED') {
     updated = await request<ApiTransfer>(path + '/approve', {
@@ -1580,11 +1580,11 @@ function policyFromApi(policy: ApiPolicy): Policy {
   };
 }
 export async function listPolicies(): Promise<Policy[]> {
-  const items = await request<ApiPolicy[]>('/api/v1/policies');
+  const items = await request<ApiPolicy[]>('/api/v1/rental-policies');
   return items.map(policyFromApi);
 }
 export async function savePolicy(policy: Policy): Promise<Policy> {
-  const created = await request<ApiPolicy>('/api/v1/policies', {
+  const created = await request<ApiPolicy>('/api/v1/rental-policies', {
     method: 'POST',
     body: JSON.stringify({
       versionCode: policy.code,
