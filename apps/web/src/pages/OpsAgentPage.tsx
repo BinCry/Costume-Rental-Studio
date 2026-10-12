@@ -377,7 +377,7 @@ export function OpsAgentPage({
               <article className="ops-metric-card">
                 <span>Việc tại chi nhánh</span>
                 <strong>{loading ? '—' : branchQueue.length}</strong>
-                <small>Hàng đợi fixture</small>
+                <small>{loading ? 'Đang đọc dữ liệu mẫu' : unassignedCount + ' việc chưa có người phụ trách'}</small>
               </article>
               <article className="ops-metric-card">
                 <span>Cần nhân viên chú ý</span>
