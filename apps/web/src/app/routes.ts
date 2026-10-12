@@ -22,7 +22,8 @@ export type Screen =
   | 'roles'
   | 'branches'
   | 'policies'
-  | 'reports';
+  | 'reports'
+  | 'opsAgent';
 export type Navigate = (screen: Screen, params?: Record<string, string>) => void;
 export interface Route {
   screen: Screen;
@@ -53,6 +54,7 @@ export const paths: Record<Screen, string> = {
   branches: '/quan-tri/chi-nhanh',
   policies: '/quan-tri/chinh-sach',
   reports: '/quan-tri/bao-cao',
+  opsAgent: '/van-hanh/ops-agent',
 };
 export function pathFor(screen: Screen, params?: Record<string, string>) {
   let path = paths[screen];

@@ -6,6 +6,7 @@ import { fixtureCustomers, fixtureEmployees, fixtureRoles } from '../fixtures/st
 import { CatalogPage } from '../pages/CatalogPage';
 import { BookingPage } from '../pages/BookingPage';
 import { DashboardPage } from '../pages/DashboardPage';
+import { OpsAgentPage } from '../pages/OpsAgentPage';
 import { OrdersPage } from '../pages/OrdersPage';
 import { OrderDetailShell } from '../pages/OrderDetailShell';
 import { AccountPage, CostumeDetailPage, MyRentalsPage } from '../pages/CustomerFeatures';
@@ -48,6 +49,7 @@ const customerNav: { screen: Screen; label: string }[] = [
 ];
 const staffNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
   { screen: 'dashboard', label: 'Bảng việc', roles: ['ADMIN', 'SALES_STAFF', 'INVENTORY_STAFF'] },
+  { screen: 'opsAgent', label: 'Ops Agent', roles: ['ADMIN', 'SALES_STAFF', 'INVENTORY_STAFF'] },
   { screen: 'orders', label: 'Đơn thuê', roles: ['ADMIN', 'SALES_STAFF', 'INVENTORY_STAFF'] },
   { screen: 'counter', label: 'Tạo tại quầy', roles: ['ADMIN', 'SALES_STAFF'] },
   { screen: 'active', label: 'Đang thuê', roles: ['ADMIN', 'SALES_STAFF', 'INVENTORY_STAFF'] },
@@ -63,7 +65,7 @@ const staffNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
 ];
 const staffNavGroups: { id: string; label: string; screens: Screen[] }[] = [
   { id: 'overview', label: 'Tổng quan', screens: ['dashboard'] },
-  { id: 'operations', label: 'Vận hành', screens: ['orders', 'counter', 'active'] },
+  { id: 'operations', label: 'Vận hành', screens: ['orders', 'counter', 'active', 'opsAgent'] },
   { id: 'inventory', label: 'Kho', screens: ['inventory', 'transfers'] },
   { id: 'customers', label: 'Khách hàng', screens: ['crm'] },
   { id: 'catalog', label: 'Danh mục', screens: ['adminCatalog'] },
@@ -86,6 +88,7 @@ const requiredPermissions: Partial<Record<Screen, string[]>> = {
   roles: ['rbac.read.all', 'rbac.manage.all'],
   branches: ['branches.read.all', 'branches.manage.all'],
   policies: ['policies.read.all', 'policies.manage.all'],
+  opsAgent: ['rentals.read.branch', 'rentals.read.all'],
 };
 
 export default function StudioApp() {
@@ -757,6 +760,9 @@ export default function StudioApp() {
             {route.screen === 'dashboard' && (
               <DashboardPage scenario={scenario} go={go} initialBranch={activeBranch} />
             )}
+            {route.screen === 'opsAgent' && (
+              <OpsAgentPage scenario={scenario} branch={activeBranch} go={go} />
+            )}
             {route.screen === 'orders' && (
               <OrdersPage
                 scenario={scenario}
@@ -880,7 +886,7 @@ export default function StudioApp() {
       </main>
       <footer className="site-footer">
         <span>Studio Trang Phục</span>
-        <span>{import.meta.env.DEV ? apiIdentity ? 'Môi trường phát triển · Dữ liệu API' : 'Môi trường phát triển · Fixture demo' : 'Dữ liệu vận hành lấy từ API · Cần đăng nhập cho chức năng riêng tư'}</span>
+        <span>{route.screen === 'opsAgent' ? 'Ops Agent · Fixture demo · Không lưu dữ liệu' : import.meta.env.DEV ? apiIdentity ? 'Môi trường phát triển · Dữ liệu API' : 'Môi trường phát triển · Fixture demo' : 'Dữ liệu vận hành lấy từ API · Cần đăng nhập cho chức năng riêng tư'}</span>
       </footer>
     </div>
   );

@@ -190,9 +190,10 @@ export function SelectField({
 export function TextAreaField({
   label,
   error,
+  hint,
   className = '',
   ...props
-}: TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string; error?: string }) {
+}: TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string; error?: string; hint?: string }) {
   const id = useId();
   return (
     <div className={`field ${className}`}>
@@ -200,9 +201,14 @@ export function TextAreaField({
       <textarea
         id={id}
         aria-invalid={!!error}
-        aria-describedby={error ? `${id}-error` : undefined}
+        aria-describedby={error ? `${id}-error` : hint ? `${id}-hint` : undefined}
         {...props}
       />
+      {hint && !error && (
+        <p id={`${id}-hint`} className="field-hint">
+          {hint}
+        </p>
+      )}
       {error && (
         <p id={`${id}-error`} className="field-error">
           {error}
