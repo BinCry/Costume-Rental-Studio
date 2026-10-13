@@ -920,6 +920,16 @@ Nhóm có thể dùng danh sách dưới đây như checklist demo/test. Một k
 | AT-42 | Lịch tương lai nằm trong buffer sau giờ trả dự kiến | Cùng unit không được xác nhận; unit thay thế chỉ được nhận nếu lịch và trạng thái đều hợp lệ. |
 | AT-43 | Đơn trước quá plannedDueAt nhưng chưa scan trả | Unit tiếp tục bị tính là đang ở khách cho quote, confirm, reallocate và handover; trạng thái chỉ đổi sau khi nhận thực tế. |
 
+### Bổ sung: chính sách cho đơn giữa bị trả trễ
+
+Đối chiếu điều khoản công khai của các đơn vị cho thuê trang phục cho thấy kỳ thuê, phí trễ và thời gian ân hạn khác nhau; không có con số nào nên được coi là chuẩn của dự án. Điểm phù hợp để áp dụng là ghi rõ giờ trả, yêu cầu khách báo sớm khi xin gia hạn, chỉ coi đồ đã sẵn sàng sau khi nhận và kiểm tra, và bảo vệ đơn kế tiếp bằng phương án xử lý thay thế.
+
+**Đề xuất cho Costume Rental Studio:** lịch thử không giữ bộ; đơn thuê chỉ giữ barcode sau khi nhân viên xác nhận. Đơn chen giữa chỉ được nhận nếu khoảng từ giờ trả hẹn đến đơn kế tiếp đủ cho dự phòng trả trễ và chuẩn bị đồ. Đơn kế tiếp đã xác nhận không tự bị hủy/dời nếu người thuê trước quá hạn. Tạo tác vụ liên kết hai đơn, tìm barcode READY thay thế cùng variant/size, liên hệ khách nhận sau nếu cần; ngay tại quầy vẫn phải chặn bàn giao barcode đang có allocation ACTIVE hoặc chưa READY.
+
+**Pilot chưa được chủ studio phê duyệt:** đề xuất khoảng cách tối thiểu 24 giờ cho trang phục thông thường và 48 giờ cho trang phục cầu kỳ; nếu thời gian chuẩn bị thực tế dài hơn thì dùng thời gian dài hơn. Đây là giả định thận trọng để bắt đầu đo vận hành, không phải chuẩn ngành. Sau 4 tuần hoặc tối thiểu 30 lượt trả (lấy mốc nào đến sau), xem lại thời gian trả trễ, thời gian đưa bộ về READY và số đơn kế tiếp bị ảnh hưởng. Phí trễ, ân hạn, hoàn/giảm giá nếu studio không giao được, và quy tắc giờ mở cửa vẫn cần được chốt riêng.
+
+Chi tiết nguồn đối chiếu, luồng xử lý và acceptance tests: [Chính sách trả trễ và bảo vệ đơn thuê kế tiếp](chinh-sach-tra-tre-va-don-thue-ke-tiep.md).
+
 # **30\. State machine nghiệp vụ khuyến nghị**
 
 ## **Đơn thuê**
