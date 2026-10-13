@@ -171,6 +171,12 @@ Không có người dùng nào được override khi mã bộ vẫn đang ở kh
 - Đơn B chưa được bàn giao thì không được đánh dấu đã thuê. Nếu khách đã thanh toán trước, mọi refund/điều chỉnh phải là giao dịch có lý do và tham chiếu payment gốc.
 - Không tự khấu trừ toàn bộ cọc của A chỉ vì trả trễ. Cọc được quyết toán theo policy đã chốt, bằng chứng và giao dịch riêng.
 
+### Tương thích đơn cũ và thời điểm bật policy
+
+- Mỗi đơn tiếp tục dùng công thức phí gắn với policy_version_id. Phiên bản 1 giữ phép tính cũ theo tổng giá thuê gộp khi trả đủ; phiên bản 2 tính theo từng bộ đã nhận, sau phân bổ giảm giá, và giới hạn phí ở 100% giá thuê bộ. Migration đặt các phiên bản đã tồn tại ở phiên bản 1; khi tạo phiên bản policy mới, backend gắn phiên bản công thức 2. Không thay đổi hồi tố khoản phí của đơn đang thuê.
+- Đệm lịch mới được ghi vào occupied_until của các đơn tạo theo policy mới. Đơn đã xác nhận trước đó giữ khoảng chiếm dụng đã lưu. Vì vậy trước khi bật policy có buffer khác 0, người quản lý phải rà soát lịch tương lai, xử lý các cặp đơn có nguy cơ xung đột bằng phân công lại hoặc liên hệ khách và ghi nhận quyết định. UI cảnh báo bước này; hệ thống hiện chưa tự backfill hay phân công lại đơn cũ. Cho tới khi rà soát xong, giữ buffer 0 hoặc đặt ngày hiệu lực sau khi lịch cũ đã được xử lý.
+- Cách tính phí đề xuất chưa được studio phê duyệt; ngày hiệu lực và nội dung công bố cho khách cũng cần được chốt trước khi tạo policy production.
+
 ## 8. Trạng thái và dữ liệu
 
 Không cần thêm trạng thái đơn `AT_RISK`. Đề xuất giữ state machine đơn hiện tại và tạo cờ/tác vụ vận hành có thể tính từ dữ liệu:
@@ -184,7 +190,7 @@ Không cần thêm trạng thái đơn `AT_RISK`. Đề xuất giữ state machi
 
 Đề xuất API/service phải dùng cùng một quy tắc khả dụng trong tra cứu public, báo giá, xác nhận, reallocate, gia hạn, điều chuyển và bàn giao. Kiểm tra ở UI chỉ hỗ trợ nhân viên; quyết định cuối phải được backend kiểm tra trong transaction.
 
-Không yêu cầu thay schema trong tài liệu này. Khi triển khai, nên có cấu hình riêng `lateReturnReserveMinutes`; `expectedTurnaround` có thể lấy từ `cleaningBufferMinutes` nếu giá trị đó phản ánh đúng thời gian chuẩn bị của nhóm trang phục. Nếu không, cần một cấu hình thời gian chuẩn bị riêng. Không dùng một buffer tổng rồi cộng lần nữa với các thành phần của nó. Mọi thay đổi schema/migration cần được rà soát riêng trước khi code.
+Triển khai trên branch này bổ sung late_return_buffer_minutes vào rental_policy_versions; hệ thống dùng max(policy buffer, variant cleaningBufferMinutes) và không cộng trùng. Migration mặc định 0, nên không tự bật đệm cho policy đang chạy. Cấu hình cleaningBufferMinutes chỉ phù hợp nếu phản ánh đúng thời gian chuẩn bị theo nhóm trang phục; nếu cần thời gian riêng, phải thiết kế thêm trường riêng và migration.
 
 ## 9. Giao diện nhân viên
 

@@ -214,6 +214,7 @@ type ApiPolicy = {
   lateGraceMinutes?: number;
   lateFeePercentPerDay?: number | string;
   lateReturnBufferMinutes?: number;
+  lateFeeFormulaVersion?: number;
   changeReason: string;
 };
 type ApiOverviewReport = {
@@ -1596,6 +1597,7 @@ function policyFromApi(policy: ApiPolicy): Policy {
     lateGraceMinutes: policy.lateGraceMinutes ?? 0,
     lateFeePercentPerDay: Number(policy.lateFeePercentPerDay ?? 0),
     lateReturnBufferMinutes: policy.lateReturnBufferMinutes ?? 0,
+    lateFeeFormulaVersion: policy.lateFeeFormulaVersion ?? 1,
     reason: policy.changeReason,
   };
 }
@@ -1612,7 +1614,7 @@ export async function savePolicy(policy: Policy): Promise<Policy> {
       effectiveTo: policy.to ? new Date(`${policy.to}T23:59:59.999Z`).toISOString() : null,
       billingDayMode: policy.billingMode,
       minRentalDays: policy.minDays,
-      maxRentalDays: policy.maxDays || undefined,
+      maxRentalDays: policy.maxDays,
       quoteValidHours: policy.quoteHours,
       noShowGraceMinutes: policy.noShowGraceMinutes ?? 0,
       lateGraceMinutes: policy.lateGraceMinutes ?? 0,

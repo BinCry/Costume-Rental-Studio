@@ -152,7 +152,7 @@ Nhánh kết thúc: `REJECTED`, `CANCELLED`, `NO_SHOW`.
 - Database ngăn cùng unit có lịch `HELD/CONFIRMED/ACTIVE` chồng nhau; service cũng kiểm tra block vệ sinh/sửa chữa và transfer.
 - Khách nhận tại quầy; `pickup_processed_by` là nhân viên quầy, không phải shipper.
 - Khi trả, nhân viên ghi nhận từng unit đã thực nhận, tình trạng, thiếu/hỏng và bằng chứng. Có thể trả một phần; chỉ tính phí trễ cho các item được thực nhận ở lần đó.
-- Phí trễ lấy từ policy snapshot của đơn: `ceil(max(0, returned_at - planned_due_at - late_grace_minutes) / 24 giờ)` kỳ đã bắt đầu × tỷ lệ phí × tiền thuê đã giảm giá của item; không vượt 100% tiền thuê item đó. Giảm giá đơn được phân bổ theo tỷ trọng tiền thuê từng item.
+- Đơn policy công thức cũ (phiên bản 1) giữ phép tính trước đây: tính trên tổng giá thuê gộp khi trả đủ; trả một phần chưa chốt phí trễ. Policy version mới (phiên bản 2) tính từng bộ đã nhận, sau khi phân bổ giảm giá theo tỷ trọng; mỗi kỳ 24 giờ đã bắt đầu nhân tỷ lệ và phí mỗi bộ không vượt 100% tiền thuê sau giảm giá. Cách tính gắn với policy version của đơn, không hồi tố.
 - Phí trễ là khoản `EXTRA`; không tự động trừ cọc. Cọc được quyết toán riêng sau khi kiểm tra theo quy trình hoàn/khấu trừ đã chốt.
 - Sau nhận trả, unit vẫn cần sạch/kiểm tra và chuyển sang `READY`, `CLEANING`, `REPAIR` hoặc `RETIRED` theo kết quả thực tế.
 

@@ -161,6 +161,7 @@ export interface Policy {
   lateGraceMinutes?: number;
   lateFeePercentPerDay?: number;
   lateReturnBufferMinutes?: number;
+  lateFeeFormulaVersion?: number;
   reason: string;
 }
 export interface ReportSnapshot {

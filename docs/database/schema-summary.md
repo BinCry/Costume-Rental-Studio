@@ -36,7 +36,7 @@ Schema hiện tại có **33 bảng**, chia thành 7 nhóm. Danh sách field đ�
 
 | Bảng | Dữ liệu chính | Ràng buộc quan trọng |
 |---|---|---|
-| `rental_policy_versions` | thời gian hiệu lực, cách tính ngày, no-show, ân hạn/phí trễ, đệm lịch, hủy, SLA refund | Bất biến; khoảng hiệu lực không chồng nhau; `late_return_buffer_minutes >= 0` |
+| `rental_policy_versions` | thời gian hiệu lực, cách tính ngày, no-show, ân hạn/phí trễ, đệm lịch, công thức phí, hủy, SLA refund | Bất biến; khoảng hiệu lực không chồng nhau; late_return_buffer_minutes >= 0; công thức phí là 1 hoặc 2 |
 | `promotions` | mã, loại/mức giảm, thời gian, hạn mức | Mã unique; thời gian và hạn mức hợp lệ |
 
 ## 4. Rental operations — 3 bảng

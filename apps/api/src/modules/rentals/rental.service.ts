@@ -240,6 +240,28 @@ export function calculateItemLateFees(
   };
 }
 
+export function calculateLegacyLateFee(
+  items: LateFeeItem[],
+  plannedDueAt: Date,
+  returnedAt: Date,
+  lateGraceMinutes: number,
+  feePercentPerDay: number,
+) {
+  const graceEnd = plannedDueAt.getTime() + Math.max(0, lateGraceMinutes) * 60_000;
+  const lateDays =
+    returnedAt.getTime() <= graceEnd
+      ? 0
+      : Math.ceil((returnedAt.getTime() - graceEnd) / 86_400_000);
+  const rentalBase = items.reduce(
+    (sum, item) => sum + item.unitDailyPriceVnd * BigInt(item.billableDays),
+    0n,
+  );
+  const lateFeeVnd = lateDays
+    ? (rentalBase * BigInt(Math.trunc(Number(feePercentPerDay) * 100)) * BigInt(lateDays)) / 10_000n
+    : 0n;
+  return { lateDays, lateFeeVnd };
+}
+
 async function assertUnitAvailableForPeriod(
   tx: Prisma.TransactionClient,
   unitId: string,
@@ -928,13 +950,15 @@ export async function extendOrder(actor: AuthenticatedActor, id: string, input: 
     const units = await lockUnits(tx, unitIds);
     const protectedEnds = new Map(
       order.items.map((item) => {
-        const unit = units.find((candidate) => candidate.id === item.unitId)!;
+        const unit = units.find((candidate) => candidate.id === item.unitId);
+        if (!unit)
+          throw new AppError(409, 'UNIT_UNAVAILABLE', 'Allocated unit is no longer available');
         return [
           item.id,
           bookingReservationUntil(
             input.newDueAt,
             order.policyVersion.lateReturnBufferMinutes,
-            unit.variant.cleaningBufferMinutes,
+            unit.variant?.cleaningBufferMinutes ?? item.variant?.cleaningBufferMinutes ?? 0,
           ),
         ];
       }),
@@ -1511,15 +1535,32 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
       }
     }
     const isFinalReturn = !input.partial;
-    const lateFee = calculateItemLateFees(
-      order.items,
-      input.items.map((item) => item.orderItemId),
-      order.plannedDueAt,
-      returnedAt,
-      order.policyVersion.lateGraceMinutes,
-      Number(order.policyVersion.lateFeePercentPerDay),
-      order.promotionDiscountVnd,
-    );
+    const lateFeeFormulaVersion = order.policyVersion.lateFeeFormulaVersion ?? 1;
+    const itemBasedFee = lateFeeFormulaVersion >= 2;
+    const calculatedLateFee = itemBasedFee
+      ? calculateItemLateFees(
+          order.items,
+          input.items.map((item) => item.orderItemId),
+          order.plannedDueAt,
+          returnedAt,
+          order.policyVersion.lateGraceMinutes,
+          Number(order.policyVersion.lateFeePercentPerDay),
+          order.promotionDiscountVnd,
+        )
+      : {
+          ...calculateLegacyLateFee(
+            order.items,
+            order.plannedDueAt,
+            returnedAt,
+            order.policyVersion.lateGraceMinutes,
+            Number(order.policyVersion.lateFeePercentPerDay),
+          ),
+          items: [],
+        };
+    const lateFee = {
+      ...calculatedLateFee,
+      lateFeeVnd: itemBasedFee || isFinalReturn ? calculatedLateFee.lateFeeVnd : 0n,
+    };
     const result = await tx.rentalOrder.update({
       where: { id },
       data: {
@@ -1535,7 +1576,11 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
               status: 'ACTIVE' as const,
               returnNotes: input.returnNotes ?? order.returnNotes,
             }),
-        lateFeeVnd: { increment: lateFee.lateFeeVnd },
+        ...(itemBasedFee
+          ? { lateFeeVnd: { increment: lateFee.lateFeeVnd } }
+          : isFinalReturn
+            ? { lateFeeVnd: lateFee.lateFeeVnd }
+            : {}),
         version: { increment: 1 },
         items: {
           updateMany: {
@@ -1557,6 +1602,8 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
         inspectionStatus: isFinalReturn ? 'PENDING_ASSESSMENT' : undefined,
         returnedItemIds: input.items.map((item) => item.orderItemId),
         returnedAt: returnedAt.toISOString(),
+        lateFeeFormulaVersion,
+        lateDays: lateFee.lateDays,
         lateFeeVnd: lateFee.lateFeeVnd.toString(),
         lateItems: lateFee.items,
       },

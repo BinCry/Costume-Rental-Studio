@@ -291,3 +291,19 @@ describe('rental extension and amendment service', () => {
     );
   });
 });
+
+
+describe('legacy late-fee formula compatibility', () => {
+  it('preserves the original gross-order calculation for legacy policy versions', () => {
+    const items = [
+      { id: itemId, unitDailyPriceVnd: 100_000n, billableDays: 2 },
+      { id: '10000000-0000-4000-8000-000000000009', unitDailyPriceVnd: 50_000n, billableDays: 1 },
+    ];
+    const due = new Date('2026-10-12T08:00:00.000Z');
+    const afterGrace = new Date(due.getTime() + 60 * 60_000 + 24 * 60 * 60_000 + 1);
+    expect(service.calculateLegacyLateFee(items, due, afterGrace, 60, 50)).toEqual({
+      lateDays: 2,
+      lateFeeVnd: 250_000n,
+    });
+  });
+});

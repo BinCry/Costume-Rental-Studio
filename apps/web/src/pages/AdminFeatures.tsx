@@ -1191,6 +1191,7 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                   onClick={() =>
                     setDraft({
                       ...policy,
+                      lateFeeFormulaVersion: 2,
                       code: `POLICY-DEMO-${items.length + 1}`,
                       from: '',
                       to: undefined,
@@ -1247,6 +1248,7 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                       { label: 'Thời hạn hoàn tiền dự kiến', value: policy.refundSlaBusinessDays == null ? 'Chưa cấu hình' : `${policy.refundSlaBusinessDays} ngày làm việc` },
                       { label: 'Ân hạn trả trễ', value: `${policy.lateGraceMinutes ?? 0} phút` },
                       { label: 'Phí trễ', value: `${policy.lateFeePercentPerDay ?? 0}% mỗi 24 giờ, tối đa 100% tiền thuê từng bộ` },
+                      { label: 'Cách tính phí', value: policy.lateFeeFormulaVersion === 2 ? 'Theo từng bộ, sau giảm giá' : 'Cách tính cũ theo toàn đơn' },
                       { label: 'Đệm lịch nội bộ', value: `${((policy.lateReturnBufferMinutes ?? 0) / 60).toLocaleString('vi-VN')} giờ` },
                       { label: 'Lý do thay đổi', value: policy.reason },
                     ]}
@@ -1296,6 +1298,22 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                         value={draft.maxDays ?? ''}
                         onChange={(e) => setDraft({ ...draft, maxDays: e.target.value === '' ? null : Number(e.target.value) })}
                         hint="Để trống nếu không giới hạn thời gian thuê."
+                      />
+                      <Field
+                        type="number"
+                        min="1"
+                        step="1"
+                        label="Báo giá có hiệu lực (giờ)"
+                        value={draft.quoteHours}
+                        onChange={(e) => setDraft({ ...draft, quoteHours: Number(e.target.value) })}
+                      />
+                      <Field
+                        type="number"
+                        min="0"
+                        step="1"
+                        label="Hủy miễn phí trước (giờ)"
+                        value={draft.cancelHours}
+                        onChange={(e) => setDraft({ ...draft, cancelHours: Number(e.target.value) })}
                       />
                       <Field
                         type="number"
@@ -1352,8 +1370,13 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                       />
                     </div>
                     <p className="muted small-note">
-                      Phương án pilot cần studio duyệt: 60 phút ân hạn, 30% giá thuê từng bộ cho mỗi 24 giờ trễ đã bắt đầu, giới hạn 100% tiền thuê bộ; đệm lịch tối thiểu 24 giờ. Các giá trị chỉ áp dụng khi tạo phiên bản có hiệu lực.
+                      Phương án pilot cần studio duyệt: 60 phút ân hạn, 30% giá thuê từng bộ cho mỗi 24 giờ trễ đã bắt đầu, giới hạn 100% tiền thuê bộ; đệm lịch tối thiểu 24 giờ. Các giá trị chỉ áp dụng khi tạo phiên bản có hiệu lực. Phiên bản policy mới dùng công thức phí theo từng bộ; đơn đang tham chiếu phiên bản cũ giữ công thức cũ.
                     </p>
+                    {realApiMode && (draft.lateReturnBufferMinutes ?? 0) > 0 && (
+                      <Feedback tone="warning" title="Rà soát lịch đã xác nhận trước khi bật đệm">
+                        Đơn xác nhận trước phiên bản này giữ nguyên khoảng chiếm dụng đã lưu; màn hình chưa tự kéo dài hoặc phân công lại các đơn đó. Hãy rà soát lịch tương lai và xử lý xung đột trước ngày hiệu lực.
+                      </Feedback>
+                    )}
                     <TextAreaField
                       label="Lý do thay đổi"
                       value={draft.reason}

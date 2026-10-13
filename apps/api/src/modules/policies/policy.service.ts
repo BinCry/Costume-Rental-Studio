@@ -43,6 +43,8 @@ export async function createPolicy(actor: AuthenticatedActor, input: PolicyInput
           'Policy effective range overlaps an existing version',
         );
     }
-    return tx.rentalPolicyVersion.create({ data: { ...input, createdBy: actor.id } });
+    return tx.rentalPolicyVersion.create({
+      data: { ...input, lateFeeFormulaVersion: 2, createdBy: actor.id },
+    });
   });
 }
