@@ -174,7 +174,11 @@ export function bookingReservationUntil(
   return new Date(plannedDueAt.getTime() + bufferMinutes * 60_000);
 }
 
-type LateFeeItem = { id: string; unitDailyPriceVnd: bigint; billableDays: number };
+interface LateFeeItem {
+  id: string;
+  unitDailyPriceVnd: bigint;
+  billableDays: number;
+}
 
 export function calculateItemLateFees(
   items: LateFeeItem[],
@@ -1256,10 +1260,9 @@ async function assertPickupUnitsReady(
   for (const item of order.items) {
     const unit = units.find((candidate) => candidate.id === item.unitId);
     if (
-      !unit ||
-      unit.variantId !== item.variantId ||
-      unit.currentBranchId !== order.pickupBranchId ||
-      unit.operationalStatus !== 'READY'
+      unit?.variantId !== item.variantId ||
+      unit?.currentBranchId !== order.pickupBranchId ||
+      unit?.operationalStatus !== 'READY'
     )
       throw new AppError(
         409,

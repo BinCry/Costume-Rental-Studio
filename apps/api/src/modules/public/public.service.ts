@@ -150,6 +150,7 @@ export async function getPublicVariant(id: string) {
  * a concrete unit to an order.
  */
 export async function checkPublicAvailability(input: PublicAvailabilityInput) {
+  const now = new Date();
   const [branch, variant, policy] = await prisma.$transaction([
     prisma.branch.findFirst({ where: { id: input.pickupBranchId, status: 'ACTIVE' }, select: { id: true } }),
     prisma.costumeVariant.findFirst({
