@@ -190,7 +190,7 @@ Không cần thêm trạng thái đơn `AT_RISK`. Đề xuất giữ state machi
 
 Đề xuất API/service phải dùng cùng một quy tắc khả dụng trong tra cứu public, báo giá, xác nhận, reallocate, gia hạn, điều chuyển và bàn giao. Kiểm tra ở UI chỉ hỗ trợ nhân viên; quyết định cuối phải được backend kiểm tra trong transaction.
 
-Triển khai trên branch này bổ sung late_return_buffer_minutes vào rental_policy_versions; hệ thống dùng max(policy buffer, variant cleaningBufferMinutes) và không cộng trùng. Migration mặc định 0, nên không tự bật đệm cho policy đang chạy. Cấu hình cleaningBufferMinutes chỉ phù hợp nếu phản ánh đúng thời gian chuẩn bị theo nhóm trang phục; nếu cần thời gian riêng, phải thiết kế thêm trường riêng và migration.
+Triển khai trên branch này bổ sung late_return_buffer_minutes vào rental_policy_versions. Khoảng bảo vệ được tính bằng planned_due_at + dự phòng trả trễ của policy + cleaningBufferMinutes của variant; hai khoảng này khác nhau nên được cộng. Migration mặc định 0, nên không tự bật dự phòng trả trễ cho policy đang chạy. cleaningBufferMinutes phải phản ánh thời gian vệ sinh/chuẩn bị thực tế của mẫu.
 
 ## 9. Giao diện nhân viên
 
@@ -258,7 +258,7 @@ Những con số dưới đây là đề xuất để pilot, chưa phải cam k�
 | --- | --- | --- |
 | Ân hạn trước khi tính phí trễ | 60 phút kể từ hạn trả chính xác trên đơn. | Chờ chủ studio duyệt |
 | Mức phí trễ | 30% tiền thuê đã giảm giá của từng bộ cho mỗi kỳ 24 giờ trễ đã bắt đầu; tối đa 100% tiền thuê bộ đó. | Chờ chủ studio duyệt |
-| Đệm bảo vệ lịch | Tối thiểu 24 giờ sau hạn trả; nếu thời gian vệ sinh của variant dài hơn thì dùng thời gian dài hơn. Tính theo giờ liên tục. | Chờ chủ studio duyệt |
+| Đệm bảo vệ lịch | 12 giờ dự phòng trễ + 12 giờ vệ sinh/chuẩn bị = tối thiểu 24 giờ; nhóm cầu kỳ đề xuất 24 + 24 = 48 giờ. Tính theo giờ liên tục; tăng tương ứng nếu thời gian vệ sinh dài hơn. | Chờ chủ studio duyệt |
 | Định nghĩa chu kỳ thuê | Dùng `billingDayMode` của policy version; đề nghị 24 giờ liên tục nếu studio muốn một ngày = 24 giờ. Đây là lựa chọn độc lập với đệm lịch. | Chờ chủ studio duyệt |
 | Nhắc khách và nhân viên | Nhắc trước hạn và cảnh báo ngay khi quá hạn mà có lịch sau đã xác nhận; kênh gửi/SLA để phase kế tiếp vì repo chưa có luồng thông báo production cho trường hợp này. | Chờ chốt |
 | Đổi barcode tương đương | Nhân viên được đổi barcode cùng variant tại cùng chi nhánh nếu unit đang `READY`; thay đổi được ghi event old/new. Khác size/mẫu/giá cần khách đồng ý. | Đề xuất áp dụng |
@@ -272,7 +272,7 @@ Những con số dưới đây là đề xuất để pilot, chưa phải cam k�
 
 - **Hạn trả khách:** `planned_due_at`, là ngày-giờ hiển thị trên đơn. Khách phải trả tại cùng chi nhánh. Đệm nội bộ không kéo dài thời hạn khách được giữ trang phục.
 - **Ân hạn tính phí:** `late_grace_minutes` trong policy snapshot. Chỉ dùng để xác định phí với khách; không làm unit khả dụng sớm hơn.
-- **Đệm lịch nội bộ:** `late_return_buffer_minutes` trong phiên bản policy, kết hợp thời gian vệ sinh theo variant bằng `max(policy buffer, variant cleaning buffer)`. Đơn mới cùng unit không được xếp vào khoảng này.
+- **Đệm lịch nội bộ:** `late_return_buffer_minutes` trong phiên bản policy cộng với `cleaningBufferMinutes` của variant. Đơn mới cùng unit không được xếp vào tổng khoảng này.
 
 Độc lập với các mốc trên, một unit có allocation đang `ACTIVE` vẫn được coi là ở khách cho đến khi nhân viên nhận lại thực tế. Không lấy giờ dự kiến hoặc việc hết buffer để tự kết luận đã trả hay sạch.
 

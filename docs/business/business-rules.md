@@ -147,7 +147,7 @@ Nhánh kết thúc: `REJECTED`, `CANCELLED`, `NO_SHOW`.
 
 - `PENDING_CONFIRMATION` chưa đảm bảo giữ unit.
 - Khi xác nhận, mỗi `rental_order_items` được gán một unit và khoảng chiếm dụng đến hết thời gian bảo vệ lịch.
-- Khoảng bảo vệ kết thúc bằng `planned_due_at + max(policy.late_return_buffer_minutes, variant.cleaning_buffer_minutes)`; đây là thời gian nội bộ, không gia hạn kỳ thuê của khách.
+- Khoảng bảo vệ kết thúc bằng `planned_due_at + policy.late_return_buffer_minutes + variant.cleaning_buffer_minutes`; dự phòng trả trễ và thời gian vệ sinh là hai khoảng riêng, đều chỉ dùng nội bộ và không gia hạn kỳ thuê của khách.
 - Unit có phân bổ `ACTIVE` tiếp tục không khả dụng cho đến khi nhân viên ghi nhận trả thực tế, kể cả khi `planned_due_at` và `occupied_until` đã qua.
 - Database ngăn cùng unit có lịch `HELD/CONFIRMED/ACTIVE` chồng nhau; service cũng kiểm tra block vệ sinh/sửa chữa và transfer.
 - Khách nhận tại quầy; `pickup_processed_by` là nhân viên quầy, không phải shipper.
@@ -196,7 +196,7 @@ Không cho `ACTIVE → CANCELLED`, `COMPLETED → ACTIVE` hoặc `REJECTED → C
 - Các khoảng hiệu lực policy không được chồng nhau.
 - Thay policy bằng cách đóng phiên bản hiện tại và thêm phiên bản mới.
 - Order lưu `policy_version_id`, nên thay đổi sau này không làm đổi đơn cũ.
-- `late_grace_minutes` dùng để tính phí với khách. `late_return_buffer_minutes` dùng để bảo vệ lịch cho lần thuê sau; kết hợp với thời gian vệ sinh theo variant bằng giá trị lớn hơn, không cộng chồng.
+- `late_grace_minutes` dùng để tính phí với khách. `late_return_buffer_minutes` là dự phòng riêng cho khách trả trễ. Khoảng bảo vệ lịch cộng thêm `variant.cleaning_buffer_minutes` để có thời gian vệ sinh/chuẩn bị.
 - Mỗi đơn có tối đa một promotion; mã và số tiền giảm được snapshot khi xác nhận.
 
 ## 12. Thanh toán và refund
@@ -265,6 +265,6 @@ Trong lần bàn giao, backend phải khóa và kiểm tra lại unit được p
 
 Trước khi thu tiền tại bước bàn giao, giao diện gọi kiểm tra sẵn sàng. API bàn giao vẫn tự kiểm tra lại trong transaction. Nếu một lỗi phát sinh sau lần kiểm tra trước và payment đã được ghi nhận, giữ payment cùng đơn để đối soát; không tự xóa giao dịch hoặc tự hoàn tiền.
 
-**Mức pilot chưa được chủ studio duyệt, không phải giá trị tự bật:** đề xuất ân hạn 60 phút; 30% tiền thuê đã giảm giá của từng bộ cho mỗi kỳ 24 giờ trễ đã bắt đầu; giới hạn tối đa bằng 100% tiền thuê bộ; đệm lịch toàn chuỗi tối thiểu 24 giờ, lấy mức lớn hơn với thời gian vệ sinh của variant. Migration thêm field đệm lịch mặc định 0 nên không thay đổi policy đang hiệu lực. Chỉ tạo policy version mới sau khi studio duyệt và chọn ngày hiệu lực.
+**Mức pilot chưa được chủ studio duyệt, không phải giá trị tự bật:** đề xuất ân hạn 60 phút; 30% tiền thuê đã giảm giá của từng bộ cho mỗi kỳ 24 giờ trễ đã bắt đầu; giới hạn tối đa bằng 100% tiền thuê bộ; 12 giờ dự phòng trả trễ cộng 12 giờ vệ sinh, tổng tối thiểu 24 giờ; nhóm cầu kỳ đề xuất 24 + 24 giờ, tổng 48 giờ. Migration thêm field đệm lịch mặc định 0 nên không thay đổi policy đang hiệu lực. Chỉ tạo policy version mới sau khi studio duyệt và chọn ngày hiệu lực.
 
 Chi tiết cách tính, các ví dụ đối chiếu và cách đo pilot nằm trong [Chính sách đệm lịch và xử lý đơn kế tiếp](chinh-sach-tra-tre-va-don-thue-ke-tiep.md).

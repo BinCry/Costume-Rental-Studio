@@ -1249,7 +1249,7 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                       { label: 'Ân hạn trả trễ', value: `${policy.lateGraceMinutes ?? 0} phút` },
                       { label: 'Phí trễ', value: `${policy.lateFeePercentPerDay ?? 0}% mỗi 24 giờ, tối đa 100% tiền thuê từng bộ` },
                       { label: 'Cách tính phí', value: policy.lateFeeFormulaVersion === 2 ? 'Theo từng bộ, sau giảm giá' : 'Cách tính cũ theo toàn đơn' },
-                      { label: 'Đệm lịch nội bộ', value: `${((policy.lateReturnBufferMinutes ?? 0) / 60).toLocaleString('vi-VN')} giờ` },
+                      { label: 'Dự phòng khách trả trễ', value: `${((policy.lateReturnBufferMinutes ?? 0) / 60).toLocaleString('vi-VN')} giờ + thời gian vệ sinh theo mẫu` },
                       { label: 'Lý do thay đổi', value: policy.reason },
                     ]}
                   />
@@ -1363,14 +1363,14 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                         min="0"
                         max="168"
                         step="0.5"
-                        label="Đệm lịch sau hạn trả (giờ)"
+                        label="Dự phòng khách trả trễ (giờ)"
                         value={(draft.lateReturnBufferMinutes ?? 0) / 60}
                         onChange={(e) => setDraft({ ...draft, lateReturnBufferMinutes: Math.round(Number(e.target.value) * 60) })}
-                        hint="Chặn lịch để dự phòng trễ và chuẩn bị đồ; đây không phải ân hạn miễn phí."
+                        hint="Cộng với thời gian vệ sinh theo mẫu. Ví dụ pilot: 12 giờ dự phòng + 12 giờ vệ sinh = 24 giờ tổng; không phải ân hạn miễn phí."
                       />
                     </div>
                     <p className="muted small-note">
-                      Phương án pilot cần studio duyệt: 60 phút ân hạn, 30% giá thuê từng bộ cho mỗi 24 giờ trễ đã bắt đầu, giới hạn 100% tiền thuê bộ; đệm lịch tối thiểu 24 giờ. Các giá trị chỉ áp dụng khi tạo phiên bản có hiệu lực. Phiên bản policy mới dùng công thức phí theo từng bộ; đơn đang tham chiếu phiên bản cũ giữ công thức cũ.
+                      Phương án pilot cần studio duyệt: 60 phút ân hạn, 30% giá thuê từng bộ cho mỗi 24 giờ trễ đã bắt đầu, giới hạn 100% tiền thuê bộ; tổng đệm gồm 12 giờ dự phòng trả trễ + 12 giờ vệ sinh. Trang phục cần xử lý lâu hơn dùng tổng thời gian tương ứng. Phiên bản policy mới dùng công thức phí theo từng bộ; đơn đang tham chiếu phiên bản cũ giữ công thức cũ.
                     </p>
                     {realApiMode && (draft.lateReturnBufferMinutes ?? 0) > 0 && (
                       <Feedback tone="warning" title="Rà soát lịch đã xác nhận trước khi bật đệm">

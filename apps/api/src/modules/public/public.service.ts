@@ -175,7 +175,9 @@ export async function checkPublicAvailability(input: PublicAvailabilityInput) {
   if (!policy) throw new AppError(404, 'POLICY_NOT_FOUND', 'No active rental policy');
   const protectedUntil = new Date(
     input.plannedDueAt.getTime() +
-      Math.max(policy.lateReturnBufferMinutes, variant.cleaningBufferMinutes ?? 0) * 60_000,
+      (Math.max(0, policy.lateReturnBufferMinutes) +
+        Math.max(0, variant.cleaningBufferMinutes ?? 0)) *
+        60_000,
   );
 
   const availableUnits = await prisma.costumeUnit.count({

@@ -169,9 +169,10 @@ export function bookingReservationUntil(
   lateReturnBufferMinutes: number,
   cleaningBufferMinutes: number | null = 0,
 ) {
-  // Use the greater value so the operational preparation window is not counted twice.
-  const bufferMinutes = Math.max(0, lateReturnBufferMinutes, cleaningBufferMinutes ?? 0);
-  return new Date(plannedDueAt.getTime() + bufferMinutes * 60_000);
+  // Late-return reserve and garment preparation are separate intervals, so both are reserved.
+  const lateReserveMinutes = Math.max(0, lateReturnBufferMinutes);
+  const preparationMinutes = Math.max(0, cleaningBufferMinutes ?? 0);
+  return new Date(plannedDueAt.getTime() + (lateReserveMinutes + preparationMinutes) * 60_000);
 }
 
 interface LateFeeItem {

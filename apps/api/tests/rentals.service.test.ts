@@ -88,13 +88,13 @@ function transactionFor(order: ReturnType<typeof activeOrder>) {
 beforeEach(() => vi.resetAllMocks());
 
 describe('rental timing and late-fee policy', () => {
-  it('uses the longer of policy buffer and garment preparation time', () => {
+  it('adds the late-return reserve to garment preparation time', () => {
     const due = new Date('2026-10-14T08:00:00.000Z');
     expect(service.bookingReservationUntil(due, 1_440, 720)).toEqual(
-      new Date('2026-10-15T08:00:00.000Z'),
+      new Date('2026-10-15T20:00:00.000Z'),
     );
     expect(service.bookingReservationUntil(due, 1_440, 2_880)).toEqual(
-      new Date('2026-10-16T08:00:00.000Z'),
+      new Date('2026-10-17T08:00:00.000Z'),
     );
   });
 
