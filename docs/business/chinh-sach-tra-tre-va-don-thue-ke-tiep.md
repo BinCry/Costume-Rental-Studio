@@ -183,7 +183,7 @@ Không cần thêm trạng thái đơn `AT_RISK`. Đề xuất giữ state machi
 
 Đề xuất API/service phải dùng cùng một quy tắc khả dụng trong tra cứu public, báo giá, xác nhận, reallocate, gia hạn, điều chuyển và bàn giao. Kiểm tra ở UI chỉ hỗ trợ nhân viên; quyết định cuối phải được backend kiểm tra trong transaction.
 
-Không yêu cầu thay schema trong tài liệu này. Nếu triển khai, cần chốt cấu hình buffer và xem xét trường/cấu hình `turnaroundBufferMinutes` tách biệt với `cleaningBufferMinutes`; mọi thay đổi schema/migration là việc riêng, không nằm trong cập nhật tài liệu này.
+Không yêu cầu thay schema trong tài liệu này. Khi triển khai, nên có cấu hình riêng `lateReturnReserveMinutes`; `expectedTurnaround` có thể lấy từ `cleaningBufferMinutes` nếu giá trị đó phản ánh đúng thời gian chuẩn bị của nhóm trang phục. Nếu không, cần một cấu hình thời gian chuẩn bị riêng. Không dùng một buffer tổng rồi cộng lần nữa với các thành phần của nó. Mọi thay đổi schema/migration cần được rà soát riêng trước khi code.
 
 ## 9. Giao diện nhân viên
 
