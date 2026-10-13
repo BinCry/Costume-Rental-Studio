@@ -19,21 +19,29 @@ Chính sách đề xuất:
 
 Không có thời gian đệm nào loại bỏ hoàn toàn rủi ro khách trả trễ. Thời gian đệm giảm nguy cơ; kiểm tra tại lúc giao và quy trình cứu đơn bảo vệ khách đã được xác nhận.
 
-## 2. Kết quả tra cứu hệ thống cho thuê
+## 2. Đối chiếu chính sách công khai của đơn vị cho thuê trang phục
 
-Đối chiếu tài liệu hướng dẫn chính thức của Booqable cho thấy các mẫu thực tiễn sau:
+Đã đối chiếu điều khoản công khai của một số cửa hàng cho thuê trang phục/váy và hướng dẫn của một phần mềm quản lý cho thuê. Đây là các ví dụ ở những thị trường khác nhau; không thể xem mức phí của họ là chuẩn chung cho studio tại Việt Nam.
 
-- Buffer sau đơn có thể dành cho chuẩn bị, vệ sinh/bảo trì hoặc dự phòng khách trả trễ. Một ngày buffer được tính là 24 giờ theo lịch, bao gồm cuối tuần/ngày nghỉ; buffer không làm tăng giá thuê.
-- Đơn nháp/yêu cầu chưa phải là đơn giữ hàng. Khi đơn được đặt chỗ, sản phẩm mới bị khóa khỏi lịch thuê khác.
-- Với hàng có mã riêng, hướng dẫn quy trình khuyên chỉ gán đúng món vật lý gần lúc nhận nếu vận hành cho phép; món trả phải được ghi nhận đã về trước khi đưa cho đơn sau.
+| Đơn vị | Quy tắc công khai đáng chú ý | Bài học áp dụng cho studio |
+| --- | --- | --- |
+| [Sophia’s Gallery & Costumes](https://sophiasgallery.com/pages/rental-agreement-terms) | Nêu rõ trang phục có thể đã được đặt cho khách kế tiếp; trả trễ có thể làm gián đoạn đơn đã xác nhận; khuyến khích khách liên hệ sớm và có thời gian ân hạn theo quyết định của cửa hàng. Trang điều khoản hiển thị mức phần trăm không nhất quán, nên không dùng con số đó làm tham khảo phí. | Phải quản lý ảnh hưởng tới đơn kế tiếp riêng với phí trễ. Không bê nguyên điều khoản bồi thường hoặc mức phí từ cửa hàng khác. |
+| [Disguises & Costumes](https://www.disguisescostumes.com/rental-policy/) | Cửa hàng nêu thời hạn thuê phổ biến, thanh toán khi đặt, giữ trang phục cho khách đã đặt, cho phép một số kỳ thuê kéo dài và quy định phí khi trả trễ. Khách được khuyến khích liên hệ nếu gặp vấn đề. | Nói rõ hạn trả và cách xin gia hạn trước khi giao đồ; gia hạn là quyết định riêng, không tự phát sinh vì khách chưa trả. |
+| [Vestiaire PH](https://www.vestiaireph.com/rental-policy) | Xác định kỳ thuê theo lúc nhận đến khi cửa hàng thực nhận; yêu cầu khách báo sớm nếu muốn gia hạn hoặc dự kiến trả trễ để cửa hàng chặn lịch; kiểm tra trang phục trước khi hoàn cọc; nêu cách đề xuất trang phục thay thế nếu món đã hứa có vấn đề. | Ghi thời điểm nhận trả thực tế, có đường xử lý thay thế cho đơn kế tiếp và chỉ hoàn cọc sau kiểm tra theo quy trình đã công bố. |
+| [Booqable – luồng đơn thuê](https://help.booqable.com/en/articles/3845244-the-booqable-order-workflow) | Đơn nháp chưa giữ tồn kho; đơn được đặt chỗ mới làm hàng không khả dụng; trạng thái trả hàng cần được cập nhật trước khi coi hàng đã quay lại kho. | Tách yêu cầu đang chờ duyệt khỏi đơn xác nhận; không dùng trạng thái/giờ dự kiến để kết luận món đồ đã trả. |
+| [Booqable – khoảng đệm lịch](https://help.booqable.com/en/articles/90053-how-to-adjust-product-settings) | Hệ thống cho phép khai báo thời gian giữa các lần thuê để chuẩn bị, vệ sinh hoặc giảm rủi ro trả trễ. Đây là cách một sản phẩm phần mềm biểu diễn quy tắc, không phải bằng chứng rằng một thời lượng cụ thể phù hợp với mọi cửa hàng. | Cấu hình khoảng đệm theo quy trình thật của studio; tách nó khỏi thời gian ân hạn tính phí. |
 
-Đây là ví dụ từ một sản phẩm thương mại, không phải quy định pháp luật hay chuẩn bắt buộc. Studio cần chọn thời lượng theo cách làm sạch trang phục, giờ mở cửa và dữ liệu trả trễ thực tế.
+### Kết luận nghiệp vụ cho mô hình của chúng ta
 
-Nguồn:
+Các đơn vị được khảo sát khác nhau về thời hạn thuê, tiền cọc, mức phí và thời gian ân hạn. Điểm có thể áp dụng chung về vận hành là: hạn trả cần được ghi cụ thể; khách cần báo sớm nếu muốn gia hạn hoặc biết sẽ trả muộn; trang phục chưa được nhận lại và kiểm tra thì chưa sẵn sàng; đơn đã xác nhận kế tiếp cần được bảo vệ bằng phương án thay thế khi xảy ra sự cố.
 
-- [Booqable: cấu hình buffer và cách tính theo giờ lịch](https://help.booqable.com/en/articles/90053-how-to-adjust-product-settings)
-- [Booqable: trạng thái đơn, giữ hàng, nhận/trả và gán món có mã](https://help.booqable.com/en/articles/3845244-the-booqable-order-workflow)
-- [Booqable: hiển thị khả dụng hoặc nhận yêu cầu chưa giữ hàng](https://help.booqable.com/en/articles/9127272-how-to-enable-a-wishlist-on-your-online-store-and-accept-order-requests)
+Vì vậy, studio nên áp dụng các quyết định sau:
+
+1. **Lịch thử đồ không giữ bộ.** Khách có thể thử trước; chỉ đơn thuê được nhân viên xác nhận mới tạo cam kết cho một bộ tại chi nhánh.
+2. **Không nhận đơn chen giữa nếu không đủ khoảng bảo vệ.** Với một barcode duy nhất, giờ nhận của đơn sau phải cách giờ trả hẹn của đơn giữa ít nhất khoảng dự phòng trễ cộng thời gian chuẩn bị. Nếu không đủ, tìm barcode khác, đề nghị ngày khác hoặc từ chối; không dựa vào lời hứa “sẽ trả đúng giờ”.
+3. **Không đảm bảo tuyệt đối bằng buffer.** Nếu người thuê trước vẫn giữ đồ quá hạn, đơn kế tiếp đã xác nhận vẫn là nghĩa vụ của studio. Cần cảnh báo sớm, tìm bộ thay thế và liên hệ khách nhận kế tiếp.
+4. **Phí trễ không thay cho xử lý vận hành.** Mức phí phải được studio chốt và công bố trước; không tự lấy tiền cọc hoặc tự tính “thiệt hại đơn sau” nếu chưa có điều khoản được duyệt.
+5. **Không sao chép giá trị hoặc điều khoản pháp lý từ ví dụ nước ngoài.** Các nguồn trên chỉ dùng để nhận diện cách doanh nghiệp mô tả hạn trả, gia hạn, nhận trả, hoàn cọc và xử lý đơn kế tiếp.
 
 ## 3. Thuật ngữ
 
@@ -44,6 +52,8 @@ Nguồn:
 | Đơn xác nhận | Đơn studio đã chấp nhận; từng dòng thuê được phân bổ cho một bộ vật lý. |
 | Giờ trả hẹn | `plannedDueAt`; thời hạn đã thông báo trên đơn. Không tự thay đổi khi khách lấy đồ muộn. |
 | Thời gian đệm khả dụng | Khoảng bảo vệ giữa giờ trả hẹn của một đơn và giờ bắt đầu đơn tiếp theo trên cùng bộ. |
+| Dự phòng trả trễ | Khoảng thời gian đặt thêm sau giờ trả hẹn để tăng khả năng đơn kế tiếp vẫn có đồ; không phải ân hạn miễn phí. |
+| Thời gian chuẩn bị | Thời gian kiểm tra/vệ sinh sau khi studio nhận lại đồ; bắt đầu từ thời điểm nhận thực tế và không kết thúc chỉ vì hết giờ dự kiến. |
 | Bộ đang ở khách | Dòng phân bổ còn `ACTIVE` hoặc đơn thuê còn `ACTIVE`; giờ trả hẹn đã qua cũng không làm bộ tự sẵn sàng. |
 | Đơn có nguy cơ thiếu bộ | Đơn xác nhận kế tiếp cần đúng bộ đó nhưng bộ chưa được trả, chưa sẵn sàng hoặc thời gian chuẩn bị không đủ. |
 
@@ -62,19 +72,25 @@ Quy tắc đơn chờ xác nhận chưa giữ hàng đã có trong `business-rul
 
 ## 5. Cách tính khả dụng
 
-### 5.1 Khoảng lịch
+### 5.1 Xếp lịch cho cùng một barcode
 
-Mỗi đơn i có khoảng thuê khách nhìn thấy `[pickup_i, due_i)` và một khoảng đệm `turnaroundBuffer_i` sau giờ trả hẹn. Hai đơn cùng một mã bộ chỉ được xếp liên tiếp nếu:
+Mỗi đơn có khoảng khách thuê `[pickupAt, plannedDueAt)`. Để nhận đơn kế tiếp trên cùng một barcode, áp dụng điều kiện:
 
 ```text
-due_sớm_hơn + turnaroundBuffer_sớm_hơn <= pickup_muộn_hơn
+pickup_kế_tiếp >= plannedDueAt
+                 + lateReturnReserve
+                 + expectedTurnaround
 ```
 
-Buffer dùng cho tính khả dụng; không cộng vào số ngày tính tiền và không thay đổi `plannedDueAt` trên hợp đồng/đơn.
+Trong đó:
 
-Đề xuất cấu hình một giá trị tổng `turnaroundBufferMinutes` theo variant hoặc nhóm trang phục. Giá trị này phải bao gồm thời gian studio cần để kiểm tra/chuẩn bị và phần dự phòng trả trễ mà chủ studio chấp nhận. Không tự cộng thêm `cleaningBufferMinutes` nếu giá trị turnaround đã bao gồm công đoạn đó.
+- `lateReturnReserve` là phần dự phòng cho việc khách trả trễ. Nó chỉ bảo vệ lịch, không phải thời gian ân hạn tính phí.
+- `expectedTurnaround` là thời gian dự kiến từ khi nhận lại tới khi kiểm tra, vệ sinh và chuẩn bị xong. Nếu chưa có số riêng cho bước này, dùng giá trị vận hành đã cấu hình cho nhóm trang phục.
+- Sau khi nhận trả thực tế, unit vẫn bị khóa theo `cleaningBufferMinutes`/block vệ sinh và chỉ sẵn sàng khi kiểm tra thực tế cho phép. Hết giờ dự kiến không tự chuyển unit sang `READY`.
 
-Trong source hiện tại, `cleaningBufferMinutes` là thời lượng block vệ sinh bắt đầu từ lúc thực tế nhận trả. Không nên âm thầm đổi ý nghĩa trường này thành buffer dự phòng trả trễ. Nếu dùng một cấu hình chung, cần ghi rõ đó là tổng khoảng cách tối thiểu giữa hai đơn; nếu tách cấu hình thì hiển thị thành phần và quy tắc cộng rõ ràng.
+Không cộng hai lần cùng một khoảng vệ sinh. Cấu hình xếp lịch phải định nghĩa rõ `expectedTurnaround` có lấy từ `cleaningBufferMinutes` hiện hữu hay dùng cấu hình riêng. `lateGraceMinutes` chỉ phục vụ tính phí trễ; không dùng làm dự phòng tồn kho.
+
+Các đơn vị được khảo sát đều cho thấy cửa hàng cần định nghĩa kỳ thuê và cách nhận trả cụ thể, nhưng họ không dùng cùng một mức buffer. Do đó buffer phải là chính sách riêng của studio, có thể khác theo nhóm trang phục và giờ hoạt động của chi nhánh.
 
 ### 5.2 Bộ trước chưa được trả
 
@@ -92,13 +108,22 @@ Sau khi nhận trả, khả dụng thực tế phụ thuộc trạng thái bộ:
 
 Ngày hết buffer dự kiến không tự chuyển bộ sang `READY`. Nếu vệ sinh kéo dài, có hư hỏng, thiếu phụ kiện hoặc block khác còn mở, bộ tiếp tục không khả dụng.
 
-### 5.4 Giá trị khởi điểm để thử nghiệm
+### 5.4 Giá trị đề xuất cho pilot studio
 
-Đề xuất pilot: khoảng đệm tối thiểu **24 giờ liên tục** giữa giờ trả hẹn và đơn kế tiếp cho trang phục thông thường; nhóm cần xử lý lâu hơn phải có giá trị riêng. Đây là giả định khởi điểm, không phải quyết định cuối.
+Chưa có dữ liệu vận hành của studio để chứng minh một mức buffer tối ưu. Đề xuất chạy pilot bảo thủ, dễ giải thích, theo **tổng thời gian tối thiểu từ giờ trả hẹn đến giờ nhận đơn sau**:
 
-Trong pilot, ghi nhận theo variant: số lần trả trễ, thời lượng trễ, thời gian từ lúc nhận trả tới `READY`, và số đơn kế tiếp bị ảnh hưởng. Sau khi có dữ liệu, chủ studio điều chỉnh buffer. Cần chốt rõ buffer tính theo giờ liên tục hay giờ làm việc của chi nhánh.
+| Nhóm trang phục | Dự phòng khách trả trễ | Kiểm tra/vệ sinh/chuẩn bị tối thiểu | Khoảng cách tối thiểu đề xuất |
+| --- | ---: | ---: | ---: |
+| Trang phục thông thường, xử lý được trong ngày | 12 giờ | 12 giờ | 24 giờ |
+| Trang phục cầu kỳ, chất liệu nhạy cảm hoặc cần xử lý lâu | 24 giờ | 24 giờ | 48 giờ |
 
-**Không dùng `lateGraceMinutes` làm buffer tồn kho.** Ân hạn là quy tắc xác định phí trễ; buffer là quy tắc xếp lịch. Hai cấu hình có mục đích khác nhau.
+Đây là **giả định khởi điểm cho pilot của dự án**, không phải tiêu chuẩn ngành hay quy tắc đã được chủ studio phê duyệt. Nếu `cleaningBufferMinutes` hoặc thời gian chuẩn bị thực tế dài hơn mức tối thiểu trong bảng, khoảng cách phải dài hơn tương ứng. Không nhận hai đơn sát nhau trên cùng một bộ chỉ vì ngày trả và ngày nhận khác nhau.
+
+Trong **4 tuần đầu hoặc sau ít nhất 30 lượt trả** (lấy mốc nào đến sau), nhân viên ghi nhận theo nhóm trang phục: thời lượng trả trễ, thời gian từ nhận thực tế tới `READY`, số đơn kế tiếp bị ảnh hưởng và số lần phải đổi bộ. Sau đó tính phân vị 90 của độ trễ và thời gian xử lý để chủ studio điều chỉnh pilot; không rút buffer chỉ để tăng số lượt đặt nếu tỷ lệ lỡ đơn kế tiếp đang cao.
+
+Khi đơn kế tiếp đã xác nhận nhưng khách trước vượt thời gian dự phòng, chuyển sang quy trình sự cố ở mục 6: giữ nguyên cam kết với khách sau, gán bộ thay thế nếu có và liên hệ sớm. Không tự dời lịch khách, thu thêm khoản bồi thường chưa công bố hoặc coi buffer là bảo đảm rằng khách sẽ trả đúng giờ.
+
+**Cần chủ studio chốt trước khi áp dụng:** nhóm nào thuộc loại cầu kỳ; thời gian mở cửa/ngày nghỉ dùng cho nhắc việc; hạn trả ghi theo ngày hay chính xác ngày-giờ; phí trễ và ân hạn; phương án khách sau chọn khi không còn bộ thay thế; chính sách giảm giá/hoàn tiền nếu studio không giao được bộ đã xác nhận.
 
 ## 6. Quy trình cảnh báo và xử lý
 
