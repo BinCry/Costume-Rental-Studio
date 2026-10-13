@@ -152,9 +152,15 @@ export interface Policy {
   to?: string;
   billingMode: 'ROLLING_24_HOURS' | 'CALENDAR_DAY';
   minDays: number;
-  maxDays: number;
+  maxDays: number | null;
   quoteHours: number;
   cancelHours: number;
+  noShowGraceMinutes?: number;
+  lateCancelFeePercent?: number;
+  refundSlaBusinessDays?: number | null;
+  lateGraceMinutes?: number;
+  lateFeePercentPerDay?: number;
+  lateReturnBufferMinutes?: number;
   reason: string;
 }
 export interface ReportSnapshot {

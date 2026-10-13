@@ -172,6 +172,14 @@ rentalRouter.post('/orders/:orderId/ready', async (req, res) => {
     'Rental order ready for pickup',
   );
 });
+rentalRouter.post('/orders/:orderId/pickup-check', async (req, res) => {
+  const input = parse(versionSchema.safeParse(req.body), 'Invalid pickup check');
+  return sendSuccess(
+    res,
+    await service.validatePickupOrder(res.locals.actor, orderId(req.params), input.expectedVersion),
+    'Rental unit readiness checked',
+  );
+});
 rentalRouter.post('/orders/:orderId/pickup', async (req, res) =>
   sendSuccess(
     res,

@@ -127,6 +127,8 @@ export interface QuoteSnapshot {
   discount: number;
   amountDueAtPickup: number;
   policy: string;
+  lateGraceMinutes?: number;
+  lateFeePercentPerDay?: number;
 }
 
 export class FixtureIssue extends Error {

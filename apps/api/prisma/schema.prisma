@@ -711,6 +711,7 @@ model RentalPolicyVersion {
   noShowGraceMinutes    Int            @default(0) @map("no_show_grace_minutes")
   lateGraceMinutes      Int            @default(0) @map("late_grace_minutes")
   lateFeePercentPerDay  Decimal        @default(0) @map("late_fee_percent_per_day") @db.Decimal(5, 2)
+  lateReturnBufferMinutes Int           @default(0) @map("late_return_buffer_minutes")
   freeCancelBeforeHours Int            @default(0) @map("free_cancel_before_hours")
   lateCancelFeePercent  Decimal        @default(0) @map("late_cancel_fee_percent") @db.Decimal(5, 2)
   refundSlaBusinessDays Int?           @map("refund_sla_business_days")

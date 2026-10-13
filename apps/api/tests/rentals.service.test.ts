@@ -36,7 +36,7 @@ function activeOrder(overrides: Record<string, unknown> = {}) {
     version: 7,
     plannedStartAt: new Date('2026-10-10T08:00:00.000Z'),
     plannedDueAt: new Date('2026-10-12T08:00:00.000Z'),
-    policyVersion: { billingDayMode: 'ROLLING_24H', maxRentalDays: 14 },
+    policyVersion: { billingDayMode: 'ROLLING_24H', maxRentalDays: 14, lateReturnBufferMinutes: 720 },
     payments: [],
     items: [
       {
@@ -49,7 +49,7 @@ function activeOrder(overrides: Record<string, unknown> = {}) {
         unitDailyPriceVnd: 100_000n,
         unitDepositVnd: 200_000n,
         accessories: [],
-        variant: { modelId: '10000000-0000-4000-8000-000000000008' },
+        variant: { modelId: '10000000-0000-4000-8000-000000000008', cleaningBufferMinutes: 1_440 },
       },
     ],
     ...overrides,
@@ -87,6 +87,47 @@ function transactionFor(order: ReturnType<typeof activeOrder>) {
 
 beforeEach(() => vi.resetAllMocks());
 
+describe('rental timing and late-fee policy', () => {
+  it('uses the longer of policy buffer and garment preparation time', () => {
+    const due = new Date('2026-10-14T08:00:00.000Z');
+    expect(service.bookingReservationUntil(due, 1_440, 720)).toEqual(
+      new Date('2026-10-15T08:00:00.000Z'),
+    );
+    expect(service.bookingReservationUntil(due, 1_440, 2_880)).toEqual(
+      new Date('2026-10-16T08:00:00.000Z'),
+    );
+  });
+
+  it('keeps prorated discounts within each garment price when small items create rounding remainders', () => {
+    const items = [
+      { id: itemId, unitDailyPriceVnd: 100n, billableDays: 1 },
+      { id: '10000000-0000-4000-8000-000000000009', unitDailyPriceVnd: 1n, billableDays: 1 },
+      { id: '10000000-0000-4000-8000-000000000010', unitDailyPriceVnd: 1n, billableDays: 1 },
+      { id: '10000000-0000-4000-8000-000000000011', unitDailyPriceVnd: 1n, billableDays: 1 },
+      { id: '10000000-0000-4000-8000-000000000012', unitDailyPriceVnd: 1n, billableDays: 1 },
+    ];
+    const now = new Date('2026-10-12T08:00:00.000Z');
+    const result = service.calculateItemLateFees(items, items.map((item) => item.id), now, now, 0, 0, 100n);
+    expect(result.items.every((item) => BigInt(item.baseRentalVnd) >= 0n)).toBe(true);
+    expect(result.items.reduce((sum, item) => sum + BigInt(item.baseRentalVnd), 0n)).toBe(4n);
+  });
+  it('charges only returned garments, allocates order discount, and caps the fee per garment', () => {
+    const items = [
+      { id: itemId, unitDailyPriceVnd: 100_000n, billableDays: 2 },
+      { id: '10000000-0000-4000-8000-000000000009', unitDailyPriceVnd: 100_000n, billableDays: 1 },
+    ];
+    const due = new Date('2026-10-12T08:00:00.000Z');
+    const graceEnd = new Date('2026-10-12T09:00:00.000Z');
+    const threeLateDays = new Date(graceEnd.getTime() + 2 * 86_400_000 + 1);
+    const partial = service.calculateItemLateFees(items, [itemId], due, threeLateDays, 60, 30, 30_000n);
+    expect(partial.items).toEqual([
+      { orderItemId: itemId, baseRentalVnd: '180000', lateDays: 3, lateFeeVnd: '162000' },
+    ]);
+    const capped = service.calculateItemLateFees(items, [itemId], due, new Date(graceEnd.getTime() + 4 * 86_400_000), 60, 30, 30_000n);
+    expect(capped.lateFeeVnd).toBe(180_000n);
+  });
+});
+
 describe('rental extension and amendment service', () => {
   it('extends every allocation atomically and records the extension fee as EXTRA', async () => {
     const order = activeOrder();
@@ -103,6 +144,16 @@ describe('rental extension and amendment service', () => {
         data: expect.objectContaining({
           additionalRentalFeeVnd: { increment: 200_000n },
           plannedDueAt: new Date('2026-10-14T08:00:00.000Z'),
+          items: {
+            update: [
+              expect.objectContaining({
+                data: {
+                  occupiedUntil: new Date('2026-10-15T08:00:00.000Z'),
+                  billableDays: 4,
+                },
+              }),
+            ],
+          },
         }),
       }),
     );
@@ -136,6 +187,30 @@ describe('rental extension and amendment service', () => {
       }),
     ).rejects.toMatchObject({ statusCode: 409, code: 'UNIT_UNAVAILABLE' });
     expect(tx.rentalOrder.update).not.toHaveBeenCalled();
+  });
+
+  it('blocks handover if the assigned unit is still allocated to an overdue customer', async () => {
+    const order = activeOrder({
+      status: 'READY_FOR_PICKUP',
+      promotionDiscountVnd: 0n,
+      additionalRentalFeeVnd: 0n,
+      payments: [
+        { purpose: 'RENTAL', status: 'SUCCEEDED', amountVnd: 200_000n },
+        { purpose: 'DEPOSIT', status: 'SUCCEEDED', amountVnd: 200_000n },
+      ],
+    });
+    const tx = transactionFor(order);
+    tx.rentalOrderItem.findFirst.mockResolvedValueOnce({ id: 'previous-active-item' });
+
+    await expect(
+      service.pickupOrder(actor, orderId, {
+        expectedVersion: 7,
+        items: [{ orderItemId: itemId, conditionGrade: 'GOOD', evidence: [] }],
+      }),
+    ).rejects.toMatchObject({ statusCode: 409, code: 'UNIT_STILL_WITH_CUSTOMER' });
+
+    expect(tx.rentalOrder.update).not.toHaveBeenCalled();
+    expect(tx.rentalOrderEvent.create).not.toHaveBeenCalled();
   });
 
   it('requires cancellation of pending gateway payments before amendment', async () => {

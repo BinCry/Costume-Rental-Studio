@@ -25,6 +25,7 @@ import {
   recordBankTransferPayment,
   recordCashPayment,
   returnOrder as returnApiOrder,
+  validatePickupOrder,
   type SettlementSnapshot,
   uploadRentalEvidence,
 } from '../api/client';
@@ -328,6 +329,7 @@ export function OrderDetailShell({
     setOperationIssue('');
     setResult(null);
     try {
+      await validatePickupOrder(order.id, order.version);
       const evidence = await Promise.all(
         order.items.map(async (item) => ({
           orderItemId: item.id,
@@ -345,7 +347,13 @@ export function OrderDetailShell({
       });
       retry();
     } catch (caught) {
-      setOperationIssue(caught instanceof Error ? caught.message : 'Không thể hoàn tất giao trang phục.');
+      setOperationIssue(
+        caught instanceof ApiClientError && caught.code === 'UNIT_STILL_WITH_CUSTOMER'
+          ? 'Không thể giao: bộ vẫn đang ở khách trước hoặc chưa được xác nhận trả. Khoản đã ghi nhận vẫn nằm trên đơn; hãy phân công bộ READY khác hoặc xử lý hoàn/điều chỉnh có lý do trước khi kết thúc.'
+          : caught instanceof Error
+            ? caught.message
+            : 'Không thể hoàn tất giao trang phục.',
+      );
     } finally {
       setOperationBusy(false);
     }

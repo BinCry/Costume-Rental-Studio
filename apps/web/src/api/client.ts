@@ -62,6 +62,8 @@ type ApiQuote = {
     versionCode?: string;
     billingDayMode?: 'CALENDAR_DAY' | 'ROLLING_24_HOURS' | string;
     quoteValidHours?: number;
+    lateGraceMinutes?: number;
+    lateFeePercentPerDay?: number | string;
   };
   period: { billableDays: number; plannedStartAt: string; plannedDueAt: string };
   items: Array<{
@@ -206,6 +208,12 @@ type ApiPolicy = {
   maxRentalDays?: number | null;
   quoteValidHours: number;
   freeCancelBeforeHours: number;
+  noShowGraceMinutes?: number;
+  lateCancelFeePercent?: number | string;
+  refundSlaBusinessDays?: number | null;
+  lateGraceMinutes?: number;
+  lateFeePercentPerDay?: number | string;
+  lateReturnBufferMinutes?: number;
   changeReason: string;
 };
 type ApiOverviewReport = {
@@ -662,6 +670,7 @@ function mapOrder(order: ApiOrder): Order {
   const items = (order.items ?? []).map((item, index) => ({
     id: item.id ?? String(index + 1), costume: item.variant?.model?.name ?? 'Trang phục',
     variant: [item.variant?.sizeCode, item.variant?.colorCode].filter(Boolean).join(' / '),
+    apiVariantId: item.variantId,
     unitCode: item.unit?.unitCode, unitStatus: item.unit?.operationalStatus,
     apiUnitId: item.unit?.id,
     accessories: item.accessories,
@@ -676,6 +685,7 @@ function mapOrder(order: ApiOrder): Order {
     id: order.orderCode || order.id, status: order.status, version: order.version,
     customer: order.customer?.user?.displayName ?? 'Khách hàng', phone: order.customer?.user?.phone ?? '',
     branch, pickup: formatDate(order.plannedStartAt), returnAt: formatDate(order.plannedDueAt),
+    apiPlannedStartAt: order.plannedStartAt, apiPlannedDueAt: order.plannedDueAt,
     dayPolicy: 'Theo chính sách hiện hành của máy chủ', items,
     money: [
       { label: 'Tiền thuê', amount: rental, status: paid > 0 ? 'Đã thu một phần' : 'Chưa thu', tone: paid > 0 ? 'success' : 'neutral' },
@@ -836,6 +846,8 @@ export async function getQuote(
     discount: numberValue(response.discountVnd),
     amountDueAtPickup: numberValue(response.totalDueVnd),
     policy: 'Chính sách ' + (response.policy.versionCode ?? 'hiện hành') + ' · do máy chủ tính',
+    lateGraceMinutes: response.policy.lateGraceMinutes ?? 0,
+    lateFeePercentPerDay: Number(response.policy.lateFeePercentPerDay ?? 0),
   };
 }
 export async function createOrder(
@@ -884,6 +896,7 @@ export async function listRentalAvailability(
   plannedDueAt: string,
 ): Promise<Unit[]> {
   if (!branchIds.has(branchName)) await listBranches();
+  if (!variants.has(variantId)) await listCatalog();
   const pickupBranchId = branchIds.get(branchName);
   const variant = variants.get(variantId);
   if (!pickupBranchId || !variant)
@@ -1574,9 +1587,15 @@ function policyFromApi(policy: ApiPolicy): Policy {
     to: policy.effectiveTo?.slice(0, 10),
     billingMode: policy.billingDayMode,
     minDays: policy.minRentalDays,
-    maxDays: policy.maxRentalDays ?? 365,
+    maxDays: policy.maxRentalDays ?? null,
     quoteHours: policy.quoteValidHours,
     cancelHours: policy.freeCancelBeforeHours,
+    noShowGraceMinutes: policy.noShowGraceMinutes ?? 0,
+    lateCancelFeePercent: Number(policy.lateCancelFeePercent ?? 0),
+    refundSlaBusinessDays: policy.refundSlaBusinessDays === undefined ? 5 : policy.refundSlaBusinessDays,
+    lateGraceMinutes: policy.lateGraceMinutes ?? 0,
+    lateFeePercentPerDay: Number(policy.lateFeePercentPerDay ?? 0),
+    lateReturnBufferMinutes: policy.lateReturnBufferMinutes ?? 0,
     reason: policy.changeReason,
   };
 }
@@ -1595,12 +1614,13 @@ export async function savePolicy(policy: Policy): Promise<Policy> {
       minRentalDays: policy.minDays,
       maxRentalDays: policy.maxDays || undefined,
       quoteValidHours: policy.quoteHours,
-      noShowGraceMinutes: 0,
-      lateGraceMinutes: 0,
-      lateFeePercentPerDay: 0,
+      noShowGraceMinutes: policy.noShowGraceMinutes ?? 0,
+      lateGraceMinutes: policy.lateGraceMinutes ?? 0,
+      lateFeePercentPerDay: policy.lateFeePercentPerDay ?? 0,
+      lateReturnBufferMinutes: policy.lateReturnBufferMinutes ?? 0,
       freeCancelBeforeHours: policy.cancelHours,
-      lateCancelFeePercent: 0,
-      refundSlaBusinessDays: 5,
+      lateCancelFeePercent: policy.lateCancelFeePercent ?? 0,
+      refundSlaBusinessDays: policy.refundSlaBusinessDays === undefined ? 5 : policy.refundSlaBusinessDays,
       changeReason: policy.reason,
     }),
   });
@@ -1776,6 +1796,26 @@ export async function getOrderSettlement(orderCode: string) {
   return request<SettlementSnapshot>(`/api/v1/payments/orders/${encodeURIComponent(orderApiId(orderCode))}/summary`);
 }
 
+export async function validatePickupOrder(orderCode: string, expectedVersion: number) {
+  const reference = orderReference(orderCode);
+  return request<{ ready: boolean; unitCount: number }>(
+    `/api/v1/rentals/orders/${encodeURIComponent(reference.id)}/pickup-check`,
+    { method: 'POST', body: JSON.stringify({ expectedVersion: reference.version ?? expectedVersion }) },
+  );
+}
+export async function reallocateOrder(
+  orderCode: string,
+  expectedVersion: number,
+  orderItemId: string,
+  unitId: string,
+  reason: string,
+) {
+  const reference = orderReference(orderCode);
+  return request<ApiOrder>(
+    `/api/v1/rentals/orders/${encodeURIComponent(reference.id)}/reallocate`,
+    { method: 'POST', body: JSON.stringify({ expectedVersion: reference.version ?? expectedVersion, orderItemId, unitId, reason }) },
+  );
+}
 export async function pickupOrder(
   orderCode: string,
   expectedVersion: number,

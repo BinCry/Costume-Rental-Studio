@@ -1033,3 +1033,17 @@ Nếu mục tiêu là đồ án có thể vận hành được và demo thuyết
 | Amendment | Chỉ trước pickup; không exchange sau ACTIVE | Giảm phức tạp condition và tiền. |
 | Outstanding | Chặn confirm đơn mới khi còn nợ quá hạn; manager được miễn/giảm theo permission | Bảo vệ tiền nhưng vẫn có đường xử lý ngoại lệ. |
 
+
+# Bổ sung nghiệp vụ: đệm lịch, trả trễ và bảo vệ đơn kế tiếp — 14/10/2026
+
+Phần này làm rõ các rule và cách triển khai đề xuất khi đơn A chưa trả mà khách B đến nhận cùng bộ. Mô hình giải quyết riêng ba mốc: hạn trả ghi trên đơn, ân hạn trước khi tính phí, và đệm lịch nội bộ. Đơn B đã xác nhận được bảo vệ; đơn request chưa duyệt không tự giữ barcode. Unit còn allocation `ACTIVE` không thể được dùng cho đơn khác dù đã quá hạn kế hoạch.
+
+**Pilot cần chủ studio duyệt trước khi công bố:** 60 phút ân hạn; phí 30% tiền thuê đã giảm của từng bộ cho mỗi kỳ 24 giờ đã bắt đầu sau ân hạn, tối đa 100% tiền thuê bộ; buffer lịch tối thiểu 24 giờ liên tục hoặc thời gian vệ sinh theo variant nếu dài hơn. Đây là khuyến nghị, không phải thông lệ chuẩn. Mức phí công khai giữa các cửa hàng cho thuê khác nhau đáng kể; xem đối chiếu [Solarent](https://solarent.vn/policy), [Trang Phục Hồng Hạnh](https://trangphuchonghanh.com/quy-dinh-khi-thue-trang-phuc-bid25.html), [Rent by TD](https://rentbytd.com/thue-vay-di-tiec-tphcm/) và hướng dẫn buffer của [Booqable](https://help.booqable.com/en/articles/90053-how-to-adjust-product-settings).
+
+Phí được tính cho từng item ngay khi nhân viên thực nhận; trả từng phần chỉ tính các item đã nhận trong lần đó. Phí nằm ở khoản phải thu `EXTRA`, còn tiền cọc được kiểm tra, giữ, khấu trừ hoặc hoàn theo quyết toán riêng. Không tự trừ phí trễ vào cọc hay tự động hoàn.
+
+Trong branch `feature/chinh-sach-dem-va-tra-tre`, code đề xuất đã đưa buffer vào quote/availability, xác nhận, gia hạn và phân công lại; bổ sung kiểm tra pickup atomic và preflight trước khi ghi payment; cho phép khôi phục đơn `READY_FOR_PICKUP` bằng unit READY cùng variant/chi nhánh; đưa mức ân hạn/phí lên policy UI và báo giá khách. Migration mới mặc định buffer bằng 0, do đó policy đang có không bị đổi. Xem [quy tắc nghiệp vụ](business-rules.md), [chi tiết policy và quy trình](chinh-sach-tra-tre-va-don-thue-ke-tiep.md), [tóm tắt schema](../database/schema-summary.md).
+
+Acceptance cần chạy trong CI: RT-03, RT-04, RT-06, RT-07, RT-08, RT-09, RT-10, RT-11 và RT-12; AT-41, AT-42, AT-43. Cần bổ sung kiểm thử API tích hợp cho trả một phần, trả trễ, tính phí theo item, conflict sau preflight và reallocation concurrent trước khi merge.
+
+**Còn cần quyết định:** phê duyệt hoặc thay mức pilot và ngày hiệu lực; giờ liên tục hay theo giờ mở cửa cho chu kỳ tính thuê; kênh/SLA cảnh báo A/B; quyền giảm phí hoặc bồi hoàn khi không có đồ thay; nội dung điều khoản khách phải chấp thuận. Repo hiện không tự gửi thông báo và không tự quyết định refund/bồi hoàn.
