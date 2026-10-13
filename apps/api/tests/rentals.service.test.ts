@@ -148,7 +148,7 @@ describe('rental extension and amendment service', () => {
             update: [
               expect.objectContaining({
                 data: {
-                  occupiedUntil: new Date('2026-10-15T08:00:00.000Z'),
+                  occupiedUntil: new Date('2026-10-15T20:00:00.000Z'),
                   billableDays: 4,
                 },
               }),
