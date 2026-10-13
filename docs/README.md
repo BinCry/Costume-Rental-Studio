@@ -34,6 +34,7 @@ docs/
 | --- | --- |
 | [`business/business-rules.md`](business/business-rules.md) | Nguồn nghiệp vụ hiện hành và state machine đã chốt |
 | [`business/business-analysis.md`](business/business-analysis.md) | Phân tích ngoại lệ, edge case và kịch bản nghiệm thu |
+| [`business/chinh-sach-tra-tre-va-don-thue-ke-tiep.md`](business/chinh-sach-tra-tre-va-don-thue-ke-tiep.md) | Đề xuất policy trả trễ, buffer, cảnh báo đơn kế tiếp và kịch bản nghiệm thu |
 
 ### Database
 
