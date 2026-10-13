@@ -310,6 +310,9 @@ Khách chọn branch \+ khoảng thuê \+ variant \-\> hệ thống ước lư�
 | BR-AV-02 | Xác nhận phải re-check unit status, branch, active blocks, overlapping allocations và cleaning buffer. |
 | BR-AV-03 | Khoảng occupied nên bao gồm thời gian vệ sinh/chuẩn bị cần thiết hoặc có block tương đương. |
 | BR-AV-04 | Một đơn nhiều bộ chỉ thành công khi có đủ số unit; tránh xác nhận nửa đơn nếu UX không hỗ trợ partial confirmation. |
+| BR-AV-05 | Allocation còn ACTIVE vẫn làm unit không khả dụng sau plannedDueAt cho đến khi thực nhận; không suy ra đã trả chỉ từ thời hạn kế hoạch. |
+| BR-AV-06 | Xếp lịch kế tiếp phải áp dụng thời gian đệm khả dụng sau giờ trả; không dùng lateGraceMinutes thay cho buffer. |
+| BR-AV-07 | Nếu đơn ACTIVE trễ ảnh hưởng đơn CONFIRMED kế tiếp, giữ cam kết đơn sau và tạo tác vụ xử lý liên kết hai đơn. |
 
 ## **Ma trận tình huống và xử lý lỗi/ngoại lệ**
 
@@ -320,7 +323,9 @@ Khách chọn branch \+ khoảng thuê \+ variant \-\> hệ thống ước lư�
 | Unit trống trong ngày thuê nhưng có cleaning block | Không tính khả dụng trong block. | ĐÃ CÓ | P0 |
 | Khách đổi ngày sau khi xem quote | Quote/availability cũ vô hiệu; phải check lại. | MỘT PHẦN | P0 |
 | Đơn nhiều bộ, chỉ còn 1/2 | Không tự xác nhận thiếu; đề xuất đổi mẫu/ngày hoặc tách đơn nếu business chấp nhận. | THIẾU | P1 |
-| Unit có booking kế tiếp quá sát giờ trả | Tính cleaning buffer; không cho lịch nếu không đủ thời gian chuẩn bị. | MỘT PHẦN | P0 |
+| Unit có booking kế tiếp quá sát giờ trả | Tính khoảng đệm khả dụng trước khi xác nhận; nếu không đủ thì chọn unit khác hoặc từ chối lịch. | THIẾU | P0 |
+| Khách thuê ở giữa quá hạn, cùng unit có đơn sau đã xác nhận | Giữ nguyên đơn sau; gắn cảnh báo A/B; không giao cho đến khi unit READY hoặc có unit thay thế hợp lệ. | THIẾU | P0 |
+| Availability tra cứu lịch tương lai khi allocation trước vẫn ACTIVE sau plannedDueAt | Tính unit vẫn ở khách tới khi nhận thực tế; không chỉ dựa occupiedUntil theo kế hoạch. | THIẾU | P0 |
 
 # **11\. Đặt thuê online**
 
@@ -443,6 +448,7 @@ Mở đơn confirmed \-\> scan từng barcode \-\> kiểm tình trạng/phụ ki
 | BR-HO-02 | Nếu policy yêu cầu rental \+ deposit trước giao, chỉ ACTIVE khi đủ điều kiện tiền; ngoại lệ phải có permission/lý do. |
 | BR-HO-03 | Condition/phụ kiện lúc giao phải được snapshot để so sánh lúc trả. |
 | BR-HO-04 | Thời điểm giao thực tế không tự động lùi planned due date trừ khi có thao tác gia hạn/điều chỉnh hợp lệ. |
+| BR-HO-05 | Ngay trước handover phải khóa và re-check unit đúng branch, READY, không còn allocation ACTIVE khác hoặc block; conflict thì không chuyển đơn sang ACTIVE. |
 
 ## **Ma trận tình huống và xử lý lỗi/ngoại lệ**
 
@@ -453,6 +459,7 @@ Mở đơn confirmed \-\> scan từng barcode \-\> kiểm tình trạng/phụ ki
 | Khách đến sau khi đã NO\_SHOW | Không tự giao; cần reopen/đơn mới theo rule nếu unit còn. | THIẾU | P1 |
 | Quét thiếu một unit trong đơn 2 bộ | Không cho giao toàn đơn nếu không hỗ trợ partial handover; hoặc định nghĩa partial handover rõ. | THIẾU | P1 |
 | Một phụ kiện bị thiếu ngay trước giao | Điều chỉnh checklist/snapshot hoặc đổi unit/phụ kiện trước khi ACTIVE; khách xác nhận. | MỘT PHẦN | P1 |
+| Unit của khách trước chưa được trả khi khách sau đến nhận | Chặn bàn giao barcode đó; giữ nguyên đơn sau và mở xử lý thay thế; không tạo hai allocation ACTIVE trên một unit. | THIẾU | P0 |
 | Chuyển khoản đang chờ đối soát | Không coi là đã thu; không giao nếu policy yêu cầu confirmed payment. | ĐÃ CÓ | P0 |
 | Nhân viên nhập sai số tiền mặt | Không sửa mất dấu sau khi chốt; tạo correction/reversal có lý do. | THIẾU | P0 |
 
@@ -909,6 +916,9 @@ Nhóm có thể dùng danh sách dưới đây như checklist demo/test. Một k
 | AT-38 | Sửa địa chỉ branch | Đơn lịch sử/chứng từ đã phát hành không bị diễn giải sai. |
 | AT-39 | Mẫu/variant inactive | Không nhận booking mới nhưng đơn cũ vẫn hiển thị đủ thông tin. |
 | AT-40 | Unit retired | Không cho thuê lại; lịch sử vẫn truy vết được. |
+| AT-41 | Khách thuê ở giữa trả trễ, ảnh hưởng đơn sau đã xác nhận | Cảnh báo gắn hai đơn; đơn sau giữ lịch; bàn giao cùng barcode bị chặn; không có hai đơn ACTIVE cùng unit. |
+| AT-42 | Lịch tương lai nằm trong buffer sau giờ trả dự kiến | Cùng unit không được xác nhận; unit thay thế chỉ được nhận nếu lịch và trạng thái đều hợp lệ. |
+| AT-43 | Đơn trước quá plannedDueAt nhưng chưa scan trả | Unit tiếp tục bị tính là đang ở khách cho quote, confirm, reallocate và handover; trạng thái chỉ đổi sau khi nhận thực tế. |
 
 # **30\. State machine nghiệp vụ khuyến nghị**
 
