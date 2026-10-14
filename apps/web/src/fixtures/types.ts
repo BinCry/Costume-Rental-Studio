@@ -95,6 +95,8 @@ export interface Order {
   apiPlannedDueAt?: string;
   dayPolicy: string;
   items: OrderItem[];
+  /** API payments used to distinguish recorded, pending, and remaining amounts at handover. */
+  apiPayments?: { purpose: string; amount: number; status: string; transactionReference?: string | null }[];
   money: MoneyLine[];
   history: string[];
   note: string;
