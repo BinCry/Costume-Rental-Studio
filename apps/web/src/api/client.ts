@@ -214,6 +214,7 @@ type ApiPolicy = {
   lateGraceMinutes?: number;
   lateFeePercentPerDay?: number | string;
   lateReturnBufferMinutes?: number;
+  defaultCleaningBufferMinutes?: number;
   lateFeeFormulaVersion?: number;
   changeReason: string;
 };
@@ -1597,6 +1598,7 @@ function policyFromApi(policy: ApiPolicy): Policy {
     lateGraceMinutes: policy.lateGraceMinutes ?? 0,
     lateFeePercentPerDay: Number(policy.lateFeePercentPerDay ?? 0),
     lateReturnBufferMinutes: policy.lateReturnBufferMinutes ?? 0,
+    defaultCleaningBufferMinutes: policy.defaultCleaningBufferMinutes ?? 0,
     lateFeeFormulaVersion: policy.lateFeeFormulaVersion ?? 1,
     reason: policy.changeReason,
   };
@@ -1620,6 +1622,7 @@ export async function savePolicy(policy: Policy): Promise<Policy> {
       lateGraceMinutes: policy.lateGraceMinutes ?? 0,
       lateFeePercentPerDay: policy.lateFeePercentPerDay ?? 0,
       lateReturnBufferMinutes: policy.lateReturnBufferMinutes ?? 0,
+      defaultCleaningBufferMinutes: policy.defaultCleaningBufferMinutes ?? 0,
       freeCancelBeforeHours: policy.cancelHours,
       lateCancelFeePercent: policy.lateCancelFeePercent ?? 0,
       refundSlaBusinessDays: policy.refundSlaBusinessDays === undefined ? 5 : policy.refundSlaBusinessDays,

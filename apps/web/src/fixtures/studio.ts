@@ -161,6 +161,7 @@ export interface Policy {
   lateGraceMinutes?: number;
   lateFeePercentPerDay?: number;
   lateReturnBufferMinutes?: number;
+  defaultCleaningBufferMinutes?: number;
   lateFeeFormulaVersion?: number;
   reason: string;
 }
@@ -651,14 +652,29 @@ const cases: Case[] = [
 ];
 const policies: Policy[] = [
   {
-    code: 'POLICY-2025',
-    from: '01/01/2025',
+    code: 'POLICY-2026-BUFFER-01',
+    from: '14/10/2026',
     billingMode: 'ROLLING_24_HOURS',
     minDays: 1,
     maxDays: 30,
     quoteHours: 24,
     cancelHours: 24,
-    reason: 'Áp dụng chính sách thuê theo chu kỳ 24 giờ',
+    lateReturnBufferMinutes: 720,
+    defaultCleaningBufferMinutes: 720,
+    reason: 'Mức đệm lịch khởi điểm đã duyệt: 12 giờ + 12 giờ',
+  },
+  {
+    code: 'POLICY-2025',
+    from: '01/01/2025',
+    to: '14/10/2026',
+    billingMode: 'ROLLING_24_HOURS',
+    minDays: 1,
+    maxDays: 30,
+    quoteHours: 24,
+    cancelHours: 24,
+    lateReturnBufferMinutes: 0,
+    defaultCleaningBufferMinutes: 0,
+    reason: 'Phiên bản lịch sử trước mức đệm lịch mới',
   },
   {
     code: 'POLICY-2024',

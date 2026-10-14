@@ -564,6 +564,7 @@ Table rental_policy_versions {
   late_grace_minutes int [not null, default: 0]
   late_fee_percent_per_day decimal(5,2) [not null, default: 0]
   late_return_buffer_minutes int [not null, default: 0]
+  default_cleaning_buffer_minutes int [not null, default: 0]
   late_fee_formula_version int [not null, default: 1]
   free_cancel_before_hours int [not null, default: 0]
   late_cancel_fee_percent decimal(5,2) [not null, default: 0]
@@ -576,7 +577,7 @@ Table rental_policy_versions {
     (effective_from, effective_to)
   }
 
-  Note: 'Chain-wide immutable policy version. Effective periods must not overlap. Require effective_from < effective_to when effective_to is set; min_rental_days >= 1; max_rental_days is null or >= min_rental_days; time values including late_return_buffer_minutes >= 0; late_fee_formula_version is 1 or 2; percentage values between 0 and 100. Close the current version and insert a new row for every policy change.'
+  Note: 'Chain-wide immutable policy version. Effective periods must not overlap. Require effective_from < effective_to when effective_to is set; min_rental_days >= 1; max_rental_days is null or >= min_rental_days; time values including late_return_buffer_minutes and default_cleaning_buffer_minutes >= 0; late_fee_formula_version is 1 or 2; percentage values between 0 and 100. Close the current version and insert a new row for every policy change.'
 }
 
 Table promotions {

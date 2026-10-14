@@ -36,7 +36,7 @@ function activeOrder(overrides: Record<string, unknown> = {}) {
     version: 7,
     plannedStartAt: new Date('2026-10-10T08:00:00.000Z'),
     plannedDueAt: new Date('2026-10-12T08:00:00.000Z'),
-    policyVersion: { billingDayMode: 'ROLLING_24H', maxRentalDays: 14, lateReturnBufferMinutes: 720 },
+    policyVersion: { billingDayMode: 'ROLLING_24H', maxRentalDays: 14, lateReturnBufferMinutes: 720, defaultCleaningBufferMinutes: 720 },
     payments: [],
     items: [
       {
@@ -95,6 +95,12 @@ describe('rental timing and late-fee policy', () => {
     );
     expect(service.bookingReservationUntil(due, 1_440, 2_880)).toEqual(
       new Date('2026-10-17T08:00:00.000Z'),
+    );
+    expect(service.bookingReservationUntil(due, 720, null, 720)).toEqual(
+      new Date('2026-10-15T08:00:00.000Z'),
+    );
+    expect(service.bookingReservationUntil(due, 720, 1_440, 720)).toEqual(
+      new Date('2026-10-15T20:00:00.000Z'),
     );
   });
 

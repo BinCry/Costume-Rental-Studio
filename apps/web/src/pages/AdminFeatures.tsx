@@ -1165,7 +1165,7 @@ export function RolesPage({ scenario, canManage = true }: { scenario: DemoScenar
 export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoScenario; canManage?: boolean }) {
   const realApiMode = apiEnabled && hasAccessToken();
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.policies);
-  const [selected, setSelected] = useState('POLICY-2025');
+  const [selected, setSelected] = useState('POLICY-2026-BUFFER-01');
   const [draft, setDraft] = useState<Policy>();
   const [issue, setIssue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1249,7 +1249,9 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                       { label: 'Ân hạn trả trễ', value: `${policy.lateGraceMinutes ?? 0} phút` },
                       { label: 'Phí trễ', value: `${policy.lateFeePercentPerDay ?? 0}% mỗi 24 giờ, tối đa 100% tiền thuê từng bộ` },
                       { label: 'Cách tính phí', value: policy.lateFeeFormulaVersion === 2 ? 'Theo từng bộ, sau giảm giá' : 'Cách tính cũ theo toàn đơn' },
-                      { label: 'Dự phòng khách trả trễ', value: `${((policy.lateReturnBufferMinutes ?? 0) / 60).toLocaleString('vi-VN')} giờ + thời gian vệ sinh theo mẫu` },
+                      { label: 'Dự phòng trả trễ', value: `${((policy.lateReturnBufferMinutes ?? 0) / 60).toLocaleString('vi-VN')} giờ` },
+                      { label: 'Vệ sinh/chuẩn bị mặc định', value: `${((policy.defaultCleaningBufferMinutes ?? 0) / 60).toLocaleString('vi-VN')} giờ; mẫu có thể ghi đè` },
+                      { label: 'Tổng đệm mặc định', value: `${(((policy.lateReturnBufferMinutes ?? 0) + (policy.defaultCleaningBufferMinutes ?? 0)) / 60).toLocaleString('vi-VN')} giờ` },
                       { label: 'Lý do thay đổi', value: policy.reason },
                     ]}
                   />
@@ -1366,15 +1368,25 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                         label="Dự phòng khách trả trễ (giờ)"
                         value={(draft.lateReturnBufferMinutes ?? 0) / 60}
                         onChange={(e) => setDraft({ ...draft, lateReturnBufferMinutes: Math.round(Number(e.target.value) * 60) })}
-                        hint="Cộng với thời gian vệ sinh theo mẫu. Ví dụ pilot: 12 giờ dự phòng + 12 giờ vệ sinh = 24 giờ tổng; không phải ân hạn miễn phí."
+                        hint="Khoảng nội bộ tính sau giờ trả hẹn; không kéo dài thời gian khách được thuê."
+                      />
+                      <Field
+                        type="number"
+                        min="0"
+                        max="168"
+                        step="0.5"
+                        label="Vệ sinh/chuẩn bị mặc định (giờ)"
+                        value={(draft.defaultCleaningBufferMinutes ?? 0) / 60}
+                        onChange={(e) => setDraft({ ...draft, defaultCleaningBufferMinutes: Math.round(Number(e.target.value) * 60) })}
+                        hint="Dùng khi mẫu chưa có thời gian riêng. Giá trị cụ thể của mẫu sẽ ghi đè mức mặc định này."
                       />
                     </div>
                     <p className="muted small-note">
-                      Phương án pilot cần studio duyệt: 60 phút ân hạn, 30% giá thuê từng bộ cho mỗi 24 giờ trễ đã bắt đầu, giới hạn 100% tiền thuê bộ; tổng đệm gồm 12 giờ dự phòng trả trễ + 12 giờ vệ sinh. Trang phục cần xử lý lâu hơn dùng tổng thời gian tương ứng. Phiên bản policy mới dùng công thức phí theo từng bộ; đơn đang tham chiếu phiên bản cũ giữ công thức cũ.
+                      Mức khởi điểm đã duyệt là 12 giờ dự phòng + 12 giờ vệ sinh/chuẩn bị. Phiên bản policy này đang tạo tổng đệm mặc định {(((draft.lateReturnBufferMinutes ?? 0) + (draft.defaultCleaningBufferMinutes ?? 0)) / 60).toLocaleString('vi-VN')} giờ; có thể thay đổi ở các phiên bản sau. Đây là khoảng xếp lịch nội bộ, không phải ân hạn hay gia hạn thuê. Ân hạn và mức phí trễ là chính sách riêng, vẫn cần được chốt trước khi công bố.
                     </p>
-                    {realApiMode && (draft.lateReturnBufferMinutes ?? 0) > 0 && (
-                      <Feedback tone="warning" title="Rà soát lịch đã xác nhận trước khi bật đệm">
-                        Đơn xác nhận trước phiên bản này giữ nguyên khoảng chiếm dụng đã lưu; màn hình chưa tự kéo dài hoặc phân công lại các đơn đó. Hãy rà soát lịch tương lai và xử lý xung đột trước ngày hiệu lực.
+                    {realApiMode && ((draft.lateReturnBufferMinutes ?? 0) > 0 || (draft.defaultCleaningBufferMinutes ?? 0) > 0) && (
+                      <Feedback tone="warning" title="Rà soát các đơn đã xác nhận">
+                        Mọi đơn tương lai cần được kiểm tra theo buffer mới; nếu hai khoảng chiếm dụng chồng nhau, hãy xử lý phân công trước khi phiên bản policy có hiệu lực.
                       </Feedback>
                     )}
                     <TextAreaField

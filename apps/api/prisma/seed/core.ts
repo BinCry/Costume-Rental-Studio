@@ -292,25 +292,14 @@ export async function seedCore(db: SeedDatabase): Promise<CoreSeedContext> {
     },
   });
 
-  const currentPolicy = await db.rentalPolicyVersion.upsert({
+  await db.rentalPolicyVersion.upsert({
     where: { versionCode: 'POLICY-2025' },
-    update: {
-      billingDayMode: BillingDayMode.ROLLING_24_HOURS,
-      minRentalDays: 1,
-      maxRentalDays: 14,
-      quoteValidHours: 24,
-      noShowGraceMinutes: 120,
-      lateGraceMinutes: 60,
-      lateFeePercentPerDay: 20,
-      freeCancelBeforeHours: 48,
-      lateCancelFeePercent: 30,
-      refundSlaBusinessDays: 5,
-    },
+    update: {},
     create: {
       id: seedId(81),
       versionCode: 'POLICY-2025',
       effectiveFrom: new Date('2025-01-01T00:00:00.000Z'),
-      effectiveTo: null,
+      effectiveTo: new Date('2026-10-14T00:00:00.000Z'),
       billingDayMode: BillingDayMode.ROLLING_24_HOURS,
       minRentalDays: 1,
       maxRentalDays: 14,
@@ -322,7 +311,33 @@ export async function seedCore(db: SeedDatabase): Promise<CoreSeedContext> {
       lateCancelFeePercent: 30,
       refundSlaBusinessDays: 5,
       createdBy: admin.id,
-      changeReason: 'Chính sách mặc định hiện hành cho toàn hệ thống.',
+      changeReason: 'Phiên bản chính sách lịch sử trước mức đệm lịch 12+12.',
+    },
+  });
+
+  const currentPolicy = await db.rentalPolicyVersion.upsert({
+    where: { versionCode: 'POLICY-2026-BUFFER-01' },
+    // Preserve values changed through policy administration on seed reruns.
+    update: {},
+    create: {
+      id: seedId(82),
+      versionCode: 'POLICY-2026-BUFFER-01',
+      effectiveFrom: new Date('2026-10-14T00:00:00.000Z'),
+      effectiveTo: null,
+      billingDayMode: BillingDayMode.ROLLING_24_HOURS,
+      minRentalDays: 1,
+      maxRentalDays: 14,
+      quoteValidHours: 24,
+      noShowGraceMinutes: 120,
+      lateGraceMinutes: 60,
+      lateFeePercentPerDay: 20,
+      lateReturnBufferMinutes: 720,
+      defaultCleaningBufferMinutes: 720,
+      freeCancelBeforeHours: 48,
+      lateCancelFeePercent: 30,
+      refundSlaBusinessDays: 5,
+      createdBy: admin.id,
+      changeReason: 'Mức đệm lịch khởi điểm đã duyệt: 12 giờ dự phòng trả trễ + 12 giờ vệ sinh/chuẩn bị.',
     },
   });
 

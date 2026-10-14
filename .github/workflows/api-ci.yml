@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'apps/api/**'
+      - 'apps/web/**'
       - 'packages/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
@@ -62,6 +63,12 @@ jobs:
           pnpm --filter @costume/api typecheck
           pnpm test:api
           pnpm build:api
+
+      - name: Verify web
+        run: |
+          pnpm --filter @costume/web lint
+          pnpm --filter @costume/web typecheck
+          pnpm --filter @costume/web build
 
       - name: Upload reports on failure
         if: failure()

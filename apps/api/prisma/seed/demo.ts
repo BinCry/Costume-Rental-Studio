@@ -409,7 +409,6 @@ async function seedCatalogAndInventory(
           dailyRentalPriceVnd: BigInt(350_000 + modelIndex * 100_000),
           depositAmountVnd: BigInt(1_000_000 + modelIndex * 250_000),
           replacementValueVnd: BigInt(3_000_000 + modelIndex * 500_000),
-          cleaningBufferMinutes: 720,
         },
         create: {
           id: seedId(variantSequence),
@@ -421,7 +420,7 @@ async function seedCatalogAndInventory(
           dailyRentalPriceVnd: BigInt(350_000 + modelIndex * 100_000),
           depositAmountVnd: BigInt(1_000_000 + modelIndex * 250_000),
           replacementValueVnd: BigInt(3_000_000 + modelIndex * 500_000),
-          cleaningBufferMinutes: 720,
+          cleaningBufferMinutes: null,
         },
       });
       variants.push({ id: variant.id, modelId: model.id });
@@ -672,7 +671,7 @@ async function seedRentals(
   const [policy, variants] = await Promise.all([
     db.rentalPolicyVersion.findUnique({
       where: { id: core.policyId },
-      select: { lateReturnBufferMinutes: true },
+      select: { lateReturnBufferMinutes: true, defaultCleaningBufferMinutes: true },
     }),
     db.costumeVariant.findMany({
       where: { id: { in: [...new Set(catalog.units.map((unit) => unit.variantId))] } },
@@ -846,7 +845,10 @@ async function seedRentals(
     const variantId = unit?.variantId ?? fallbackVariant;
     if (!variantId) throw new Error(`Missing variant for order ${orderCode}`);
     const isCompleted = definition.status === OrderStatus.COMPLETED;
-    const cleaningBufferMinutes = Math.max(0, cleaningBufferByVariantId.get(variantId) ?? 0);
+    const cleaningBufferMinutes = Math.max(
+      0,
+      cleaningBufferByVariantId.get(variantId) ?? policy.defaultCleaningBufferMinutes,
+    );
     const occupiedUntil = new Date(
       plannedDueAt.getTime() +
         (policy.lateReturnBufferMinutes + cleaningBufferMinutes) * 60_000,

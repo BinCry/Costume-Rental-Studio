@@ -167,11 +167,15 @@ function billableDays(start: Date, due: Date, mode: string) {
 export function bookingReservationUntil(
   plannedDueAt: Date,
   lateReturnBufferMinutes: number,
-  cleaningBufferMinutes: number | null = 0,
+  cleaningBufferMinutes: number | null = null,
+  defaultCleaningBufferMinutes = 0,
 ) {
   // Late-return reserve and garment preparation are separate intervals, so both are reserved.
   const lateReserveMinutes = Math.max(0, lateReturnBufferMinutes);
-  const preparationMinutes = Math.max(0, cleaningBufferMinutes ?? 0);
+  const preparationMinutes = Math.max(
+    0,
+    cleaningBufferMinutes ?? defaultCleaningBufferMinutes,
+  );
   return new Date(plannedDueAt.getTime() + (lateReserveMinutes + preparationMinutes) * 60_000);
 }
 
@@ -338,6 +342,7 @@ async function availabilityForQuote(
   input: QuoteInput,
   variants: Awaited<ReturnType<typeof pricedItems>>['variants'],
   lateReturnBufferMinutes: number,
+  defaultCleaningBufferMinutes: number,
 ) {
   const rows = await Promise.all(
     variants.map(async (variant) => {
@@ -345,6 +350,7 @@ async function availabilityForQuote(
         input.plannedDueAt,
         lateReturnBufferMinutes,
         variant.cleaningBufferMinutes,
+        defaultCleaningBufferMinutes,
       );
       const availableUnits = await tx.costumeUnit.count({
         where: {
@@ -419,6 +425,7 @@ export async function createQuote(actor: AuthenticatedActor, input: QuoteInput) 
       input,
       variants,
       policy.lateReturnBufferMinutes,
+      policy.defaultCleaningBufferMinutes,
     );
     return {
       quoteExpiresAt: new Date(Date.now() + policy.quoteValidHours * 3_600_000),
@@ -505,6 +512,7 @@ function itemCreateData(
   variants: Awaited<ReturnType<typeof pricedItems>>['variants'],
   days: number,
   lateReturnBufferMinutes: number,
+  defaultCleaningBufferMinutes: number,
 ) {
   return input.items.map((item) => {
     const variant = variants.find((v) => v.id === item.variantId)!;
@@ -518,6 +526,7 @@ function itemCreateData(
         input.plannedDueAt,
         lateReturnBufferMinutes,
         variant.cleaningBufferMinutes,
+        defaultCleaningBufferMinutes,
       ),
       billableDays: days,
       unitDailyPriceVnd: variant.dailyRentalPriceVnd,
@@ -639,6 +648,7 @@ export async function checkAvailability(
       input.plannedDueAt,
       policy.lateReturnBufferMinutes,
       variant.cleaningBufferMinutes,
+      policy.defaultCleaningBufferMinutes,
     );
     const units = await tx.costumeUnit.findMany({
       where: {
@@ -720,7 +730,7 @@ export async function createOrder(actor: AuthenticatedActor, input: CreateOrderI
         promotionDiscountVnd: discount,
         quoteExpiresAt: new Date(Date.now() + policy.quoteValidHours * 3_600_000),
         createdBy: actor.id,
-        items: { create: itemCreateData(input, variants, days, policy.lateReturnBufferMinutes) },
+        items: { create: itemCreateData(input, variants, days, policy.lateReturnBufferMinutes, policy.defaultCleaningBufferMinutes) },
       },
       include: includeOrder(),
     });
@@ -772,7 +782,7 @@ export async function updateOrder(actor: AuthenticatedActor, id: string, input: 
         promotionCode: promotion?.code ?? null,
         promotionDiscountVnd: discount,
         quoteExpiresAt: new Date(Date.now() + policy.quoteValidHours * 3_600_000),
-        items: { deleteMany: {}, create: itemCreateData(input, variants, days, policy.lateReturnBufferMinutes) },
+        items: { deleteMany: {}, create: itemCreateData(input, variants, days, policy.lateReturnBufferMinutes, policy.defaultCleaningBufferMinutes) },
         version: { increment: 1 },
       },
       include: includeOrder(),
@@ -959,7 +969,8 @@ export async function extendOrder(actor: AuthenticatedActor, id: string, input: 
           bookingReservationUntil(
             input.newDueAt,
             order.policyVersion.lateReturnBufferMinutes,
-            unit.variant?.cleaningBufferMinutes ?? item.variant?.cleaningBufferMinutes ?? 0,
+            unit.variant?.cleaningBufferMinutes ?? item.variant?.cleaningBufferMinutes ?? null,
+            order.policyVersion.defaultCleaningBufferMinutes,
           ),
         ];
       }),
@@ -1518,7 +1529,8 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
       if (!inputItem.isMissing) {
         const unit = units.find((value) => value.id === orderItem.unitId)!;
         const blockType = inputItem.nextOperationalStatus === 'REPAIR' ? 'REPAIR' : 'CLEANING';
-        const cleaningMinutes = unit.variant.cleaningBufferMinutes ?? 0;
+        const cleaningMinutes =
+          unit.variant.cleaningBufferMinutes ?? order.policyVersion.defaultCleaningBufferMinutes;
         const blockedUntil =
           blockType === 'REPAIR'
             ? inputItem.repairBlockedUntil!

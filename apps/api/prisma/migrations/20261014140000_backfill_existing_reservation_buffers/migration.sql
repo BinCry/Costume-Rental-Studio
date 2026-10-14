@@ -1,7 +1,7 @@
--- Backfill existing future reservations without changing customer terms.
--- The linked policy supplies the late-return reserve; the variant supplies the
--- current turnaround/cleaning window because historical cleaning snapshots are
--- not stored. Existing occupied_until values are never shortened.
+-- Backfill eligible future reservations without changing customer-facing terms.
+-- The newly effective policy supplies the internal late-return reserve and
+-- default preparation window; a variant-specific cleaning value overrides it.
+-- Existing occupied_until values are never shortened.
 BEGIN;
 
 -- Prevent reservation, policy, variant, and block writes between preflight and
@@ -24,7 +24,7 @@ BEGIN
         i.occupied_until,
         o.planned_due_at + make_interval(
           mins => GREATEST(p.late_return_buffer_minutes, 0)
-            + GREATEST(COALESCE(v.cleaning_buffer_minutes, 0), 0)
+            + GREATEST(COALESCE(v.cleaning_buffer_minutes, p.default_cleaning_buffer_minutes, 0), 0)
         )
       ) AS proposed_until,
       o.order_code,
@@ -32,7 +32,7 @@ BEGIN
       u.unit_code
     FROM rental_order_items i
     JOIN rental_orders o ON o.id = i.order_id
-    JOIN rental_policy_versions p ON p.id = o.policy_version_id
+    JOIN rental_policy_versions p ON p.version_code = 'POLICY-2026-BUFFER-01'
     JOIN costume_variants v ON v.id = i.variant_id
     JOIN costume_units u ON u.id = i.unit_id
     WHERE i.unit_id IS NOT NULL
@@ -88,7 +88,7 @@ BEGIN
           i.occupied_until,
           o.planned_due_at + make_interval(
             mins => GREATEST(p.late_return_buffer_minutes, 0)
-              + GREATEST(COALESCE(v.cleaning_buffer_minutes, 0), 0)
+              + GREATEST(COALESCE(v.cleaning_buffer_minutes, p.default_cleaning_buffer_minutes, 0), 0)
           )
         ) AS proposed_until,
         o.order_code,
@@ -96,7 +96,7 @@ BEGIN
         u.unit_code
       FROM rental_order_items i
       JOIN rental_orders o ON o.id = i.order_id
-      JOIN rental_policy_versions p ON p.id = o.policy_version_id
+      JOIN rental_policy_versions p ON p.version_code = 'POLICY-2026-BUFFER-01'
       JOIN costume_variants v ON v.id = i.variant_id
       JOIN costume_units u ON u.id = i.unit_id
       WHERE i.unit_id IS NOT NULL
@@ -159,14 +159,14 @@ BEGIN
         i.occupied_until,
         o.planned_due_at + make_interval(
           mins => GREATEST(p.late_return_buffer_minutes, 0)
-            + GREATEST(COALESCE(v.cleaning_buffer_minutes, 0), 0)
+            + GREATEST(COALESCE(v.cleaning_buffer_minutes, p.default_cleaning_buffer_minutes, 0), 0)
         )
       ) AS proposed_until,
       o.order_code,
       u.unit_code
     FROM rental_order_items i
     JOIN rental_orders o ON o.id = i.order_id
-    JOIN rental_policy_versions p ON p.id = o.policy_version_id
+    JOIN rental_policy_versions p ON p.version_code = 'POLICY-2026-BUFFER-01'
     JOIN costume_variants v ON v.id = i.variant_id
     JOIN costume_units u ON u.id = i.unit_id
     WHERE i.unit_id IS NOT NULL
@@ -198,14 +198,14 @@ BEGIN
           i.occupied_until,
           o.planned_due_at + make_interval(
             mins => GREATEST(p.late_return_buffer_minutes, 0)
-              + GREATEST(COALESCE(v.cleaning_buffer_minutes, 0), 0)
+              + GREATEST(COALESCE(v.cleaning_buffer_minutes, p.default_cleaning_buffer_minutes, 0), 0)
           )
         ) AS proposed_until,
         o.order_code,
         u.unit_code
       FROM rental_order_items i
       JOIN rental_orders o ON o.id = i.order_id
-      JOIN rental_policy_versions p ON p.id = o.policy_version_id
+      JOIN rental_policy_versions p ON p.version_code = 'POLICY-2026-BUFFER-01'
       JOIN costume_variants v ON v.id = i.variant_id
       JOIN costume_units u ON u.id = i.unit_id
       WHERE i.unit_id IS NOT NULL
@@ -245,12 +245,12 @@ WITH candidates AS (
       i.occupied_until,
       o.planned_due_at + make_interval(
         mins => GREATEST(p.late_return_buffer_minutes, 0)
-          + GREATEST(COALESCE(v.cleaning_buffer_minutes, 0), 0)
+          + GREATEST(COALESCE(v.cleaning_buffer_minutes, p.default_cleaning_buffer_minutes, 0), 0)
       )
     ) AS proposed_until
   FROM rental_order_items i
   JOIN rental_orders o ON o.id = i.order_id
-  JOIN rental_policy_versions p ON p.id = o.policy_version_id
+  JOIN rental_policy_versions p ON p.version_code = 'POLICY-2026-BUFFER-01'
   JOIN costume_variants v ON v.id = i.variant_id
   WHERE i.unit_id IS NOT NULL
     AND i.allocation_status IN ('HELD', 'CONFIRMED')

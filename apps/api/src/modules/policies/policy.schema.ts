@@ -13,6 +13,7 @@ export const policySchema = z
     lateGraceMinutes: z.coerce.number().int().nonnegative().default(0),
     lateFeePercentPerDay: z.coerce.number().min(0).max(100).default(0),
     lateReturnBufferMinutes: z.coerce.number().int().nonnegative().max(10_080).default(0),
+    defaultCleaningBufferMinutes: z.coerce.number().int().nonnegative().max(10_080).default(0),
     freeCancelBeforeHours: z.coerce.number().int().nonnegative().default(0),
     lateCancelFeePercent: z.coerce.number().min(0).max(100).default(0),
     refundSlaBusinessDays: z.coerce.number().int().positive().nullable().optional(),

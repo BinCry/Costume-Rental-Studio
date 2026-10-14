@@ -167,7 +167,7 @@ export async function checkPublicAvailability(input: PublicAvailabilityInput) {
         OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
       },
       orderBy: { effectiveFrom: 'desc' },
-      select: { lateReturnBufferMinutes: true },
+      select: { lateReturnBufferMinutes: true, defaultCleaningBufferMinutes: true },
     }),
   ]);
   if (!branch) throw new AppError(404, 'BRANCH_NOT_FOUND', 'Branch not found');
@@ -176,7 +176,10 @@ export async function checkPublicAvailability(input: PublicAvailabilityInput) {
   const protectedUntil = new Date(
     input.plannedDueAt.getTime() +
       (Math.max(0, policy.lateReturnBufferMinutes) +
-        Math.max(0, variant.cleaningBufferMinutes ?? 0)) *
+        Math.max(
+          0,
+          variant.cleaningBufferMinutes ?? policy.defaultCleaningBufferMinutes,
+        )) *
         60_000,
   );
 
