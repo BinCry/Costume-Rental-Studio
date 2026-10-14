@@ -148,6 +148,9 @@ Nhánh kết thúc: `REJECTED`, `CANCELLED`, `NO_SHOW`.
 - `PENDING_CONFIRMATION` chưa đảm bảo giữ unit.
 - Khi xác nhận, mỗi `rental_order_items` được gán một unit và khoảng chiếm dụng đến hết thời gian bảo vệ lịch.
 - Khoảng bảo vệ kết thúc bằng `planned_due_at + policy.late_return_buffer_minutes + variant.cleaning_buffer_minutes`; dự phòng trả trễ và thời gian vệ sinh là hai khoảng riêng, đều chỉ dùng nội bộ và không gia hạn kỳ thuê của khách.
+- Cutover dữ liệu chỉ kéo dài `occupied_until` của đơn tương lai đã gán unit nhưng chưa bàn giao, theo policy gắn với đơn cộng thời gian vệ sinh hiện tại của variant; không đổi hạn trả, phí/cọc, policy version, barcode, trạng thái hay block. Đơn có allocation `ACTIVE` tiếp tục bị khóa đến khi trả thực tế.
+- Cutover dừng trước khi ghi nếu khoảng mới chồng lịch cùng unit hoặc phần đệm mới giao với block `PLANNED/IN_PROGRESS`; nhân viên giải quyết bằng phân công lại trước khi triển khai lại. Không tự dời hoặc hủy lịch khách.
+- Thời gian vệ sinh lúc lập đơn chưa được snapshot riêng. Backfill dùng cấu hình variant tại thời điểm cutover và chỉ kéo dài, không rút ngắn lịch đang lưu. Các policy hiện hữu nhận buffer mặc định 0; không áp ngược giá trị của policy mới lên đơn cũ.
 - Unit có phân bổ `ACTIVE` tiếp tục không khả dụng cho đến khi nhân viên ghi nhận trả thực tế, kể cả khi `planned_due_at` và `occupied_until` đã qua.
 - Database ngăn cùng unit có lịch `HELD/CONFIRMED/ACTIVE` chồng nhau; service cũng kiểm tra block vệ sinh/sửa chữa và transfer.
 - Khách nhận tại quầy; `pickup_processed_by` là nhân viên quầy, không phải shipper.

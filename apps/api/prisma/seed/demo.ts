@@ -669,6 +669,20 @@ async function seedRentals(
   catalog: CatalogContext,
   anchor: Date,
 ): Promise<OrderSeedResult> {
+  const [policy, variants] = await Promise.all([
+    db.rentalPolicyVersion.findUnique({
+      where: { id: core.policyId },
+      select: { lateReturnBufferMinutes: true },
+    }),
+    db.costumeVariant.findMany({
+      where: { id: { in: [...new Set(catalog.units.map((unit) => unit.variantId))] } },
+      select: { id: true, cleaningBufferMinutes: true },
+    }),
+  ]);
+  if (!policy) throw new Error('Missing seeded rental policy');
+  const cleaningBufferByVariantId = new Map(
+    variants.map((variant) => [variant.id, variant.cleaningBufferMinutes]),
+  );
   const percentPromotion = await db.promotion.upsert({
     where: { code: 'WELCOME10' },
     update: {
@@ -832,6 +846,11 @@ async function seedRentals(
     const variantId = unit?.variantId ?? fallbackVariant;
     if (!variantId) throw new Error(`Missing variant for order ${orderCode}`);
     const isCompleted = definition.status === OrderStatus.COMPLETED;
+    const cleaningBufferMinutes = Math.max(0, cleaningBufferByVariantId.get(variantId) ?? 0);
+    const occupiedUntil = new Date(
+      plannedDueAt.getTime() +
+        (policy.lateReturnBufferMinutes + cleaningBufferMinutes) * 60_000,
+    );
     const itemId = seedId(850 + index);
     const item = await db.rentalOrderItem.upsert({
       where: { id: itemId },
@@ -841,7 +860,7 @@ async function seedRentals(
         unitId: unit?.id ?? null,
         allocationStatus: definition.allocation,
         occupiedFrom: plannedStartAt,
-        occupiedUntil: addHours(plannedDueAt, 12),
+        occupiedUntil,
         allocatedBy: isUnassigned ? null : branchSalesUserId,
         billableDays: Math.max(1, definition.due - definition.start),
         unitDailyPriceVnd: BigInt(550_000),
@@ -856,7 +875,7 @@ async function seedRentals(
         unitId: unit?.id ?? null,
         allocationStatus: definition.allocation,
         occupiedFrom: plannedStartAt,
-        occupiedUntil: addHours(plannedDueAt, 12),
+        occupiedUntil,
         allocatedBy: isUnassigned ? null : branchSalesUserId,
         billableDays: Math.max(1, definition.due - definition.start),
         unitDailyPriceVnd: BigInt(550_000),
