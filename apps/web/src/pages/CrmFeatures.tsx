@@ -105,10 +105,21 @@ export function CrmPage({
     useMobileDetailReveal<HTMLDivElement>();
   const { detailRef: caseDetailRef, revealDetail: revealCase } =
     useMobileDetailReveal<HTMLDivElement>();
-  const activeCustomer = realApiMode && data?.length
-    ? data.find((customer) => customer.code === selected) ?? data[0]
+  const visibleApiCustomers = (data ?? []).filter((customer) =>
+    customer.preferredBranch === branch &&
+    `${customer.name} ${customer.phone} ${customer.code}`
+      .toLocaleLowerCase('vi')
+      .includes(search.toLocaleLowerCase('vi')),
+  );
+  const activeCustomer = realApiMode
+    ? visibleApiCustomers.find((customer) => customer.code === selected) ?? visibleApiCustomers[0]
     : undefined;
   const activeCustomerCode = activeCustomer?.code ?? selected;
+  const activeCaseCode = (casesResource.data ?? []).find(
+    (item) => item.customerCode === activeCustomerCode && item.code === caseCode,
+  )?.code ?? (casesResource.data ?? []).find(
+    (item) => item.customerCode === activeCustomerCode,
+  )?.code;
   useEffect(() => {
     if (!realApiMode || !activeCustomer) return;
     let active = true;
@@ -148,24 +159,24 @@ export function CrmPage({
     };
   }, [activeCustomer, activeCustomerCode, branch, interactionRetry, realApiMode]);
   useEffect(() => {
-    if (!realApiMode || !caseCode || !casesResource.data?.some((item) => item.code === caseCode)) return;
+    if (!realApiMode || !activeCaseCode) return;
     let active = true;
-    setApiCaseHistoryLoading((current) => ({ ...current, [caseCode]: true }));
-    setApiCaseHistoryErrors((current) => ({ ...current, [caseCode]: false }));
-    void listCrmCaseHistory(caseCode)
+    setApiCaseHistoryLoading((current) => ({ ...current, [activeCaseCode]: true }));
+    setApiCaseHistoryErrors((current) => ({ ...current, [activeCaseCode]: false }));
+    void listCrmCaseHistory(activeCaseCode)
       .then((items) => {
-        if (active) setApiCaseHistory((current) => ({ ...current, [caseCode]: items }));
+        if (active) setApiCaseHistory((current) => ({ ...current, [activeCaseCode]: items }));
       })
       .catch(() => {
-        if (active) setApiCaseHistoryErrors((current) => ({ ...current, [caseCode]: true }));
+        if (active) setApiCaseHistoryErrors((current) => ({ ...current, [activeCaseCode]: true }));
       })
       .finally(() => {
-        if (active) setApiCaseHistoryLoading((current) => ({ ...current, [caseCode]: false }));
+        if (active) setApiCaseHistoryLoading((current) => ({ ...current, [activeCaseCode]: false }));
       });
     return () => {
       active = false;
     };
-  }, [caseCode, caseHistoryRetry, casesResource.data, realApiMode]);
+  }, [activeCaseCode, caseHistoryRetry, realApiMode]);
   const switchView = (kind: 'customer' | 'case' | 'newCase', code: string) => {
     if (draft) {
       setPendingView({ kind, code });
@@ -270,7 +281,7 @@ export function CrmPage({
         );
         const person = visible.find((c) => c.code === activeCustomerCode) ?? visible[0];
         const related = (casesResource.data ?? []).filter((c) => c.customerCode === person?.code);
-        const current = related.find((c) => c.code === caseCode) ?? related[0];
+        const current = related.find((c) => c.code === activeCaseCode) ?? related[0];
         const editing = draft ?? current;
         const personInteractions = person
           ? apiInteractions[person.code] ?? (realApiMode ? [] : person.interactions)
@@ -640,7 +651,7 @@ export function CrmPage({
                       )}
                     </fieldset>
                     <h3>Lịch sử case</h3>
-                    {realApiMode && editing === current && apiCaseHistoryLoading[current?.code ?? ''] ? (
+                    {realApiMode && editing === current && current && (apiCaseHistoryLoading[current.code] || apiCaseHistory[current.code] === undefined) ? (
                       <p className="muted" role="status">Đang tải lịch sử case…</p>
                     ) : realApiMode && editing === current && current && apiCaseHistoryErrors[current.code] ? (
                       <Feedback
