@@ -269,7 +269,7 @@ export interface SettlementSnapshot {
   deposit: {
     dueVnd: string;
     paidVnd: string;
-    remainingVnd: string;
+    remainingVnd?: string;
     deductionVnd: string;
     refundedVnd: string;
     refundRemainingVnd: string;
