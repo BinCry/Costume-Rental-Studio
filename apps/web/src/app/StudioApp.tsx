@@ -280,14 +280,40 @@ export default function StudioApp() {
         'payments.manage.branch',
         'payments.manage.all',
       ].some((permission) => effectivePermissions.includes(permission)));
+  const canReturn =
+    !apiIdentity ||
+    ['rentals.return.branch', 'rentals.return.all', 'rentals.manage.branch', 'rentals.manage.all']
+      .some((permission) => effectivePermissions.includes(permission));
+  const canAssessReturn =
+    !apiIdentity ||
+    ['rentals.assessment.branch', 'rentals.assessment.all', 'rentals.manage.branch', 'rentals.manage.all']
+      .some((permission) => effectivePermissions.includes(permission));
+  const canPrepareSettlement =
+    !apiIdentity ||
+    ['payments.manage.branch', 'payments.manage.all']
+      .some((permission) => effectivePermissions.includes(permission));
+  const canCompleteSettlement =
+    !apiIdentity ||
+    ['rentals.settlement.branch', 'rentals.settlement.all', 'rentals.manage.branch', 'rentals.manage.all']
+      .some((permission) => effectivePermissions.includes(permission));
   const canOpen = (screen: Screen) => {
     if (!assigned) return false;
     if (screen === 'handover')
-      return ['rentals.handover.branch', 'rentals.manage.branch', 'rentals.manage.all']
+      return ['rentals.handover.branch', 'rentals.handover.all', 'rentals.manage.branch', 'rentals.manage.all']
         .some((permission) => effectivePermissions.includes(permission));
-    if (screen === 'return')
-      return ['rentals.return.branch', 'rentals.manage.branch', 'rentals.manage.all']
+    if (screen === 'return') {
+      const canReadOrder = ['rentals.read.branch', 'rentals.read.all']
         .some((permission) => effectivePermissions.includes(permission));
+      const canWorkReturn = [
+        'rentals.return.branch', 'rentals.return.all',
+        'rentals.manage.branch', 'rentals.manage.all',
+        'rentals.assessment.branch', 'rentals.assessment.all',
+        'payments.manage.branch', 'payments.manage.all',
+        'rentals.settlement.branch', 'rentals.settlement.all',
+        'payments.read.branch', 'payments.read.all',
+      ].some((permission) => effectivePermissions.includes(permission));
+      return canReadOrder && canWorkReturn;
+    }
     if (screen === 'reports')
       return effectivePermissions.includes('reports.read.all') || effectivePermissions.includes('reports.read.branch');
     if (apiIdentity) {
@@ -773,10 +799,10 @@ export default function StudioApp() {
                   effectivePermissions.includes('rentals.manage.branch') ||
                   effectivePermissions.includes('rentals.manage.all')
                 }
-                canConfirm={['rentals.confirm.branch', 'rentals.manage.branch', 'rentals.manage.all'].some((permission) => effectivePermissions.includes(permission))}
-                canPrepare={['rentals.prepare.branch', 'rentals.manage.branch', 'rentals.manage.all'].some((permission) => effectivePermissions.includes(permission))}
-                canHandover={['rentals.handover.branch', 'rentals.manage.branch', 'rentals.manage.all'].some((permission) => effectivePermissions.includes(permission))}
-                canReturn={['rentals.return.branch', 'rentals.manage.branch', 'rentals.manage.all'].some((permission) => effectivePermissions.includes(permission))}
+                canConfirm={['rentals.confirm.branch', 'rentals.confirm.all', 'rentals.manage.branch', 'rentals.manage.all'].some((permission) => effectivePermissions.includes(permission))}
+                canPrepare={['rentals.prepare.branch', 'rentals.prepare.all', 'rentals.manage.branch', 'rentals.manage.all'].some((permission) => effectivePermissions.includes(permission))}
+                canHandover={['rentals.handover.branch', 'rentals.handover.all', 'rentals.manage.branch', 'rentals.manage.all'].some((permission) => effectivePermissions.includes(permission))}
+                canReturn={['rentals.return.branch', 'rentals.return.all', 'rentals.manage.branch', 'rentals.manage.all'].some((permission) => effectivePermissions.includes(permission))}
                 initialOrderId={p.get('order') ?? undefined}
                 initialFilter={p.get('filter') ?? undefined}
                 initialBranch={activeBranch}
@@ -802,6 +828,10 @@ export default function StudioApp() {
                 initialBranch={activeBranch}
                 canReadPayments={canReadPayments}
                 canCollectPayments={canCollectPayments}
+                canReturn={canReturn}
+                canAssessReturn={canAssessReturn}
+                canPrepareSettlement={canPrepareSettlement}
+                canCompleteSettlement={canCompleteSettlement}
               />
             )}
             {route.screen === 'counter' && (
