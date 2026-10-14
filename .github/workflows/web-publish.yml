@@ -49,8 +49,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Verify web build
+      - name: Verify web
         run: |
+          pnpm --filter @costume/web lint
+          pnpm --filter @costume/web test
           pnpm --filter @costume/web typecheck
           pnpm --filter @costume/web build
 
