@@ -56,7 +56,7 @@ const initialDraft = (costumeId?: string, context?: URLSearchParams): BookingDra
     costumeId: costumeId ?? baseDraft.costumeId,
     variant: variants.includes(requestedVariant)
       ? requestedVariant
-      : (variants[0] ?? baseDraft.variant),
+      : (apiMode && costumeId && requestedVariant ? requestedVariant : variants[0] ?? baseDraft.variant),
     branch: requestedBranch?.trim() ? requestedBranch : (apiMode ? '' : baseDraft.branch),
     pickup: requestedPickup?.trim() ? requestedPickup : apiMode ? defaultRentalDate(1) : baseDraft.pickup,
     returnAt: requestedReturn?.trim() ? requestedReturn : apiMode ? defaultRentalDate(3) : baseDraft.returnAt,
@@ -79,13 +79,10 @@ export function BookingPage({
   const apiMode = apiEnabled && (hasAccessToken() || !import.meta.env.DEV);
   const { options: branchOptions, ready: branchOptionsReady, error: branchOptionsError, retry: retryBranches } = useBranchOptions();
   const [step, setStep] = useState(() => {
+    const requestedVariant = initialContext.get('variant');
+    if (requestedVariant) return 2;
     const selected = fixtureCatalog.find((entry) => entry.id === costumeId);
-    if (!selected) return initialContext.get('variant') ? 2 : 0;
-    return selected.sizes.some(
-      (size) => `${size} / ${selected.colors[0]}` === initialContext.get('variant'),
-    )
-      ? 2
-      : 1;
+    return selected ? 1 : 0;
   });
   const [draftState, setDraft] = useState<BookingDraft>(() => initialDraft(costumeId, initialContext));
   const [quote, setQuote] = useState<QuoteSnapshot>();
@@ -135,11 +132,19 @@ export function BookingPage({
   }, [apiMode]);
   const item = (data ?? []).find((entry) => entry.id === draftState.costumeId) ??
     fixtureCatalog.find((entry) => entry.id === draftState.costumeId);
-  const choices = item ? item.sizes.map((size) => `${size} / ${item.colors[0]}`) : [];
+  const choices = item?.apiVariants?.length
+    ? item.apiVariants.map((variant) => ({
+        value: variant.code,
+        label: `${variant.size} / ${variant.color}${variant.edition ? ` · ${variant.edition}` : ''}`,
+      }))
+    : item
+      ? item.sizes.map((size) => ({ value: `${size} / ${item.colors[0]}`, label: `${size} / ${item.colors[0]}` }))
+      : [];
+  const selectedVariantLabel = choices.find((choice) => choice.value === draftState.variant)?.label ?? draftState.variant;
   const draft = {
     ...draftState,
-    variant: item && !choices.includes(draftState.variant)
-      ? choices[0] ?? draftState.variant
+    variant: item && !choices.some((choice) => choice.value === draftState.variant)
+      ? choices[0]?.value ?? draftState.variant
       : draftState.variant,
     branch: branchOptions.includes(draftState.branch)
       ? draftState.branch
@@ -158,7 +163,7 @@ export function BookingPage({
     if (step === 0 && !item) return 'Hãy chọn một mẫu trang phục.';
     if (
       step === 1 &&
-      (!choices.includes(draft.variant) || draft.quantity < 1 || draft.quantity > 2)
+      (!choices.some((choice) => choice.value === draft.variant) || draft.quantity < 1 || draft.quantity > 2)
     )
       return 'Chọn size/màu và số bộ hợp lệ (1–2 bộ).';
     if (
@@ -333,15 +338,17 @@ export function BookingPage({
                         setDraft((current) => ({
                           ...current,
                           costumeId: entry.id,
-                          variant: `${entry.sizes[0]} / ${entry.colors[0]}`,
+                          variant: entry.apiVariants?.[0]?.code ?? `${entry.sizes[0]} / ${entry.colors[0]}`,
                         }));
                       }}
                     >
                       <span
                         className={`booking-costume-image costume-${entry.imagePosition}`}
                         role="img"
-                        aria-label={`Ảnh minh họa ${entry.name}`}
-                      />
+                        aria-label={entry.imageAlt || `Ảnh ${entry.name}`}
+                      >
+                        {entry.imageUrl && <img src={entry.imageUrl} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                      </span>
                       <span>
                         <strong>{entry.name}</strong>
                         <small>
@@ -362,7 +369,7 @@ export function BookingPage({
                   >
                     <option value="">Chọn biến thể</option>
                     {choices.map((choice) => (
-                      <option key={choice}>{choice}</option>
+                      <option key={choice.value} value={choice.value}>{choice.label}</option>
                     ))}
                   </SelectField>
                   <SelectField
@@ -537,7 +544,7 @@ export function BookingPage({
                   <div>
                     <span>Trang phục</span>
                     <strong>
-                      {item?.name} · {draft.variant} · {draft.quantity} bộ
+                      {item?.name} · {selectedVariantLabel} · {draft.quantity} bộ
                     </strong>
                   </div>
                   <div>
@@ -617,7 +624,7 @@ export function BookingPage({
             <span className="eyebrow">TÓM TẮT YÊU CẦU</span>
             <h3>{item?.name ?? 'Chưa chọn mẫu'}</h3>
             <p>
-              {draft.variant || 'Chưa chọn biến thể'} · {draft.quantity} bộ
+              {selectedVariantLabel || 'Chưa chọn biến thể'} · {draft.quantity} bộ
             </p>
             <div className="sidebar-divider" />
             <p>
