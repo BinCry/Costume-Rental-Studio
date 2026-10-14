@@ -569,6 +569,10 @@ export function BookingPage({
                       {money(quote?.rental ?? 0)} / {money(quote?.deposit ?? 0)}
                     </strong>
                   </div>
+                  <div>
+                    <span>Tổng dự kiến khi nhận đồ</span>
+                    <strong>{money(quote?.amountDueAtPickup ?? 0)}</strong>
+                  </div>
                   <p className="inline-note">{lateReturnPolicyText(quote, apiMode)}</p>
                   <p className="inline-note">
                     Điều kiện hủy và chính sách áp dụng cần được xác nhận từ backend trước khi triển
