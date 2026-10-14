@@ -71,7 +71,10 @@ export function OrderDetailShell({
   const [scanBusy, setScanBusy] = useState(false);
   const [checks, setChecks] = useState<Record<string, boolean>>({});
   const [returnConditions, setReturnConditions] = useState<
-    Record<string, 'PASSED' | 'PENDING_ASSESSMENT'>
+    Record<string, 'PASSED' | 'PENDING_ASSESSMENT' | 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED'>
+  >({});
+  const [returnAccessories, setReturnAccessories] = useState<
+    Record<string, { quantityReturned: string; conditionIn: string }>
   >({});
   const [method, setMethod] = useState<'CASH' | 'BANK_TRANSFER'>('CASH');
   const [rentPreview, setRentPreview] = useState(false);
@@ -123,13 +126,35 @@ export function OrderDetailShell({
           : [`${item.id}-condition`, `${item.id}-accessories`],
       )
     : [];
+  const accessoryReviewComplete = !realApiMode || mode !== 'return' || scannedItems.every((item) =>
+    (item.accessories ?? []).every((accessory) => {
+      if (!accessory.id) return false;
+      const review = returnAccessories[`${item.id}:${accessory.id}`];
+      if (!review || review.quantityReturned.trim() === '') return false;
+      const quantity = Number(review.quantityReturned);
+      return Number.isInteger(quantity) && quantity >= 0 && quantity <= accessory.quantityOut &&
+        (quantity === 0 || !!review.conditionIn);
+    }),
+  );
+  const accessoryNeedsAssessment = realApiMode && mode === 'return' && scannedItems.some((item) =>
+    (item.accessories ?? []).some((accessory) => {
+      const review = returnAccessories[`${item.id}:${accessory.id}`];
+      return !!review && Number(review.quantityReturned) < accessory.quantityOut ||
+        (!!review?.conditionIn && ['FAIR', 'POOR', 'DAMAGED'].includes(review.conditionIn));
+    }),
+  );
   const allChecked =
     requiresChecks.length > 0 &&
     requiresChecks.every((key) => checks[key]) &&
-    (mode === 'handover' || scannedItems.every((item) => !!returnConditions[item.id]));
+    (mode === 'handover' || scannedItems.every((item) => !!returnConditions[item.id])) &&
+    accessoryReviewComplete;
   const needsAssessment =
     mode === 'return' &&
-    scannedItems.some((item) => returnConditions[item.id] === 'PENDING_ASSESSMENT');
+    (accessoryNeedsAssessment || scannedItems.some((item) =>
+      realApiMode
+        ? ['FAIR', 'POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')
+        : returnConditions[item.id] === 'PENDING_ASSESSMENT',
+    ));
   const needsAssessmentNote = needsAssessment && !note.trim();
   const evidenceItems = mode === 'handover' ? order?.items ?? [] : scannedItems;
   const allEvidenceSelected =
@@ -154,7 +179,7 @@ export function OrderDetailShell({
     !!settlement &&
     allReturnItemsScanned &&
     allChecked &&
-    scannedItems.every((item) => returnConditions[item.id] === 'PASSED') &&
+    scannedItems.every((item) => ['PASSED', 'NEW', 'GOOD'].includes(returnConditions[item.id] ?? '')) &&
     (settlement.damageFee > 0 || settlement.missingFee > 0);
   const refreshSettlement = async () => {
     if (!settlementRequestEnabled || !activeOrderId) return;
@@ -391,16 +416,22 @@ export function OrderDetailShell({
       const items = await Promise.all(
         scannedItems.map(async (item) => ({
           orderItemId: item.id,
-          returnConditionGrade: returnConditions[item.id] === 'PENDING_ASSESSMENT' ? ('FAIR' as const) : ('GOOD' as const),
+          returnConditionGrade: (['NEW', 'GOOD', 'FAIR', 'POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')
+            ? returnConditions[item.id]
+            : returnConditions[item.id] === 'PENDING_ASSESSMENT' ? 'FAIR' : 'GOOD') as 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED',
           isMissing: false,
-          damageNotes: returnConditions[item.id] === 'PENDING_ASSESSMENT' ? note.trim() : undefined,
-          nextOperationalStatus: 'CLEANING' as const,
+          damageNotes: needsAssessment ? note.trim() : undefined,
+          nextOperationalStatus: ['POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '') ? 'REPAIR' as const : 'CLEANING' as const,
           evidence: await uploadEvidence(item.id, 'RETURN'),
-          accessories: (item.accessories ?? []).map((accessory) => ({
-            accessoryId: accessory.id,
-            quantityReturned: accessory.quantityOut,
-            conditionIn: 'GOOD' as const,
-          })),
+          accessories: (item.accessories ?? []).map((accessory) => {
+            const review = returnAccessories[`${item.id}:${accessory.id}`];
+            const quantityReturned = Number(review?.quantityReturned);
+            return {
+              accessoryId: accessory.id,
+              quantityReturned,
+              conditionIn: quantityReturned > 0 ? review?.conditionIn as 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED' : null,
+            };
+          }),
         })),
       );
       await returnApiOrder(order.id, order.version, scannedItems.length < order.items.length, note.trim(), items);
@@ -714,20 +745,76 @@ export function OrderDetailShell({
                     </label>
                   )}
                   {mode === 'return' && matchedCodes.includes(item.unitCode ?? '') && (
-                    <SelectField
-                      label={`Kết quả kiểm ${item.unitCode ?? item.costume}`}
-                      value={returnConditions[item.id] ?? ''}
-                      onChange={(event) =>
-                        setReturnConditions((current) => ({
-                          ...current,
-                          [item.id]: event.target.value as 'PASSED' | 'PENDING_ASSESSMENT',
-                        }))
-                      }
-                    >
-                      <option value="">Chọn kết quả sau khi kiểm</option>
-                      <option value="PASSED">Đạt · không thấy vấn đề</option>
-                      <option value="PENDING_ASSESSMENT">Cần đánh giá hư hỏng hoặc thiếu</option>
-                    </SelectField>
+                    <>
+                      <SelectField
+                        label={`Tình trạng thực tế ${item.unitCode ?? item.costume}`}
+                        value={returnConditions[item.id] ?? ''}
+                        onChange={(event) =>
+                          setReturnConditions((current) => ({
+                            ...current,
+                            [item.id]: event.target.value as typeof current[string],
+                          }))
+                        }
+                      >
+                        <option value="">Chọn tình trạng sau khi kiểm</option>
+                        {realApiMode ? (
+                          <>
+                            <option value="NEW">Mới</option>
+                            <option value="GOOD">Tốt, đủ điều kiện vệ sinh</option>
+                            <option value="FAIR">Trầy xước / cần đánh giá</option>
+                            <option value="POOR">Hư hỏng nặng / cần đánh giá</option>
+                            <option value="DAMAGED">Hư hỏng / cần đánh giá</option>
+                          </>
+                        ) : (
+                          <>
+                            <option value="PASSED">Đạt · không thấy vấn đề</option>
+                            <option value="PENDING_ASSESSMENT">Cần đánh giá hư hỏng hoặc thiếu</option>
+                          </>
+                        )}
+                      </SelectField>
+                      {realApiMode && (item.accessories ?? []).length > 0 && (
+                        <div className="stack-form" aria-label="Đối chiếu phụ kiện trả">
+                          <strong>Đếm phụ kiện thực nhận</strong>
+                          {(item.accessories ?? []).map((accessory, index) => {
+                            const key = `${item.id}:${accessory.id}`;
+                            const review = returnAccessories[key] ?? { quantityReturned: '', conditionIn: '' };
+                            return (
+                              <div className="two-fields" key={key || index}>
+                                <Field
+                                  label={`${accessory.name || `Phụ kiện ${index + 1}`} · trả ${accessory.quantityOut}`}
+                                  type="number"
+                                  min={0}
+                                  max={accessory.quantityOut}
+                                  step={1}
+                                  value={review.quantityReturned}
+                                  onChange={(event) => setReturnAccessories((current) => ({
+                                    ...current,
+                                    [key]: { ...review, quantityReturned: event.target.value },
+                                  }))}
+                                  error={!accessory.id ? 'Thiếu mã phụ kiện từ máy chủ; chưa thể ghi nhận trả.' : undefined}
+                                />
+                                <SelectField
+                                  label="Tình trạng phụ kiện"
+                                  value={review.conditionIn}
+                                  disabled={!review.quantityReturned || Number(review.quantityReturned) === 0}
+                                  onChange={(event) => setReturnAccessories((current) => ({
+                                    ...current,
+                                    [key]: { ...review, conditionIn: event.target.value },
+                                  }))}
+                                >
+                                  <option value="">Chọn tình trạng</option>
+                                  <option value="NEW">Mới</option>
+                                  <option value="GOOD">Tốt</option>
+                                  <option value="FAIR">Trầy xước</option>
+                                  <option value="POOR">Hư hỏng nặng</option>
+                                  <option value="DAMAGED">Hỏng</option>
+                                </SelectField>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               ))}
@@ -1031,7 +1118,7 @@ export function OrderDetailShell({
                         ? 'Chưa quét bộ nào trong phiên này. Đối chiếu barcode trước khi xem số quyết toán; cọc vẫn đang giữ.'
                         : 'Còn barcode chưa quét trong phiên này. Theo dõi tình trạng từng bộ và tiếp tục giữ cọc; chưa dùng số dự kiến hoàn để chốt tiền.'
                       : !allChecked
-                        ? 'Đối chiếu phụ kiện và chọn kết quả kiểm cho từng bộ đã quét trước khi xem số tiền.'
+                        ? 'Đối chiếu số lượng, tình trạng phụ kiện và chọn tình trạng thực tế cho từng bộ đã quét trước khi xem số tiền.'
                         : 'Cần backend trả số phí, cấn trừ và khoản còn hoàn từ chứng từ trước khi quyết toán.'}
                   </Feedback>
                 )}
@@ -1067,7 +1154,11 @@ export function OrderDetailShell({
                     {scannedItems.map((item) => (
                       <li key={item.id}>
                         {item.unitCode} ·{' '}
-                        {returnConditions[item.id] === 'PASSED' ? 'Đạt' : 'Chờ đánh giá'}
+                        {returnConditions[item.id] === 'PASSED' || returnConditions[item.id] === 'NEW' || returnConditions[item.id] === 'GOOD'
+                          ? 'Đạt'
+                          : returnConditions[item.id] === 'FAIR' || returnConditions[item.id] === 'POOR' || returnConditions[item.id] === 'DAMAGED' || returnConditions[item.id] === 'PENDING_ASSESSMENT'
+                            ? 'Cần đánh giá'
+                            : 'Chưa chọn tình trạng'}
                       </li>
                     ))}
                   </ul>
