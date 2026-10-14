@@ -18,11 +18,14 @@ import { useFixtureResource } from '../components/useFixtureResource';
 import { branches, fixtureAdapter, fixtureCatalog } from '../fixtures/adapter';
 import { studioAdapter } from '../fixtures/studio';
 import type { DemoScenario, Order, OrderStatus } from '../fixtures/types';
+import type { Unit } from '../fixtures/studio';
 import {
   apiEnabled,
   cancelOrder as cancelApiOrder,
   hasAccessToken,
   prepareAndReadyOrder,
+  listRentalAvailability,
+  reallocateOrder as reallocateApiOrder,
   readyOrder as readyApiOrder,
   rejectOrder as rejectApiOrder,
 } from '../api/client';
@@ -71,6 +74,9 @@ export function OrdersPage({
   const [mobileDetail, setMobileDetail] = useState(!!initialOrderId);
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
   const [unavailableUnits, setUnavailableUnits] = useState<string[]>([]);
+  const [replacementOptions, setReplacementOptions] = useState<Record<string, Unit[]>>({});
+  const [replacementSelection, setReplacementSelection] = useState<Record<string, string>>({});
+  const [replacementBusy, setReplacementBusy] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<'confirm' | 'reject' | 'cancel' | null>(null);
@@ -162,6 +168,9 @@ export function OrdersPage({
     setSelectedId(id);
     setMobileDetail(true);
     setSelectedUnits([]);
+    setReplacementOptions({});
+    setReplacementSelection({});
+    setReplacementBusy('');
     setNotice('');
     setLocalConfirmed(false);
     setLocalCancelled(false);
@@ -236,6 +245,61 @@ export function OrdersPage({
       setDialog(null);
     } finally {
       setBusy(false);
+    }
+  };
+  const loadReplacementOptions = async (item: Order['items'][number]) => {
+    if (!order || !item.apiVariantId || !order.apiPlannedStartAt || !order.apiPlannedDueAt) {
+      setNotice('Chưa tải đủ lịch và biến thể của đơn để tìm bộ thay thế.');
+      return;
+    }
+    setReplacementBusy(item.id);
+    setNotice('');
+    try {
+      const options = await listRentalAvailability(
+        item.apiVariantId,
+        order.branch,
+        order.apiPlannedStartAt,
+        order.apiPlannedDueAt,
+      );
+      setReplacementOptions((current) => ({ ...current, [item.id]: options }));
+      setReplacementSelection((current) => ({
+        ...current,
+        [item.id]: current[item.id] ?? options[0]?.barcode ?? '',
+      }));
+      if (!options.length) setNotice('Không còn bộ READY phù hợp trong khoảng thuê này. Hãy đề xuất lịch khác hoặc xử lý đơn theo chính sách đã duyệt.');
+    } catch (caught) {
+      setNotice(caught instanceof Error ? caught.message : 'Không tải được bộ thay thế.');
+    } finally {
+      setReplacementBusy('');
+    }
+  };
+  const reallocateReadyItem = async (item: Order['items'][number]) => {
+    if (!order || !realApiMode) return;
+    const candidate = replacementOptions[item.id]?.find(
+      (unit) => unit.barcode === replacementSelection[item.id],
+    );
+    if (!candidate?.apiId) {
+      setNotice('Chọn một bộ READY phù hợp trước khi phân công.');
+      return;
+    }
+    setReplacementBusy(item.id);
+    setNotice('');
+    try {
+      await reallocateApiOrder(
+        order.id,
+        order.version,
+        item.id,
+        candidate.apiId,
+        'Thay bộ dự phòng trước khi bàn giao',
+      );
+      setNotice(`Đã gán ${candidate.barcode} cho ${item.costume}. Quét lại barcode mới trước khi giao.`);
+      setReplacementOptions({});
+      setReplacementSelection({});
+      retry();
+    } catch (caught) {
+      setNotice(caught instanceof Error ? caught.message : 'Chưa phân công được bộ thay thế.');
+    } finally {
+      setReplacementBusy('');
     }
   };
   const markPrepared = async () => {
@@ -513,6 +577,64 @@ export function OrdersPage({
                     ))}
                   </div>
                 </div>
+                {realApiMode && order.status === 'READY_FOR_PICKUP' && (
+                  <div className="detail-section unit-selection">
+                    <h3>Đổi bộ dự phòng trước khi giao</h3>
+                    <p>
+                      Dùng khi barcode đã phân công chưa về hoặc chưa READY. Bộ thay thế phải cùng biến thể,
+                      chi nhánh và còn trống trong cả kỳ thuê.
+                    </p>
+                    {order.items.map((item) => {
+                      const options = replacementOptions[item.id] ?? [];
+                      return (
+                        <div className="check-unit" key={item.id}>
+                          <div className="check-unit-head">
+                            <strong>{item.costume} · {item.variant}</strong>
+                            <span>Hiện gán: {item.unitCode ?? 'Chưa có bộ'}</span>
+                          </div>
+                          {!options.length ? (
+                            <Button
+                              variant="secondary"
+                              loading={replacementBusy === item.id}
+                              disabled={!item.apiVariantId || replacementBusy !== ''}
+                              onClick={() => void loadReplacementOptions(item)}
+                            >
+                              Tìm bộ READY phù hợp
+                            </Button>
+                          ) : (
+                            <div className="feature-filters">
+                              <SelectField
+                                label={`Bộ thay thế cho ${item.costume}`}
+                                value={replacementSelection[item.id] ?? ''}
+                                onChange={(event) =>
+                                  setReplacementSelection((current) => ({
+                                    ...current,
+                                    [item.id]: event.target.value,
+                                  }))
+                                }
+                              >
+                                <option value="">Chọn barcode</option>
+                                {options.map((unit) => (
+                                  <option value={unit.barcode} key={unit.apiId}>
+                                    {unit.barcode} · {unit.variant}
+                                  </option>
+                                ))}
+                              </SelectField>
+                              <Button
+                                variant="secondary"
+                                loading={replacementBusy === item.id}
+                                disabled={!replacementSelection[item.id] || replacementBusy !== ''}
+                                onClick={() => void reallocateReadyItem(item)}
+                              >
+                                Phân công bộ thay thế
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 <MoneyBreakdown
                   lines={order.money}
                   footer={

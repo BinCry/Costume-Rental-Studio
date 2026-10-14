@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   confirm: vi.fn(),
   prepare: vi.fn(),
   ready: vi.fn(),
+  pickupCheck: vi.fn(),
   pickup: vi.fn(),
   returned: vi.fn(),
   complete: vi.fn(),
@@ -42,6 +43,7 @@ vi.mock('../src/modules/rentals/rental.service.js', () => ({
   confirmOrder: mocks.confirm,
   prepareOrder: mocks.prepare,
   markOrderReady: mocks.ready,
+  validatePickupOrder: mocks.pickupCheck,
   pickupOrder: mocks.pickup,
   returnOrder: mocks.returned,
   completeOrder: mocks.complete,
@@ -134,6 +136,11 @@ describe('Rental order HTTP routes', () => {
       .post(`/api/v1/rentals/orders/${orderId}/ready`)
       .set(auth(bearer))
       .send({ expectedVersion: 3 })
+      .expect(200);
+    await request(createApp())
+      .post(`/api/v1/rentals/orders/${orderId}/pickup-check`)
+      .set(auth(bearer))
+      .send({ expectedVersion: 4 })
       .expect(200);
     await request(createApp())
       .post(`/api/v1/rentals/orders/${orderId}/extend`)

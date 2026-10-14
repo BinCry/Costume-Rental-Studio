@@ -2,7 +2,7 @@
 
 **Trạng thái:** nguồn nghiệp vụ hiện hành (source of truth).
 
-**Cập nhật:** 06/10/2026
+**Cập nhật:** 14/10/2026
 
 **Phạm vi:** các quyết định nghiệp vụ đã chốt cho MVP. Prisma schema, API và giao diện phải tuân theo tài liệu này; một rule xuất hiện ở đây không đồng nghĩa tính năng tương ứng đã được triển khai xong.
 
@@ -146,11 +146,18 @@ DRAFT
 Nhánh kết thúc: `REJECTED`, `CANCELLED`, `NO_SHOW`.
 
 - `PENDING_CONFIRMATION` chưa đảm bảo giữ unit.
-- Khi xác nhận, mỗi `rental_order_items` được gán một unit và khoảng chiếm dụng.
-- Database ngăn cùng unit có lịch `HELD/CONFIRMED/ACTIVE` chồng nhau.
+- Khi xác nhận, mỗi `rental_order_items` được gán một unit và khoảng chiếm dụng đến hết thời gian bảo vệ lịch.
+- Khoảng bảo vệ kết thúc bằng `planned_due_at + policy.late_return_buffer_minutes + (variant.cleaning_buffer_minutes nếu có, nếu không thì policy.default_cleaning_buffer_minutes)`. Mức khởi điểm được duyệt là 12 giờ + 12 giờ; hai khoảng nằm trong policy version và có thể đổi bằng phiên bản mới. Thời gian vệ sinh riêng của variant ghi đè mức mặc định; buffer chỉ dùng nội bộ, không gia hạn kỳ thuê khách.
+- Cutover chỉ kéo dài `occupied_until` của đơn tương lai đã gán unit nhưng chưa bàn giao theo mức đệm của policy mới có hiệu lực và override vệ sinh hiện tại của variant (hoặc mặc định trong policy); không đổi hạn trả, phí/cọc, policy version, barcode, trạng thái hay block. Đơn có allocation `ACTIVE` tiếp tục bị khóa đến khi trả thực tế.
+- Cutover dừng trước khi ghi nếu khoảng mới chồng lịch cùng unit hoặc phần đệm mới giao với block `PLANNED/IN_PROGRESS`; nhân viên giải quyết bằng phân công lại trước khi triển khai lại. Không tự dời hoặc hủy lịch khách.
+- Thời gian vệ sinh lúc lập đơn chưa được snapshot riêng. Backfill dùng override hiện tại của variant hoặc mức mặc định trong policy mới và chỉ kéo dài, không rút ngắn lịch đang lưu. Policy version lịch sử giữ nguyên giá trị; đơn đã tạo giữ policy snapshot và điều khoản phí của mình.
+- Unit có phân bổ `ACTIVE` tiếp tục không khả dụng cho đến khi nhân viên ghi nhận trả thực tế, kể cả khi `planned_due_at` và `occupied_until` đã qua.
+- Database ngăn cùng unit có lịch `HELD/CONFIRMED/ACTIVE` chồng nhau; service cũng kiểm tra block vệ sinh/sửa chữa và transfer.
 - Khách nhận tại quầy; `pickup_processed_by` là nhân viên quầy, không phải shipper.
-- Khi trả, nhân viên ghi tình trạng, thiếu/hỏng và phí trên order/item.
-- Sau nhận trả, unit chuyển sang `READY`, `CLEANING`, `REPAIR` hoặc `RETIRED` theo kết quả kiểm tra.
+- Khi trả, nhân viên ghi nhận từng unit đã thực nhận, tình trạng, thiếu/hỏng và bằng chứng. Có thể trả một phần; chỉ tính phí trễ cho các item được thực nhận ở lần đó.
+- Đơn policy công thức cũ (phiên bản 1) giữ phép tính trước đây: tính trên tổng giá thuê gộp khi trả đủ; trả một phần chưa chốt phí trễ. Policy version mới (phiên bản 2) tính từng bộ đã nhận, sau khi phân bổ giảm giá theo tỷ trọng; mỗi kỳ 24 giờ đã bắt đầu nhân tỷ lệ và phí mỗi bộ không vượt 100% tiền thuê sau giảm giá. Cách tính gắn với policy version của đơn, không hồi tố.
+- Phí trễ là khoản `EXTRA`; không tự động trừ cọc. Cọc được quyết toán riêng sau khi kiểm tra theo quy trình hoàn/khấu trừ đã chốt.
+- Sau nhận trả, unit vẫn cần sạch/kiểm tra và chuyển sang `READY`, `CLEANING`, `REPAIR` hoặc `RETIRED` theo kết quả thực tế.
 
 Ma trận chuyển trạng thái chính:
 
@@ -180,7 +187,7 @@ Không cho `ACTIVE → CANCELLED`, `COMPLETED → ACTIVE` hoặc `REJECTED → C
 ## 10. No-show, trả trễ và hủy
 
 - Đơn `READY_FOR_PICKUP` quá `planned_start_at + no_show_grace_minutes` có thể chuyển `NO_SHOW` và giải phóng unit.
-- Trả sau `planned_due_at + late_grace_minutes` phát sinh phí trễ theo policy snapshot của đơn.
+- Trả sau `planned_due_at + late_grace_minutes` phát sinh phí theo công thức ở mục 8, dựa trên policy snapshot. Ân hạn tính phí và đệm lịch nội bộ là hai cấu hình độc lập.
 - Đơn chưa xác nhận được hủy miễn phí.
 - Đơn đã xác nhận áp dụng `free_cancel_before_hours` và `late_cancel_fee_percent`.
 - Đơn đã `ACTIVE` không còn hủy; phải xử lý theo flow trả đồ.
@@ -192,6 +199,7 @@ Không cho `ACTIVE → CANCELLED`, `COMPLETED → ACTIVE` hoặc `REJECTED → C
 - Các khoảng hiệu lực policy không được chồng nhau.
 - Thay policy bằng cách đóng phiên bản hiện tại và thêm phiên bản mới.
 - Order lưu `policy_version_id`, nên thay đổi sau này không làm đổi đơn cũ.
+- `late_grace_minutes` dùng để tính phí với khách. `late_return_buffer_minutes` là dự phòng trả trễ; khoảng bảo vệ cộng thêm `variant.cleaning_buffer_minutes` nếu có, nếu không dùng `default_cleaning_buffer_minutes` của policy version. Giá trị 12+12 được duyệt làm mức khởi điểm có thể cấu hình; không đồng nghĩa các mức ân hạn/phí trễ đã được duyệt.
 - Mỗi đơn có tối đa một promotion; mã và số tiền giảm được snapshot khi xác nhận.
 
 ## 12. Thanh toán và refund
@@ -253,3 +261,13 @@ Campaign, consent, tag và loyalty chưa nằm trong schema hiện tại; chỉ 
 - Exchange unit/size sau khi đơn đã `ACTIVE`.
 - Campaign marketing, loyalty và CRM nâng cao.
 
+
+## 16. Trả trễ giữa hai đơn và khuyến nghị pilot
+
+Trong lần bàn giao, backend phải khóa và kiểm tra lại unit được phân công: đúng variant/chi nhánh, đang `READY`, không có phân bổ đang thuê khác, block hiện hành hoặc điều chuyển. Nếu khách A chưa trả mà khách B đến nhận cùng barcode, trả conflict `UNIT_STILL_WITH_CUSTOMER`; B vẫn `READY_FOR_PICKUP`, không tạo phân bổ `ACTIVE` thứ hai. Nhân viên có thể phân công lại cho barcode `READY` khác cùng variant/chi nhánh. Nếu không có, không giao sai bộ; liên hệ khách và xử lý theo phương án lịch/đơn đã được studio duyệt.
+
+Trước khi thu tiền tại bước bàn giao, giao diện gọi kiểm tra sẵn sàng. API bàn giao vẫn tự kiểm tra lại trong transaction. Nếu một lỗi phát sinh sau lần kiểm tra trước và payment đã được ghi nhận, giữ payment cùng đơn để đối soát; không tự xóa giao dịch hoặc tự hoàn tiền.
+
+**Mức đệm khởi điểm đã duyệt:** 12 giờ dự phòng trả trễ + 12 giờ vệ sinh/chuẩn bị mặc định. Đây là cấu hình nội bộ, tổng 24 giờ mặc định, được lưu trong policy version và có thể điều chỉnh bằng policy version mới; variant có thể đặt thời gian vệ sinh riêng. Migration tạo phiên bản policy mới, giữ nguyên phiên bản lịch sử và backfill lịch tương lai chưa bàn giao sau bước kiểm tra xung đột. Việc duyệt 12+12 không chốt ân hạn tính phí, mức phí trễ, bồi hoàn hay 24+24 cho nhóm trang phục khác.
+
+Chi tiết cách tính, các ví dụ đối chiếu và cách đo pilot nằm trong [Chính sách đệm lịch và xử lý đơn kế tiếp](chinh-sach-tra-tre-va-don-thue-ke-tiep.md).

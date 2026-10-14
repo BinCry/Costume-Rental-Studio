@@ -55,6 +55,8 @@ export interface OrderItem {
   unitCode?: string;
   unitStatus?: string;
   apiUnitId?: string;
+  /** API-only variant key used to search eligible replacement units. */
+  apiVariantId?: string;
   accessories?: Array<{
     id: string;
     quantityOut: number;
@@ -78,6 +80,9 @@ export interface Order {
   branch: string;
   pickup: string;
   returnAt: string;
+  /** API timestamps used for availability checks; fixtures may omit them. */
+  apiPlannedStartAt?: string;
+  apiPlannedDueAt?: string;
   dayPolicy: string;
   items: OrderItem[];
   money: MoneyLine[];
@@ -127,6 +132,8 @@ export interface QuoteSnapshot {
   discount: number;
   amountDueAtPickup: number;
   policy: string;
+  lateGraceMinutes?: number;
+  lateFeePercentPerDay?: number;
 }
 
 export class FixtureIssue extends Error {

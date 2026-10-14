@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'apps/api/**'
+      - 'apps/web/**'
       - 'packages/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
@@ -14,6 +15,7 @@ on:
       - main
     paths:
       - 'apps/api/**'
+      - 'apps/web/**'
       - 'packages/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
@@ -32,6 +34,20 @@ jobs:
     name: Lint, Typecheck, Test, Build API
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout source
@@ -56,12 +72,22 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ci
         run: pnpm --filter @costume/api db:generate
 
+      - name: Verify database migrations
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ci?schema=public
+        run: pnpm --filter @costume/api db:migrate:deploy
+
       - name: Run verification suite
         run: |
           pnpm --filter @costume/api lint
           pnpm --filter @costume/api typecheck
           pnpm test:api
           pnpm build:api
+
+      - name: Verify web
+        run: |
+          pnpm --filter @costume/web typecheck
+          pnpm --filter @costume/web build
 
       - name: Upload reports on failure
         if: failure()

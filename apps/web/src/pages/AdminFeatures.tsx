@@ -1165,7 +1165,7 @@ export function RolesPage({ scenario, canManage = true }: { scenario: DemoScenar
 export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoScenario; canManage?: boolean }) {
   const realApiMode = apiEnabled && hasAccessToken();
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.policies);
-  const [selected, setSelected] = useState('POLICY-2025');
+  const [selected, setSelected] = useState('POLICY-2026-BUFFER-01');
   const [draft, setDraft] = useState<Policy>();
   const [issue, setIssue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1191,6 +1191,7 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                   onClick={() =>
                     setDraft({
                       ...policy,
+                      lateFeeFormulaVersion: policy.lateFeeFormulaVersion ?? 1,
                       code: `POLICY-DEMO-${items.length + 1}`,
                       from: '',
                       to: undefined,
@@ -1239,9 +1240,18 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                             ? '24 giờ liên tục'
                             : 'Ngày lịch',
                       },
-                      { label: 'Số ngày', value: `${policy.minDays}–${policy.maxDays}` },
+                      { label: 'Số ngày', value: `${policy.minDays}–${policy.maxDays ?? 'Không giới hạn'}` },
                       { label: 'Báo giá hiệu lực', value: `${policy.quoteHours} giờ` },
                       { label: 'Hủy miễn phí trước', value: `${policy.cancelHours} giờ` },
+                      { label: 'Ân hạn không đến nhận', value: `${policy.noShowGraceMinutes ?? 0} phút` },
+                      { label: 'Phí hủy trễ', value: `${policy.lateCancelFeePercent ?? 0}%` },
+                      { label: 'Thời hạn hoàn tiền dự kiến', value: policy.refundSlaBusinessDays == null ? 'Chưa cấu hình' : `${policy.refundSlaBusinessDays} ngày làm việc` },
+                      { label: 'Ân hạn trả trễ', value: `${policy.lateGraceMinutes ?? 0} phút` },
+                      { label: 'Phí trễ', value: `${policy.lateFeePercentPerDay ?? 0}% mỗi 24 giờ, tối đa 100% tiền thuê từng bộ` },
+                      { label: 'Cách tính phí', value: policy.lateFeeFormulaVersion === 2 ? 'Theo từng bộ, sau giảm giá' : 'Cách tính cũ theo toàn đơn' },
+                      { label: 'Dự phòng trả trễ', value: `${((policy.lateReturnBufferMinutes ?? 0) / 60).toLocaleString('vi-VN')} giờ` },
+                      { label: 'Vệ sinh/chuẩn bị mặc định', value: `${((policy.defaultCleaningBufferMinutes ?? 0) / 60).toLocaleString('vi-VN')} giờ; mẫu có thể ghi đè` },
+                      { label: 'Tổng đệm mặc định', value: `${(((policy.lateReturnBufferMinutes ?? 0) + (policy.defaultCleaningBufferMinutes ?? 0)) / 60).toLocaleString('vi-VN')} giờ` },
                       { label: 'Lý do thay đổi', value: policy.reason },
                     ]}
                   />
@@ -1287,10 +1297,98 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                         type="number"
                         min="1"
                         label="Số ngày tối đa"
-                        value={draft.maxDays}
-                        onChange={(e) => setDraft({ ...draft, maxDays: Number(e.target.value) })}
+                        value={draft.maxDays ?? ''}
+                        onChange={(e) => setDraft({ ...draft, maxDays: e.target.value === '' ? null : Number(e.target.value) })}
+                        hint="Để trống nếu không giới hạn thời gian thuê."
+                      />
+                      <Field
+                        type="number"
+                        min="1"
+                        step="1"
+                        label="Báo giá có hiệu lực (giờ)"
+                        value={draft.quoteHours}
+                        onChange={(e) => setDraft({ ...draft, quoteHours: Number(e.target.value) })}
+                      />
+                      <Field
+                        type="number"
+                        min="0"
+                        step="1"
+                        label="Hủy miễn phí trước (giờ)"
+                        value={draft.cancelHours}
+                        onChange={(e) => setDraft({ ...draft, cancelHours: Number(e.target.value) })}
+                      />
+                      <Field
+                        type="number"
+                        min="0"
+                        step="1"
+                        label="Ân hạn không đến nhận (phút)"
+                        value={draft.noShowGraceMinutes ?? 0}
+                        onChange={(e) => setDraft({ ...draft, noShowGraceMinutes: Number(e.target.value) })}
+                      />
+                      <Field
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.5"
+                        label="Phí hủy trễ (%)"
+                        value={draft.lateCancelFeePercent ?? 0}
+                        onChange={(e) => setDraft({ ...draft, lateCancelFeePercent: Number(e.target.value) })}
+                      />
+                      <Field
+                        type="number"
+                        min="1"
+                        step="1"
+                        label="SLA hoàn tiền (ngày làm việc)"
+                        value={draft.refundSlaBusinessDays ?? ''}
+                        onChange={(e) => setDraft({ ...draft, refundSlaBusinessDays: e.target.value === '' ? null : Number(e.target.value) })}
+                        hint="Để trống nếu chưa công bố SLA hoàn tiền."
+                      />
+                      <Field
+                        type="number"
+                        min="0"
+                        step="1"
+                        label="Ân hạn trả trễ (phút)"
+                        value={draft.lateGraceMinutes ?? 0}
+                        onChange={(e) => setDraft({ ...draft, lateGraceMinutes: Number(e.target.value) })}
+                      />
+                      <Field
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.5"
+                        label="Phí trễ (% mỗi 24 giờ)"
+                        value={draft.lateFeePercentPerDay ?? 0}
+                        onChange={(e) => setDraft({ ...draft, lateFeePercentPerDay: Number(e.target.value) })}
+                      />
+                      <Field
+                        type="number"
+                        min="0"
+                        max="168"
+                        step="0.5"
+                        label="Dự phòng khách trả trễ (giờ)"
+                        value={(draft.lateReturnBufferMinutes ?? 0) / 60}
+                        onChange={(e) => setDraft({ ...draft, lateReturnBufferMinutes: Math.round(Number(e.target.value) * 60) })}
+                        hint="Khoảng nội bộ tính sau giờ trả hẹn; không kéo dài thời gian khách được thuê."
+                      />
+                      <Field
+                        type="number"
+                        min="0"
+                        max="168"
+                        step="0.5"
+                        label="Vệ sinh/chuẩn bị mặc định (giờ)"
+                        value={(draft.defaultCleaningBufferMinutes ?? 0) / 60}
+                        onChange={(e) => setDraft({ ...draft, defaultCleaningBufferMinutes: Math.round(Number(e.target.value) * 60) })}
+                        hint="Dùng khi mẫu chưa có thời gian riêng. Giá trị cụ thể của mẫu sẽ ghi đè mức mặc định này."
                       />
                     </div>
+                    <p className="muted small-note">
+                      Mức khởi điểm đã duyệt là 12 giờ dự phòng + 12 giờ vệ sinh/chuẩn bị. Phiên bản policy này đang tạo tổng đệm mặc định {(((draft.lateReturnBufferMinutes ?? 0) + (draft.defaultCleaningBufferMinutes ?? 0)) / 60).toLocaleString('vi-VN')} giờ; có thể thay đổi ở các phiên bản sau. Đây là khoảng xếp lịch nội bộ, không phải ân hạn hay gia hạn thuê. Ân hạn và mức phí trễ là chính sách riêng, vẫn cần được chốt trước khi công bố.
+                    </p>
+                    {realApiMode && ((draft.lateReturnBufferMinutes ?? 0) > 0 || (draft.defaultCleaningBufferMinutes ?? 0) > 0) && (
+                      <Feedback tone="warning" title="Rà soát các đơn đã xác nhận">
+                        Mọi đơn tương lai cần được kiểm tra theo buffer mới; nếu hai khoảng chiếm dụng chồng nhau, hãy xử lý phân công trước khi phiên bản policy có hiệu lực.
+                      </Feedback>
+                    )}
                     <TextAreaField
                       label="Lý do thay đổi"
                       value={draft.reason}
@@ -1304,7 +1402,7 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                           if (
                             !draft.from ||
                             !draft.reason.trim() ||
-                            draft.maxDays < draft.minDays
+                            (draft.maxDays != null && draft.maxDays < draft.minDays)
                           ) {
                             setIssue('Nhập ngày hiệu lực, lý do và số ngày hợp lệ.');
                             return;

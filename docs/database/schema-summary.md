@@ -36,7 +36,7 @@ Schema hiện tại có **33 bảng**, chia thành 7 nhóm. Danh sách field đ�
 
 | Bảng | Dữ liệu chính | Ràng buộc quan trọng |
 |---|---|---|
-| `rental_policy_versions` | thời gian hiệu lực, cách tính ngày, no-show, trễ, hủy, SLA refund | Bất biến; khoảng hiệu lực không chồng nhau |
+| `rental_policy_versions` | thời gian hiệu lực, cách tính ngày, no-show, ân hạn/phí trễ, đệm trả trễ, vệ sinh mặc định, công thức phí, hủy, SLA refund | Bất biến; khoảng hiệu lực không chồng nhau; late_return_buffer_minutes và default_cleaning_buffer_minutes >= 0; công thức phí là 1 hoặc 2 |
 | `promotions` | mã, loại/mức giảm, thời gian, hạn mức | Mã unique; thời gian và hạn mức hợp lệ |
 
 ## 4. Rental operations — 3 bảng
@@ -81,6 +81,8 @@ Schema hiện tại có **33 bảng**, chia thành 7 nhóm. Danh sách field đ�
 ## Trạng thái migration
 
 - Initial migration: `apps/api/prisma/migrations/20261001120000_init/migration.sql`.
+- Rental buffer migration: `apps/api/prisma/migrations/20261014120000_late_return_buffer/migration.sql`; field mới mặc định `0` để giữ nguyên policy hiện hành.
+- Existing-order cutover: `apps/api/prisma/migrations/20261014140000_backfill_existing_reservation_buffers/migration.sql`; extends future, assigned, not-yet-handed-over reservations using the linked policy buffer plus current variant cleaning time. It preserves longer stored intervals and aborts before updates if it detects new unit/block conflicts.
 - Migration có raw SQL cho `CHECK`, `UNIQUE NULLS NOT DISTINCT`, partial unique index, `btree_gist` và GiST exclusion.
 - Dùng `prisma migrate deploy` để apply vào database test/production.
 - Không dùng `prisma db push` thay cho migration đã duyệt.

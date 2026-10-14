@@ -150,7 +150,8 @@ export async function getPublicVariant(id: string) {
  * a concrete unit to an order.
  */
 export async function checkPublicAvailability(input: PublicAvailabilityInput) {
-  const [branch, variant] = await prisma.$transaction([
+  const now = new Date();
+  const [branch, variant, policy] = await prisma.$transaction([
     prisma.branch.findFirst({ where: { id: input.pickupBranchId, status: 'ACTIVE' }, select: { id: true } }),
     prisma.costumeVariant.findFirst({
       where: {
@@ -158,11 +159,29 @@ export async function checkPublicAvailability(input: PublicAvailabilityInput) {
         status: 'ACTIVE',
         model: { is: { status: 'ACTIVE', category: { is: { status: 'ACTIVE' } } } },
       },
-      select: { id: true },
+      select: { id: true, cleaningBufferMinutes: true },
+    }),
+    prisma.rentalPolicyVersion.findFirst({
+      where: {
+        effectiveFrom: { lte: now },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
+      },
+      orderBy: { effectiveFrom: 'desc' },
+      select: { lateReturnBufferMinutes: true, defaultCleaningBufferMinutes: true },
     }),
   ]);
   if (!branch) throw new AppError(404, 'BRANCH_NOT_FOUND', 'Branch not found');
   if (!variant) throw new AppError(404, 'VARIANT_NOT_FOUND', 'Variant not found');
+  if (!policy) throw new AppError(404, 'POLICY_NOT_FOUND', 'No active rental policy');
+  const protectedUntil = new Date(
+    input.plannedDueAt.getTime() +
+      (Math.max(0, policy.lateReturnBufferMinutes) +
+        Math.max(
+          0,
+          variant.cleaningBufferMinutes ?? policy.defaultCleaningBufferMinutes,
+        )) *
+        60_000,
+  );
 
   const availableUnits = await prisma.costumeUnit.count({
     where: {
@@ -171,17 +190,25 @@ export async function checkPublicAvailability(input: PublicAvailabilityInput) {
       operationalStatus: 'READY',
       orderItems: {
         none: {
-          order: {
-            status: { in: ['CONFIRMED', 'PREPARING', 'READY_FOR_PICKUP', 'ACTIVE', 'RETURN_INSPECTION'] },
-          },
-          occupiedFrom: { lt: input.plannedDueAt },
-          occupiedUntil: { gt: input.plannedStartAt },
+          OR: [
+            {
+              order: {
+                status: { in: ['CONFIRMED', 'PREPARING', 'READY_FOR_PICKUP', 'ACTIVE', 'RETURN_INSPECTION'] },
+              },
+              occupiedFrom: { lt: protectedUntil },
+              occupiedUntil: { gt: input.plannedStartAt },
+            },
+            {
+              allocationStatus: 'ACTIVE',
+              order: { status: { in: ['ACTIVE', 'RETURN_INSPECTION'] } },
+            },
+          ],
         },
       },
       blocks: {
         none: {
           status: { in: ['PLANNED', 'IN_PROGRESS'] },
-          blockedFrom: { lt: input.plannedDueAt },
+          blockedFrom: { lt: protectedUntil },
           blockedUntil: { gt: input.plannedStartAt },
         },
       },

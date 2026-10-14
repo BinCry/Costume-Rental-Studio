@@ -20,6 +20,18 @@ import { useBranchOptions } from '../components/useBranchOptions';
 
 const steps = ['Trang phục', 'Lựa chọn', 'Nhận và trả', 'Báo giá', 'Người thuê', 'Xác nhận'];
 const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
+function lateReturnPolicyText(quote: QuoteSnapshot | undefined, apiMode: boolean) {
+  const dueRule = 'Hạn trả là thời điểm ghi trên đơn; đệm lịch nội bộ không kéo dài thời gian thuê.';
+  if (!quote || quote.lateFeePercentPerDay === undefined) {
+    return apiMode
+      ? 'Báo giá chưa trả về mức phí trả trễ. Hãy xác nhận với studio trước khi gửi yêu cầu. ' + dueRule
+      : 'Bản minh họa không mô phỏng phí trả trễ; studio cần xác nhận chính sách trước khi áp dụng. ' + dueRule;
+  }
+  const rate = Math.max(0, quote.lateFeePercentPerDay);
+  if (rate === 0) return 'Chính sách trong báo giá hiện không cấu hình phí trả trễ. ' + dueRule;
+  const grace = Math.max(0, quote.lateGraceMinutes ?? 0);
+  return `Sau ${grace} phút ân hạn, phụ phí là ${rate}% giá thuê của từng bộ cho mỗi 24 giờ trễ đã bắt đầu, tối đa 100% tiền thuê của bộ đó. Tiền cọc được quyết toán riêng sau khi nhận và kiểm tra đồ. ${dueRule}`;
+}
 const baseDraft: BookingDraft = {
   costumeId: 'ao-dai-lina',
   variant: 'M / Hồng phấn',
@@ -472,6 +484,7 @@ export function BookingPage({
                       <small>
                         Hiệu lực đến: {quote.expiresAt} · {quote.policy}
                       </small>
+                      <p className="inline-note">{lateReturnPolicyText(quote, apiMode)}</p>
                     </div>
                   )}
                 </div>
@@ -555,6 +568,7 @@ export function BookingPage({
                       {money(quote?.rental ?? 0)} / {money(quote?.deposit ?? 0)}
                     </strong>
                   </div>
+                  <p className="inline-note">{lateReturnPolicyText(quote, apiMode)}</p>
                   <p className="inline-note">
                     Điều kiện hủy và chính sách áp dụng cần được xác nhận từ backend trước khi triển
                     khai thật. Bản demo không tự đặt ra phí hủy.

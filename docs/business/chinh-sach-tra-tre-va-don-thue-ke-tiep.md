@@ -87,9 +87,9 @@ Trong đó:
 
 - `lateReturnReserve` là phần dự phòng cho việc khách trả trễ. Nó chỉ bảo vệ lịch, không phải thời gian ân hạn tính phí.
 - `expectedTurnaround` là thời gian dự kiến từ khi nhận lại tới khi kiểm tra, vệ sinh và chuẩn bị xong. Nếu chưa có số riêng cho bước này, dùng giá trị vận hành đã cấu hình cho nhóm trang phục.
-- Sau khi nhận trả thực tế, unit vẫn bị khóa theo `cleaningBufferMinutes`/block vệ sinh và chỉ sẵn sàng khi kiểm tra thực tế cho phép. Hết giờ dự kiến không tự chuyển unit sang `READY`.
+- Sau khi nhận trả thực tế, unit vẫn bị khóa theo thời gian vệ sinh/chuẩn bị đang áp dụng (`cleaningBufferMinutes` của variant hoặc mức policy mặc định) và block vệ sinh; chỉ sẵn sàng khi kiểm tra thực tế cho phép. Hết giờ dự kiến không tự chuyển unit sang `READY`.
 
-Không cộng hai lần cùng một khoảng vệ sinh. Cấu hình xếp lịch phải định nghĩa rõ `expectedTurnaround` có lấy từ `cleaningBufferMinutes` hiện hữu hay dùng cấu hình riêng. `lateGraceMinutes` chỉ phục vụ tính phí trễ; không dùng làm dự phòng tồn kho.
+Không cộng hai lần cùng một khoảng vệ sinh. `expectedTurnaround` dùng cùng một nguồn: `cleaningBufferMinutes` của variant nếu có, nếu không thì `defaultCleaningBufferMinutes` của policy. `lateGraceMinutes` chỉ phục vụ tính phí trễ; không dùng làm dự phòng tồn kho.
 
 Các đơn vị được khảo sát đều cho thấy cửa hàng cần định nghĩa kỳ thuê và cách nhận trả cụ thể, nhưng họ không dùng cùng một mức buffer. Do đó buffer phải là chính sách riêng của studio, có thể khác theo nhóm trang phục và giờ hoạt động của chi nhánh.
 
@@ -109,16 +109,17 @@ Sau khi nhận trả, khả dụng thực tế phụ thuộc trạng thái bộ:
 
 Ngày hết buffer dự kiến không tự chuyển bộ sang `READY`. Nếu vệ sinh kéo dài, có hư hỏng, thiếu phụ kiện hoặc block khác còn mở, bộ tiếp tục không khả dụng.
 
-### 5.4 Giá trị đề xuất cho pilot studio
+### 5.4 Mức khởi điểm đã duyệt và cách cấu hình
 
-Chưa có dữ liệu vận hành của studio để chứng minh một mức buffer tối ưu. Đề xuất chạy pilot bảo thủ, dễ giải thích, theo **tổng thời gian tối thiểu từ giờ trả hẹn đến giờ nhận đơn sau**:
+Studio đã duyệt mức khởi điểm **12 giờ dự phòng trả trễ + 12 giờ vệ sinh/chuẩn bị = 24 giờ tổng** cho trang phục dùng mức mặc định. Đây là giá trị khởi tạo để vận hành và đo lường, không phải chuẩn ngành. Hai tham số nằm trong một policy version: `lateReturnBufferMinutes` và `defaultCleaningBufferMinutes`; quản trị viên có thể điều chỉnh bằng cách tạo policy version mới.
 
-| Nhóm trang phục | Dự phòng khách trả trễ | Kiểm tra/vệ sinh/chuẩn bị tối thiểu | Khoảng cách tối thiểu đề xuất |
-| --- | ---: | ---: | ---: |
-| Trang phục thông thường, xử lý được trong ngày | 12 giờ | 12 giờ | 24 giờ |
-| Trang phục cầu kỳ, chất liệu nhạy cảm hoặc cần xử lý lâu | 24 giờ | 24 giờ | 48 giờ |
+| Tham số | Mức khởi điểm | Phạm vi áp dụng |
+| --- | ---: | --- |
+| Dự phòng khách trả trễ | 12 giờ | Policy version hiện hành |
+| Vệ sinh/chuẩn bị mặc định | 12 giờ | Dùng khi variant không có override |
+| Vệ sinh/chuẩn bị riêng của mẫu | Theo thời gian vận hành thực tế | Override mặc định cho đúng variant |
 
-Đây là **giả định khởi điểm cho pilot của dự án**, không phải tiêu chuẩn ngành hay quy tắc đã được chủ studio phê duyệt. Nếu `cleaningBufferMinutes` hoặc thời gian chuẩn bị thực tế dài hơn mức tối thiểu trong bảng, khoảng cách phải dài hơn tương ứng. Không nhận hai đơn sát nhau trên cùng một bộ chỉ vì ngày trả và ngày nhận khác nhau.
+Khoảng giữ lịch được tính là giờ trả hẹn + dự phòng trả trễ + thời gian vệ sinh/chuẩn bị có hiệu lực (override variant nếu có, nếu không thì mặc định policy). Mẫu cần xử lý lâu hơn phải cấu hình override theo thời gian thực tế; không áp con số 24+24 cho cả nhóm khi chưa có phê duyệt. Buffer là nội bộ, không gia hạn kỳ thuê hoặc ân hạn tính phí cho khách.
 
 Trong **4 tuần đầu hoặc sau ít nhất 30 lượt trả** (lấy mốc nào đến sau), nhân viên ghi nhận theo nhóm trang phục: thời lượng trả trễ, thời gian từ nhận thực tế tới `READY`, số đơn kế tiếp bị ảnh hưởng và số lần phải đổi bộ. Sau đó tính phân vị 90 của độ trễ và thời gian xử lý để chủ studio điều chỉnh pilot; không rút buffer chỉ để tăng số lượt đặt nếu tỷ lệ lỡ đơn kế tiếp đang cao.
 
@@ -171,6 +172,16 @@ Không có người dùng nào được override khi mã bộ vẫn đang ở kh
 - Đơn B chưa được bàn giao thì không được đánh dấu đã thuê. Nếu khách đã thanh toán trước, mọi refund/điều chỉnh phải là giao dịch có lý do và tham chiếu payment gốc.
 - Không tự khấu trừ toàn bộ cọc của A chỉ vì trả trễ. Cọc được quyết toán theo policy đã chốt, bằng chứng và giao dịch riêng.
 
+### Tương thích đơn cũ và thời điểm bật policy
+
+- Mỗi đơn tiếp tục dùng công thức phí gắn với policy_version_id. Phiên bản 1 giữ phép tính cũ theo tổng giá thuê gộp khi trả đủ; phiên bản 2 tính theo từng bộ đã nhận, sau phân bổ giảm giá, và giới hạn phí ở 100% giá thuê bộ. Migration đặt các phiên bản đã tồn tại ở phiên bản 1; khi tạo phiên bản policy mới, backend gắn phiên bản công thức 2. Không thay đổi hồi tố khoản phí của đơn đang thuê.
+- Migration `20261014140000_backfill_existing_reservation_buffers` kéo dài lịch của các đơn tương lai đã được phân công nhưng chưa bàn giao (`PENDING_CONFIRMATION`, `CONFIRMED`, `PREPARING`, `READY_FOR_PICKUP`; allocation `HELD/CONFIRMED`) đến ít nhất `planned_due_at + đệm trả trễ + vệ sinh/chuẩn bị`. Dùng policy version mới có hiệu lực và override vệ sinh của variant; nếu variant chưa có override thì dùng `default_cleaning_buffer_minutes` của policy. Giá trị mới là `GREATEST(occupied_until hiện tại, thời điểm tính lại)`; migration không rút ngắn lịch.
+- Cutover chỉ đổi `occupied_until`, `updated_at` và version của đơn bị ảnh hưởng. Không đổi hạn trả, phí, cọc, policy version, mã bộ, phân công, trạng thái hoặc block. Đơn đang `ACTIVE/RETURN_INSPECTION` không bị sửa: allocation ACTIVE tiếp tục chặn giao cho đến khi nhận trả và hoàn tất kiểm tra.
+- Schema không lưu snapshot thời gian vệ sinh tại lúc lập đơn; cutover dùng override vệ sinh hiện tại của variant hoặc mặc định policy. Policy version lịch sử và điều khoản phí của đơn không bị sửa. Migration thêm policy version mới có đệm 12+12, sau đó backfill `occupied_until` cho các đơn tương lai chưa bàn giao. Policy version mới tạo sau này chỉ áp dụng theo thời điểm hiệu lực, không tự đổi khoản phí/cọc của đơn cũ.
+- Trước khi cập nhật, migration khóa ghi lịch trong transaction và kiểm tra chồng lấn giữa các bộ đã phân công cũng như phần đệm mới với block `PLANNED/IN_PROGRESS`. Nếu phát hiện xung đột, migration dừng và ghi mã đơn/đơn vị liên quan; nhóm phải dùng luồng phân công lại hiện có để xử lý rồi triển khai lại. Không tự hủy đơn, đổi ngày hẹn hoặc đổi barcode.
+- Phí trễ vẫn gắn với policy version của từng đơn. Ngày hiệu lực và nội dung công bố cho khách phải được chốt trước khi tạo policy production.
+- Cách tính phí trễ đề xuất chưa được studio phê duyệt; ngày hiệu lực của mức phí và nội dung công bố cho khách vẫn cần chốt riêng. Mức đệm lịch 12+12 đã được duyệt và được khởi tạo trong policy version mới.
+
 ## 8. Trạng thái và dữ liệu
 
 Không cần thêm trạng thái đơn `AT_RISK`. Đề xuất giữ state machine đơn hiện tại và tạo cờ/tác vụ vận hành có thể tính từ dữ liệu:
@@ -184,7 +195,7 @@ Không cần thêm trạng thái đơn `AT_RISK`. Đề xuất giữ state machi
 
 Đề xuất API/service phải dùng cùng một quy tắc khả dụng trong tra cứu public, báo giá, xác nhận, reallocate, gia hạn, điều chuyển và bàn giao. Kiểm tra ở UI chỉ hỗ trợ nhân viên; quyết định cuối phải được backend kiểm tra trong transaction.
 
-Không yêu cầu thay schema trong tài liệu này. Khi triển khai, nên có cấu hình riêng `lateReturnReserveMinutes`; `expectedTurnaround` có thể lấy từ `cleaningBufferMinutes` nếu giá trị đó phản ánh đúng thời gian chuẩn bị của nhóm trang phục. Nếu không, cần một cấu hình thời gian chuẩn bị riêng. Không dùng một buffer tổng rồi cộng lần nữa với các thành phần của nó. Mọi thay đổi schema/migration cần được rà soát riêng trước khi code.
+Triển khai trên branch này bổ sung `late_return_buffer_minutes` và `default_cleaning_buffer_minutes` vào `rental_policy_versions`. Khoảng bảo vệ được tính bằng `planned_due_at` + dự phòng trả trễ của policy + thời gian vệ sinh/chuẩn bị riêng của variant, hoặc mức mặc định trong policy nếu variant chưa có override. Migration tạo policy version mới với mức khởi điểm 12+12 và giữ nguyên policy version lịch sử; giá trị runtime được đọc từ database, không cố định trong logic ứng dụng.
 
 ## 9. Giao diện nhân viên
 
@@ -207,9 +218,9 @@ CTA ưu tiên: `Gán bộ thay thế` → `Liên hệ khách đang thuê` → `�
 - Trên điện thoại, mã đơn B và hành động thay thế phải luôn dễ truy cập; không để tác vụ khẩn phụ thuộc bảng rộng hoặc cuộn ngang.
 - Tác vụ được đóng khi đã có unit thay thế hợp lệ hoặc đơn B đã có thỏa thuận khác được ghi nhận; chỉ ghi “khách A đã trả” là chưa đủ nếu bộ vẫn đang vệ sinh.
 
-## 10. Đối chiếu với source hiện tại trên GitHub `main`
+## 10. Baseline source trên GitHub `main` trước khi sửa
 
-Đây là snapshot đọc source ngày 14/10/2026, không phải xác nhận runtime production:
+Đây là snapshot read-only trên `main` ngày 14/10/2026 trước thay đổi của branch này, không phải xác nhận runtime production:
 
 | Hiện trạng đã xác minh | Tác động |
 | --- | --- |
@@ -224,6 +235,8 @@ Liên kết source:
 - [Tính availability, xác nhận/gán unit, gia hạn, bàn giao và nhận trả](https://github.com/BinCry/Costume-Rental-Studio/blob/main/apps/api/src/modules/rentals/rental.service.ts)
 - [Availability công khai](https://github.com/BinCry/Costume-Rental-Studio/blob/main/apps/api/src/modules/public/public.service.ts)
 - [Dashboard và hàng đợi tác vụ](https://github.com/BinCry/Costume-Rental-Studio/blob/main/apps/web/src/api/client.ts)
+
+Bản sửa đang được đề xuất trên branch `feature/chinh-sach-dem-va-tra-tre` trong [PR #1](https://github.com/BinCry/Costume-Rental-Studio/pull/1); chưa merge và chưa triển khai. Migration tạo policy version mới, không sửa policy lịch sử; các lịch tương lai chưa bàn giao được backfill sau khi preflight xác nhận không có xung đột.
 
 ## 11. Kịch bản nghiệm thu
 
@@ -242,21 +255,81 @@ Liên kết source:
 | RT-11 | Đơn B đã thu payment trước khi phát hiện conflict | Không xóa payment; hiển thị trạng thái tiền và cho xử lý refund/điều chỉnh theo policy. |
 | RT-12 | Đổi barcode thay thế rồi mở lại dashboard | Cảnh báo được đóng theo resolution đã lưu; không tạo bản ghi/tác vụ trùng. |
 
-## 12. Quyết định cần chủ dự án chốt
+## 12. Quyết định còn cần chủ dự án phê duyệt
 
-| Quyết định | Đề xuất | Trạng thái |
+Mức đệm lịch khởi điểm **12+12 giờ đã được duyệt** và được lưu trong policy version mới; hệ thống cho phép điều chỉnh các giá trị này bằng policy version tiếp theo. Migration giữ nguyên policy lịch sử và backfill khoảng chiếm dụng của đơn tương lai chưa bàn giao. Các quyết định về phí, hoàn/đền bù và thông báo vẫn mở; 12+12 không đồng nghĩa phê duyệt các điều khoản đó.
+
+| Quyết định | Phương án đề xuất | Trạng thái |
 | --- | --- | --- |
-| Khoảng đệm tối thiểu | Pilot 24 giờ liên tục cho nhóm thường; cấu hình dài hơn cho đồ cần làm sạch lâu. Đo dữ liệu rồi chỉnh. | Cần chốt |
-| Giờ liên tục hay giờ làm việc | Chọn giờ liên tục ở MVP cho dễ tính nhất quán; nếu chọn giờ mở cửa, cần lịch nghỉ/chi nhánh đầy đủ. | Cần chốt |
-| Phạm vi cấu hình buffer | Theo variant hoặc nhóm trang phục; override theo chi nhánh chỉ khi quy trình vệ sinh thực sự khác. | Cần chốt |
-| Thời điểm nhắc khách/nhân viên | Nhắc trước hạn và cảnh báo ngay khi quá hạn mà có B sắp nhận; chốt SLA và kênh gửi sau. | Cần chốt |
-| Thay bộ tương đương | Cùng variant/size có thể thay barcode nội bộ; khác mẫu/màu/giá cần khách đồng ý. | Cần chốt |
-| Không có hàng thay thế | Thống nhất quyền đổi lịch/hủy, refund nếu đã thu, giảm giá/credit/bồi hoàn và ai duyệt. | Cần chốt |
-| Quyền override | Không bao giờ override khi đồ vẫn ở khách; nếu cho phép override thời gian chuẩn bị thì manager phải ghi lý do. | Đề xuất |
+| Ân hạn trước khi tính phí trễ | 60 phút kể từ hạn trả chính xác trên đơn. | Chờ chủ studio duyệt |
+| Mức phí trễ | 30% tiền thuê đã giảm giá của từng bộ cho mỗi kỳ 24 giờ trễ đã bắt đầu; tối đa 100% tiền thuê bộ đó. | Chờ chủ studio duyệt |
+| Đệm bảo vệ lịch | 12 giờ dự phòng trễ + 12 giờ vệ sinh/chuẩn bị mặc định = 24 giờ. Hai giá trị cấu hình theo policy version; variant được override thời gian chuẩn bị. | Đã duyệt mức khởi điểm; có thể điều chỉnh |
+| Định nghĩa chu kỳ thuê | Dùng `billingDayMode` của policy version; đề nghị 24 giờ liên tục nếu studio muốn một ngày = 24 giờ. Đây là lựa chọn độc lập với đệm lịch. | Chờ chủ studio duyệt |
+| Nhắc khách và nhân viên | Nhắc trước hạn và cảnh báo ngay khi quá hạn mà có lịch sau đã xác nhận; kênh gửi/SLA để phase kế tiếp vì repo chưa có luồng thông báo production cho trường hợp này. | Chờ chốt |
+| Đổi barcode tương đương | Nhân viên được đổi barcode cùng variant tại cùng chi nhánh nếu unit đang `READY`; thay đổi được ghi event old/new. Khác size/mẫu/giá cần khách đồng ý. | Đề xuất áp dụng |
+| Không có đồ thay thế | Giữ đơn sau ở trạng thái chưa bàn giao; manager liên hệ khách để thỏa thuận lịch/mẫu khác, hủy/refund hoặc bồi hoàn theo chính sách được duyệt. Không tự chọn mức bồi hoàn hay tự hoàn tiền. | Cần policy xử lý khách |
+| Override buffer | Không cho override khi unit còn đang ở khách, bị block hoặc đang transfer. Chỉ người được cấp quyền mới có thể rút ngắn thời gian chuẩn bị và phải ghi lý do. | Đề xuất áp dụng |
+| Đánh giá pilot | Đánh giá sau ít nhất 4 tuần và 30 lượt trả (lấy mốc đến sau): số lần trả trễ, đơn kế tiếp bị ảnh hưởng, tỷ lệ đổi unit, phút vệ sinh thực tế, mức phí tranh chấp. | Đề xuất |
 
-Cho tới khi chủ dự án duyệt các dòng trên, dùng tài liệu này như thiết kế đề xuất; không coi các mức phút/giờ hoặc mức bồi hoàn là cam kết kinh doanh.
+## 13. Chính sách pilot và quy trình vận hành đề xuất
 
-## 13. Tài liệu liên quan
+### Tách ba mốc thời gian
+
+- **Hạn trả khách:** `planned_due_at`, là ngày-giờ hiển thị trên đơn. Khách phải trả tại cùng chi nhánh. Đệm nội bộ không kéo dài thời hạn khách được giữ trang phục.
+- **Ân hạn tính phí:** `late_grace_minutes` trong policy snapshot. Chỉ dùng để xác định phí với khách; không làm unit khả dụng sớm hơn.
+- **Đệm lịch nội bộ:** `late_return_buffer_minutes` của policy cộng với `cleaningBufferMinutes` của variant nếu có; nếu không thì dùng `default_cleaning_buffer_minutes` trong policy. Hai mức khởi điểm 12+12 được duyệt và thay đổi qua policy version.
+
+Độc lập với các mốc trên, một unit có allocation đang `ACTIVE` vẫn được coi là ở khách cho đến khi nhân viên nhận lại thực tế. Không lấy giờ dự kiến hoặc việc hết buffer để tự kết luận đã trả hay sạch.
+
+### Công thức đề xuất
+
+```text
+kỳ_trễ = ceil(max(0, giờ_nhận_trả_thực_tế - hạn_trả - ân_hạn) / 24 giờ)
+phí_từng_bộ = min(tiền_thuê_từng_bộ_sau_giảm_giá × tỷ_lệ_phí × kỳ_trễ, tiền_thuê_từng_bộ_sau_giảm_giá)
+```
+
+Ở mức pilot, tỷ lệ là 30%; ân hạn là 60 phút. Mỗi kỳ 24 giờ đã bắt đầu được tính một lần. Ví dụ bộ có tiền thuê sau giảm giá 300.000đ, nhận trễ 30 giờ sau hạn: sau khi trừ 60 phút ân hạn, đã bắt đầu 2 kỳ 24 giờ; phí đề xuất là `300.000 × 30% × 2 = 180.000đ`. Mức tối đa là 300.000đ cho bộ đó.
+
+Với đơn nhiều bộ trả từng phần, tại mỗi lần nhận chỉ tính phí cho các bộ được ghi nhận đã nhận. Phần giảm giá đơn được chia theo tỷ trọng tiền thuê từng bộ trước khi tính phí. Bộ còn ở khách chưa phát sinh phí nhận trả; khi được nhận sau, tính theo thời gian thực nhận của chính lần đó.
+
+Phí trễ là khoản phải thu `EXTRA`, tách khỏi tiền cọc. Sau khi nhận, nhân viên kiểm tra tình trạng và phụ kiện; chỉ người được quyền mới ghi khoản khấu trừ cọc hoặc tạo refund theo kết quả kiểm tra. Không tự trừ phí trễ vào cọc và không tự động chuyển tiền refund.
+
+### Luồng khi khách A trả trễ, khách B đến nhận
+
+1. Hệ thống đã giữ lịch đơn B theo hạn trả cộng đệm lịch; đơn request đang chờ duyệt không tự giữ barcode.
+2. Trước khi thu tiền và ghi nhận bàn giao B, màn hình gọi kiểm tra sẵn sàng. Backend khóa đơn/unit rồi kiểm tra đúng variant, chi nhánh, trạng thái `READY`, block, transfer và allocation `ACTIVE` của đơn khác.
+3. Nếu unit vẫn do A giữ, API trả conflict có mã `UNIT_STILL_WITH_CUSTOMER`. Đơn B vẫn `READY_FOR_PICKUP`; không ghi nhận B đã thuê. Khi preflight phát hiện conflict, giao diện dừng trước khi ghi payment mới. API bàn giao luôn kiểm tra lại trong transaction.
+4. Nhân viên tải danh sách unit còn `READY` cùng variant/chi nhánh, chọn barcode thay thế và phân công trong transaction. Lịch sử lưu unit cũ, unit mới, actor và lý do; nhân viên quét barcode mới trước khi giao.
+5. Nếu không có bộ thay thế, không giao nhầm unit. Giữ nguyên đơn và tiền đã thu; nhân viên/manager liên hệ khách, ghi nhận thỏa thuận đổi lịch/mẫu hoặc hủy/refund/bồi hoàn theo policy đã được duyệt. Không tự động xóa payment, đổi ngày hay đặt số tiền bù.
+6. Khi A trả thực tế, từng item được ghi nhận riêng, chuyển sang vệ sinh/sửa chữa/kiểm tra; chỉ unit trở lại `READY` sau các bước vận hành đã hoàn tất. Gia hạn A chỉ thành công nếu mọi unit của đơn không xung đột với lịch đã xác nhận và khoảng buffer.
+
+Preflight không thay thế kiểm tra atomic cuối: nếu trạng thái thay đổi giữa preflight và bước bàn giao, API vẫn từ chối. Vì payment hiện là giao dịch riêng, nếu lỗi phát sinh sau khi payment thành công thì giữ nguyên giao dịch để nhân viên đối soát/refund theo nghiệp vụ; không tự hoàn.
+
+### Phạm vi code hiện có trên branch đề xuất
+
+- API quote, public availability, confirm, reallocate và gia hạn dùng khoảng bảo vệ sau hạn trả; allocation đang ACTIVE tiếp tục chặn khả dụng.
+- Màn giao gọi preflight; API pickup kiểm tra lại unit trong transaction. Conflict chỉ được phép khôi phục bằng phân công lại unit READY cùng variant/chi nhánh.
+- Phí trễ tính theo item được nhận ở lần trả hiện tại, tăng vào khoản EXTRA và lưu phân tích theo item trong event. Giới hạn từng bộ là 100% tiền thuê đã giảm giá.
+- Màn chính sách hiển thị và lưu ân hạn, tỷ lệ phí, đệm lịch. Các trường no-show, phí hủy, SLA refund và giới hạn số ngày cũng được giữ lại khi tạo version mới để tránh reset giá trị ẩn.
+- Màn báo giá thuê hiển thị công thức phí trễ do API trả về; bản fixture nêu rõ không mô phỏng policy thật.
+- Policy version mới khởi tạo mức đệm nội bộ 12+12 giờ; hai trường được lưu trong database và có thể sửa bằng phiên bản mới. Ân hạn tính phí, tỷ lệ phí trễ và quy trình bồi hoàn vẫn là các quyết định riêng chưa được duyệt.
+- Nhánh code chưa tạo thông báo chủ động liên kết A/B trước giờ khách B đến, chưa tự động gửi SMS/email, và chưa tự chọn bồi hoàn. Những việc này cần quyết định CRM/SLA và tích hợp thông báo.
+
+### Đối chiếu nguồn công khai
+
+Các chính sách bán lẻ dưới đây cho thấy cách viết điều khoản khác nhau; con số phí không phải chuẩn ngành và không được sao chép thành mức của studio:
+
+- [Solarent (TP.HCM)](https://solarent.vn/policy): công khai giờ hạn trả, cách tính phí trễ, kiểm tra đồ và thời điểm hoàn cọc.
+- [Trang Phục Hồng Hạnh](https://trangphuchonghanh.com/quy-dinh-khi-thue-trang-phuc-bid25.html): có cách tính phí theo ngày và điều kiện riêng cho từng loại trang phục.
+- [Rent by TD](https://rentbytd.com/thue-vay-di-tiec-tphcm/): mô tả một ngày thuê theo chu kỳ 24 giờ với giờ nhận/trả cụ thể.
+- [Booqable – cấu hình buffer sản phẩm](https://help.booqable.com/en/articles/90053-how-to-adjust-product-settings): hướng dẫn buffer để dành thời gian chuẩn bị/sửa chữa; buffer là thời gian lịch, không phải thời gian miễn phí cho khách.
+- [Booqable – luồng đơn](https://help.booqable.com/en/articles/3845244-the-booqable-order-workflow): phân biệt đơn nháp với đơn được giữ lịch.
+- [Vestiaire PH – rental policy](https://www.vestiaireph.com/rental-policy): khuyến khích báo sớm khi cần gia hạn/trả trễ, nhận đồ thực tế rồi kiểm tra trước hoàn cọc.
+- [Sophia's Gallery & Costumes](https://sophiasgallery.com/pages/rental-agreement-terms): nhấn mạnh món đồ có thể đã được đặt cho khách kế tiếp, nên trễ một đơn có thể ảnh hưởng lịch đã hứa.
+
+**Kết luận nghiệp vụ:** chốt giờ trả rõ ràng, cấu hình riêng ân hạn và buffer, chỉ giải phóng unit sau khi nhận thực tế, và giữ phương án khôi phục đơn B. Trước khi công bố mức phí, chủ studio phải duyệt văn bản và ngày hiệu lực.
+
+## 14. Tài liệu liên quan
 
 - [Quy tắc nghiệp vụ hiện hành](business-rules.md)
 - [Phân tích nghiệp vụ và kịch bản nghiệm thu](business-analysis.md)

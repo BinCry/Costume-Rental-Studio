@@ -164,6 +164,109 @@ function billableDays(start: Date, due: Date, mode: string) {
       )
     : Math.max(1, Math.ceil(hours / 24));
 }
+export function bookingReservationUntil(
+  plannedDueAt: Date,
+  lateReturnBufferMinutes: number,
+  cleaningBufferMinutes: number | null = null,
+  defaultCleaningBufferMinutes = 0,
+) {
+  // Late-return reserve and garment preparation are separate intervals, so both are reserved.
+  const lateReserveMinutes = Math.max(0, lateReturnBufferMinutes);
+  const preparationMinutes = Math.max(
+    0,
+    cleaningBufferMinutes ?? defaultCleaningBufferMinutes,
+  );
+  return new Date(plannedDueAt.getTime() + (lateReserveMinutes + preparationMinutes) * 60_000);
+}
+
+interface LateFeeItem {
+  id: string;
+  unitDailyPriceVnd: bigint;
+  billableDays: number;
+}
+
+export function calculateItemLateFees(
+  items: LateFeeItem[],
+  returnedItemIds: string[],
+  plannedDueAt: Date,
+  returnedAt: Date,
+  lateGraceMinutes: number,
+  feePercentPerDay: number,
+  promotionDiscountVnd = 0n,
+) {
+  const totalBase = items.reduce(
+    (sum, item) => sum + item.unitDailyPriceVnd * BigInt(item.billableDays),
+    0n,
+  );
+  const discount = promotionDiscountVnd < 0n
+    ? 0n
+    : promotionDiscountVnd > totalBase
+      ? totalBase
+      : promotionDiscountVnd;
+  const itemBases = items.map((item) => item.unitDailyPriceVnd * BigInt(item.billableDays));
+  const discounts = itemBases.map((base) => (totalBase > 0n ? (discount * base) / totalBase : 0n));
+  let undistributedDiscount = discount - discounts.reduce((sum, value) => sum + value, 0n);
+  for (let index = 0; index < discounts.length && undistributedDiscount > 0n; index += 1) {
+    const remainingCapacity = itemBases[index]! - discounts[index]!;
+    const allocation = remainingCapacity < undistributedDiscount ? remainingCapacity : undistributedDiscount;
+    discounts[index] = discounts[index]! + allocation;
+    undistributedDiscount -= allocation;
+  }
+  const bases = items.map((item, index) => ({
+    item,
+    baseVnd: itemBases[index]! - discounts[index]!,
+  }));
+  const graceEnd = plannedDueAt.getTime() + Math.max(0, lateGraceMinutes) * 60_000;
+  const lateDays =
+    returnedAt.getTime() <= graceEnd
+      ? 0
+      : Math.ceil((returnedAt.getTime() - graceEnd) / 86_400_000);
+  const rateBasisPoints = BigInt(Math.round(Math.min(100, Math.max(0, feePercentPerDay)) * 100));
+  const returned = new Set(returnedItemIds);
+  const chargedItems = bases
+    .filter(({ item }) => returned.has(item.id))
+    .map(({ item, baseVnd }) => {
+      let feeVnd =
+        lateDays > 0 && rateBasisPoints > 0n
+          ? (baseVnd * rateBasisPoints * BigInt(lateDays)) / 10_000n
+          : 0n;
+      if (feeVnd > baseVnd) feeVnd = baseVnd;
+      return { orderItemId: item.id, baseRentalVnd: baseVnd, lateDays, lateFeeVnd: feeVnd };
+    });
+  return {
+    lateDays,
+    lateFeeVnd: chargedItems.reduce((sum, item) => sum + item.lateFeeVnd, 0n),
+    items: chargedItems.map((item) => ({
+      orderItemId: item.orderItemId,
+      baseRentalVnd: item.baseRentalVnd.toString(),
+      lateDays: item.lateDays,
+      lateFeeVnd: item.lateFeeVnd.toString(),
+    })),
+  };
+}
+
+export function calculateLegacyLateFee(
+  items: LateFeeItem[],
+  plannedDueAt: Date,
+  returnedAt: Date,
+  lateGraceMinutes: number,
+  feePercentPerDay: number,
+) {
+  const graceEnd = plannedDueAt.getTime() + Math.max(0, lateGraceMinutes) * 60_000;
+  const lateDays =
+    returnedAt.getTime() <= graceEnd
+      ? 0
+      : Math.ceil((returnedAt.getTime() - graceEnd) / 86_400_000);
+  const rentalBase = items.reduce(
+    (sum, item) => sum + item.unitDailyPriceVnd * BigInt(item.billableDays),
+    0n,
+  );
+  const lateFeeVnd = lateDays
+    ? (rentalBase * BigInt(Math.trunc(Number(feePercentPerDay) * 100)) * BigInt(lateDays)) / 10_000n
+    : 0n;
+  return { lateDays, lateFeeVnd };
+}
+
 async function assertUnitAvailableForPeriod(
   tx: Prisma.TransactionClient,
   unitId: string,
@@ -171,7 +274,7 @@ async function assertUnitAvailableForPeriod(
   occupiedUntil: Date,
   excludedItemId: string,
 ) {
-  const [overlap, blocked, transfer] = await Promise.all([
+  const [overlap, blocked, transfer, activeAllocation] = await Promise.all([
     tx.rentalOrderItem.findFirst({
       where: {
         unitId,
@@ -195,8 +298,17 @@ async function assertUnitAvailableForPeriod(
       where: { unitId, transfer: { status: { in: ['REQUESTED', 'APPROVED', 'IN_TRANSIT'] } } },
       select: { id: true },
     }),
+    tx.rentalOrderItem.findFirst({
+      where: {
+        unitId,
+        id: { not: excludedItemId },
+        allocationStatus: 'ACTIVE',
+        order: { status: { in: ['ACTIVE', 'RETURN_INSPECTION'] } },
+      },
+      select: { id: true },
+    }),
   ]);
-  if (overlap || blocked || transfer)
+  if (overlap || blocked || transfer || activeAllocation)
     throw new AppError(409, 'UNIT_UNAVAILABLE', 'Unit is already reserved or unavailable');
 }
 async function pricedItems(tx: Prisma.TransactionClient, input: CreateOrderInput) {
@@ -228,26 +340,42 @@ async function pricedItems(tx: Prisma.TransactionClient, input: CreateOrderInput
 async function availabilityForQuote(
   tx: Prisma.TransactionClient,
   input: QuoteInput,
-  variantIds: string[],
+  variants: Awaited<ReturnType<typeof pricedItems>>['variants'],
+  lateReturnBufferMinutes: number,
+  defaultCleaningBufferMinutes: number,
 ) {
   const rows = await Promise.all(
-    variantIds.map(async (variantId) => {
+    variants.map(async (variant) => {
+      const protectedUntil = bookingReservationUntil(
+        input.plannedDueAt,
+        lateReturnBufferMinutes,
+        variant.cleaningBufferMinutes,
+        defaultCleaningBufferMinutes,
+      );
       const availableUnits = await tx.costumeUnit.count({
         where: {
-          variantId,
+          variantId: variant.id,
           currentBranchId: input.pickupBranchId,
           operationalStatus: 'READY',
           orderItems: {
             none: {
-              order: { status: { in: occupiedStatuses } },
-              occupiedFrom: { lt: input.plannedDueAt },
-              occupiedUntil: { gt: input.plannedStartAt },
+              OR: [
+                {
+                  order: { status: { in: occupiedStatuses } },
+                  occupiedFrom: { lt: protectedUntil },
+                  occupiedUntil: { gt: input.plannedStartAt },
+                },
+                {
+                  allocationStatus: 'ACTIVE',
+                  order: { status: { in: ['ACTIVE', 'RETURN_INSPECTION'] } },
+                },
+              ],
             },
           },
           blocks: {
             none: {
               status: { in: ['PLANNED', 'IN_PROGRESS'] },
-              blockedFrom: { lt: input.plannedDueAt },
+              blockedFrom: { lt: protectedUntil },
               blockedUntil: { gt: input.plannedStartAt },
             },
           },
@@ -256,7 +384,7 @@ async function availabilityForQuote(
           },
         },
       });
-      return { variantId, availableUnits };
+      return { variantId: variant.id, availableUnits };
     }),
   );
   return rows;
@@ -295,7 +423,9 @@ export async function createQuote(actor: AuthenticatedActor, input: QuoteInput) 
     const availability = await availabilityForQuote(
       tx,
       input,
-      variants.map((variant) => variant.id),
+      variants,
+      policy.lateReturnBufferMinutes,
+      policy.defaultCleaningBufferMinutes,
     );
     return {
       quoteExpiresAt: new Date(Date.now() + policy.quoteValidHours * 3_600_000),
@@ -306,6 +436,8 @@ export async function createQuote(actor: AuthenticatedActor, input: QuoteInput) 
         minRentalDays: policy.minRentalDays,
         maxRentalDays: policy.maxRentalDays,
         quoteValidHours: policy.quoteValidHours,
+        lateGraceMinutes: policy.lateGraceMinutes,
+        lateFeePercentPerDay: Number(policy.lateFeePercentPerDay),
       },
       period: {
         plannedStartAt: input.plannedStartAt,
@@ -379,6 +511,8 @@ function itemCreateData(
   input: CreateOrderInput,
   variants: Awaited<ReturnType<typeof pricedItems>>['variants'],
   days: number,
+  lateReturnBufferMinutes: number,
+  defaultCleaningBufferMinutes: number,
 ) {
   return input.items.map((item) => {
     const variant = variants.find((v) => v.id === item.variantId)!;
@@ -388,7 +522,12 @@ function itemCreateData(
     return {
       variantId: variant.id,
       occupiedFrom: input.plannedStartAt,
-      occupiedUntil: input.plannedDueAt,
+      occupiedUntil: bookingReservationUntil(
+        input.plannedDueAt,
+        lateReturnBufferMinutes,
+        variant.cleaningBufferMinutes,
+        defaultCleaningBufferMinutes,
+      ),
       billableDays: days,
       unitDailyPriceVnd: variant.dailyRentalPriceVnd,
       unitDepositVnd: variant.depositAmountVnd,
@@ -496,32 +635,56 @@ export async function checkAvailability(
     !hasPermission(actor, { module: 'rentals', action: 'manage', scope: 'OWN' })
   )
     throw new AppError(403, 'FORBIDDEN', 'Permission denied for availability');
-  const units = await prisma.costumeUnit.findMany({
-    where: {
-      variantId: input.variantId,
-      currentBranchId: input.pickupBranchId,
-      operationalStatus: 'READY',
-      orderItems: {
-        none: {
-          order: { status: { in: occupiedStatuses } },
-          occupiedFrom: { lt: input.plannedDueAt },
-          occupiedUntil: { gt: input.plannedStartAt },
+  return prisma.$transaction(async (tx) => {
+    const [variant, policy] = await Promise.all([
+      tx.costumeVariant.findUnique({
+        where: { id: input.variantId },
+        select: { id: true, cleaningBufferMinutes: true },
+      }),
+      currentPolicy(tx),
+    ]);
+    if (!variant) throw new AppError(404, 'VARIANT_NOT_FOUND', 'Variant not found');
+    const protectedUntil = bookingReservationUntil(
+      input.plannedDueAt,
+      policy.lateReturnBufferMinutes,
+      variant.cleaningBufferMinutes,
+      policy.defaultCleaningBufferMinutes,
+    );
+    const units = await tx.costumeUnit.findMany({
+      where: {
+        variantId: input.variantId,
+        currentBranchId: input.pickupBranchId,
+        operationalStatus: 'READY',
+        orderItems: {
+          none: {
+            OR: [
+              {
+                order: { status: { in: occupiedStatuses } },
+                occupiedFrom: { lt: protectedUntil },
+                occupiedUntil: { gt: input.plannedStartAt },
+              },
+              {
+                allocationStatus: 'ACTIVE',
+                order: { status: { in: ['ACTIVE', 'RETURN_INSPECTION'] } },
+              },
+            ],
+          },
+        },
+        blocks: {
+          none: {
+            status: { in: ['PLANNED', 'IN_PROGRESS'] },
+            blockedFrom: { lt: protectedUntil },
+            blockedUntil: { gt: input.plannedStartAt },
+          },
+        },
+        transferItems: {
+          none: { transfer: { status: { in: ['REQUESTED', 'APPROVED', 'IN_TRANSIT'] } } },
         },
       },
-      blocks: {
-        none: {
-          status: { in: ['PLANNED', 'IN_PROGRESS'] },
-          blockedFrom: { lt: input.plannedDueAt },
-          blockedUntil: { gt: input.plannedStartAt },
-        },
-      },
-      transferItems: {
-        none: { transfer: { status: { in: ['REQUESTED', 'APPROVED', 'IN_TRANSIT'] } } },
-      },
-    },
-    select: { id: true, unitCode: true, conditionGrade: true },
-  });
-  return { available: units.length > 0, units };
+      select: { id: true, unitCode: true, conditionGrade: true },
+    });
+    return { available: units.length > 0, units };
+  }, transactionOptions);
 }
 export async function createOrder(actor: AuthenticatedActor, input: CreateOrderInput) {
   requireActor(actor);
@@ -567,7 +730,7 @@ export async function createOrder(actor: AuthenticatedActor, input: CreateOrderI
         promotionDiscountVnd: discount,
         quoteExpiresAt: new Date(Date.now() + policy.quoteValidHours * 3_600_000),
         createdBy: actor.id,
-        items: { create: itemCreateData(input, variants, days) },
+        items: { create: itemCreateData(input, variants, days, policy.lateReturnBufferMinutes, policy.defaultCleaningBufferMinutes) },
       },
       include: includeOrder(),
     });
@@ -619,7 +782,7 @@ export async function updateOrder(actor: AuthenticatedActor, id: string, input: 
         promotionCode: promotion?.code ?? null,
         promotionDiscountVnd: discount,
         quoteExpiresAt: new Date(Date.now() + policy.quoteValidHours * 3_600_000),
-        items: { deleteMany: {}, create: itemCreateData(input, variants, days) },
+        items: { deleteMany: {}, create: itemCreateData(input, variants, days, policy.lateReturnBufferMinutes, policy.defaultCleaningBufferMinutes) },
         version: { increment: 1 },
       },
       include: includeOrder(),
@@ -666,6 +829,15 @@ async function assertAllocations(
       },
       select: { id: true },
     });
+    const activeAllocation = await tx.rentalOrderItem.findFirst({
+      where: {
+        unitId: unit.id,
+        id: { not: item.id },
+        allocationStatus: 'ACTIVE',
+        order: { status: { in: ['ACTIVE', 'RETURN_INSPECTION'] } },
+      },
+      select: { id: true },
+    });
     const blocked = await tx.unitBlock.findFirst({
       where: {
         unitId: unit.id,
@@ -682,7 +854,7 @@ async function assertAllocations(
       },
       select: { id: true },
     });
-    if (overlap || blocked || transfer)
+    if (overlap || activeAllocation || blocked || transfer)
       throw new AppError(409, 'UNIT_UNAVAILABLE', 'Unit is already reserved or unavailable');
   }
 }
@@ -720,7 +892,7 @@ export async function reallocateOrder(
   return prisma.$transaction(async (tx) => {
     const order = await lockOrder(tx, id);
     assertManage(actor, order);
-    assertStatus(order.status, ['CONFIRMED', 'PREPARING']);
+    assertStatus(order.status, ['CONFIRMED', 'PREPARING', 'READY_FOR_PICKUP']);
     assertVersion(order.version, input.expectedVersion);
     const previousItem = order.items.find((item) => item.id === input.orderItemId);
     if (!previousItem)
@@ -786,13 +958,29 @@ export async function extendOrder(actor: AuthenticatedActor, id: string, input: 
         'INVALID_ALLOCATION',
         'An active order must have every unit allocated',
       );
-    await lockUnits(tx, unitIds);
+    const units = await lockUnits(tx, unitIds);
+    const protectedEnds = new Map(
+      order.items.map((item) => {
+        const unit = units.find((candidate) => candidate.id === item.unitId);
+        if (!unit)
+          throw new AppError(409, 'UNIT_UNAVAILABLE', 'Allocated unit is no longer available');
+        return [
+          item.id,
+          bookingReservationUntil(
+            input.newDueAt,
+            order.policyVersion.lateReturnBufferMinutes,
+            unit.variant?.cleaningBufferMinutes ?? item.variant?.cleaningBufferMinutes ?? null,
+            order.policyVersion.defaultCleaningBufferMinutes,
+          ),
+        ];
+      }),
+    );
     for (const item of order.items)
       await assertUnitAvailableForPeriod(
         tx,
         item.unitId!,
         order.plannedDueAt,
-        input.newDueAt,
+        protectedEnds.get(item.id)!,
         item.id,
       );
     const additionalFeeVnd = order.items.reduce(
@@ -806,10 +994,10 @@ export async function extendOrder(actor: AuthenticatedActor, id: string, input: 
         additionalRentalFeeVnd: { increment: additionalFeeVnd },
         version: { increment: 1 },
         items: {
-          updateMany: {
-            where: {},
-            data: { occupiedUntil: input.newDueAt, billableDays: totalDays },
-          },
+          update: order.items.map((item) => ({
+            where: { id: item.id },
+            data: { occupiedUntil: protectedEnds.get(item.id)!, billableDays: totalDays },
+          })),
         },
       },
       include: includeOrder(),
@@ -1095,6 +1283,82 @@ async function storeEvidence(
     });
   }
 }
+
+async function assertPickupUnitsReady(
+  tx: Prisma.TransactionClient,
+  order: Awaited<ReturnType<typeof lockOrder>>,
+) {
+  const unitIds = order.items.map((item) => item.unitId).filter((value): value is string => Boolean(value));
+  if (unitIds.length !== order.items.length || new Set(unitIds).size !== unitIds.length)
+    throw new AppError(409, 'UNIT_NOT_READY', 'Every order item must have its own assigned unit');
+  const units = await lockUnits(tx, unitIds);
+  const checkedAt = new Date();
+  for (const item of order.items) {
+    const unit = units.find((candidate) => candidate.id === item.unitId);
+    if (
+      unit?.variantId !== item.variantId ||
+      unit?.currentBranchId !== order.pickupBranchId ||
+      unit?.operationalStatus !== 'READY'
+    )
+      throw new AppError(
+        409,
+        'UNIT_NOT_READY',
+        'Trang phục chưa sẵn sàng tại chi nhánh nhận. Hãy kiểm tra lại bộ được phân công.',
+      );
+    const [activeAllocation, activeBlock, activeTransfer] = await Promise.all([
+      tx.rentalOrderItem.findFirst({
+        where: {
+          unitId: unit.id,
+          id: { not: item.id },
+          allocationStatus: 'ACTIVE',
+          order: { status: { in: ['ACTIVE', 'RETURN_INSPECTION'] } },
+        },
+        select: { id: true },
+      }),
+      tx.unitBlock.findFirst({
+        where: {
+          unitId: unit.id,
+          status: { in: ['PLANNED', 'IN_PROGRESS'] },
+          blockedFrom: { lte: checkedAt },
+          blockedUntil: { gt: checkedAt },
+        },
+        select: { id: true },
+      }),
+      tx.stockTransferItem.findFirst({
+        where: { unitId: unit.id, transfer: { status: { in: ['REQUESTED', 'APPROVED', 'IN_TRANSIT'] } } },
+        select: { id: true },
+      }),
+    ]);
+    if (activeAllocation)
+      throw new AppError(
+        409,
+        'UNIT_STILL_WITH_CUSTOMER',
+        'Chưa thể bàn giao: bộ này vẫn đang được thuê hoặc chưa được xác nhận trả.',
+      );
+    if (activeBlock || activeTransfer)
+      throw new AppError(
+        409,
+        'UNIT_NOT_READY',
+        'Trang phục đang vệ sinh, sửa chữa hoặc điều chuyển nên chưa thể bàn giao.',
+      );
+  }
+  return units;
+}
+export async function validatePickupOrder(
+  actor: AuthenticatedActor,
+  id: string,
+  expectedVersion: number,
+) {
+  requireEmployee(actor);
+  return prisma.$transaction(async (tx) => {
+    const order = await lockOrder(tx, id);
+    assertRentalAction(actor, order, 'handover');
+    assertStatus(order.status, ['READY_FOR_PICKUP']);
+    assertVersion(order.version, expectedVersion);
+    await assertPickupUnitsReady(tx, order);
+    return { ready: true, unitCount: order.items.length };
+  }, transactionOptions);
+}
 export async function pickupOrder(actor: AuthenticatedActor, id: string, input: PickupInput) {
   requireEmployee(actor);
   return prisma.$transaction(async (tx) => {
@@ -1124,7 +1388,7 @@ export async function pickupOrder(actor: AuthenticatedActor, id: string, input: 
         'INVALID_PICKUP_ITEMS',
         'Every order item must be supplied exactly once',
       );
-    await lockUnits(tx, order.items.map((item) => item.unitId!).filter(Boolean));
+    await assertPickupUnitsReady(tx, order);
     for (const item of input.items) {
       await storeEvidence(tx, item.orderItemId, 'PICKUP', item.evidence, actor.id);
       await tx.rentalOrderItem.update({
@@ -1265,7 +1529,8 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
       if (!inputItem.isMissing) {
         const unit = units.find((value) => value.id === orderItem.unitId)!;
         const blockType = inputItem.nextOperationalStatus === 'REPAIR' ? 'REPAIR' : 'CLEANING';
-        const cleaningMinutes = unit.variant.cleaningBufferMinutes ?? 0;
+        const cleaningMinutes =
+          unit.variant.cleaningBufferMinutes ?? order.policyVersion.defaultCleaningBufferMinutes;
         const blockedUntil =
           blockType === 'REPAIR'
             ? inputItem.repairBlockedUntil!
@@ -1283,21 +1548,32 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
       }
     }
     const isFinalReturn = !input.partial;
-    const graceEnd = order.plannedDueAt.getTime() + order.policyVersion.lateGraceMinutes * 60_000;
-    const lateDays =
-      returnedAt.getTime() <= graceEnd
-        ? 0
-        : Math.ceil((returnedAt.getTime() - graceEnd) / 86_400_000);
-    const rentalBase = order.items.reduce(
-      (sum, item) => sum + item.unitDailyPriceVnd * BigInt(item.billableDays),
-      0n,
-    );
-    const late = lateDays
-      ? (rentalBase *
-          BigInt(Math.trunc(Number(order.policyVersion.lateFeePercentPerDay) * 100)) *
-          BigInt(lateDays)) /
-        10_000n
-      : 0n;
+    const lateFeeFormulaVersion = order.policyVersion.lateFeeFormulaVersion ?? 1;
+    const itemBasedFee = lateFeeFormulaVersion >= 2;
+    const calculatedLateFee = itemBasedFee
+      ? calculateItemLateFees(
+          order.items,
+          input.items.map((item) => item.orderItemId),
+          order.plannedDueAt,
+          returnedAt,
+          order.policyVersion.lateGraceMinutes,
+          Number(order.policyVersion.lateFeePercentPerDay),
+          order.promotionDiscountVnd,
+        )
+      : {
+          ...calculateLegacyLateFee(
+            order.items,
+            order.plannedDueAt,
+            returnedAt,
+            order.policyVersion.lateGraceMinutes,
+            Number(order.policyVersion.lateFeePercentPerDay),
+          ),
+          items: [],
+        };
+    const lateFee = {
+      ...calculatedLateFee,
+      lateFeeVnd: itemBasedFee || isFinalReturn ? calculatedLateFee.lateFeeVnd : 0n,
+    };
     const result = await tx.rentalOrder.update({
       where: { id },
       data: {
@@ -1308,12 +1584,16 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
               returnProcessedBy: actor.id,
               returnNotes: input.returnNotes ?? null,
               inspectionStatus: 'PENDING_ASSESSMENT' as const,
-              lateFeeVnd: late,
             }
           : {
               status: 'ACTIVE' as const,
               returnNotes: input.returnNotes ?? order.returnNotes,
             }),
+        ...(itemBasedFee
+          ? { lateFeeVnd: { increment: lateFee.lateFeeVnd } }
+          : isFinalReturn
+            ? { lateFeeVnd: lateFee.lateFeeVnd }
+            : {}),
         version: { increment: 1 },
         items: {
           updateMany: {
@@ -1331,9 +1611,15 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
       actor.id,
       'ACTIVE',
       isFinalReturn ? 'RETURN_INSPECTION' : 'ACTIVE',
-      isFinalReturn
-        ? { inspectionStatus: 'PENDING_ASSESSMENT' }
-        : { returnedItemIds: input.items.map((item) => item.orderItemId) },
+      {
+        inspectionStatus: isFinalReturn ? 'PENDING_ASSESSMENT' : undefined,
+        returnedItemIds: input.items.map((item) => item.orderItemId),
+        returnedAt: returnedAt.toISOString(),
+        lateFeeFormulaVersion,
+        lateDays: lateFee.lateDays,
+        lateFeeVnd: lateFee.lateFeeVnd.toString(),
+        lateItems: lateFee.items,
+      },
     );
     return result;
   }, transactionOptions);

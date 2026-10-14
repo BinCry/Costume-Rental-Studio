@@ -25,6 +25,7 @@ import {
   recordBankTransferPayment,
   recordCashPayment,
   returnOrder as returnApiOrder,
+  validatePickupOrder,
   type SettlementSnapshot,
   uploadRentalEvidence,
 } from '../api/client';
@@ -80,6 +81,7 @@ export function OrderDetailShell({
   const [evidenceFiles, setEvidenceFiles] = useState<Record<string, File[]>>({});
   const [operationBusy, setOperationBusy] = useState(false);
   const [operationIssue, setOperationIssue] = useState('');
+  const [operationIssueCode, setOperationIssueCode] = useState('');
   const [backendSettlement, setBackendSettlement] = useState<SettlementSnapshot>();
   const [settlementLoading, setSettlementLoading] = useState(false);
   const [settlementError, setSettlementError] = useState('');
@@ -194,6 +196,7 @@ export function OrderDetailShell({
     setTransactionReference('');
     setEvidenceFiles({});
     setOperationIssue('');
+    setOperationIssueCode('');
     setBackendSettlement(undefined);
     setScanIssue('');
     setResult(null);
@@ -326,8 +329,10 @@ export function OrderDetailShell({
     }
     setOperationBusy(true);
     setOperationIssue('');
+    setOperationIssueCode('');
     setResult(null);
     try {
+      await validatePickupOrder(order.id, order.version);
       const evidence = await Promise.all(
         order.items.map(async (item) => ({
           orderItemId: item.id,
@@ -345,7 +350,17 @@ export function OrderDetailShell({
       });
       retry();
     } catch (caught) {
-      setOperationIssue(caught instanceof Error ? caught.message : 'Không thể hoàn tất giao trang phục.');
+      const code = caught instanceof ApiClientError ? caught.code : '';
+      setOperationIssueCode(code);
+      setOperationIssue(
+        code === 'UNIT_STILL_WITH_CUSTOMER'
+          ? 'Không thể giao: bộ vẫn đang ở khách trước hoặc chưa được xác nhận trả. Mọi khoản đã ghi nhận vẫn nằm trên đơn; hãy mở đơn để phân công bộ READY khác.'
+          : code === 'UNIT_NOT_READY'
+            ? 'Bộ được phân công chưa sẵn sàng tại chi nhánh. Các khoản đã ghi nhận vẫn nằm trên đơn; mở đơn để kiểm tra trạng thái và chọn bộ READY khác.'
+            : caught instanceof Error
+              ? caught.message
+              : 'Không thể hoàn tất giao trang phục.',
+      );
     } finally {
       setOperationBusy(false);
     }
@@ -1023,6 +1038,14 @@ export function OrderDetailShell({
                 </Feedback>
               )}
               {operationIssue && <Feedback tone="danger" title="Chưa hoàn tất thao tác">{operationIssue}</Feedback>}
+              {mode === 'handover' && ['UNIT_STILL_WITH_CUSTOMER', 'UNIT_NOT_READY'].includes(operationIssueCode) && (
+                <Button
+                  variant="secondary"
+                  onClick={() => go('orders', { order: order?.id ?? orderId, filter: 'Sắp giao' })}
+                >
+                  Mở đơn để phân công bộ thay thế
+                </Button>
+              )}
               {mode === 'return' && result?.signature === previewSignature && !restricted && (
                 <div
                   className="return-review"
