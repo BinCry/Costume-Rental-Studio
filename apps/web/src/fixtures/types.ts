@@ -64,6 +64,7 @@ export interface OrderItem {
   apiVariantId?: string;
   accessories?: {
     id: string;
+    name?: string;
     quantityOut: number;
     quantityReturned?: number | null;
   }[];
