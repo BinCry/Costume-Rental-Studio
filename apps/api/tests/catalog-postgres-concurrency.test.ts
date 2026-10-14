@@ -464,17 +464,15 @@ describe.skipIf(!runDatabaseTests)('Catalog media concurrency with PostgreSQL', 
       let policy = await prisma.rentalPolicyVersion.findFirst({
         orderBy: { effectiveFrom: 'desc' },
       });
-      if (!policy) {
-        policy = await prisma.rentalPolicyVersion.create({
-          data: {
-            versionCode: `TEST-POLICY-${marker}`,
-            effectiveFrom: new Date('2020-01-01T00:00:00.000Z'),
-            billingDayMode: 'CALENDAR_DAY',
-            quoteValidHours: 24,
-            changeReason: 'Chính sách tối thiểu dùng riêng cho kiểm thử PostgreSQL.',
-          },
-        });
-      }
+      policy ??= await prisma.rentalPolicyVersion.create({
+        data: {
+          versionCode: `TEST-POLICY-${marker}`,
+          effectiveFrom: new Date('2020-01-01T00:00:00.000Z'),
+          billingDayMode: 'CALENDAR_DAY',
+          quoteValidHours: 24,
+          changeReason: 'Chính sách tối thiểu dùng riêng cho kiểm thử PostgreSQL.',
+        },
+      });
       const order = await prisma.rentalOrder.create({
         data: {
           orderCode: `DELETE-O-${marker}`,
