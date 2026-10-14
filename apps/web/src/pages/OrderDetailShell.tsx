@@ -858,8 +858,10 @@ export function OrderDetailShell({
                       </SelectField>
                       {realApiMode && ['POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '') && (
                         <Field
-                          label="Dự kiến sẵn sàng sau sửa chữa"
+                          label="Dự kiến sẵn sàng sau sửa chữa (bắt buộc)"
                           type="datetime-local"
+                          required
+                          hint="Nhập thời điểm dự kiến bộ có thể đưa vào sử dụng sau sửa chữa."
                           value={repairBlockedUntil[item.id] ?? ''}
                           onChange={(event) => setRepairBlockedUntil((current) => ({ ...current, [item.id]: event.target.value }))}
                           error={repairBlockedUntil[item.id] && Date.parse(repairBlockedUntil[item.id]) <= Date.now()
@@ -1000,7 +1002,7 @@ export function OrderDetailShell({
                       <strong>Tiền thuê</strong>
                       <span>
                         <span className="collection-mobile-label">Cần thu</span>
-                        {money(realApiMode ? parseVndAmount(backendSettlement?.rental.dueVnd) ?? 0 : rental?.amount ?? 0)}
+                        {realApiMode ? settlementMoney(backendSettlement?.rental.dueVnd) : money(rental?.amount ?? 0)}
                       </span>
                       <span>
                         <span className="collection-mobile-label">{realApiMode ? 'Đã ghi nhận' : 'Đánh dấu nhận (demo)'}</span>
@@ -1019,7 +1021,7 @@ export function OrderDetailShell({
                       <strong>Tiền cọc</strong>
                       <span>
                         <span className="collection-mobile-label">Cần thu</span>
-                        {money(realApiMode ? parseVndAmount(backendSettlement?.deposit.dueVnd) ?? 0 : deposit?.amount ?? 0)}
+                        {realApiMode ? settlementMoney(backendSettlement?.deposit.dueVnd) : money(deposit?.amount ?? 0)}
                       </span>
                       <span>
                         <span className="collection-mobile-label">Đã đánh dấu nhận</span>
@@ -1370,6 +1372,9 @@ export function OrderDetailShell({
                 )}
                 {needsAssessmentNote && (
                   <p role="status">Mô tả vấn đề cần đánh giá trước khi xem kết quả nhận trả.</p>
+                )}
+                {realApiMode && mode === 'return' && scannedEnough && !repairScheduleComplete && (
+                  <p role="status">Với mỗi bộ được đánh giá hư hỏng nặng, nhập thời điểm dự kiến sửa xong trong tương lai.</p>
                 )}
                 {realApiMode && !allEvidenceSelected && (
                   <p role="status">Chọn ít nhất một ảnh bằng chứng cho mỗi bộ đã đối chiếu trước khi xác nhận.</p>
