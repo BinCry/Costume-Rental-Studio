@@ -152,6 +152,40 @@ describe('payment service settlement snapshot', () => {
       outstandingVnd: 250n,
     });
   });
+
+  it('clamps the extra balance to zero when the deposit deduction exceeds extra fees', async () => {
+    mocks.rentalOrderFindUnique.mockResolvedValue({
+      id: orderId,
+      status: 'RETURN_INSPECTION',
+      customerUserId: customerId,
+      pickupBranchId: 'branch-1',
+      items: [
+        {
+          billableDays: 1,
+          unitDailyPriceVnd: 0n,
+          unitDepositVnd: 200_000n,
+          damageFeeVnd: 0n,
+          missingFeeVnd: 0n,
+          accessories: [],
+        },
+      ],
+      promotionDiscountVnd: 0n,
+      additionalRentalFeeVnd: 0n,
+      lateFeeVnd: 0n,
+      otherFeeVnd: 100_000n,
+      depositDeductionVnd: 200_000n,
+      payments: [
+        { purpose: 'RENTAL', amountVnd: 0n, status: 'SUCCEEDED', refunds: [] },
+        { purpose: 'DEPOSIT', amountVnd: 200_000n, status: 'SUCCEEDED', refunds: [] },
+      ],
+    });
+
+    await expect(service.getSettlement(customerActor, orderId)).resolves.toMatchObject({
+      extra: { dueVnd: 100_000n, paidVnd: 0n, remainingVnd: 0n },
+      outstandingVnd: 0n,
+      canComplete: true,
+    });
+  });
 });
 
 const staffActor = {

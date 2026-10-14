@@ -271,7 +271,8 @@ function settlement(
   const refundAvailableVnd = refundableBeforeRefunds - completedRefund - pendingRefund;
   const rentalRemainingVnd = rentalDue - paidRental;
   const depositRemainingVnd = depositDue - paidDeposit;
-  const extraRemainingVnd = extraDue - paidExtra - order.depositDeductionVnd;
+  const extraBalanceVnd = extraDue - paidExtra - order.depositDeductionVnd;
+  const extraRemainingVnd = extraBalanceVnd > 0n ? extraBalanceVnd : 0n;
   const outstandingVnd =
     (rentalRemainingVnd > 0n ? rentalRemainingVnd : 0n) +
     (extraRemainingVnd > 0n ? extraRemainingVnd : 0n);
