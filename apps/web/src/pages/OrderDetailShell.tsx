@@ -752,7 +752,7 @@ export function OrderDetailShell({
                         onChange={(event) =>
                           setReturnConditions((current) => ({
                             ...current,
-                            [item.id]: event.target.value as typeof current[string],
+                            [item.id]: event.target.value as 'PASSED' | 'PENDING_ASSESSMENT' | 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED',
                           }))
                         }
                       >
