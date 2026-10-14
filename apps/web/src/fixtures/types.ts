@@ -62,6 +62,10 @@ export interface OrderItem {
   apiUnitId?: string;
   /** API-only variant key used to search eligible replacement units. */
   apiVariantId?: string;
+  /** API allocation state is used to offer only units still held by the customer for return. */
+  apiAllocationStatus?: string;
+  apiReturnConditionGrade?: string;
+  apiIsMissing?: boolean;
   accessories?: {
     id: string;
     name?: string;
