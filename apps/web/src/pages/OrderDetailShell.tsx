@@ -206,9 +206,13 @@ export function OrderDetailShell({
     canReadPayments && settlementAmountsValid && !settlementLoading && !settlementError && !pendingCollection
   );
   const cashChecksComplete = (rentalRemaining <= 0 || rentPreview) && (depositRemaining <= 0 || depositPreview);
+  const sameBankReferenceForBoth = rentalRemaining > 0 && depositRemaining > 0 &&
+    !!transactionReferences.rental.trim() &&
+    transactionReferences.rental.trim().toLocaleUpperCase() === transactionReferences.deposit.trim().toLocaleUpperCase();
   const bankReferencesComplete =
     (rentalRemaining <= 0 || !!transactionReferences.rental.trim()) &&
-    (depositRemaining <= 0 || !!transactionReferences.deposit.trim());
+    (depositRemaining <= 0 || !!transactionReferences.deposit.trim()) &&
+    !sameBankReferenceForBoth;
   const backendSettlementCanComplete =
     settlementAmountsValid && backendSettlement?.canComplete === true;
   const snapshotConditionMismatch =
@@ -411,7 +415,9 @@ export function OrderDetailShell({
     }
     if (!order || !allScanned || !allChecked || !allEvidenceSelected || !canCollectPayments || !handoverPaymentReady || restricted) return;
     if (effectiveMethod === 'BANK_TRANSFER' && !bankReferencesComplete) {
-      setOperationIssue('Nhập mã giao dịch riêng cho từng khoản còn phải thu trước khi xác nhận.');
+      setOperationIssue(sameBankReferenceForBoth
+        ? 'Mã giao dịch phải khác nhau cho tiền thuê và tiền cọc. Không dùng một giao dịch cho hai khoản.'
+        : 'Nhập mã giao dịch riêng cho từng khoản còn phải thu trước khi xác nhận.');
       return;
     }
     setOperationBusy(true);
@@ -1056,6 +1062,12 @@ export function OrderDetailShell({
                     </div>
                   ) : (
                     <>
+                      {realApiMode && rentalRemaining > 0 && depositRemaining > 0 && (
+                        <Feedback tone="warning" title="Chuyển khoản được đối soát theo từng khoản">
+                          Nhập mã giao dịch riêng cho tiền thuê và tiền cọc. Nếu khách chỉ chuyển một giao dịch gộp,
+                          hãy dừng để đối soát theo quy trình đã chốt; không dùng lại cùng một mã cho cả hai khoản.
+                        </Feedback>
+                      )}
                       {realApiMode && rentalRemaining > 0 && (
                         <Field
                           label="Mã giao dịch tiền thuê"
