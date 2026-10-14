@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/ui';
 import { apiEnabled, currentUser, hasAccessToken, listBranches, logout, restoreSession } from '../api/client';
 import type { DemoScenario } from '../fixtures/types';
@@ -118,18 +118,19 @@ export default function StudioApp() {
     previousRouteRef.current = route;
     mainRef.current?.focus({ preventScroll: true });
   }, [route]);
-  useEffect(() => {
-    const activeGroup = staffNavGroups.find((group) => group.screens.includes(route.screen));
+  const syncRoute = useCallback((nextRoute: ReturnType<typeof readRoute>) => {
+    setRoute(nextRoute);
+    const activeGroup = staffNavGroups.find((group) => group.screens.includes(nextRoute.screen));
     if (activeGroup) setExpandedStaffGroup(activeGroup.id);
-  }, [route.screen]);
+  }, []);
   useEffect(() => {
     const onPop = () => {
-      setRoute(readRoute());
+      syncRoute(readRoute());
       setMenuOpen(false);
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
-  }, []);
+  }, [syncRoute]);
   useEffect(() => {
     const refresh = () => setAccessRevision((value) => value + 1);
     window.addEventListener('fixture-access-updated', refresh);
@@ -181,7 +182,7 @@ export default function StudioApp() {
   }, [menuOpen, route.screen]);
   const go: Navigate = (screen, params) => {
     window.history.pushState(null, '', pathFor(screen, params));
-    setRoute(readRoute());
+    syncRoute(readRoute());
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
@@ -204,7 +205,7 @@ export default function StudioApp() {
       }
     }
     window.history.replaceState(null, '', destination);
-    setRoute(readRoute());
+    syncRoute(readRoute());
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'instant' });
   };

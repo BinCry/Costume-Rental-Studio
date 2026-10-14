@@ -94,24 +94,24 @@ export function CrmPage({
     useMobileDetailReveal<HTMLDivElement>();
   const { detailRef: caseDetailRef, revealDetail: revealCase } =
     useMobileDetailReveal<HTMLDivElement>();
+  const activeCustomer = realApiMode && data?.length
+    ? data.find((customer) => customer.code === selected) ?? data[0]
+    : undefined;
+  const activeCustomerCode = activeCustomer?.code ?? selected;
   useEffect(() => {
-    if (!realApiMode || !data?.length) return;
-    if (!data.some((customer) => customer.code === selected)) setSelected(data[0].code);
-  }, [data, realApiMode, selected]);
-  useEffect(() => {
-    if (!realApiMode || !selected) return;
+    if (!realApiMode || !activeCustomer) return;
     let active = true;
-    void listCustomerInteractions(selected, branch)
+    void listCustomerInteractions(activeCustomerCode, branch)
       .then((items) => {
-        if (active) setApiInteractions((current) => ({ ...current, [selected]: items }));
+        if (active) setApiInteractions((current) => ({ ...current, [activeCustomerCode]: items }));
       })
       .catch(() => {
-        if (active) setApiInteractions((current) => ({ ...current, [selected]: [] }));
+        if (active) setApiInteractions((current) => ({ ...current, [activeCustomerCode]: [] }));
       });
     return () => {
       active = false;
     };
-  }, [branch, realApiMode, selected]);
+  }, [activeCustomer, activeCustomerCode, branch, realApiMode]);
   useEffect(() => {
     if (!realApiMode || !caseCode || !casesResource.data?.some((item) => item.code === caseCode)) return;
     let active = true;
@@ -228,7 +228,7 @@ export function CrmPage({
             c.preferredBranch === branch &&
             `${c.name} ${c.phone} ${c.code}`.toLowerCase().includes(search.toLowerCase()),
         );
-        const person = visible.find((c) => c.code === selected) ?? visible[0];
+        const person = visible.find((c) => c.code === activeCustomerCode) ?? visible[0];
         const related = (casesResource.data ?? []).filter((c) => c.customerCode === person?.code);
         const current = related.find((c) => c.code === caseCode) ?? related[0];
         const editing = draft ?? current;

@@ -36,7 +36,7 @@ interface ApiModel {
 type ApiAdminModel = ApiModel & {
   modelCode: string;
   categoryId: string;
-  status?: 'ACTIVE' | 'INACTIVE' | string;
+  status?: string;
   category?: { id?: string; name?: string | null } | null;
 };
 interface ApiCategory { id: string; name: string; status?: string }
@@ -60,7 +60,7 @@ interface ApiQuote {
   quoteExpiresAt: string;
   policy: {
     versionCode?: string;
-    billingDayMode?: 'CALENDAR_DAY' | 'ROLLING_24_HOURS' | string;
+    billingDayMode?: string;
     quoteValidHours?: number;
     lateGraceMinutes?: number;
     lateFeePercentPerDay?: number | string;
@@ -262,7 +262,7 @@ export interface SettlementSnapshot {
 
 export interface PaymentRecord {
   id: string;
-  purpose: 'RENTAL' | 'DEPOSIT' | 'EXTRA' | string;
+  purpose: string;
   method: string;
   amountVnd: string | number;
   status: string;
@@ -619,7 +619,7 @@ export async function saveCatalogVariant(variant: Variant): Promise<Variant> {
     variantCode: variant.code,
     sizeCode: variant.size,
     colorCode: variant.color,
-    editionLabel: variant.edition || undefined,
+    editionLabel: variant.edition ? variant.edition : undefined,
     fitNotes: variant.fit || undefined,
     dailyRentalPriceVnd: Math.round(variant.price),
     depositAmountVnd: Math.round(variant.deposit),
@@ -1188,7 +1188,7 @@ export async function saveStaff(employee: Employee) {
       body: JSON.stringify({
         email: employee.email,
         displayName: employee.name,
-        employeeCode: employee.employeeCode?.trim() || employee.code,
+        employeeCode: employee.employeeCode?.trim() ? employee.employeeCode.trim() : employee.code,
         joinedAt: new Date().toISOString(),
         assignments,
       }),
@@ -1402,7 +1402,7 @@ export async function saveCrmCase(value: Case): Promise<Case> {
         // neutral seed category for customer support cases.
         caseType: 'SUPPORT',
         priority: value.priority,
-        ownerUserId: await ownerUserId(value.owner, value.branch) || undefined,
+        ownerUserId: await ownerUserId(value.owner, value.branch).then((id) => id ? id : undefined),
         note: value.history[0],
       }),
     });
@@ -1763,7 +1763,7 @@ export async function uploadCatalogMedia(
   const path = ownerType === 'model' ? 'models' : 'variants';
   return request(`/api/v1/catalog/${path}/${encodeURIComponent(ownerId)}/media`, {
     method: 'POST',
-    body: JSON.stringify({ uploadKey: presigned.objectKey, sortOrder: 0, altText: altText || undefined }),
+    body: JSON.stringify({ uploadKey: presigned.objectKey, sortOrder: 0, altText: altText ? altText : undefined }),
   });
 }
 

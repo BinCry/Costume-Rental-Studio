@@ -103,14 +103,11 @@ export function CostumeDetailPage({
     requestedReturn?.trim() ? requestedReturn : defaultReturn,
   );
   const [photo, setPhoto] = useState(0);
-  const [availability, setAvailability] = useState<
+  const [availabilityState, setAvailability] = useState<
     'idle' | 'loading' | 'available' | 'unavailable' | 'error'
   >('idle');
   useEffect(() => {
-    if (!usePublicApi || !branch || !pickup || !due || !id) {
-      setAvailability('idle');
-      return;
-    }
+    if (!usePublicApi || !branch || !pickup || !due || !id) return;
     let active = true;
     setAvailability('loading');
     void checkPublicAvailability(id, branch, pickup, due)
@@ -120,6 +117,7 @@ export function CostumeDetailPage({
       active = false;
     };
   }, [branch, due, id, pickup, usePublicApi]);
+  const availability = usePublicApi && branch && pickup && due && id ? availabilityState : 'idle';
   const catalogContext = Object.fromEntries(
     [...initialContext.entries()].filter(([key]) => key !== 'id'),
   );

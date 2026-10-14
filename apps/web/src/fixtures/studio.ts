@@ -1101,7 +1101,7 @@ export const studioAdapter = {
       return order;
     });
   },
-  async details(scenario: DemoScenario) {
+  async details(this: void, scenario: DemoScenario) {
     if (apiEnabled && hasAccessToken()) {
       try {
         return await listApiCatalogDetails();
@@ -1113,7 +1113,7 @@ export const studioAdapter = {
     }
     return list(details, scenario);
   },
-  async units(scenario: DemoScenario) {
+  async units(this: void, scenario: DemoScenario) {
     if (apiEnabled && hasAccessToken()) {
       try {
         return await listApiInventoryUnits();
@@ -1128,7 +1128,7 @@ export const studioAdapter = {
     }
     return list(units, scenario);
   },
-  async activeUnits(scenario: DemoScenario) {
+  async activeUnits(this: void, scenario: DemoScenario) {
     if (apiEnabled && hasAccessToken()) {
       try {
         return await listApiActiveRentals();
@@ -1150,7 +1150,7 @@ export const studioAdapter = {
     }
     return list(customers, scenario);
   },
-  async employees(scenario: DemoScenario) {
+  async employees(this: void, scenario: DemoScenario) {
     if (apiEnabled && hasAccessToken()) {
       try {
         return await listApiStaff();
@@ -1165,7 +1165,7 @@ export const studioAdapter = {
     }
     return list(employees, scenario);
   },
-  async branches(scenario: DemoScenario) {
+  async branches(this: void, scenario: DemoScenario) {
     if (apiEnabled && hasAccessToken()) {
       try {
         return await listApiManagedBranches();
@@ -1178,7 +1178,7 @@ export const studioAdapter = {
     return list(branches, scenario);
   },
   branchObligations,
-  async permissions(scenario: DemoScenario) {
+  async permissions(this: void, scenario: DemoScenario) {
     if (apiEnabled && hasAccessToken()) {
       try {
         return await listApiRbacPermissions();
@@ -1193,7 +1193,7 @@ export const studioAdapter = {
     }
     return list(permissions, scenario);
   },
-  async roles(scenario: DemoScenario) {
+  async roles(this: void, scenario: DemoScenario) {
     if (apiEnabled && hasAccessToken()) {
       try {
         return await listApiRbacRoles();
@@ -1232,7 +1232,7 @@ export const studioAdapter = {
     }
     return list(cases, scenario);
   },
-  async policies(scenario: DemoScenario) {
+  async policies(this: void, scenario: DemoScenario) {
     if (apiEnabled && hasAccessToken()) {
       try {
         return await listApiPolicies();
@@ -1256,7 +1256,7 @@ export const studioAdapter = {
     }
     return list(reports, scenario);
   },
-  async customerOrders(scenario: DemoScenario) {
+  async customerOrders(this: void, scenario: DemoScenario) {
     if (apiEnabled && hasAccessToken()) return listApiCustomerOrders();
     return list(customerOrders, scenario);
   },

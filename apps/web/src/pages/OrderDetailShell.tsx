@@ -82,9 +82,11 @@ export function OrderDetailShell({
   const [operationBusy, setOperationBusy] = useState(false);
   const [operationIssue, setOperationIssue] = useState('');
   const [operationIssueCode, setOperationIssueCode] = useState('');
-  const [backendSettlement, setBackendSettlement] = useState<SettlementSnapshot>();
-  const [settlementLoading, setSettlementLoading] = useState(false);
-  const [settlementError, setSettlementError] = useState('');
+  const [settlementResource, setSettlementResource] = useState<
+    | { orderId: string; status: 'loading' }
+    | { orderId: string; status: 'success'; snapshot: SettlementSnapshot }
+    | { orderId: string; status: 'error'; message: string }
+  >();
   const [result, setResult] = useState<{ text: string; signature: string } | null>(null);
   const { loading, data, error, retry } = useFixtureResource(scenario, loadOrders);
   const eligible = (data ?? []).filter(
@@ -95,6 +97,19 @@ export function OrderDetailShell({
         : ['ACTIVE', 'RETURN_INSPECTION'].includes(entry.status)),
   );
   const order: Order | undefined = eligible.find((entry) => entry.id === orderId);
+  const activeOrderId = order?.id;
+  const settlementRequestEnabled = realApiMode && mode === 'return' && !!activeOrderId && canReadPayments;
+  const currentSettlementResource = settlementRequestEnabled && settlementResource?.orderId === activeOrderId
+    ? settlementResource
+    : undefined;
+  const backendSettlement = currentSettlementResource?.status === 'success'
+    ? currentSettlementResource.snapshot
+    : undefined;
+  const settlementLoading = settlementRequestEnabled &&
+    (!currentSettlementResource || currentSettlementResource.status === 'loading');
+  const settlementError = currentSettlementResource?.status === 'error'
+    ? currentSettlementResource.message
+    : '';
   const rental = order?.money.find((line) => line.label === 'Tiền thuê');
   const deposit = order?.money.find((line) => line.label === 'Tiền cọc');
   const settlement = realApiMode ? undefined : order ? returnSnapshots[order.id] : undefined;
@@ -142,47 +157,41 @@ export function OrderDetailShell({
     scannedItems.every((item) => returnConditions[item.id] === 'PASSED') &&
     (settlement.damageFee > 0 || settlement.missingFee > 0);
   const refreshSettlement = async () => {
-    if (!realApiMode || mode !== 'return' || !order || !canReadPayments) return;
-    const targetOrderId = order.id;
-    setSettlementLoading(true);
-    setSettlementError('');
+    if (!settlementRequestEnabled || !activeOrderId) return;
+    const targetOrderId = activeOrderId;
+    setSettlementResource({ orderId: targetOrderId, status: 'loading' });
     try {
       const snapshot = await getOrderSettlement(targetOrderId);
-      if (orderId === targetOrderId) setBackendSettlement(snapshot);
+      if (orderId === targetOrderId)
+        setSettlementResource({ orderId: targetOrderId, status: 'success', snapshot });
     } catch (caught: unknown) {
       if (orderId === targetOrderId)
-        setSettlementError(caught instanceof Error ? caught.message : 'Không tải được quyết toán.');
-    } finally {
-      if (orderId === targetOrderId) setSettlementLoading(false);
+        setSettlementResource({
+          orderId: targetOrderId,
+          status: 'error',
+          message: caught instanceof Error ? caught.message : 'Không tải được quyết toán.',
+        });
     }
   };
   useEffect(() => {
+    if (!settlementRequestEnabled || !activeOrderId) return;
     let active = true;
-    if (!realApiMode || mode !== 'return' || !order || !canReadPayments) {
-      setBackendSettlement(undefined);
-      setSettlementError('');
-      setSettlementLoading(false);
-      return () => {
-        active = false;
-      };
-    }
-    setSettlementLoading(true);
-    setSettlementError('');
-    void getOrderSettlement(order.id)
+    void getOrderSettlement(activeOrderId)
       .then((snapshot) => {
-        if (active) setBackendSettlement(snapshot);
+        if (active) setSettlementResource({ orderId: activeOrderId, status: 'success', snapshot });
       })
       .catch((caught: unknown) => {
         if (active)
-          setSettlementError(caught instanceof Error ? caught.message : 'Không tải được quyết toán.');
-      })
-      .finally(() => {
-        if (active) setSettlementLoading(false);
+          setSettlementResource({
+            orderId: activeOrderId,
+            status: 'error',
+            message: caught instanceof Error ? caught.message : 'Không tải được quyết toán.',
+          });
       });
     return () => {
       active = false;
     };
-  }, [canReadPayments, mode, order?.id, realApiMode]);
+  }, [activeOrderId, settlementRequestEnabled]);
   const onOrderChange = (id: string) => {
     setOrderId(id);
     setBarcode('');
@@ -197,7 +206,7 @@ export function OrderDetailShell({
     setEvidenceFiles({});
     setOperationIssue('');
     setOperationIssueCode('');
-    setBackendSettlement(undefined);
+    setSettlementResource(undefined);
     setScanIssue('');
     setResult(null);
     if (id)
@@ -1075,7 +1084,7 @@ export function OrderDetailShell({
               )}
               <div className="task-final">
                 <Button
-                  onClick={mode === 'handover' ? performHandover : performReturn}
+                  onClick={() => { void (mode === 'handover' ? performHandover() : performReturn()); }}
                   loading={operationBusy}
                   disabled={
                     !scannedEnough ||
