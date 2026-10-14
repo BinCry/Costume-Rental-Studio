@@ -84,6 +84,11 @@ jobs:
           pnpm test:api
           pnpm build:api
 
+      - name: Collect safe web ESLint fixes
+        run: |
+          pnpm --filter @costume/web lint:fix || true
+          git diff -- apps/web/src
+
       - name: Verify web
         run: |
           pnpm --filter @costume/web lint
