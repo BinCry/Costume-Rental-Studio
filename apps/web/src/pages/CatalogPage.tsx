@@ -581,7 +581,7 @@ export function CatalogPage({
                 className="filter-toggle"
                 aria-expanded={filterOpen}
                 aria-controls="catalog-filters"
-                onClick={() => setFilterOpen(!filterOpen)
+                onClick={() => setFilterOpen(!filterOpen)}
               >
                 <Icon name="filter" size={18} /> Bộ lọc
               </Button>
