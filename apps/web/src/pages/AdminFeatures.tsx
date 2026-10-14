@@ -1191,7 +1191,7 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                   onClick={() =>
                     setDraft({
                       ...policy,
-                      lateFeeFormulaVersion: 2,
+                      lateFeeFormulaVersion: policy.lateFeeFormulaVersion ?? 1,
                       code: `POLICY-DEMO-${items.length + 1}`,
                       from: '',
                       to: undefined,

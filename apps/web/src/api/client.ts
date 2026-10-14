@@ -1621,6 +1621,7 @@ export async function savePolicy(policy: Policy): Promise<Policy> {
       noShowGraceMinutes: policy.noShowGraceMinutes ?? 0,
       lateGraceMinutes: policy.lateGraceMinutes ?? 0,
       lateFeePercentPerDay: policy.lateFeePercentPerDay ?? 0,
+      lateFeeFormulaVersion: policy.lateFeeFormulaVersion ?? 1,
       lateReturnBufferMinutes: policy.lateReturnBufferMinutes ?? 0,
       defaultCleaningBufferMinutes: policy.defaultCleaningBufferMinutes ?? 0,
       freeCancelBeforeHours: policy.cancelHours,
