@@ -443,6 +443,7 @@ export function OrderDetailShell({
         signature: previewSignature,
       });
       retry();
+      await refreshSettlement();
     } catch (caught) {
       const code = caught instanceof ApiClientError ? caught.code : '';
       setOperationIssueCode(code);
@@ -1180,9 +1181,9 @@ export function OrderDetailShell({
                       >
                         {settlementAmountsValid ? (
                           <>
-                            Còn phải thu: {settlementMoney(backendSettlement.outstandingVnd)}. Việc hoàn cọc
-                            qua SePay chỉ được thực hiện theo giao dịch và quyền được cấp; giao diện không
-                            tự suy ra đã hoàn từ số dự kiến.
+                            Còn phải thu: {settlementMoney(backendSettlement.outstandingVnd)}. Phương thức
+                            và thời hạn hoàn cọc vẫn cần Studio chốt; giao diện chỉ hiển thị số tiền, trạng thái
+                            máy chủ ghi nhận và điểm còn cần xử lý, không suy ra đã hoàn từ số dự kiến.
                           </>
                         ) : (
                           'Máy chủ chưa trả đủ hoặc trả sai dữ liệu tiền. Chưa thể xác nhận điều kiện hoàn tất; hãy tải lại sau khi dịch vụ quyết toán được cập nhật.'
