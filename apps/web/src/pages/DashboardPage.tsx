@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { Navigate } from '../App';
 import { Button, EmptyState, Feedback, Field, Icon, SelectField } from '../components/ui';
 import { useFixtureResource } from '../components/useFixtureResource';

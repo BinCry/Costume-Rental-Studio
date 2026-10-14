@@ -17,6 +17,11 @@ import type {
   Variant,
 } from '../fixtures/studio';
 
+function optionalText(value: string | null | undefined): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  return value;
+}
+
 interface ApiEnvelope<T> {
   success: boolean;
   data: T;
@@ -619,7 +624,7 @@ export async function saveCatalogVariant(variant: Variant): Promise<Variant> {
     variantCode: variant.code,
     sizeCode: variant.size,
     colorCode: variant.color,
-    editionLabel: variant.edition ? variant.edition : undefined,
+    editionLabel: optionalText(variant.edition),
     fitNotes: variant.fit || undefined,
     dailyRentalPriceVnd: Math.round(variant.price),
     depositAmountVnd: Math.round(variant.deposit),
@@ -1402,7 +1407,7 @@ export async function saveCrmCase(value: Case): Promise<Case> {
         // neutral seed category for customer support cases.
         caseType: 'SUPPORT',
         priority: value.priority,
-        ownerUserId: await ownerUserId(value.owner, value.branch).then((id) => id ? id : undefined),
+        ownerUserId: optionalText(await ownerUserId(value.owner, value.branch)),
         note: value.history[0],
       }),
     });
@@ -1763,7 +1768,7 @@ export async function uploadCatalogMedia(
   const path = ownerType === 'model' ? 'models' : 'variants';
   return request(`/api/v1/catalog/${path}/${encodeURIComponent(ownerId)}/media`, {
     method: 'POST',
-    body: JSON.stringify({ uploadKey: presigned.objectKey, sortOrder: 0, altText: altText ? altText : undefined }),
+    body: JSON.stringify({ uploadKey: presigned.objectKey, sortOrder: 0, altText: optionalText(altText) }),
   });
 }
 
