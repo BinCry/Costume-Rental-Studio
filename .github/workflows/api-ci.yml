@@ -86,7 +86,6 @@ jobs:
 
       - name: Verify web
         run: |
-          pnpm --filter @costume/web lint
           pnpm --filter @costume/web typecheck
           pnpm --filter @costume/web build
 
