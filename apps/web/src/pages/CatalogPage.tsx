@@ -27,9 +27,13 @@ async function checkCatalogAvailability(
   branch: string,
   pickup: string,
   returnAt: string,
+  size: string,
+  color: string,
 ): Promise<Record<string, CatalogAvailability>> {
   const variants = items.flatMap((item) =>
-    (item.apiVariants ?? []).map((variant) => ({ modelId: item.id, variantId: variant.id })),
+    (item.apiVariants ?? [])
+      .filter((variant) => (size === 'Tất cả' || variant.size === size) && (color === 'Tất cả' || variant.color === color))
+      .map((variant) => ({ modelId: item.id, variantId: variant.id })),
   );
   const checks: { modelId: string; available: boolean | null }[] = [];
   let cursor = 0;
@@ -47,7 +51,8 @@ async function checkCatalogAvailability(
   }));
   return Object.fromEntries(items.map((item) => {
     const values = checks.filter((entry) => entry?.modelId === item.id).map((entry) => entry.available);
-    if (!values.length || values.every((value) => value === null)) return [item.id, 'error'];
+    if (!values.length) return [item.id, 'unavailable'];
+    if (values.every((value) => value === null)) return [item.id, 'error'];
     if (values.some((value) => value === true)) return [item.id, 'available'];
     if (values.every((value) => value === false)) return [item.id, 'unavailable'];
     return [item.id, 'error'];
@@ -370,8 +375,11 @@ export function CatalogPage({
     window.history.replaceState(null, '', `/${params.toString() ? `?${params}` : ''}`);
   }, [branch, pickup, returnAt, category, size, color, search]);
   const periodSelected = !!pickup && !!returnAt;
-  const availabilityRequestEnabled = apiMode && !!branch && periodSelected && Boolean(data?.length);
-  const availabilityKey = JSON.stringify([branch, pickup, returnAt]);
+  const dateRangeIssue = periodSelected && (!Number.isFinite(Date.parse(pickup)) || !Number.isFinite(Date.parse(returnAt)) || Date.parse(returnAt) <= Date.parse(pickup))
+    ? 'Thời điểm trả phải sau thời điểm nhận.'
+    : '';
+  const availabilityRequestEnabled = apiMode && !!branch && periodSelected && !dateRangeIssue && Boolean(data?.length);
+  const availabilityKey = JSON.stringify([branch, pickup, returnAt, size, color]);
   const currentApiAvailability = apiAvailability?.key === availabilityKey ? apiAvailability.values : {};
   useEffect(() => {
     if (!availabilityRequestEnabled || !data?.length) return;
@@ -380,13 +388,13 @@ export function CatalogPage({
       key: availabilityKey,
       values: Object.fromEntries(data.map((item) => [item.id, 'loading' as const])),
     });
-    void checkCatalogAvailability(data, branch, pickup, returnAt).then((values) => {
+    void checkCatalogAvailability(data, branch, pickup, returnAt, size, color).then((values) => {
       if (!cancelled) setApiAvailability({ key: availabilityKey, values });
     });
     return () => {
       cancelled = true;
     };
-  }, [apiMode, availabilityKey, availabilityRequestEnabled, availabilityRetry, branch, data, pickup, returnAt]);
+  }, [apiMode, availabilityKey, availabilityRequestEnabled, availabilityRetry, branch, color, data, pickup, returnAt, size]);
   const fixtureAvailabilityKnown = !apiMode &&
     pickup === fixturePeriod.pickup && returnAt === fixturePeriod.returnAt && branch === branches[0];
   const categoryOptions = [...new Set((data ?? []).map((item) => item.category).filter(Boolean))].sort();
@@ -479,6 +487,7 @@ export function CatalogPage({
           type="datetime-local"
           value={returnAt}
           onChange={(event) => setReturnAt(event.target.value)}
+          error={dateRangeIssue || undefined}
         />
         <button
           type="button"
@@ -503,8 +512,10 @@ export function CatalogPage({
             {loading ? 'Đang tải...' : `${filtered.length} mẫu trang phục`}
           </div>
         </div>
+        {dateRangeIssue && <Feedback tone="warning" title="Khoảng thuê chưa hợp lệ">{dateRangeIssue} Tồn kho chưa được kiểm tra.</Feedback>}
         <div className="catalog-layout">
           <aside
+            id="catalog-filters"
             className={`catalog-filters ${filterOpen ? 'open' : ''}`}
             aria-label="Bộ lọc trang phục"
           >
@@ -568,7 +579,9 @@ export function CatalogPage({
               <Button
                 variant="secondary"
                 className="filter-toggle"
-                onClick={() => setFilterOpen(!filterOpen)}
+                aria-expanded={filterOpen}
+                aria-controls="catalog-filters"
+                onClick={() => setFilterOpen(!filterOpen)
               >
                 <Icon name="filter" size={18} /> Bộ lọc
               </Button>
