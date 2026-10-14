@@ -7,9 +7,16 @@ Pull request / push branch
 → CI: lint, typecheck, test, Prisma validate/generate
 
 Push hoặc merge vào main
-→ CI
-→ build Docker image API
-→ push Docker Hub
+
+API:
+→ CI: lint, typecheck, test, build và kiểm tra migration trên PostgreSQL tạm
+→ build, push Docker image API
+→ trigger Coolify deploy
+→ container API chạy migration còn thiếu trước khi khởi động server
+
+Web:
+→ typecheck, build
+→ build, push Docker image Web
 → trigger Coolify deploy
 ```
 
@@ -46,12 +53,15 @@ prisma migrate dev --name <name> --create-only
 Production:
 
 ```bash
+# Chỉ dùng khi cần chạy migration thủ công trong một đợt bảo trì có kiểm soát.
 prisma migrate deploy
 ```
 
-`migrate deploy` phải chạy trước khi phiên bản API cần schema mới nhận traffic. Coolify pre-deployment command có thể bị bỏ qua ở lần deploy đầu; initial migration cần được chạy chủ động. Docker image hoặc migration job phải chứa Prisma CLI, schema và thư mục migrations.
+Image API hiện chạy `prisma migrate deploy` trong lệnh khởi động, trước khi chạy `node dist/server.js`. Vì vậy, khi Coolify thay container bằng image mới, container sẽ áp dụng migration còn thiếu rồi mới mở API. Nếu migration lỗi, lệnh khởi động dừng và container mới không thể báo healthy.
 
-Workflow `api-publish.yml` hiện chỉ kiểm tra, đóng gói image và gọi Coolify; nó không tự áp dụng migration vào database. Trước khi dùng quyền thanh toán toàn chuỗi cho quản trị viên, chạy migration `20261011020000_global_payment_permissions` bằng `prisma migrate deploy` từ môi trường có kết nối riêng tới database production. Nếu chưa chạy migration, các quyền thanh toán phạm vi toàn chuỗi chưa được gán và giao diện sẽ khóa thao tác tương ứng theo quyền API trả về.
+Workflow `api-publish.yml` không chạy migration trên database production trực tiếp: nó kiểm thử toàn bộ migration trên PostgreSQL tạm trong CI, build/push image rồi gọi Coolify. Migration production được chạy bởi entrypoint của image API. Không chạy đồng thời migration thủ công và deploy API. Khi migration backfill dừng do xung đột lịch, hãy xử lý các đơn được nêu trong log rồi deploy lại theo quy trình có kiểm soát.
+
+Quy tắc này cũng áp dụng cho migration `20261011020000_global_payment_permissions`: khi migration còn thiếu, startup API sẽ áp dụng trước khi server nhận traffic. Sau deploy, xác minh API health/readiness và quyền thực tế của vai trò trước khi thao tác thanh toán toàn chuỗi.
 
 Không dùng `prisma migrate dev` hoặc `prisma db push` trên production.
 
