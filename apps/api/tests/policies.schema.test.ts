@@ -49,24 +49,28 @@ beforeEach(() => {
   );
 });
 
+function createdPolicyData(): Record<string, unknown> {
+  const call: unknown = mocks.create.mock.calls[0];
+  if (!call || typeof call !== 'object' || !('data' in call)) {
+    throw new Error('Policy create call was not recorded');
+  }
+  const data: unknown = call.data;
+  if (!data || typeof data !== 'object') {
+    throw new Error('Policy create call did not contain data');
+  }
+  return data as Record<string, unknown>;
+}
+
 describe('policy fee formula version', () => {
   it('preserves the current formula when a new version changes only scheduling policy', async () => {
     const parsed = policySchema.parse(policyInput);
     await createPolicy(actor, parsed);
-    expect(mocks.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ lateFeeFormulaVersion: 2 }),
-      }),
-    );
+    expect(createdPolicyData().lateFeeFormulaVersion).toBe(2);
   });
 
   it('allows an explicitly selected fee formula version', async () => {
     const parsed = policySchema.parse({ ...policyInput, lateFeeFormulaVersion: 1 });
     await createPolicy(actor, parsed);
-    expect(mocks.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ lateFeeFormulaVersion: 1 }),
-      }),
-    );
+    expect(createdPolicyData().lateFeeFormulaVersion).toBe(1);
   });
 });
