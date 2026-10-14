@@ -42,6 +42,8 @@ export type TransferStatus =
 export type CaseStatus = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
 export type UserStatus = 'PENDING' | 'ACTIVE' | 'LOCKED' | 'INACTIVE';
 export interface Variant {
+  /** Server variant ID used by quote and availability APIs. */
+  apiId?: string;
   code: string;
   modelId: string;
   size: string;
@@ -62,6 +64,8 @@ export interface CostumeDetail {
   material: string;
   accessories: string[];
   imagePosition: 'left' | 'center' | 'right' | 'missing';
+  imageUrl?: string;
+  imageAlt?: string;
   variants: Variant[];
 }
 export interface UnitBlock {
