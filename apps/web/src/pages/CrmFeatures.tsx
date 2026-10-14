@@ -25,6 +25,7 @@ import {
   createCustomerInteraction,
   hasAccessToken,
   listCrmCaseHistory,
+  listCustomerRentalHistory,
   listCrmAssignees,
   listCustomerInteractions,
 } from '../api/client';
@@ -80,6 +81,10 @@ export function CrmPage({
   const [busy, setBusy] = useState(false);
   const [apiInteractions, setApiInteractions] = useState<Record<string, string[]>>({});
   const [apiCaseHistory, setApiCaseHistory] = useState<Record<string, string[]>>({});
+  const [apiRentalHistory, setApiRentalHistory] = useState<Record<string, string[]>>({});
+  const [apiRentalHistoryErrors, setApiRentalHistoryErrors] = useState<Record<string, boolean>>({});
+  const [apiRentalHistoryLoading, setApiRentalHistoryLoading] = useState<Record<string, boolean>>({});
+  const [rentalHistoryRetry, setRentalHistoryRetry] = useState(0);
   const [apiInteractionErrors, setApiInteractionErrors] = useState<Record<string, boolean>>({});
   const [apiCaseHistoryErrors, setApiCaseHistoryErrors] = useState<Record<string, boolean>>({});
   const [apiInteractionLoading, setApiInteractionLoading] = useState<Record<string, boolean>>({});
@@ -104,6 +109,25 @@ export function CrmPage({
     ? data.find((customer) => customer.code === selected) ?? data[0]
     : undefined;
   const activeCustomerCode = activeCustomer?.code ?? selected;
+  useEffect(() => {
+    if (!realApiMode || !activeCustomer) return;
+    let active = true;
+    setApiRentalHistoryLoading((current) => ({ ...current, [activeCustomerCode]: true }));
+    setApiRentalHistoryErrors((current) => ({ ...current, [activeCustomerCode]: false }));
+    void listCustomerRentalHistory(activeCustomerCode)
+      .then((items) => {
+        if (active) setApiRentalHistory((current) => ({ ...current, [activeCustomerCode]: items }));
+      })
+      .catch(() => {
+        if (active) setApiRentalHistoryErrors((current) => ({ ...current, [activeCustomerCode]: true }));
+      })
+      .finally(() => {
+        if (active) setApiRentalHistoryLoading((current) => ({ ...current, [activeCustomerCode]: false }));
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeCustomer, activeCustomerCode, rentalHistoryRetry, realApiMode]);
   useEffect(() => {
     if (!realApiMode || !activeCustomer) return;
     let active = true;
@@ -333,7 +357,19 @@ export function CrmPage({
                       ]}
                     />
                     <h3>Lịch sử thuê</h3>
-                    <Timeline items={person.history} />
+                    {realApiMode && apiRentalHistoryLoading[person.code] ? (
+                      <p className="muted" role="status">Đang tải lịch sử thuê…</p>
+                    ) : realApiMode && apiRentalHistoryErrors[person.code] ? (
+                      <Feedback
+                        tone="danger"
+                        title="Chưa tải được lịch sử thuê"
+                        action={<Button variant="secondary" onClick={() => setRentalHistoryRetry((value) => value + 1)}>Thử lại</Button>}
+                      >
+                        Kiểm tra quyền xem đơn thuê của tài khoản rồi thử tải lại.
+                      </Feedback>
+                    ) : (
+                      <Timeline items={realApiMode ? apiRentalHistory[person.code] ?? [] : person.history} />
+                    )}
                     <h3>Tương tác</h3>
                     {realApiMode && apiInteractionLoading[person.code] ? (
                       <p className="muted" role="status">Đang tải tương tác…</p>
