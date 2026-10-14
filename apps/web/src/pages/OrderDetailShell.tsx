@@ -439,6 +439,14 @@ export function OrderDetailShell({
     } catch (caught) {
       const code = caught instanceof ApiClientError ? caught.code : '';
       setOperationIssueCode(code);
+      retry();
+      void refreshSettlement();
+      if (code === 'ORDER_VERSION_CONFLICT' || code === 'INVALID_ORDER_TRANSITION') {
+        setMatchedCodes([]);
+        setMatchedCode('');
+        setChecks({});
+        setEvidenceFiles({});
+      }
       setOperationIssue(
         code === 'UNIT_STILL_WITH_CUSTOMER'
           ? 'Không thể giao: bộ vẫn đang ở khách trước hoặc chưa được xác nhận trả. Mọi khoản đã ghi nhận vẫn nằm trên đơn; hãy mở đơn để phân công bộ READY khác.'
@@ -511,6 +519,8 @@ export function OrderDetailShell({
         setRepairBlockedUntil({});
         setEvidenceFiles({});
       }
+      retry();
+      void refreshSettlement();
       setOperationIssue(caught instanceof Error ? caught.message : 'Không thể hoàn tất nhận trả.');
     } finally {
       setOperationBusy(false);
@@ -932,6 +942,33 @@ export function OrderDetailShell({
               </div>
               {mode === 'handover' ? (
                 <>
+                  {realApiMode && settlementLoading && (
+                    <Feedback title="Đang tải số dư thanh toán">
+                      Đang đối chiếu số phải thu, khoản đã ghi nhận và giao dịch chờ xác minh.
+                    </Feedback>
+                  )}
+                  {realApiMode && settlementError && (
+                    <Feedback tone="danger" title="Không tải được số dư thanh toán"
+                      action={<Button variant="secondary" onClick={() => void refreshSettlement()}>Tải lại</Button>}>
+                      {settlementError}
+                    </Feedback>
+                  )}
+                  {realApiMode && !canReadPayments && (
+                    <Feedback tone="warning" title="Bạn chưa có quyền xem khoản thu">
+                      Cần quyền đọc thanh toán tại chi nhánh trước khi xác nhận giao đồ.
+                    </Feedback>
+                  )}
+                  {realApiMode && pendingCollection && (
+                    <Feedback tone="warning" title="Có khoản thu đang chờ đối soát">
+                      Chưa thu lại hoặc giao đồ cho đến khi giao dịch được xác minh.
+                    </Feedback>
+                  )}
+                  {realApiMode && !settlementLoading && !settlementError && canReadPayments && !settlementAmountsValid && (
+                    <Feedback tone="danger" title="Số dư thanh toán chưa đầy đủ">
+                      Không xác nhận giao đồ cho đến khi máy chủ trả đủ tiền thuê, cọc và số còn phải thu.
+                      <Button variant="secondary" onClick={() => void refreshSettlement()}>Tải lại số dư</Button>
+                    </Feedback>
+                  )}
                   <SelectField
                     label={`Phương thức thu ${realApiMode ? '' : '(bản xem trước)'}`}
                     value={effectiveMethod}
