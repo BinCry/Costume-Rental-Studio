@@ -118,6 +118,8 @@ interface ApiOrder {
     purpose: string;
     amountVnd: string | number | bigint;
     status: string;
+    method?: string;
+    transactionReference?: string | null;
     refunds?: { amountVnd: string | number | bigint; status: string }[];
   }[];
   lateFeeVnd?: string | number | bigint;
@@ -267,6 +269,7 @@ export interface SettlementSnapshot {
   deposit: {
     dueVnd: string;
     paidVnd: string;
+    remainingVnd: string;
     deductionVnd: string;
     refundedVnd: string;
     refundRemainingVnd: string;
@@ -869,6 +872,12 @@ function mapOrder(order: ApiOrder): Order {
     branch, pickup: formatDate(order.plannedStartAt), returnAt: formatDate(order.plannedDueAt),
     apiPlannedStartAt: order.plannedStartAt, apiPlannedDueAt: order.plannedDueAt,
     dayPolicy: 'Theo chính sách hiện hành của máy chủ', items,
+    apiPayments: (order.payments ?? []).map((payment) => ({
+      purpose: payment.purpose,
+      amount: numberValue(payment.amountVnd),
+      status: payment.status,
+      transactionReference: payment.transactionReference,
+    })),
     money: [
       { label: 'Tiền thuê', amount: rental, status: paymentStatus('RENTAL', rental), tone: paidFor('RENTAL') > 0 ? 'success' : 'neutral' },
       { label: 'Tiền cọc', amount: deposit, status: paymentStatus('DEPOSIT', deposit), tone: 'info' },
