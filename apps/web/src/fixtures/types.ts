@@ -38,6 +38,11 @@ export interface CatalogItem {
   depositFrom: number;
   availableAtFixturePeriod: boolean;
   description: string;
+  /** Published image from the catalog API; absent in fixture data. */
+  imageUrl?: string;
+  imageAlt?: string;
+  /** Public variant IDs and price snapshots used by availability checks. */
+  apiVariants?: { id: string; size: string; color: string; price: number; deposit: number }[];
 }
 
 export interface UnitOption {
