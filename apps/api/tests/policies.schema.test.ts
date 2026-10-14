@@ -50,11 +50,11 @@ beforeEach(() => {
 });
 
 function createdPolicyData(): Record<string, unknown> {
-  const call: unknown = mocks.create.mock.calls[0];
-  if (!call || typeof call !== 'object' || !('data' in call)) {
+  const args: unknown = mocks.create.mock.calls[0]?.[0];
+  if (!args || typeof args !== 'object' || !('data' in args)) {
     throw new Error('Policy create call was not recorded');
   }
-  const data: unknown = call.data;
+  const data: unknown = args.data;
   if (!data || typeof data !== 'object') {
     throw new Error('Policy create call did not contain data');
   }
