@@ -177,7 +177,7 @@ BEGIN
   conflicts AS (
     SELECT format(
       '%s on %s through %s conflicts with block %s (%s)',
-      c.order_code, c.unit_code, c.proposed_until, b.block_code, b.block_type
+      c.order_code, c.unit_code, c.proposed_until, b.id, b.block_type
     ) AS example
     FROM candidates c
     JOIN unit_blocks b ON b.unit_id = c.unit_id
@@ -216,7 +216,7 @@ BEGIN
     conflicts AS (
       SELECT format(
         '%s on %s through %s conflicts with block %s (%s)',
-        c.order_code, c.unit_code, c.proposed_until, b.block_code, b.block_type
+        c.order_code, c.unit_code, c.proposed_until, b.id, b.block_type
       ) AS example
       FROM candidates c
       JOIN unit_blocks b ON b.unit_id = c.unit_id
