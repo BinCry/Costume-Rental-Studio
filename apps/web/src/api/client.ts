@@ -96,6 +96,9 @@ interface ApiOrder {
   items?: {
     id: string;
     variantId?: string;
+    allocationStatus?: string;
+    returnConditionGrade?: string | null;
+    isMissing?: boolean;
     variant?: { sizeCode?: string; colorCode?: string; model?: { name?: string } };
     unit?: { id?: string; unitCode?: string; operationalStatus?: string };
     unitDailyPriceVnd?: string | number | bigint;
@@ -818,10 +821,14 @@ function mapOrder(order: ApiOrder): Order {
     id: item.id ?? String(index + 1), costume: item.variant?.model?.name ?? 'Trang phục',
     variant: [item.variant?.sizeCode, item.variant?.colorCode].filter(Boolean).join(' / '),
     apiVariantId: item.variantId,
+    apiAllocationStatus: item.allocationStatus,
+    apiReturnConditionGrade: item.returnConditionGrade ?? undefined,
+    apiIsMissing: item.isMissing,
     unitCode: item.unit?.unitCode, unitStatus: item.unit?.operationalStatus,
     apiUnitId: item.unit?.id,
     accessories: item.accessories?.map((accessory) => ({
-      id: accessory.modelAccessoryId ?? '',
+      // Return endpoints validate the RentalItemAccessory row id, not its catalog model id.
+      id: accessory.id,
       name: accessory.accessoryName,
       quantityOut: accessory.quantityOut,
       quantityReturned: accessory.quantityReturned,
@@ -1209,11 +1216,14 @@ export async function listDashboardTasks(branchName?: string): Promise<QueueTask
     if (!isPending && !isHandover && !isActive) return [];
     const taskDate = isActive ? dueAt : pickupAt;
     const overdue = isActive && dueAt.getTime() < now.getTime();
+    const taskDay = localDateKey(taskDate);
     const group: QueueTask['group'] = overdue
       ? 'Quá hạn'
-      : taskDate.getTime() <= soon && localDateKey(taskDate) === today
+      : taskDay === today && taskDate.getTime() <= soon
         ? 'Trong 2 giờ tới'
-        : 'Hôm nay';
+        : taskDay === today
+          ? 'Hôm nay'
+          : 'Ngày khác';
     const taskType: QueueTask['kind'] = overdue
       ? 'overdue'
       : isPending
