@@ -351,6 +351,55 @@ describe('web API client session and error handling', () => {
     });
   });
 
+  it('retains accessory return condition from order detail and maps it to a readable label', async () => {
+    const listedOrder = {
+      id: 'order-1',
+      orderCode: 'RT-TEST-06',
+      status: 'RETURN_INSPECTION',
+      version: 3,
+      plannedStartAt: '2026-10-14T03:00:00.000Z',
+      plannedDueAt: '2026-10-15T03:00:00.000Z',
+      pickupBranch: { id: 'branch-1', name: 'Chi nhánh Quận 1' },
+      items: [],
+      payments: [],
+    };
+    const detail = {
+      ...listedOrder,
+      inspectionStatus: 'PENDING_ASSESSMENT',
+      items: [{
+        id: 'order-item-1',
+        accessories: [{
+          id: 'accessory-row-1',
+          accessoryName: 'Khăn choàng',
+          quantityOut: 2,
+          quantityReturned: 1,
+          conditionIn: 'FAIR',
+          damageFeeVnd: '0',
+          missingFeeVnd: '0',
+        }],
+      }],
+    };
+    globalThis.fetch
+      .mockResolvedValueOnce(success({
+        items: [listedOrder],
+        pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+      }))
+      .mockResolvedValueOnce(success(detail));
+    const { getReturnSettlementOrder, listOrders } = await import('../src/api/client.ts');
+    await listOrders({ loadPendingAvailability: false });
+    const loaded = await getReturnSettlementOrder('RT-TEST-06');
+    const { returnConditionLabel } = await import('../src/pages/OrderDetailShell.tsx');
+
+    expect(loaded.items[0].accessories[0]).toMatchObject({
+      id: 'accessory-row-1',
+      quantityReturned: 1,
+      quantityOut: 2,
+      conditionIn: 'FAIR',
+    });
+    expect(returnConditionLabel(loaded.items[0].accessories[0].conditionIn)).toBe('Khá');
+    expect(returnConditionLabel(null)).toBe('Chưa ghi nhận');
+  });
+
   it('reads refund rows with GET only', async () => {
     const order = {
       id: 'order-1',
