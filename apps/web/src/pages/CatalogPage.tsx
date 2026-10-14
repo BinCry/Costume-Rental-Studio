@@ -239,6 +239,7 @@ function CostumeCard({
   conflict,
   availabilityOverride,
   availabilityState,
+  onRetry,
   onView,
 }: {
   item: CatalogItem;
@@ -247,6 +248,7 @@ function CostumeCard({
   conflict: boolean;
   availabilityOverride?: boolean;
   availabilityState?: CatalogAvailability;
+  onRetry?: () => void;
   onView: (trigger: HTMLButtonElement) => void;
 }) {
   const available = availabilityOverride ?? item.availableAtFixturePeriod;
@@ -298,12 +300,17 @@ function CostumeCard({
           <small>Cọc từ {money(item.depositFrom)}</small>
         </div>
         {availability && (
-          <StatusLabel
-            text={availability}
-            tone={availability.startsWith('Có') || availability.startsWith('Còn') ? 'success' : availability.startsWith('Đang') ? 'info' : availability.startsWith('Chưa') ? 'danger' : 'warning'}
-          />
+          <div className="inline-status">
+            <StatusLabel
+              text={availability}
+              tone={availability.startsWith('Có') || availability.startsWith('Còn') ? 'success' : availability.startsWith('Đang') ? 'info' : availability.startsWith('Chưa') ? 'danger' : 'warning'}
+            />
+            {availabilityState === 'error' && onRetry && (
+              <button type="button" className="text-button" onClick={onRetry}>Thử lại</button>
+            )}
+          </div>
         )}
-        {periodSelected && !fixtureAvailabilityKnown && (
+        {periodSelected && !availability && !fixtureAvailabilityKnown && (
           <StatusLabel text="Chưa có dữ liệu khả dụng cho kỳ này" tone="neutral" />
         )}
         <Button
@@ -345,6 +352,7 @@ export function CatalogPage({
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<CatalogItem | null>(null);
   const [apiAvailability, setApiAvailability] = useState<AvailabilitySnapshot>();
+  const [availabilityRetry, setAvailabilityRetry] = useState(0);
   const previewRef = useRef<HTMLElement>(null);
   const previewTriggerRef = useRef<HTMLButtonElement>(null);
   const { loading, data, error, retry } = useFixtureResource(scenario, loadCatalog);
@@ -378,7 +386,7 @@ export function CatalogPage({
     return () => {
       cancelled = true;
     };
-  }, [apiMode, availabilityKey, availabilityRequestEnabled, branch, data, pickup, returnAt]);
+  }, [apiMode, availabilityKey, availabilityRequestEnabled, availabilityRetry, branch, data, pickup, returnAt]);
   const fixtureAvailabilityKnown = !apiMode &&
     pickup === fixturePeriod.pickup && returnAt === fixturePeriod.returnAt && branch === branches[0];
   const categoryOptions = [...new Set((data ?? []).map((item) => item.category).filter(Boolean))].sort();
@@ -681,6 +689,7 @@ export function CatalogPage({
                       conflict={scenario === 'conflict'}
                       availabilityOverride={currentApiAvailability[item.id] === 'available' ? true : currentApiAvailability[item.id] === 'unavailable' ? false : undefined}
                       availabilityState={apiMode && periodSelected ? currentApiAvailability[item.id] : undefined}
+                      onRetry={() => setAvailabilityRetry((value) => value + 1)}
                       onView={(trigger) => openPreview(item, trigger)}
                     />
                   ))}
