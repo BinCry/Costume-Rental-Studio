@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Navigate } from '../App';
 import {
   Button,
@@ -82,6 +82,7 @@ export function OrderDetailShell({
   const [note, setNote] = useState('');
   const [transactionReference, setTransactionReference] = useState('');
   const [evidenceFiles, setEvidenceFiles] = useState<Record<string, File[]>>({});
+  const evidenceCache = useRef(new Map<string, { files: File[]; evidence: Awaited<ReturnType<typeof uploadRentalEvidence>>[] }>());
   const [operationBusy, setOperationBusy] = useState(false);
   const [operationIssue, setOperationIssue] = useState('');
   const [operationIssueCode, setOperationIssueCode] = useState('');
@@ -332,7 +333,13 @@ export function OrderDetailShell({
   const uploadEvidence = async (itemId: string, phase: 'PICKUP' | 'RETURN') => {
     const files = evidenceFiles[itemId] ?? [];
     if (files.length === 0) throw new ApiClientError(400, 'EVIDENCE_REQUIRED', 'Mỗi bộ cần ít nhất một ảnh bằng chứng.');
-    return Promise.all(files.slice(0, 10).map((file) => uploadRentalEvidence(itemId, phase, file)));
+    const cacheKey = `${order?.id ?? orderId}:${itemId}:${phase}`;
+    const cached = evidenceCache.current.get(cacheKey);
+    if (cached && cached.files.length === files.length && cached.files.every((file, index) => file === files[index]))
+      return cached.evidence;
+    const evidence = await Promise.all(files.slice(0, 10).map((file) => uploadRentalEvidence(itemId, phase, file)));
+    evidenceCache.current.set(cacheKey, { files: files.slice(0, 10), evidence });
+    return evidence;
   };
   const ensurePayment = async (
     purpose: 'RENTAL' | 'DEPOSIT',
@@ -340,16 +347,17 @@ export function OrderDetailShell({
     transactionRef?: string,
   ) => {
     if (amount <= 0) return;
-    const existing = await listOrderPayments(order?.id ?? '');
-    const alreadyRecorded = existing.some(
-      (payment) =>
-        payment.purpose === purpose &&
-        Number(payment.amountVnd) === Math.round(amount) &&
-        ['SUCCEEDED', 'PAID'].includes(payment.status),
-    );
-    if (alreadyRecorded) return;
-    if (effectiveMethod === 'CASH') await recordCashPayment(order?.id ?? '', purpose, amount);
-    else await recordBankTransferPayment(order?.id ?? '', purpose, amount, transactionRef ?? '');
+    const existing = (await listOrderPayments(order?.id ?? '')).filter((payment) => payment.purpose === purpose);
+    const pending = existing.some((payment) => payment.status === 'PENDING' || payment.status === 'PROCESSING');
+    if (pending)
+      throw new ApiClientError(409, 'PAYMENT_RECONCILIATION_REQUIRED', 'Có khoản thu đang chờ xác minh. Đối soát giao dịch trước khi thử lại.');
+    const paid = existing
+      .filter((payment) => ['SUCCEEDED', 'PAID'].includes(payment.status))
+      .reduce((sum, payment) => sum + Number(payment.amountVnd), 0);
+    const remaining = Math.max(0, Math.round(amount) - paid);
+    if (remaining <= 0) return;
+    if (effectiveMethod === 'CASH') await recordCashPayment(order?.id ?? '', purpose, remaining);
+    else await recordBankTransferPayment(order?.id ?? '', purpose, remaining, transactionRef ?? '');
   };
   const performHandover = async () => {
     if (!realApiMode) {
