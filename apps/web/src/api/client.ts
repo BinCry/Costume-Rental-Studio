@@ -852,7 +852,7 @@ function mapOrder(order: ApiOrder): Order {
     .filter((payment) => payment.purpose === purpose && successful(payment))
     .reduce((sum, payment) => sum + numberValue(payment.amountVnd), 0);
   const pendingFor = (purpose: string) => (order.payments ?? [])
-    .filter((payment) => payment.purpose === purpose && payment.status === 'PENDING')
+    .filter((payment) => payment.purpose === purpose && ['PENDING', 'PROCESSING'].includes(payment.status))
     .reduce((sum, payment) => sum + numberValue(payment.amountVnd), 0);
   const paymentStatus = (purpose: string, due: number) => {
     if (pendingFor(purpose) > 0) return paidFor(purpose) > 0 ? 'Có giao dịch đang xác minh' : 'Đang xác minh';
