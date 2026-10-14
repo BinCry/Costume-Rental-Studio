@@ -7,7 +7,7 @@ import { branches, fixtureAdapter, fixtureClock } from '../fixtures/adapter';
 import type { DemoScenario, QueueTask } from '../fixtures/types';
 import { apiEnabled, hasAccessToken, listDashboardTasks } from '../api/client';
 
-const groups: QueueTask['group'][] = ['Quá hạn', 'Trong 2 giờ tới', 'Hôm nay', 'Chờ xác nhận lâu'];
+const groups: QueueTask['group'][] = ['Quá hạn', 'Trong 2 giờ tới', 'Hôm nay', 'Ngày khác', 'Chờ xác nhận lâu'];
 const summary: { label: string; kind: QueueTask['kind']; short: string }[] = [
   { label: 'Chờ xác nhận', kind: 'pending', short: 'Cần duyệt' },
   { label: 'Giao trong ngày', kind: 'handover', short: 'Sắp giao' },
@@ -55,6 +55,7 @@ export function DashboardPage({
   const effectiveKind = realApiMode && kind === 'payment' ? 'all' : kind;
   const effectivePriority = realApiMode && priority === 'Chờ xác nhận lâu' ? 'all' : priority;
   const scoped = (data ?? []).filter((task) => task.branch === branch && !stale.includes(task.id));
+  const visibleForDate = scoped.filter((task) => !workDate || task.workDate === workDate || task.kind === 'overdue');
   const visible = scoped.filter(
     (task) =>
       (effectiveKind === 'all' || task.kind === effectiveKind) &&
@@ -114,7 +115,7 @@ export function DashboardPage({
         />
         <SelectField
           label="Loại việc"
-          value={kind}
+          value={effectiveKind}
           onChange={(event) => setKind(event.target.value)}
         >
           <option value="all">Tất cả việc</option>
@@ -166,7 +167,7 @@ export function DashboardPage({
           >
             <span>{entry.label}</span>
             <strong>
-              {loading ? '—' : scoped.filter((task) => task.kind === entry.kind).length}
+              {loading ? '—' : visibleForDate.filter((task) => task.kind === entry.kind).length}
             </strong>
             <small>
               {entry.short} <Icon name="arrow" size={14} />
