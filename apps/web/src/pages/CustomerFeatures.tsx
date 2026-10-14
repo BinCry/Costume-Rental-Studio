@@ -114,6 +114,7 @@ export function CostumeDetailPage({
     key: string;
     status: 'available' | 'unavailable' | 'error';
   }>();
+  const [availabilityRetry, setAvailabilityRetry] = useState(0);
   const availabilityKey = JSON.stringify([apiVariantId, branch, pickup, due]);
   const hasAvailabilityInputs = usePublicApi && !!apiVariantId && !!branch && !!pickup && !!due;
   useEffect(() => {
@@ -128,7 +129,7 @@ export function CostumeDetailPage({
     return () => {
       active = false;
     };
-  }, [availabilityKey, apiVariantId, branch, due, hasAvailabilityInputs, pickup]);
+  }, [availabilityKey, apiVariantId, availabilityRetry, branch, due, hasAvailabilityInputs, pickup]);
   const availability = hasAvailabilityInputs
     ? availabilityResult?.key === availabilityKey ? availabilityResult.status : 'loading'
     : 'idle';
@@ -265,6 +266,9 @@ export function CostumeDetailPage({
                   )}
                   <Feedback
                     tone={known ? (available ? 'success' : 'warning') : 'info'}
+                    action={availability === 'error' ? (
+                      <Button variant="secondary" onClick={() => setAvailabilityRetry((value) => value + 1)}>Thử lại</Button>
+                    ) : undefined}
                     title={
                       availability === 'loading'
                         ? 'Đang kiểm tra khả dụng'
