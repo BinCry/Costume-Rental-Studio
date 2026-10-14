@@ -50,11 +50,15 @@ export function DashboardPage({
     loadQueue,
     `${branch}:${realApiMode ? 'api' : 'fixture'}`,
   );
+  const displayedGroups = realApiMode ? groups.filter((entry) => entry !== 'Chờ xác nhận lâu') : groups;
+  const displayedSummary = realApiMode ? summary.filter((entry) => entry.kind !== 'payment') : summary;
+  const effectiveKind = realApiMode && kind === 'payment' ? 'all' : kind;
+  const effectivePriority = realApiMode && priority === 'Chờ xác nhận lâu' ? 'all' : priority;
   const scoped = (data ?? []).filter((task) => task.branch === branch && !stale.includes(task.id));
   const visible = scoped.filter(
     (task) =>
-      (kind === 'all' || task.kind === kind) &&
-      (priority === 'all' || task.group === priority) &&
+      (effectiveKind === 'all' || task.kind === effectiveKind) &&
+      (effectivePriority === 'all' || task.group === effectivePriority) &&
       (taskStatus === 'all' || task.status === taskStatus) &&
       (!workDate || task.workDate === workDate || task.kind === 'overdue') &&
       `${task.orderId} ${task.customer} ${task.phone} ${task.barcode ?? ''} ${task.task}`
@@ -114,7 +118,7 @@ export function DashboardPage({
           onChange={(event) => setKind(event.target.value)}
         >
           <option value="all">Tất cả việc</option>
-          {summary.map((entry) => (
+          {displayedSummary.map((entry) => (
             <option key={entry.kind} value={entry.kind}>
               {entry.label}
             </option>
@@ -124,11 +128,11 @@ export function DashboardPage({
       <div className="queue-extra-filters">
         <SelectField
           label="Mức ưu tiên"
-          value={priority}
+          value={effectivePriority}
           onChange={(event) => setPriority(event.target.value)}
         >
           <option value="all">Tất cả mức</option>
-          {groups.map((entry) => (
+          {displayedGroups.map((entry) => (
             <option key={entry}>{entry}</option>
           ))}
         </SelectField>
@@ -148,11 +152,16 @@ export function DashboardPage({
           onChange={(event) => setWorkDateOverride(event.target.value)}
         />
       </div>
+      {realApiMode && (
+        <p className="section-help" role="status">
+          Hàng đợi API hiện trả về việc duyệt, giao và trả. Chưa có dữ liệu riêng cho giao dịch cần xử lý hoặc mức “chờ xác nhận lâu”.
+        </p>
+      )}
       <section className="queue-summary" aria-label="Tóm tắt hàng đợi">
-        {summary.map((entry) => (
+        {displayedSummary.map((entry) => (
           <button
             key={entry.kind}
-            className={`queue-counter ${kind === entry.kind ? 'selected' : ''}`}
+            className={`queue-counter ${effectiveKind === entry.kind ? 'selected' : ''}`}
             onClick={() => setKind(entry.kind)}
           >
             <span>{entry.label}</span>
@@ -235,7 +244,7 @@ export function DashboardPage({
       )}
       {!loading && !error && visible.length > 0 && (
         <div className="work-groups">
-          {groups.map((group) => {
+          {displayedGroups.map((group) => {
             const tasks = visible.filter((task) => task.group === group);
             return tasks.length ? (
               <section key={group} className="work-group">
