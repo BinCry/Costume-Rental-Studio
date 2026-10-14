@@ -274,12 +274,52 @@ export interface SettlementSnapshot {
     refundedVnd: string;
     refundRemainingVnd: string;
     refundAvailableVnd?: string;
-    refundInProgressVnd: string;
+    refundInProgressVnd?: string;
   };
   extra: { dueVnd: string; paidVnd: string; remainingVnd: string };
   outstandingVnd: string;
   canPickup: boolean;
   canComplete: boolean;
+}
+
+export interface ReturnSettlementOrderDetails {
+  id: string;
+  orderCode: string;
+  status: string;
+  version: number;
+  inspectionStatus?: string | null;
+  depositDeductionVnd: string | number | bigint;
+  otherFeeVnd: string | number | bigint;
+  settlementNote?: string | null;
+  returnNotes?: string | null;
+  items: {
+    id: string;
+    returnConditionGrade?: string | null;
+    isMissing?: boolean;
+    damageFeeVnd?: string | number | bigint;
+    missingFeeVnd?: string | number | bigint;
+    accessories: {
+      id: string;
+      accessoryName?: string;
+      quantityOut: number;
+      quantityReturned?: number | null;
+      conditionIn?: string | null;
+      damageFeeVnd?: string | number | bigint;
+      missingFeeVnd?: string | number | bigint;
+    }[];
+  }[];
+}
+
+export interface OrderRefundRecord {
+  id: string;
+  paymentId: string;
+  amountVnd: string | number | bigint;
+  status: string;
+  reason?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  completedAt?: string | null;
+  providerRefundId?: string | null;
 }
 
 export interface PaymentRecord {
@@ -338,6 +378,13 @@ function apiErrorMessage(status: number, code: string) {
     UNIT_NOT_READY: 'Bộ được chọn chưa sẵn sàng để giao.',
     PAYMENT_AMOUNT_EXCEEDS_BALANCE: 'Số tiền vượt quá khoản còn phải thu. Hãy tải lại quyết toán.',
     PAYMENT_RECONCILIATION_REQUIRED: 'Giao dịch đang cần đối soát. Không tạo khoản thu mới trước khi kiểm tra.',
+    ASSESSMENT_REQUIRED: 'Cần lưu kết quả kiểm tra toàn bộ trang phục và phụ kiện trước khi quyết toán.',
+    ASSESSMENT_LOCKED: 'Đánh giá đã bị khóa do giao dịch tài chính phát sinh. Tải lại dữ liệu và đối chiếu lịch sử.',
+    SETTLEMENT_LOCKED: 'Quyết toán đã bị khóa do giao dịch tài chính phát sinh. Tải lại và đối chiếu lịch sử.',
+    SETTLEMENT_CONFLICT: 'Thông tin quyết toán đã thay đổi. Tải lại snapshot và kiểm tra lại số liệu.',
+    SETTLEMENT_REQUIRED: 'Các khoản thanh toán hoặc hoàn cọc chưa đáp ứng điều kiện đóng đơn.',
+    SETTLEMENT_NOT_READY: 'Snapshot máy chủ chưa xác nhận đủ điều kiện hoàn tất. Tải lại trước khi thao tác.',
+
     IDEMPOTENCY_CONFLICT: 'Yêu cầu đã thay đổi so với lần gửi trước. Hãy tải lại đơn và kiểm tra giao dịch.',
     INVALID_ORDER_TRANSITION: 'Đơn đã chuyển sang trạng thái khác. Hãy tải lại trước khi thao tác.',
     POLICY_OVERLAP: 'Thời hạn chính sách bị trùng. Hãy kiểm tra lại thời điểm áp dụng.',
@@ -2042,6 +2089,24 @@ export async function getOrderSettlement(orderCode: string) {
   return request<SettlementSnapshot>(`/api/v1/payments/orders/${encodeURIComponent(orderApiId(orderCode))}/summary`);
 }
 
+export async function getReturnSettlementOrder(orderCode: string) {
+  const order = await request<ReturnSettlementOrderDetails>(
+    `/api/v1/rentals/orders/${encodeURIComponent(orderApiId(orderCode))}`,
+  );
+  orderRefs.set(orderCode, {
+    id: order.id,
+    itemIds: order.items.map((item) => item.id),
+    version: order.version,
+  });
+  return order;
+}
+
+export async function listOrderRefunds(orderCode: string) {
+  return request<OrderRefundRecord[]>(
+    `/api/v1/payments/orders/${encodeURIComponent(orderApiId(orderCode))}/refunds`,
+  );
+}
+
 export async function validatePickupOrder(orderCode: string, expectedVersion: number) {
   const reference = orderReference(orderCode);
   return request<{ ready: boolean; unitCount: number }>(
@@ -2098,9 +2163,14 @@ export async function returnOrder(
 export async function assessOrderReturn(
   orderCode: string,
   expectedVersion: number,
-  items: { orderItemId: string; damageFeeVnd: number; missingFeeVnd: number; accessories: { accessoryId: string; damageFeeVnd: number; missingFeeVnd: number }[] }[],
+  items: {
+    orderItemId: string;
+    damageFeeVnd: string;
+    missingFeeVnd: string;
+    accessories: { accessoryId: string; damageFeeVnd: string; missingFeeVnd: string }[];
+  }[],
 ) {
-  return request<ApiOrder>(`/api/v1/rentals/orders/${encodeURIComponent(orderApiId(orderCode))}/assessment`, {
+  return request<ReturnSettlementOrderDetails>(`/api/v1/rentals/orders/${encodeURIComponent(orderApiId(orderCode))}/assessment`, {
     method: 'POST',
     body: JSON.stringify({ expectedVersion, items }),
   });
@@ -2109,12 +2179,43 @@ export async function assessOrderReturn(
 export async function prepareOrderSettlement(
   orderCode: string,
   expectedVersion: number,
-  depositDeductionVnd = 0,
-  otherFeeVnd = 0,
+  depositDeductionVnd: string,
+  otherFeeVnd: string,
   settlementNote = '',
 ) {
-  return request<ApiOrder>(`/api/v1/payments/orders/${encodeURIComponent(orderApiId(orderCode))}/settlement`, {
+  return request<ReturnSettlementOrderDetails>(`/api/v1/payments/orders/${encodeURIComponent(orderApiId(orderCode))}/settlement`, {
     method: 'POST',
-    body: JSON.stringify({ expectedVersion, depositDeductionVnd: String(Math.round(depositDeductionVnd)), otherFeeVnd: String(Math.round(otherFeeVnd)), settlementNote: settlementNote || undefined }),
+    body: JSON.stringify({ expectedVersion, depositDeductionVnd, otherFeeVnd, settlementNote: settlementNote || undefined }),
   });
+}
+
+export async function completeOrderSettlement(orderCode: string) {
+  const orderId = orderApiId(orderCode);
+  const details = await getReturnSettlementOrder(orderCode);
+  const snapshot = await getOrderSettlement(orderCode);
+  if (
+    snapshot.orderId !== orderId ||
+    snapshot.status !== 'RETURN_INSPECTION' ||
+    snapshot.canComplete !== true ||
+    details.id !== orderId ||
+    details.status !== 'RETURN_INSPECTION' ||
+    !['PASSED', 'HAS_DAMAGE', 'HAS_MISSING_ITEM'].includes(details.inspectionStatus ?? '')
+  )
+    throw new ApiClientError(409, 'SETTLEMENT_NOT_READY', apiErrorMessage(409, 'SETTLEMENT_NOT_READY'));
+  const depositDeductionVnd = String(details.depositDeductionVnd);
+  const otherFeeVnd = String(details.otherFeeVnd);
+  if (!/^\d+$/.test(depositDeductionVnd) || !/^\d+$/.test(otherFeeVnd))
+    throw new ApiClientError(409, 'SETTLEMENT_NOT_READY', apiErrorMessage(409, 'SETTLEMENT_NOT_READY'));
+  return request<ReturnSettlementOrderDetails>(
+    `/api/v1/rentals/orders/${encodeURIComponent(orderId)}/complete`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        expectedVersion: details.version,
+        depositDeductionVnd,
+        otherFeeVnd,
+        settlementNote: details.settlementNote ?? undefined,
+      }),
+    },
+  );
 }
