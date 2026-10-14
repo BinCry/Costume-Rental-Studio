@@ -20,7 +20,10 @@ import { useBranchOptions } from '../components/useBranchOptions';
 const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
 
 type CatalogAvailability = 'loading' | 'available' | 'unavailable' | 'error';
-type AvailabilitySnapshot = { key: string; values: Record<string, CatalogAvailability> };
+interface AvailabilitySnapshot {
+  key: string;
+  values: Record<string, CatalogAvailability>;
+}
 
 async function checkCatalogAvailability(
   items: CatalogItem[],
@@ -275,10 +278,10 @@ function CostumeCard({
       <div
         className={`costume-media costume-${item.imagePosition}`}
         role={item.imageUrl ? undefined : 'img'}
-        aria-label={item.imageUrl ? undefined : (item.imageAlt || `Ảnh minh họa mẫu ${item.name}`)}
+        aria-label={item.imageUrl ? undefined : (item.imageAlt ?? `Ảnh minh họa mẫu ${item.name}`)}
       >
         {item.imageUrl ? (
-          <img src={item.imageUrl} alt={item.imageAlt || item.name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <img src={item.imageUrl} alt={item.imageAlt ?? item.name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : item.imagePosition === 'missing' ? (
           <span className="media-placeholder">
             <Icon name="spark" size={30} /> Chưa có ảnh
@@ -380,14 +383,14 @@ export function CatalogPage({
     : '';
   const availabilityRequestEnabled = apiMode && !!branch && periodSelected && !dateRangeIssue && Boolean(data?.length);
   const availabilityKey = JSON.stringify([branch, pickup, returnAt, size, color]);
-  const currentApiAvailability = apiAvailability?.key === availabilityKey ? apiAvailability.values : {};
+  const currentApiAvailability = apiAvailability?.key === availabilityKey
+    ? apiAvailability.values
+    : availabilityRequestEnabled && data?.length
+      ? Object.fromEntries(data.map((item) => [item.id, 'loading' as const]))
+      : {};
   useEffect(() => {
     if (!availabilityRequestEnabled || !data?.length) return;
     let cancelled = false;
-    setApiAvailability({
-      key: availabilityKey,
-      values: Object.fromEntries(data.map((item) => [item.id, 'loading' as const])),
-    });
     void checkCatalogAvailability(data, branch, pickup, returnAt, size, color).then((values) => {
       if (!cancelled) setApiAvailability({ key: availabilityKey, values });
     });
@@ -599,9 +602,9 @@ export function CatalogPage({
                   <div
                     className={`catalog-preview-image costume-${selectedItem.imagePosition}`}
                     role={selectedItem.imageUrl ? undefined : 'img'}
-                    aria-label={selectedItem.imageUrl ? undefined : (selectedItem.imageAlt || `Ảnh minh họa ${selectedItem.name}`)}
+                    aria-label={selectedItem.imageUrl ? undefined : (selectedItem.imageAlt ?? `Ảnh minh họa ${selectedItem.name}`)}
                   >
-                    {selectedItem.imageUrl && <img src={selectedItem.imageUrl} alt={selectedItem.imageAlt || selectedItem.name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                    {selectedItem.imageUrl && <img src={selectedItem.imageUrl} alt={selectedItem.imageAlt ?? selectedItem.name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                   </div>
                   <div className="catalog-preview-copy">
                     <div className="preview-top">

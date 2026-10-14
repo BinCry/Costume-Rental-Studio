@@ -345,7 +345,7 @@ export function BookingPage({
                       <span
                         className={`booking-costume-image costume-${entry.imagePosition}`}
                         role="img"
-                        aria-label={entry.imageAlt || `Ảnh ${entry.name}`}
+                        aria-label={entry.imageAlt ?? `Ảnh ${entry.name}`}
                       >
                         {entry.imageUrl && <img src={entry.imageUrl} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                       </span>

@@ -180,7 +180,7 @@ export function CostumeDetailPage({
                   {item.imageUrl ? (
                     <img
                       src={item.imageUrl}
-                      alt={item.imageAlt || item.name}
+                      alt={item.imageAlt ?? item.name}
                       loading="eager"
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                     />

@@ -74,6 +74,7 @@ export function OrderDetailShell({
     Record<string, 'PASSED' | 'PENDING_ASSESSMENT' | 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED'>
   >({});
   const [repairBlockedUntil, setRepairBlockedUntil] = useState<Record<string, string>>({});
+  const [repairScheduleValidity, setRepairScheduleValidity] = useState<Record<string, boolean>>({});
   const [returnAccessories, setReturnAccessories] = useState<
     Record<string, { quantityReturned: string; conditionIn: string }>
   >({});
@@ -153,7 +154,7 @@ export function OrderDetailShell({
   const repairScheduleComplete = !realApiMode || mode !== 'return' || scannedItems.every((item) => {
     if (!['POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')) return true;
     const value = repairBlockedUntil[item.id];
-    return !!value && Number.isFinite(Date.parse(value)) && Date.parse(value) > Date.now();
+    return !!value && Number.isFinite(Date.parse(value)) && repairScheduleValidity[item.id] === true;
   });
   const allChecked =
     requiresChecks.length > 0 &&
@@ -385,7 +386,7 @@ export function OrderDetailShell({
     if (files.length === 0) throw new ApiClientError(400, 'EVIDENCE_REQUIRED', 'Mỗi bộ cần ít nhất một ảnh bằng chứng.');
     const cacheKey = `${order?.id ?? orderId}:${itemId}:${phase}`;
     const cached = evidenceCache.current.get(cacheKey);
-    if (cached && cached.files.length === files.length && cached.files.every((file, index) => file === files[index]))
+    if (cached?.files.length === files.length && cached?.files.every((file, index) => file === files[index]))
       return cached.evidence;
     const evidence = await Promise.all(files.slice(0, 10).map((file) => uploadRentalEvidence(itemId, phase, file)));
     evidenceCache.current.set(cacheKey, { files: files.slice(0, 10), evidence });
@@ -476,6 +477,15 @@ export function OrderDetailShell({
     if (!order || !scannedEnough || !allChecked || !allEvidenceSelected || restricted) return;
     if (order.status !== 'ACTIVE') {
       setOperationIssue('Đơn đã ở bước kiểm tra/quyết toán. Không gửi lại thao tác nhận trả; hãy xử lý biên bản và hoàn cọc theo quyền được cấp.');
+      return;
+    }
+    const invalidRepairSchedule = scannedItems.find((item) => {
+      if (!['POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')) return false;
+      const value = repairBlockedUntil[item.id];
+      return !value || !Number.isFinite(Date.parse(value)) || Date.parse(value) <= Date.now();
+    });
+    if (invalidRepairSchedule) {
+      setOperationIssue(`Nhập thời điểm sửa xong trong tương lai cho bộ ${invalidRepairSchedule.unitCode ?? invalidRepairSchedule.id}.`);
       return;
     }
     setOperationBusy(true);
@@ -864,8 +874,13 @@ export function OrderDetailShell({
                           required
                           hint="Nhập thời điểm dự kiến bộ có thể đưa vào sử dụng sau sửa chữa."
                           value={repairBlockedUntil[item.id] ?? ''}
-                          onChange={(event) => setRepairBlockedUntil((current) => ({ ...current, [item.id]: event.target.value }))}
-                          error={repairBlockedUntil[item.id] && Date.parse(repairBlockedUntil[item.id]) <= Date.now()
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            const valid = !!value && Number.isFinite(Date.parse(value)) && Date.parse(value) > Date.now();
+                            setRepairBlockedUntil((current) => ({ ...current, [item.id]: value }));
+                            setRepairScheduleValidity((current) => ({ ...current, [item.id]: valid }));
+                          }}
+                          error={repairBlockedUntil[item.id] && repairScheduleValidity[item.id] !== true
                             ? 'Chọn thời điểm trong tương lai.'
                             : undefined}
                         />
@@ -879,7 +894,7 @@ export function OrderDetailShell({
                             return (
                               <div className="two-fields" key={key || index}>
                                 <Field
-                                  label={`${accessory.name || `Phụ kiện ${index + 1}`} · trả ${accessory.quantityOut}`}
+                                  label={`${accessory.name ?? `Phụ kiện ${index + 1}`} · trả ${accessory.quantityOut}`}
                                   type="number"
                                   min={0}
                                   max={accessory.quantityOut}
