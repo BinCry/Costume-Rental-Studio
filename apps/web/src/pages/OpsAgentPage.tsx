@@ -9,13 +9,13 @@ import { opsAgentFixtureAdapter, opsAgentSources, opsAgentWorkflows } from '../f
 
 type AgentTab = 'overview' | 'queue' | 'workflows' | 'knowledge' | 'activity' | 'chat';
 type QueueFilter = 'all' | QueueTask['kind'];
-type ChatMessage = {
+interface ChatMessage {
   id: number;
   role: 'assistant' | 'user';
   text: string;
   sourceIds: string[];
-};
-type QueueFilterOption = { id: QueueFilter; label: string };
+}
+interface QueueFilterOption { id: QueueFilter; label: string }
 
 const tabs: { id: AgentTab; label: string }[] = [
   { id: 'overview', label: 'Tổng quan' },
@@ -152,7 +152,7 @@ export function OpsAgentPage({
       sourceIds: ['product-scope', 'safety-direction'],
     },
   ]);
-  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const messageEndRef = useRef<HTMLDivElement>(null);
   const messageSequence = useRef(1);
   const loadQueue = useCallback((currentScenario: DemoScenario) => fixtureAdapter.listQueue(currentScenario), []);

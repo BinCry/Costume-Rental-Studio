@@ -531,7 +531,7 @@ export function AccountPage({
   apiIdentity?: {
     displayName: string;
     email: string;
-    roles: Array<{ name: string; branchId: string | null; actorGroup?: string }>;
+    roles: { name: string; branchId: string | null; actorGroup?: string }[];
   };
   realApiMode?: boolean;
   onSignOut?: () => void;

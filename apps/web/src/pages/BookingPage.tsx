@@ -22,7 +22,7 @@ const steps = ['Trang phục', 'Lựa chọn', 'Nhận và trả', 'Báo giá', 
 const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
 function lateReturnPolicyText(quote: QuoteSnapshot | undefined, apiMode: boolean) {
   const dueRule = 'Hạn trả là thời điểm ghi trên đơn; đệm lịch nội bộ không kéo dài thời gian thuê.';
-  if (!quote || quote.lateFeePercentPerDay === undefined) {
+  if (quote?.lateFeePercentPerDay === undefined) {
     return apiMode
       ? 'Báo giá chưa trả về mức phí trả trễ. Hãy xác nhận với studio trước khi gửi yêu cầu. ' + dueRule
       : 'Bản minh họa không mô phỏng phí trả trễ; studio cần xác nhận chính sách trước khi áp dụng. ' + dueRule;
