@@ -111,7 +111,7 @@ export interface QueueTask {
   barcode?: string;
   task: string;
   urgency: string;
-  group: 'Quá hạn' | 'Trong 2 giờ tới' | 'Hôm nay' | 'Chờ xác nhận lâu';
+  group: 'Quá hạn' | 'Trong 2 giờ tới' | 'Hôm nay' | 'Ngày khác' | 'Chờ xác nhận lâu';
   kind: 'pending' | 'handover' | 'return' | 'overdue' | 'payment';
   owner: string;
   branch: string;
