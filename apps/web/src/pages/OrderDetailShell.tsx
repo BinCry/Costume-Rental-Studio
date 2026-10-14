@@ -52,13 +52,13 @@ function settlementMoney(value: unknown): string {
 const loadOrders = (scenario: DemoScenario) => fixtureAdapter.listOrders(scenario);
 
 type ReturnWorkflowDetailsResource =
-  | { orderId: string; status: 'loading' }
-  | { orderId: string; status: 'success'; details: ReturnSettlementOrderDetails }
-  | { orderId: string; status: 'error'; message: string };
+  | { orderId: string; requestKey: string; status: 'loading' }
+  | { orderId: string; requestKey: string; status: 'success'; details: ReturnSettlementOrderDetails }
+  | { orderId: string; requestKey: string; status: 'error'; message: string };
 type RefundsResource =
-  | { orderId: string; status: 'loading' }
-  | { orderId: string; status: 'success'; refunds: OrderRefundRecord[] }
-  | { orderId: string; status: 'error'; message: string };
+  | { orderId: string; requestKey: string; status: 'loading' }
+  | { orderId: string; requestKey: string; status: 'success'; refunds: OrderRefundRecord[] }
+  | { orderId: string; requestKey: string; status: 'error'; message: string };
 
 function amountText(value: string | number | bigint | null | undefined) {
   return String(value ?? '0');
@@ -71,7 +71,17 @@ function inspectionLabel(status: string | null | undefined) {
   if (status === 'PASSED') return 'Đã đánh giá · không có phí';
   if (status === 'HAS_DAMAGE') return 'Đã đánh giá · có hư hỏng/thiếu';
   if (status === 'HAS_MISSING_ITEM') return 'Đã đánh giá · có đồ thiếu';
-  return status || 'Chưa có trạng thái';
+  return status ?? 'Chưa có trạng thái';
+}
+export function returnConditionLabel(conditionIn: string | null | undefined) {
+  const labels: Record<string, string> = {
+    NEW: 'Mới',
+    GOOD: 'Tốt',
+    FAIR: 'Khá',
+    POOR: 'Kém',
+    DAMAGED: 'Hư hỏng',
+  };
+  return conditionIn ? labels[conditionIn] ?? 'Chưa ghi nhận' : 'Chưa ghi nhận';
 }
 function refundLabel(status: string) {
   if (status === 'COMPLETED') return 'Máy chủ ghi nhận hoàn tất';
@@ -100,24 +110,32 @@ function ReturnSettlementWorkflow({
   onRefresh: () => void;
   onCompleted: () => void;
 }) {
+  const [reloadRevision, setReloadRevision] = useState(0);
+  const workflowKey = JSON.stringify([order.id, order.version, canReadPayments, reloadRevision]);
   const [detailsResource, setDetailsResource] = useState<ReturnWorkflowDetailsResource>({
     orderId: order.id,
+    requestKey: workflowKey,
     status: 'loading',
   });
   const [refundsResource, setRefundsResource] = useState<RefundsResource>({
     orderId: order.id,
-    status: canReadPayments ? 'loading' : 'error',
-    ...(canReadPayments ? {} : { message: 'Bạn chưa có quyền đọc trạng thái thanh toán.' }),
-  } as RefundsResource);
+    requestKey: workflowKey,
+    status: 'loading',
+  });
   const [assessmentDraft, setAssessmentDraft] = useState<Record<string, { damage: string; missing: string }>>({});
   const [settlementDraft, setSettlementDraft] = useState({ depositDeduction: '0', otherFee: '0', note: '' });
   const [busy, setBusy] = useState(false);
   const [issue, setIssue] = useState('');
   const [message, setMessage] = useState('');
-  const [reloadRevision, setReloadRevision] = useState(0);
-  const currentDetailsResource = detailsResource.orderId === order.id ? detailsResource : undefined;
+  const currentDetailsResource =
+    detailsResource.orderId === order.id && detailsResource.requestKey === workflowKey
+      ? detailsResource
+      : undefined;
   const details = currentDetailsResource?.status === 'success' ? currentDetailsResource.details : undefined;
-  const currentRefundsResource = refundsResource.orderId === order.id ? refundsResource : undefined;
+  const currentRefundsResource =
+    refundsResource.orderId === order.id && refundsResource.requestKey === workflowKey
+      ? refundsResource
+      : undefined;
   const refunds = currentRefundsResource?.status === 'success' ? currentRefundsResource.refunds : undefined;
   const detailsLoading = !currentDetailsResource || currentDetailsResource.status === 'loading';
   const detailsError = currentDetailsResource?.status === 'error' ? currentDetailsResource.message : '';
@@ -127,12 +145,10 @@ function ReturnSettlementWorkflow({
 
   useEffect(() => {
     let active = true;
-    setDetailsResource({ orderId: order.id, status: 'loading' });
-    if (canReadPayments) setRefundsResource({ orderId: order.id, status: 'loading' });
     void getReturnSettlementOrder(order.id)
       .then((loaded) => {
         if (!active) return;
-        setDetailsResource({ orderId: order.id, status: 'success', details: loaded });
+        setDetailsResource({ orderId: order.id, requestKey: workflowKey, status: 'success', details: loaded });
         setAssessmentDraft(Object.fromEntries(loaded.items.map((item) => [
           item.id,
           { damage: amountText(item.damageFeeVnd), missing: amountText(item.missingFeeVnd) },
@@ -146,6 +162,7 @@ function ReturnSettlementWorkflow({
       .catch((caught: unknown) => {
         if (active) setDetailsResource({
           orderId: order.id,
+          requestKey: workflowKey,
           status: 'error',
           message: caught instanceof Error ? caught.message : 'Không tải được biên bản kiểm tra.',
         });
@@ -153,18 +170,19 @@ function ReturnSettlementWorkflow({
     if (canReadPayments) {
       void listOrderRefunds(order.id)
         .then((loaded) => {
-          if (active) setRefundsResource({ orderId: order.id, status: 'success', refunds: loaded });
+          if (active) setRefundsResource({ orderId: order.id, requestKey: workflowKey, status: 'success', refunds: loaded });
         })
         .catch((caught: unknown) => {
           if (active) setRefundsResource({
             orderId: order.id,
+            requestKey: workflowKey,
             status: 'error',
             message: caught instanceof Error ? caught.message : 'Không tải được trạng thái hoàn cọc.',
           });
         });
     }
     return () => { active = false; };
-  }, [order.id, order.version, canReadPayments, reloadRevision]);
+  }, [workflowKey, order.id, order.version, canReadPayments, reloadRevision]);
 
   const refreshWorkflow = () => {
     setMessage('');
@@ -172,7 +190,7 @@ function ReturnSettlementWorkflow({
     onRefresh();
   };
   const assess = async () => {
-    if (!details || details.status !== 'RETURN_INSPECTION' || !canAssess || busy) return;
+    if (details?.status !== 'RETURN_INSPECTION' || !canAssess || busy) return;
     const items = details.items.map((item) => {
       const fee = assessmentDraft[item.id] ?? {
         damage: amountText(item.damageFeeVnd),
@@ -223,7 +241,7 @@ function ReturnSettlementWorkflow({
     }
   };
   const prepare = async () => {
-    if (!details || details.status !== 'RETURN_INSPECTION' ||
+    if (details?.status !== 'RETURN_INSPECTION' ||
       !assessmentComplete || !canPrepare || busy) return;
     if (!validVndInput(settlementDraft.depositDeduction) || !validVndInput(settlementDraft.otherFee)) {
       setIssue('Nhập khoản cấn trừ và phí khác bằng số nguyên VND không âm.');
@@ -345,7 +363,15 @@ function ReturnSettlementWorkflow({
                     };
                     return (
                       <div className="return-accessory-assessment" key={accessory.id}>
-                        <strong>{accessory.accessoryName ?? 'Phụ kiện'} · đã trả {accessory.quantityReturned ?? 0}/{accessory.quantityOut}</strong>
+                        <strong>
+                          {accessory.accessoryName ?? 'Phụ kiện'} · đã trả{' '}
+                          {accessory.quantityReturned === null || accessory.quantityReturned === undefined
+                            ? 'Chưa ghi nhận'
+                            : String(accessory.quantityReturned) + '/' + String(accessory.quantityOut)}
+                        </strong>
+                        <p className="section-help">
+                          Tình trạng khi nhận trả: {returnConditionLabel(accessory.conditionIn)}
+                        </p>
                         <div className="two-fields">
                           <Field
                             label="Phí hư hỏng phụ kiện (VND)"
@@ -462,10 +488,9 @@ function ReturnSettlementWorkflow({
                 disabled={
                   busy ||
                   !canReadPayments ||
-                  !snapshot ||
-                  snapshot.orderId !== details.id ||
-                  snapshot.status !== 'RETURN_INSPECTION' ||
-                  snapshot.canComplete !== true ||
+                  snapshot?.orderId !== details.id ||
+                  snapshot?.status !== 'RETURN_INSPECTION' ||
+                  snapshot?.canComplete !== true ||
                   details.status !== 'RETURN_INSPECTION' ||
                   !assessmentComplete ||
                   detailsLoading ||
