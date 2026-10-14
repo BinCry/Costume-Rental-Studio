@@ -328,6 +328,7 @@ export function CrmPage({
                   {visible.map((c) => (
                     <button
                       className={`feature-list-row selectable ${person?.code === c.code ? 'selected' : ''}`}
+                      aria-pressed={person?.code === c.code}
                       key={c.code}
                       onClick={() => switchView('customer', c.code)}
                     >
@@ -460,6 +461,7 @@ export function CrmPage({
                       {related.map((c) => (
                         <button
                           className={`feature-list-row selectable ${current?.code === c.code ? 'selected' : ''}`}
+                          aria-pressed={current?.code === c.code}
                           key={c.code}
                           onClick={() => switchView('case', c.code)}
                         >
