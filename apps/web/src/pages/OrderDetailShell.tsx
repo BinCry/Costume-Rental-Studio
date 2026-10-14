@@ -73,6 +73,7 @@ export function OrderDetailShell({
   const [returnConditions, setReturnConditions] = useState<
     Record<string, 'PASSED' | 'PENDING_ASSESSMENT' | 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED'>
   >({});
+  const [repairBlockedUntil, setRepairBlockedUntil] = useState<Record<string, string>>({});
   const [returnAccessories, setReturnAccessories] = useState<
     Record<string, { quantityReturned: string; conditionIn: string }>
   >({});
@@ -80,7 +81,7 @@ export function OrderDetailShell({
   const [rentPreview, setRentPreview] = useState(false);
   const [depositPreview, setDepositPreview] = useState(false);
   const [note, setNote] = useState('');
-  const [transactionReference, setTransactionReference] = useState('');
+  const [transactionReferences, setTransactionReferences] = useState({ rental: '', deposit: '' });
   const [evidenceFiles, setEvidenceFiles] = useState<Record<string, File[]>>({});
   const evidenceCache = useRef(new Map<string, { files: File[]; evidence: Awaited<ReturnType<typeof uploadRentalEvidence>>[] }>());
   const [operationBusy, setOperationBusy] = useState(false);
@@ -102,7 +103,7 @@ export function OrderDetailShell({
   );
   const order: Order | undefined = eligible.find((entry) => entry.id === orderId);
   const activeOrderId = order?.id;
-  const settlementRequestEnabled = realApiMode && mode === 'return' && !!activeOrderId && canReadPayments;
+  const settlementRequestEnabled = realApiMode && !!activeOrderId && canReadPayments;
   const currentSettlementResource = settlementRequestEnabled && settlementResource?.orderId === activeOrderId
     ? settlementResource
     : undefined;
@@ -117,9 +118,14 @@ export function OrderDetailShell({
   const rental = order?.money.find((line) => line.label === 'Tiền thuê');
   const deposit = order?.money.find((line) => line.label === 'Tiền cọc');
   const settlement = realApiMode ? undefined : order ? returnSnapshots[order.id] : undefined;
-  const scannedItems =
-    order?.items.filter((item) => !!item.unitCode && matchedCodes.includes(item.unitCode)) ?? [];
-  const allReturnItemsScanned = !!order && scannedItems.length === order.items.length;
+  const returnableItems = mode === 'return' && realApiMode
+    ? (order?.items ?? []).filter((item) => ['ACTIVE', 'CONFIRMED'].includes(item.apiAllocationStatus ?? ''))
+    : order?.items ?? [];
+  const operationItems = mode === 'return' ? returnableItems : order?.items ?? [];
+  const scannedItems = operationItems.filter((item) => !!item.unitCode && matchedCodes.includes(item.unitCode));
+  const allReturnItemsScanned = !!order && (
+    order.status === 'RETURN_INSPECTION' || scannedItems.length === returnableItems.length
+  );
   const requiresChecks = order
     ? (mode === 'return' ? scannedItems : order.items).flatMap((item) =>
         mode === 'return'
@@ -144,11 +150,16 @@ export function OrderDetailShell({
         (!!review?.conditionIn && ['FAIR', 'POOR', 'DAMAGED'].includes(review.conditionIn));
     }),
   );
+  const repairScheduleComplete = !realApiMode || mode !== 'return' || scannedItems.every((item) => {
+    if (!['POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')) return true;
+    const value = repairBlockedUntil[item.id];
+    return !!value && Number.isFinite(Date.parse(value)) && Date.parse(value) > Date.now();
+  });
   const allChecked =
     requiresChecks.length > 0 &&
     requiresChecks.every((key) => checks[key]) &&
     (mode === 'handover' || scannedItems.every((item) => !!returnConditions[item.id])) &&
-    accessoryReviewComplete;
+    accessoryReviewComplete && repairScheduleComplete;
   const needsAssessment =
     mode === 'return' &&
     (accessoryNeedsAssessment || scannedItems.some((item) =>
@@ -165,7 +176,12 @@ export function OrderDetailShell({
   const settlementAmountsValid =
     !!backendSettlement &&
     [
+      backendSettlement.rental.dueVnd,
+      backendSettlement.rental.paidVnd,
+      backendSettlement.rental.remainingVnd,
       backendSettlement.deposit.dueVnd,
+      backendSettlement.deposit.paidVnd,
+      backendSettlement.deposit.remainingVnd,
       backendSettlement.deposit.deductionVnd,
       backendSettlement.deposit.refundedVnd,
       backendSettlement.deposit.refundAvailableVnd ??
@@ -173,6 +189,26 @@ export function OrderDetailShell({
       backendSettlement.extra.remainingVnd,
       backendSettlement.outstandingVnd,
     ].every((value) => parseVndAmount(value) !== null);
+  const rentalRemaining = realApiMode
+    ? (parseVndAmount(backendSettlement?.rental.remainingVnd) ?? 0)
+    : (rental?.amount ?? 0);
+  const depositRemaining = realApiMode
+    ? (parseVndAmount(backendSettlement?.deposit.remainingVnd) ?? 0)
+    : (deposit?.amount ?? 0);
+  const pendingRental = (order?.apiPayments ?? []).some((payment) =>
+    payment.purpose === 'RENTAL' && ['PENDING', 'PROCESSING'].includes(payment.status),
+  );
+  const pendingDeposit = (order?.apiPayments ?? []).some((payment) =>
+    payment.purpose === 'DEPOSIT' && ['PENDING', 'PROCESSING'].includes(payment.status),
+  );
+  const pendingCollection = pendingRental || pendingDeposit;
+  const handoverPaymentReady = !realApiMode || (
+    canReadPayments && settlementAmountsValid && !settlementLoading && !settlementError && !pendingCollection
+  );
+  const cashChecksComplete = (rentalRemaining <= 0 || rentPreview) && (depositRemaining <= 0 || depositPreview);
+  const bankReferencesComplete =
+    (rentalRemaining <= 0 || !!transactionReferences.rental.trim()) &&
+    (depositRemaining <= 0 || !!transactionReferences.deposit.trim());
   const backendSettlementCanComplete =
     settlementAmountsValid && backendSettlement?.canComplete === true;
   const snapshotConditionMismatch =
@@ -225,10 +261,12 @@ export function OrderDetailShell({
     setMatchedCodes([]);
     setChecks({});
     setReturnConditions({});
+    setRepairBlockedUntil({});
+    setReturnAccessories({});
     setRentPreview(false);
     setDepositPreview(false);
     setNote('');
-    setTransactionReference('');
+    setTransactionReferences({ rental: '', deposit: '' });
     setEvidenceFiles({});
     setOperationIssue('');
     setOperationIssueCode('');
@@ -270,9 +308,14 @@ export function OrderDetailShell({
           `Mã ${barcode.toUpperCase()} thuộc đơn ${hit.order.id}, không khớp đơn ${order?.id}. Chưa ghi nhận giao/trả.`,
         );
       } else {
-        const code = hit.order.items[hit.itemIndex].unitCode ?? '';
-        setMatchedCode(code);
-        setMatchedCodes((current) => (current.includes(code) ? current : [...current, code]));
+        const hitItem = hit.order.items[hit.itemIndex];
+        const code = hitItem.unitCode ?? '';
+        if (mode === 'return' && realApiMode && !['ACTIVE', 'CONFIRMED'].includes(hitItem.apiAllocationStatus ?? '')) {
+          setScanIssue(`Bộ ${code} đã được ghi nhận trả trước đó, không cần quét lại.`);
+        } else {
+          setMatchedCode(code);
+          setMatchedCodes((current) => (current.includes(code) ? current : [...current, code]));
+        }
       }
     } catch (caught) {
       setScanIssue(caught instanceof Error ? caught.message : 'Chưa tra cứu được mã bộ.');
@@ -296,6 +339,8 @@ export function OrderDetailShell({
     matchedCodes,
     checks,
     returnConditions,
+    repairBlockedUntil,
+    transactionReferences,
     effectiveMethod,
     rentPreview,
     depositPreview,
@@ -323,8 +368,8 @@ export function OrderDetailShell({
       text: needsAssessment
         ? `Đã xem trước nhận ${scannedItems.length}/${order.items.length} bộ có vấn đề cần đánh giá. Ghi chú được giữ trong phiên demo; cọc vẫn đang giữ, chưa tính phí hoặc hoàn tiền. Backend cần tạo biên bản PENDING_ASSESSMENT và phân công xử lý.`
         : order.status === 'ACTIVE'
-          ? scannedItems.length < order.items.length
-            ? `Đã xem trước nhận ${scannedItems.length}/${order.items.length} bộ. Bộ chưa quét vẫn ở khách; chưa quyết toán hoặc hoàn cọc. Backend cần xác nhận trạng thái từng dòng.`
+          ? scannedItems.length < returnableItems.length
+            ? `Đã xem trước nhận ${scannedItems.length}/${returnableItems.length} bộ còn ở khách. Các bộ đã nhận lần trước không cần quét lại; chưa quyết toán hoặc hoàn cọc.`
             : 'Đã xem trước kết quả kiểm tra. Backend cần ghi nhận trả để chuyển đơn sang Đang kiểm tra đồ trả; chưa hoàn cọc.'
           : 'Đã xem trước quyết toán. Backend cần xác nhận cấn trừ, hoàn cọc và điều kiện hoàn tất; bản demo chưa ghi giao dịch.',
       signature: previewSignature,
@@ -364,9 +409,9 @@ export function OrderDetailShell({
       previewHandover();
       return;
     }
-    if (!order || !allScanned || !allChecked || !allEvidenceSelected || !canCollectPayments || restricted) return;
-    if (effectiveMethod === 'BANK_TRANSFER' && !transactionReference.trim()) {
-      setOperationIssue('Nhập mã giao dịch chuyển khoản trước khi xác nhận thu tiền.');
+    if (!order || !allScanned || !allChecked || !allEvidenceSelected || !canCollectPayments || !handoverPaymentReady || restricted) return;
+    if (effectiveMethod === 'BANK_TRANSFER' && !bankReferencesComplete) {
+      setOperationIssue('Nhập mã giao dịch riêng cho từng khoản còn phải thu trước khi xác nhận.');
       return;
     }
     setOperationBusy(true);
@@ -383,8 +428,8 @@ export function OrderDetailShell({
           evidence: await uploadEvidence(item.id, 'PICKUP'),
         })),
       );
-      await ensurePayment('RENTAL', rental?.amount ?? 0, transactionReference.trim());
-      await ensurePayment('DEPOSIT', deposit?.amount ?? 0, transactionReference.trim());
+      await ensurePayment('RENTAL', parseVndAmount(backendSettlement?.rental.dueVnd) ?? rental?.amount ?? 0, transactionReferences.rental.trim());
+      await ensurePayment('DEPOSIT', parseVndAmount(backendSettlement?.deposit.dueVnd) ?? deposit?.amount ?? 0, transactionReferences.deposit.trim());
       await pickupApiOrder(order.id, order.version, evidence);
       setResult({
         text: 'Đã ghi nhận bằng chứng, thanh toán và giao trang phục. Đơn đã được chuyển sang trạng thái đang thuê.',
@@ -442,16 +487,27 @@ export function OrderDetailShell({
           }),
         })),
       );
-      await returnApiOrder(order.id, order.version, scannedItems.length < order.items.length, note.trim(), items);
+      await returnApiOrder(order.id, order.version, scannedItems.length < returnableItems.length, note.trim(), items);
       setResult({
         text:
-          scannedItems.length < order.items.length
-            ? `Đã ghi nhận trả ${scannedItems.length}/${order.items.length} bộ. Cọc vẫn được giữ để xử lý phần còn lại hoặc quyết toán.`
+          scannedItems.length < returnableItems.length
+            ? `Đã ghi nhận trả ${scannedItems.length}/${returnableItems.length} bộ còn ở khách. Cọc vẫn được giữ để xử lý phần còn lại hoặc quyết toán.`
             : 'Đã ghi nhận trả đủ bộ. Đơn đang chờ kiểm tra và quyết toán cọc theo quy trình.',
         signature: previewSignature,
       });
       retry();
     } catch (caught) {
+      const code = caught instanceof ApiClientError ? caught.code : '';
+      setOperationIssueCode(code);
+      if (code === 'ORDER_VERSION_CONFLICT' || code === 'INVALID_ORDER_TRANSITION') {
+        setMatchedCodes([]);
+        setMatchedCode('');
+        setChecks({});
+        setReturnConditions({});
+        setReturnAccessories({});
+        setRepairBlockedUntil({});
+        setEvidenceFiles({});
+      }
       setOperationIssue(caught instanceof Error ? caught.message : 'Không thể hoàn tất nhận trả.');
     } finally {
       setOperationBusy(false);
