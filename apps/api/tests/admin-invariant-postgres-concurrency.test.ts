@@ -234,7 +234,7 @@ describe.skipIf(!runDatabaseTests)('Global administrator lockout protection with
     const marker = randomUUID().toUpperCase();
     const user = await prisma.user.create({
       data: {
-        email: `admin-${marker}@example.test`,
+        email: `admin-${marker}@example.test`.toLowerCase(),
         displayName: 'Administrator test',
         status: 'ACTIVE',
       },
