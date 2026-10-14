@@ -17,7 +17,8 @@ pnpm install
 pnpm --filter @costume/web dev
 pnpm --filter @costume/web typecheck
 pnpm --filter @costume/web lint
+pnpm --filter @costume/web test
 pnpm --filter @costume/web build
 ```
 
-Xem [`docs/ui/demo-guide.md`](../../docs/ui/demo-guide.md) để biết đường dẫn, cách chuyển giữa fixture/API, luồng demo và các quyết định nghiệp vụ còn mở.
+Test API client nằm trong `tests/api-client.test.mjs`; test dùng Vitest có sẵn trong monorepo, không cần backend đang chạy. Xem [`docs/ui/demo-guide.md`](../../docs/ui/demo-guide.md) để biết đường dẫn, cách chuyển giữa fixture/API, luồng demo và các quyết định nghiệp vụ còn mở.
