@@ -105,6 +105,8 @@ interface ApiOrder {
     missingFeeVnd?: string | number | bigint;
     accessories?: {
       id: string;
+      modelAccessoryId?: string | null;
+      accessoryName?: string;
       quantityOut: number;
       quantityReturned?: number | null;
     }[];
@@ -818,7 +820,12 @@ function mapOrder(order: ApiOrder): Order {
     apiVariantId: item.variantId,
     unitCode: item.unit?.unitCode, unitStatus: item.unit?.operationalStatus,
     apiUnitId: item.unit?.id,
-    accessories: item.accessories,
+    accessories: item.accessories?.map((accessory) => ({
+      id: accessory.modelAccessoryId ?? '',
+      name: accessory.accessoryName,
+      quantityOut: accessory.quantityOut,
+      quantityReturned: accessory.quantityReturned,
+    })),
   }));
   const rental = Math.max(0, orderItems.reduce(
     (sum, item) => sum + numberValue(item.unitDailyPriceVnd) * (item.billableDays ?? 1),
