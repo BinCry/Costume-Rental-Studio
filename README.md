@@ -85,7 +85,7 @@ Browse Costumes
 
 ## 🚧 Current Status
 
-Repository hiện có giao diện React/Vite kết nối với API Express/Prisma. Mã nguồn đã bao phủ các luồng vận hành chính; việc hoàn tất giao diện còn phụ thuộc kiểm thử với dữ liệu staging và xác nhận từng hành trình bằng API thật.
+Repository hiện có giao diện React/Vite kết nối với API Express/Prisma. Các luồng vận hành chính đã có trong source; CI xác minh lint/test/typecheck/build. Nghiệm thu giao dịch đầu cuối vẫn cần staging với dữ liệu cô lập.
 
 | Area | Status | Notes |
 |------|--------|-------|
@@ -94,7 +94,7 @@ Repository hiện có giao diện React/Vite kết nối với API Express/Prism
 | Frontend | ✅ Đã kết nối API | Adapter ở `apps/web/src/api/client.ts`; màn hình được chia theo khu khách, vận hành và quản trị. |
 | Tài khoản | ✅ Có luồng API/UI | Đăng nhập, đăng ký email và OTP, đặt lại mật khẩu, Google sign-in và phiên đăng nhập. |
 | Database | ✅ Prisma migrations | Schema và migration được quản lý bằng Prisma; container API áp dụng migration trước khi mở server. |
-| Kiểm thử frontend | 🔄 Đang hoàn thiện | Nhánh này bổ sung test API client và bật lint/test frontend trong CI. |
+| Kiểm thử frontend | ✅ CI đạt | Lint, 5 test API client, typecheck và build đều qua CI. |
 | Nghiệm thu còn lại | ⚠️ Cần môi trường staging | Chạy lại các hành trình nghiệp vụ với API và dữ liệu cô lập; không dùng giao dịch thật trên production. |
 | Ops Agent API | Ngoài phạm vi đợt này | Phần hoàn thiện hiện tại không bao gồm xây API cho Ops Agent. |
 
@@ -454,7 +454,7 @@ Costume-Rental-Studio/
 
 ## 🗄 Database Design
 
-PostgreSQL + Prisma đã có schema và initial migration. Migration hiện cần được apply/test trên PostgreSQL trước khi bắt đầu repository/service nghiệp vụ.
+PostgreSQL + Prisma đã có schema và các migration. API CI kiểm tra migration trên PostgreSQL 16 tạm trước khi chạy test và build.
 
 Tài liệu database được chia theo mục đích:
 
