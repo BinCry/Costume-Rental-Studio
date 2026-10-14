@@ -19,6 +19,41 @@ import { useBranchOptions } from '../components/useBranchOptions';
 
 const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
 
+type CatalogAvailability = 'loading' | 'available' | 'unavailable' | 'error';
+type AvailabilitySnapshot = { key: string; values: Record<string, CatalogAvailability> };
+
+async function checkCatalogAvailability(
+  items: CatalogItem[],
+  branch: string,
+  pickup: string,
+  returnAt: string,
+): Promise<Record<string, CatalogAvailability>> {
+  const variants = items.flatMap((item) =>
+    (item.apiVariants ?? []).map((variant) => ({ modelId: item.id, variantId: variant.id })),
+  );
+  const checks: { modelId: string; available: boolean | null }[] = [];
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(5, variants.length) }, async () => {
+    while (cursor < variants.length) {
+      const index = cursor++;
+      const variant = variants[index];
+      try {
+        const result = await checkPublicAvailability(variant.variantId, branch, pickup, returnAt);
+        checks[index] = { modelId: variant.modelId, available: result.available };
+      } catch {
+        checks[index] = { modelId: variant.modelId, available: null };
+      }
+    }
+  }));
+  return Object.fromEntries(items.map((item) => {
+    const values = checks.filter((entry) => entry?.modelId === item.id).map((entry) => entry.available);
+    if (!values.length || values.every((value) => value === null)) return [item.id, 'error'];
+    if (values.some((value) => value === true)) return [item.id, 'available'];
+    if (values.every((value) => value === false)) return [item.id, 'unavailable'];
+    return [item.id, 'error'];
+  }));
+}
+
 const heroLooks = [
   { code: 'ao-dai', label: 'Áo dài' },
   { code: 'suit', label: 'Suit' },
@@ -203,6 +238,7 @@ function CostumeCard({
   fixtureAvailabilityKnown,
   conflict,
   availabilityOverride,
+  availabilityState,
   onView,
 }: {
   item: CatalogItem;
@@ -210,11 +246,19 @@ function CostumeCard({
   fixtureAvailabilityKnown: boolean;
   conflict: boolean;
   availabilityOverride?: boolean;
+  availabilityState?: CatalogAvailability;
   onView: (trigger: HTMLButtonElement) => void;
 }) {
   const available = availabilityOverride ?? item.availableAtFixturePeriod;
-  const availability =
-    periodSelected && fixtureAvailabilityKnown
+  const availability = availabilityState
+    ? availabilityState === 'loading'
+      ? 'Đang kiểm tra biến thể…'
+      : availabilityState === 'error'
+        ? 'Chưa kiểm tra được lịch'
+        : availabilityState === 'available'
+          ? 'Có biến thể còn khả dụng'
+          : 'Không còn biến thể phù hợp'
+    : periodSelected && fixtureAvailabilityKnown
       ? available && !conflict
         ? 'Còn theo kỳ chọn'
         : 'Không còn theo kỳ chọn'
@@ -223,19 +267,17 @@ function CostumeCard({
     <article className="costume-card">
       <div
         className={`costume-media costume-${item.imagePosition}`}
-        role="img"
-        aria-label={
-          item.imagePosition === 'missing'
-            ? `Chưa có ảnh minh họa của ${item.name}`
-            : `Ảnh minh họa mẫu ${item.name}`
-        }
+        role={item.imageUrl ? undefined : 'img'}
+        aria-label={item.imageUrl ? undefined : (item.imageAlt || `Ảnh minh họa mẫu ${item.name}`)}
       >
-        {item.imagePosition === 'missing' && (
+        {item.imageUrl ? (
+          <img src={item.imageUrl} alt={item.imageAlt || item.name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : item.imagePosition === 'missing' ? (
           <span className="media-placeholder">
             <Icon name="spark" size={30} /> Chưa có ảnh
           </span>
-        )}
-        <span className="media-caption">Ảnh minh họa</span>
+        ) : null}
+        <span className="media-caption">{item.imageUrl ? 'Ảnh trang phục' : 'Ảnh minh họa'}</span>
       </div>
       <div className="costume-body">
         <div className="costume-top">
@@ -258,7 +300,7 @@ function CostumeCard({
         {availability && (
           <StatusLabel
             text={availability}
-            tone={availability.startsWith('Còn') ? 'success' : 'warning'}
+            tone={availability.startsWith('Có') || availability.startsWith('Còn') ? 'success' : availability.startsWith('Đang') ? 'info' : availability.startsWith('Chưa') ? 'danger' : 'warning'}
           />
         )}
         {periodSelected && !fixtureAvailabilityKnown && (
@@ -302,7 +344,7 @@ export function CatalogPage({
   const [search, setSearch] = useState(initialContext.get('search') ?? '');
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<CatalogItem | null>(null);
-  const [apiAvailability, setApiAvailability] = useState<Record<string, boolean>>({});
+  const [apiAvailability, setApiAvailability] = useState<AvailabilitySnapshot>();
   const previewRef = useRef<HTMLElement>(null);
   const previewTriggerRef = useRef<HTMLButtonElement>(null);
   const { loading, data, error, retry } = useFixtureResource(scenario, loadCatalog);
@@ -321,34 +363,27 @@ export function CatalogPage({
   }, [branch, pickup, returnAt, category, size, color, search]);
   const periodSelected = !!pickup && !!returnAt;
   const availabilityRequestEnabled = apiMode && !!branch && periodSelected && Boolean(data?.length);
-  const currentApiAvailability = availabilityRequestEnabled ? apiAvailability : {};
+  const availabilityKey = JSON.stringify([branch, pickup, returnAt]);
+  const currentApiAvailability = apiAvailability?.key === availabilityKey ? apiAvailability.values : {};
   useEffect(() => {
-    if (!apiMode || !branch || !periodSelected || !data?.length) return;
+    if (!availabilityRequestEnabled || !data?.length) return;
     let cancelled = false;
-    void Promise.all(
-      data.map(async (item) => {
-        try {
-          const result = await checkPublicAvailability(item.id, branch, pickup, returnAt);
-          return [item.id, result.available] as const;
-        } catch {
-          return [item.id, undefined] as const;
-        }
-      }),
-    ).then((entries) => {
-      if (cancelled) return;
-      setApiAvailability(
-        Object.fromEntries(
-          entries.filter((entry): entry is readonly [string, boolean] => entry[1] !== undefined),
-        ),
-      );
+    setApiAvailability({
+      key: availabilityKey,
+      values: Object.fromEntries(data.map((item) => [item.id, 'loading' as const])),
+    });
+    void checkCatalogAvailability(data, branch, pickup, returnAt).then((values) => {
+      if (!cancelled) setApiAvailability({ key: availabilityKey, values });
     });
     return () => {
       cancelled = true;
     };
-  }, [apiMode, branch, data, periodSelected, pickup, returnAt]);
-  const fixtureAvailabilityKnown = apiMode
-    ? periodSelected && Boolean(data?.length) && (data?.every((item) => currentApiAvailability[item.id] !== undefined) ?? false)
-    : pickup === fixturePeriod.pickup && returnAt === fixturePeriod.returnAt && branch === branches[0];
+  }, [apiMode, availabilityKey, availabilityRequestEnabled, branch, data, pickup, returnAt]);
+  const fixtureAvailabilityKnown = !apiMode &&
+    pickup === fixturePeriod.pickup && returnAt === fixturePeriod.returnAt && branch === branches[0];
+  const categoryOptions = [...new Set((data ?? []).map((item) => item.category).filter(Boolean))].sort();
+  const sizeOptions = [...new Set((data ?? []).flatMap((item) => item.sizes))].sort();
+  const colorOptions = [...new Set((data ?? []).flatMap((item) => item.colors))].sort();
   const filtered = (data ?? []).filter(
     (item) =>
       (category === 'Tất cả' || item.category === category) &&
@@ -482,7 +517,7 @@ export function CatalogPage({
               value={category}
               onChange={(event) => setCategory(event.target.value)}
             >
-              {['Tất cả', 'Áo dài', 'Suit', 'Đầm'].map((entry) => (
+              {['Tất cả', ...categoryOptions].map((entry) => (
                 <option key={entry}>{entry}</option>
               ))}
             </SelectField>
@@ -491,7 +526,7 @@ export function CatalogPage({
               value={size}
               onChange={(event) => setSize(event.target.value)}
             >
-              {['Tất cả', 'S', 'M', 'L'].map((entry) => (
+              {['Tất cả', ...sizeOptions].map((entry) => (
                 <option key={entry}>{entry}</option>
               ))}
             </SelectField>
@@ -500,7 +535,7 @@ export function CatalogPage({
               value={color}
               onChange={(event) => setColor(event.target.value)}
             >
-              {['Tất cả', 'Hồng phấn', 'Kem', 'Đỏ berry', 'Trắng'].map((entry) => (
+              {['Tất cả', ...colorOptions].map((entry) => (
                 <option key={entry}>{entry}</option>
               ))}
             </SelectField>
@@ -542,9 +577,11 @@ export function CatalogPage({
                 >
                   <div
                     className={`catalog-preview-image costume-${selectedItem.imagePosition}`}
-                    role="img"
-                    aria-label={`Ảnh minh họa ${selectedItem.name}`}
-                  />
+                    role={selectedItem.imageUrl ? undefined : 'img'}
+                    aria-label={selectedItem.imageUrl ? undefined : (selectedItem.imageAlt || `Ảnh minh họa ${selectedItem.name}`)}
+                  >
+                    {selectedItem.imageUrl && <img src={selectedItem.imageUrl} alt={selectedItem.imageAlt || selectedItem.name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                  </div>
                   <div className="catalog-preview-copy">
                     <div className="preview-top">
                       <p className="eyebrow">XEM NHANH TRANG PHỤC</p>
@@ -642,7 +679,8 @@ export function CatalogPage({
                       periodSelected={periodSelected}
                       fixtureAvailabilityKnown={fixtureAvailabilityKnown}
                       conflict={scenario === 'conflict'}
-                      availabilityOverride={currentApiAvailability[item.id]}
+                      availabilityOverride={currentApiAvailability[item.id] === 'available' ? true : currentApiAvailability[item.id] === 'unavailable' ? false : undefined}
+                      availabilityState={apiMode && periodSelected ? currentApiAvailability[item.id] : undefined}
                       onView={(trigger) => openPreview(item, trigger)}
                     />
                   ))}
