@@ -103,23 +103,28 @@ export function CostumeDetailPage({
     requestedReturn?.trim() ? requestedReturn : defaultReturn,
   );
   const [photo, setPhoto] = useState(0);
-  const [availability, setAvailability] = useState<
-    'idle' | 'loading' | 'available' | 'unavailable' | 'error'
-  >('idle');
+  const [availabilityResult, setAvailabilityResult] = useState<{
+    key: string;
+    status: 'available' | 'unavailable' | 'error';
+  }>();
+  const availabilityKey = JSON.stringify([id, branch, pickup, due]);
+  const hasAvailabilityInputs = usePublicApi && !!branch && !!pickup && !!due && !!id;
   useEffect(() => {
-    if (!usePublicApi || !branch || !pickup || !due || !id) {
-      setAvailability('idle');
-      return;
-    }
+    if (!hasAvailabilityInputs) return;
     let active = true;
-    setAvailability('loading');
     void checkPublicAvailability(id, branch, pickup, due)
-      .then((result) => active && setAvailability(result.available ? 'available' : 'unavailable'))
-      .catch(() => active && setAvailability('error'));
+      .then((result) => active && setAvailabilityResult({
+        key: availabilityKey,
+        status: result.available ? 'available' : 'unavailable',
+      }))
+      .catch(() => active && setAvailabilityResult({ key: availabilityKey, status: 'error' }));
     return () => {
       active = false;
     };
-  }, [branch, due, id, pickup, usePublicApi]);
+  }, [availabilityKey, branch, due, hasAvailabilityInputs, id, pickup]);
+  const availability = hasAvailabilityInputs
+    ? availabilityResult?.key === availabilityKey ? availabilityResult.status : 'loading'
+    : 'idle';
   const catalogContext = Object.fromEntries(
     [...initialContext.entries()].filter(([key]) => key !== 'id'),
   );
@@ -531,7 +536,7 @@ export function AccountPage({
   apiIdentity?: {
     displayName: string;
     email: string;
-    roles: Array<{ name: string; branchId: string | null; actorGroup?: string }>;
+    roles: { name: string; branchId: string | null; actorGroup?: string }[];
   };
   realApiMode?: boolean;
   onSignOut?: () => void;

@@ -9,13 +9,13 @@ import { opsAgentFixtureAdapter, opsAgentSources, opsAgentWorkflows } from '../f
 
 type AgentTab = 'overview' | 'queue' | 'workflows' | 'knowledge' | 'activity' | 'chat';
 type QueueFilter = 'all' | QueueTask['kind'];
-type ChatMessage = {
+interface ChatMessage {
   id: number;
   role: 'assistant' | 'user';
   text: string;
   sourceIds: string[];
-};
-type QueueFilterOption = { id: QueueFilter; label: string };
+}
+interface QueueFilterOption { id: QueueFilter; label: string }
 
 const tabs: { id: AgentTab; label: string }[] = [
   { id: 'overview', label: 'Tổng quan' },
@@ -152,7 +152,7 @@ export function OpsAgentPage({
       sourceIds: ['product-scope', 'safety-direction'],
     },
   ]);
-  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const messageEndRef = useRef<HTMLDivElement>(null);
   const messageSequence = useRef(1);
   const loadQueue = useCallback((currentScenario: DemoScenario) => fixtureAdapter.listQueue(currentScenario), []);
@@ -163,6 +163,8 @@ export function OpsAgentPage({
   );
 
   useEffect(() => {
+    // A cleared fixture conflict belongs to the current branch and scenario.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setConflictCleared(false);
   }, [scenario, branch]);
 
@@ -214,12 +216,16 @@ export function OpsAgentPage({
 
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, current: AgentTab) => {
     const index = tabs.findIndex((item) => item.id === current);
-    let nextIndex = index;
-    if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
-    else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
-    else if (event.key === 'Home') nextIndex = 0;
-    else if (event.key === 'End') nextIndex = tabs.length - 1;
-    else return;
+    const nextIndex = event.key === 'ArrowRight'
+      ? (index + 1) % tabs.length
+      : event.key === 'ArrowLeft'
+        ? (index - 1 + tabs.length) % tabs.length
+        : event.key === 'Home'
+          ? 0
+          : event.key === 'End'
+            ? tabs.length - 1
+            : undefined;
+    if (nextIndex === undefined) return;
     event.preventDefault();
     focusTab(tabs[nextIndex].id);
   };

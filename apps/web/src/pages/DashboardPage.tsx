@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { Navigate } from '../App';
 import { Button, EmptyState, Feedback, Field, Icon, SelectField } from '../components/ui';
 import { useFixtureResource } from '../components/useFixtureResource';
@@ -34,7 +34,8 @@ export function DashboardPage({
   const [kind, setKind] = useState('all');
   const [priority, setPriority] = useState('all');
   const [taskStatus, setTaskStatus] = useState('all');
-  const [workDate, setWorkDate] = useState(() => realApiMode ? localDateKey(new Date()) : '2026-10-03');
+  const [workDateOverride, setWorkDateOverride] = useState<string>();
+  const workDate = workDateOverride ?? (realApiMode ? localDateKey(new Date()) : '2026-10-03');
   const [search, setSearch] = useState('');
   const [stale, setStale] = useState<string[]>([]);
   const [notice, setNotice] = useState('');
@@ -49,9 +50,6 @@ export function DashboardPage({
     loadQueue,
     `${branch}:${realApiMode ? 'api' : 'fixture'}`,
   );
-  useEffect(() => {
-    if (realApiMode && workDate === '2026-10-03') setWorkDate(localDateKey(new Date()));
-  }, [realApiMode, workDate]);
   const scoped = (data ?? []).filter((task) => task.branch === branch && !stale.includes(task.id));
   const visible = scoped.filter(
     (task) =>
@@ -147,7 +145,7 @@ export function DashboardPage({
           label="Ngày cần xử lý"
           type="date"
           value={workDate}
-          onChange={(event) => setWorkDate(event.target.value)}
+          onChange={(event) => setWorkDateOverride(event.target.value)}
         />
       </div>
       <section className="queue-summary" aria-label="Tóm tắt hàng đợi">
@@ -224,7 +222,7 @@ export function DashboardPage({
                 setKind('all');
                 setPriority('all');
                 setTaskStatus('all');
-                setWorkDate(realApiMode ? localDateKey(new Date()) : '2026-10-03');
+                setWorkDateOverride(realApiMode ? localDateKey(new Date()) : '2026-10-03');
               }}
             >
               Xóa bộ lọc

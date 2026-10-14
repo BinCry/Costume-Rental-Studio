@@ -57,11 +57,11 @@ export interface OrderItem {
   apiUnitId?: string;
   /** API-only variant key used to search eligible replacement units. */
   apiVariantId?: string;
-  accessories?: Array<{
+  accessories?: {
     id: string;
     quantityOut: number;
     quantityReturned?: number | null;
-  }>;
+  }[];
 }
 
 export interface MoneyLine {

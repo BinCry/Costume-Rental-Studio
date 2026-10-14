@@ -289,7 +289,7 @@ export function CatalogPage({
   const apiMode = apiEnabled && (hasAccessToken() || !import.meta.env.DEV);
   const { options: branchOptions, ready: branchOptionsReady, error: branchOptionsError, retry: retryBranches } = useBranchOptions();
   const [branchSelection, setBranchSelection] = useState(() =>
-    requestedBranch?.trim() || (apiMode ? '' : branches[0]),
+    requestedBranch?.trim() ? requestedBranch : (apiMode ? '' : branches[0]),
   );
   const branch = branchOptions.includes(branchSelection)
     ? branchSelection
@@ -320,11 +320,10 @@ export function CatalogPage({
     window.history.replaceState(null, '', `/${params.toString() ? `?${params}` : ''}`);
   }, [branch, pickup, returnAt, category, size, color, search]);
   const periodSelected = !!pickup && !!returnAt;
+  const availabilityRequestEnabled = apiMode && !!branch && periodSelected && Boolean(data?.length);
+  const currentApiAvailability = availabilityRequestEnabled ? apiAvailability : {};
   useEffect(() => {
-    if (!apiMode || !branch || !periodSelected || !data?.length) {
-      setApiAvailability({});
-      return;
-    }
+    if (!apiMode || !branch || !periodSelected || !data?.length) return;
     let cancelled = false;
     void Promise.all(
       data.map(async (item) => {
@@ -348,7 +347,7 @@ export function CatalogPage({
     };
   }, [apiMode, branch, data, periodSelected, pickup, returnAt]);
   const fixtureAvailabilityKnown = apiMode
-    ? periodSelected && Boolean(data?.length) && (data?.every((item) => apiAvailability[item.id] !== undefined) ?? false)
+    ? periodSelected && Boolean(data?.length) && (data?.every((item) => currentApiAvailability[item.id] !== undefined) ?? false)
     : pickup === fixturePeriod.pickup && returnAt === fixturePeriod.returnAt && branch === branches[0];
   const filtered = (data ?? []).filter(
     (item) =>
@@ -643,7 +642,7 @@ export function CatalogPage({
                       periodSelected={periodSelected}
                       fixtureAvailabilityKnown={fixtureAvailabilityKnown}
                       conflict={scenario === 'conflict'}
-                      availabilityOverride={apiAvailability[item.id]}
+                      availabilityOverride={currentApiAvailability[item.id]}
                       onView={(trigger) => openPreview(item, trigger)}
                     />
                   ))}

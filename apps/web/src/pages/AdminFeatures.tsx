@@ -69,7 +69,7 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
   const realApiMode = apiEnabled && hasAccessToken();
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.details);
   const loadCategories = useCallback(
-    async (_currentScenario: DemoScenario) => (realApiMode ? listCatalogCategories() : []),
+    async () => (realApiMode ? listCatalogCategories() : []),
     [realApiMode],
   );
   const categoriesResource = useFixtureResource(scenario, loadCategories);

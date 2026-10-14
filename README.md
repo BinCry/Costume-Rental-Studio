@@ -85,23 +85,20 @@ Browse Costumes
 
 ## 🚧 Current Status
 
-Repository đã có nền kỹ thuật và bản frontend trình diễn toàn luồng bằng fixture. Nghiệp vụ thật vẫn chờ tích hợp API.
+Repository hiện có giao diện React/Vite kết nối với API Express/Prisma. Các luồng vận hành chính đã có trong source; CI xác minh lint/test/typecheck/build. Nghiệm thu giao dịch đầu cuối vẫn cần staging với dữ liệu cô lập.
 
 | Area | Status | Notes |
 |------|--------|-------|
-| pnpm monorepo | ✅ Implemented | Quản lý `apps/api` và `apps/web` trong một workspace |
-| Express HTTP foundation | ✅ Implemented | Security middleware, CORS, rate limit, logging, error handling và graceful shutdown |
-| API response contract | ✅ Implemented | Success/error envelope, `AppError`, timestamp và request ID |
-| API integration tests | ✅ Implemented | Supertest + Vitest cho health, errors, rate limit và security headers |
-| Code quality tooling | ✅ Implemented | ESLint, Prettier, lint-staged và Husky hooks dùng chung tại root |
-| React frontend foundation | ✅ Fixture UI audited | Các màn khách, vận hành và quản trị đã được kiểm toán theo mười hành trình; chưa nối API |
-| PostgreSQL + Prisma | 🟡 Migration ready | Prisma schema và initial migration 32 bảng đã có; cần apply và test constraint trên PostgreSQL |
-| Authentication + authorization | ⏳ Planned | Google Login, session và quyền theo chi nhánh chưa triển khai |
-| Rental business modules | 🟡 Fixture UI only | Danh mục, tồn kho, đơn thuê, giao trả, thanh toán, CRM và báo cáo đang dùng adapter fixture; giao dịch thật chưa triển khai |
+| Monorepo và build | ✅ Implemented | pnpm workspace quản lý API và web; workflow riêng kiểm tra và đóng gói image. |
+| API nghiệp vụ | ✅ Có trong source | Các module auth, catalog, rentals, payments, inventory, CRM, RBAC, staff, policies, reports và các module hỗ trợ nằm trong `apps/api/src/modules`. |
+| Frontend | ✅ Đã kết nối API | Adapter ở `apps/web/src/api/client.ts`; màn hình được chia theo khu khách, vận hành và quản trị. |
+| Tài khoản | ✅ Có luồng API/UI | Đăng nhập, đăng ký email và OTP, đặt lại mật khẩu, Google sign-in và phiên đăng nhập. |
+| Database | ✅ Prisma migrations | Schema và migration được quản lý bằng Prisma; container API áp dụng migration trước khi mở server. |
+| Kiểm thử frontend | ✅ CI đạt | Lint, 5 test API client, typecheck và build đều qua CI. |
+| Nghiệm thu còn lại | ⚠️ Cần môi trường staging | Chạy lại các hành trình nghiệp vụ với API và dữ liệu cô lập; không dùng giao dịch thật trên production. |
+| Ops Agent API | Ngoài phạm vi đợt này | Phần hoàn thiện hiện tại không bao gồm xây API cho Ops Agent. |
 
-> Các tính năng nghiệp vụ bên dưới mô tả phạm vi đã phân tích. Chúng không đồng nghĩa tất cả đã có trong source code hiện tại.
-
----
+**Lưu ý:** có API trong source và build thành công không tự chứng minh mọi kịch bản nghiệp vụ đã được kiểm thử end-to-end. Bảng trên phân biệt trạng thái triển khai với trạng thái nghiệm thu.
 
 ## ✨ Features
 
@@ -208,14 +205,15 @@ Repository đã có nền kỹ thuật và bản frontend trình diễn toàn lu
 ### Application Layers
 
 ```text
-Users
-  -> React Web Application (Vite)
-  -> REST API (Express)
-  -> Logging / Security / CORS / Rate Limit / Validation
-  -> Business Modules (planned modular monolith)
-  -> PostgreSQL via Prisma (planned)
-  -> Google Identity / Notification / Payment adapters (planned)
+Người dùng
+  -> Ứng dụng web React + Vite
+  -> REST API Express
+  -> Kiểm tra dữ liệu, quyền, log và xử lý lỗi
+  -> Các module nghiệp vụ trong apps/api/src/modules
+  -> PostgreSQL qua Prisma
 ```
+
+Thông tin triển khai và kiểm tra frontend được ghi trong [apps/web/README.md](apps/web/README.md) và [hướng dẫn trình diễn UI](docs/ui/demo-guide.md).
 
 ### Backend Foundation
 
@@ -228,21 +226,22 @@ Users
 | `app.ts` | Khởi tạo Express, middleware và routes |
 | `server.ts` | Mở cổng và graceful shutdown |
 
-### Planned Business Modules
+### API Modules
 
-| Module | Responsibility |
-|--------|----------------|
-| `auth` | Google Login, session và tài khoản |
-| `branches` | Chi nhánh, giờ hoạt động và cấu hình nhận trả |
-| `staff` | Nhân viên, phân công chi nhánh và quyền |
-| `catalog` | Mẫu trang phục, biến thể, ảnh và phân loại |
-| `inventory` | Bộ vật lý, barcode, tình trạng và điều chuyển |
-| `rentals` | Báo giá, đơn thuê, xác nhận, giao và nhận trả |
-| `payments` | Khoản phải thu, thanh toán, cọc và hoàn tiền |
-| `crm` | Hồ sơ khách, tương tác và hỗ trợ |
-| `reports` | KPI vận hành và tài chính |
+Các module hiện có trong `apps/api/src/modules`:
 
----
+| Module | Phạm vi |
+|--------|---------|
+| `auth`, `users`, `rbac` | Tài khoản, phiên, vai trò và quyền |
+| `branches`, `staff` | Chi nhánh, nhân viên và phân công |
+| `public`, `catalog`, `promotions` | Trang phục công khai, danh mục và ưu đãi |
+| `rentals`, `scheduling`, `policies` | Báo giá, đơn thuê, lịch khả dụng và chính sách |
+| `inventory`, `transfers` | Bộ trang phục, block lịch và điều chuyển |
+| `payments` | Thu tiền, cọc, quyết toán và hoàn tiền |
+| `customers`, `crm` | Hồ sơ khách, tương tác và yêu cầu hỗ trợ |
+| `reports`, `uploads`, `outbox` | Báo cáo, ảnh/tệp và xử lý sự kiện |
+
+Danh sách module mô tả mã nguồn API. Xem [tài liệu API](docs/api/) và test trong từng workspace để biết luồng nào đã được xác minh.
 
 ## 🚀 Quick Start
 
@@ -343,6 +342,7 @@ Invoke-RestMethod http://localhost:4000/health
 | `pnpm db:seed` | Generate Prisma Client rồi seed database theo `SEED_PROFILE` |
 | `pnpm --filter @costume/api db:studio` | Mở Prisma Studio cho database trong `DATABASE_URL` |
 | `pnpm --filter @costume/web lint` | Chạy ESLint cho frontend |
+| `pnpm --filter @costume/web test` | Chạy kiểm thử API client của frontend |
 | `pnpm --filter @costume/api start` | Chạy production build của API |
 
 ---
@@ -378,57 +378,42 @@ Chỉ biến có prefix `VITE_` mới được Vite đưa vào mã frontend. Kh�
 
 ## 📡 API Endpoints
 
-### Current Endpoint
+### API groups
 
-| Method | Endpoint | Description | Auth |
-|--------|----------|-------------|------|
-| `GET` | `/health` | Kiểm tra HTTP process đang hoạt động | Public |
+API hiện dùng tiền tố `/api/v1` cho các nhóm nghiệp vụ. Danh sách route và quyền cụ thể được duy trì trong source module và tài liệu dưới `docs/api/`.
 
-### Success Response
+| Nhóm | Phạm vi |
+|------|---------|
+| `/health`, `/health/ready` | Kiểm tra tiến trình và khả năng phục vụ |
+| `/api/v1/auth`, `/api/v1/users` | Đăng nhập, đăng ký, hồ sơ và phiên |
+| `/api/v1/public`, `/api/v1/catalog` | Danh mục công khai và quản trị trang phục |
+| `/api/v1/branches`, `/api/v1/staff`, `/api/v1/rbac` | Chi nhánh, nhân viên và quyền |
+| `/api/v1/rentals`, `/api/v1/scheduling`, `/api/v1/rental-policies` | Báo giá, đơn thuê, lịch và chính sách |
+| `/api/v1/inventory`, `/api/v1/inventory/transfers` | Kho, tình trạng bộ và điều chuyển |
+| `/api/v1/payments` | Thanh toán, cọc, quyết toán và hoàn tiền |
+| `/api/v1/customers`, `/api/v1/crm` | Hồ sơ khách và xử lý CRM |
+| `/api/v1/reports`, `/api/v1/uploads` | Báo cáo và tải tệp |
 
-```json
-{
-  "success": true,
-  "data": {
-    "status": "ok",
-    "service": "costume-api"
-  },
-  "message": "API is healthy"
-}
-```
+### Response contract
 
-### Error Response
+Response thành công dùng envelope `success/data`; lỗi có `code`, `message`, `statusCode`, thời điểm, đường dẫn và `requestId`. Mỗi response API có header `X-Request-Id`; handler chung nằm trong `apps/api/src/common`.
 
 ```json
 {
   "success": false,
   "error": {
     "code": "VALIDATION_ERROR",
-    "message": "Validation failed",
+    "message": "Dữ liệu chưa hợp lệ",
     "details": {
-      "password": "Password must contain at least 6 characters"
+      "email": "Kiểm tra định dạng email"
     }
   },
   "statusCode": 400,
-  "timestamp": "2026-04-08T00:00:00.000Z",
-  "path": "/api/example",
+  "timestamp": "2026-10-14T00:00:00.000Z",
+  "path": "/api/v1/example",
   "requestId": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
-
-Mỗi response có header `X-Request-Id`; contract được thể hiện bởi helper và middleware hiện có trong `apps/api/src/common`.
-
-### Planned API Groups
-
-- `/api/v1/auth` — đăng nhập, session và tài khoản.
-- `/api/v1/costumes` — danh mục và tìm kiếm trang phục.
-- `/api/v1/availability` — lịch trống và báo giá dự kiến.
-- `/api/v1/rentals` — đơn thuê, xác nhận, giao và nhận trả.
-- `/api/v1/payments` — thu tiền, cọc, cấn trừ và hoàn tiền.
-- `/api/v1/customers` — hồ sơ khách và lịch sử thuê.
-- `/api/v1/admin` — quản trị chi nhánh, nhân viên, quyền và báo cáo.
-
----
 
 ## 📁 Project Structure
 
@@ -469,7 +454,7 @@ Costume-Rental-Studio/
 
 ## 🗄 Database Design
 
-PostgreSQL + Prisma đã có schema và initial migration. Migration hiện cần được apply/test trên PostgreSQL trước khi bắt đầu repository/service nghiệp vụ.
+PostgreSQL + Prisma đã có schema và các migration. API CI kiểm tra migration trên PostgreSQL 16 tạm trước khi chạy test và build.
 
 Tài liệu database được chia theo mục đích:
 
@@ -610,13 +595,12 @@ pnpm build:api
 - Error response không lộ stack trace hoặc thông báo lỗi nội bộ.
 - UUID request ID hỗ trợ đối chiếu response với log.
 
-### Planned
+### Cần xác minh trong staging
 
-- Google Identity Services / OpenID Connect.
-- Session security và CSRF protection phù hợp với cơ chế auth được chọn.
-- Quyền theo thao tác và phạm vi `OWN`, `BRANCH`, `ALL`.
-- Validation cho toàn bộ request DTO.
-- Database transactions và constraints chống đặt trùng.
+- Chạy hành trình đăng nhập/đăng ký/đăng xuất với cấu hình OAuth và cookie thực tế.
+- Xác nhận quyền được API áp dụng theo người dùng, vai trò và chi nhánh cho từng thao tác.
+- Chạy các tình huống xung đột đồng thời, timeout mạng và retry trên dữ liệu cô lập.
+- Kiểm tra lại CORS, callback OAuth, HTTPS/cookie flags và giới hạn tải tệp theo cấu hình triển khai.
 
 ---
 

@@ -3,8 +3,9 @@
 ## Luồng hiện tại
 
 ```text
-Pull request / push branch
-→ CI: lint, typecheck, test, Prisma validate/generate
+Pull request / push branch:
+→ API CI: lint, typecheck, test, build và xác minh migration trên PostgreSQL tạm
+→ Web CI: lint, test API client, typecheck và build
 
 Push hoặc merge vào main
 
@@ -15,7 +16,7 @@ API:
 → container API chạy migration còn thiếu trước khi khởi động server
 
 Web:
-→ typecheck, build
+→ lint, test API client, typecheck, build
 → build, push Docker image Web
 → trigger Coolify deploy
 ```

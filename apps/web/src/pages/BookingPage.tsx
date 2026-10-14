@@ -22,7 +22,7 @@ const steps = ['Trang phục', 'Lựa chọn', 'Nhận và trả', 'Báo giá', 
 const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
 function lateReturnPolicyText(quote: QuoteSnapshot | undefined, apiMode: boolean) {
   const dueRule = 'Hạn trả là thời điểm ghi trên đơn; đệm lịch nội bộ không kéo dài thời gian thuê.';
-  if (!quote || quote.lateFeePercentPerDay === undefined) {
+  if (quote?.lateFeePercentPerDay === undefined) {
     return apiMode
       ? 'Báo giá chưa trả về mức phí trả trễ. Hãy xác nhận với studio trước khi gửi yêu cầu. ' + dueRule
       : 'Bản minh họa không mô phỏng phí trả trễ; studio cần xác nhận chính sách trước khi áp dụng. ' + dueRule;
@@ -57,7 +57,7 @@ const initialDraft = (costumeId?: string, context?: URLSearchParams): BookingDra
     variant: variants.includes(requestedVariant)
       ? requestedVariant
       : (variants[0] ?? baseDraft.variant),
-    branch: requestedBranch?.trim() || (apiMode ? '' : baseDraft.branch),
+    branch: requestedBranch?.trim() ? requestedBranch : (apiMode ? '' : baseDraft.branch),
     pickup: requestedPickup?.trim() ? requestedPickup : apiMode ? defaultRentalDate(1) : baseDraft.pickup,
     returnAt: requestedReturn?.trim() ? requestedReturn : apiMode ? defaultRentalDate(3) : baseDraft.returnAt,
   };
@@ -80,7 +80,7 @@ export function BookingPage({
   const { options: branchOptions, ready: branchOptionsReady, error: branchOptionsError, retry: retryBranches } = useBranchOptions();
   const [step, setStep] = useState(() => {
     const selected = fixtureCatalog.find((entry) => entry.id === costumeId);
-    if (!selected) return 0;
+    if (!selected) return initialContext.get('variant') ? 2 : 0;
     return selected.sizes.some(
       (size) => `${size} / ${selected.colors[0]}` === initialContext.get('variant'),
     )
@@ -133,24 +133,18 @@ export function BookingPage({
       active = false;
     };
   }, [apiMode]);
+  const item = (data ?? []).find((entry) => entry.id === draftState.costumeId) ??
+    fixtureCatalog.find((entry) => entry.id === draftState.costumeId);
+  const choices = item ? item.sizes.map((size) => `${size} / ${item.colors[0]}`) : [];
   const draft = {
     ...draftState,
+    variant: item && !choices.includes(draftState.variant)
+      ? choices[0] ?? draftState.variant
+      : draftState.variant,
     branch: branchOptions.includes(draftState.branch)
       ? draftState.branch
       : branchOptions[0] ?? (apiMode ? '' : draftState.branch),
   };
-  const item = (data ?? []).find((entry) => entry.id === draft.costumeId) ??
-    fixtureCatalog.find((entry) => entry.id === draft.costumeId);
-  const choices = item ? item.sizes.map((size) => `${size} / ${item.colors[0]}`) : [];
-  useEffect(() => {
-    if (!item || step !== 0) return;
-    const requestedVariant = initialContext.get('variant');
-    if (requestedVariant && choices.includes(requestedVariant)) setStep(2);
-  }, [choices, initialContext, item, step]);
-  useEffect(() => {
-    if (!item || choices.includes(draft.variant)) return;
-    setDraft((current) => ({ ...current, variant: choices[0] ?? current.variant }));
-  }, [item, choices, draft.variant]);
   const update = <K extends keyof BookingDraft>(key: K, value: BookingDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
     if (['costumeId', 'variant', 'quantity', 'branch', 'pickup', 'returnAt'].includes(key)) {

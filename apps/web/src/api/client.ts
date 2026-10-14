@@ -17,62 +17,67 @@ import type {
   Variant,
 } from '../fixtures/studio';
 
-type ApiEnvelope<T> = {
+function optionalText(value: string | null | undefined): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  return value;
+}
+
+interface ApiEnvelope<T> {
   success: boolean;
   data: T;
   message?: string;
   error?: { code?: string; message?: string; details?: Record<string, unknown> };
-};
-type Page<T> = { items: T[]; pagination?: { page: number; pageSize: number; totalItems: number; totalPages: number } };
-type ApiModel = {
+}
+interface Page<T> { items: T[]; pagination?: { page: number; pageSize: number; totalItems: number; totalPages: number } }
+interface ApiModel {
   id: string;
   name: string;
   shortDescription?: string | null;
   description?: string | null;
   material?: string | null;
   category?: { name?: string | null } | null;
-  media?: Array<{ mediaUrl?: string | null; altText?: string | null }>;
-};
+  media?: { mediaUrl?: string | null; altText?: string | null }[];
+}
 type ApiAdminModel = ApiModel & {
   modelCode: string;
   categoryId: string;
-  status?: 'ACTIVE' | 'INACTIVE' | string;
+  status?: string;
   category?: { id?: string; name?: string | null } | null;
 };
-type ApiCategory = { id: string; name: string; status?: string };
-type ApiVariant = {
+interface ApiCategory { id: string; name: string; status?: string }
+interface ApiVariant {
   id: string; modelId: string; variantCode: string; sizeCode: string; colorCode: string;
   dailyRentalPriceVnd: string | number | bigint; depositAmountVnd: string | number | bigint;
   replacementValueVnd?: string | number | bigint;
   status?: string; editionLabel?: string | null; fitNotes?: string | null;
-  media?: Array<{ mediaUrl?: string | null; altText?: string | null }>;
+  media?: { mediaUrl?: string | null; altText?: string | null }[];
   model?: ApiModel | null;
-};
-type ApiBranch = {
+}
+interface ApiBranch {
   id: string;
   name: string;
   branchCode?: string;
   status?: string;
   address?: string | null;
   phone?: string | null;
-};
-type ApiQuote = {
+}
+interface ApiQuote {
   quoteExpiresAt: string;
   policy: {
     versionCode?: string;
-    billingDayMode?: 'CALENDAR_DAY' | 'ROLLING_24_HOURS' | string;
+    billingDayMode?: string;
     quoteValidHours?: number;
     lateGraceMinutes?: number;
     lateFeePercentPerDay?: number | string;
   };
   period: { billableDays: number; plannedStartAt: string; plannedDueAt: string };
-  items: Array<{
+  items: {
     variantId: string;
     dailyRentalPriceVnd: string | number | bigint;
     depositAmountVnd: string | number | bigint;
     rentalAmountVnd: string | number | bigint;
     availableUnits: number;
-  }>;
+  }[];
   promotion?: { discountVnd: string | number | bigint } | null;
   subtotalVnd: string | number | bigint;
   discountVnd: string | number | bigint;
@@ -80,13 +85,13 @@ type ApiQuote = {
   depositVnd: string | number | bigint;
   totalDueVnd: string | number | bigint;
   available: boolean;
-};
-type ApiOrder = {
+}
+interface ApiOrder {
   id: string; orderCode: string; status: Order['status']; version: number;
   plannedStartAt: string; plannedDueAt: string; customerNote?: string | null;
   customer?: { user?: { displayName?: string; phone?: string | null } };
   pickupBranch?: { id?: string; name?: string };
-  items?: Array<{
+  items?: {
     id: string;
     variantId?: string;
     variant?: { sizeCode?: string; colorCode?: string; model?: { name?: string } };
@@ -94,19 +99,19 @@ type ApiOrder = {
     unitDailyPriceVnd?: string | number | bigint;
     unitDepositVnd?: string | number | bigint;
     billableDays?: number;
-    accessories?: Array<{
+    accessories?: {
       id: string;
       quantityOut: number;
       quantityReturned?: number | null;
-    }>;
-  }>;
-  payments?: Array<{ purpose: string; amountVnd: string | number | bigint; status: string }>;
+    }[];
+  }[];
+  payments?: { purpose: string; amountVnd: string | number | bigint; status: string }[];
   lateFeeVnd?: string | number | bigint;
   otherFeeVnd?: string | number | bigint;
-  events?: Array<{ occurredAt?: string; eventType?: string }>;
-};
-type ApiUnit = { id: string; unitCode: string; conditionGrade?: string };
-type ApiActiveRental = {
+  events?: { occurredAt?: string; eventType?: string }[];
+}
+interface ApiUnit { id: string; unitCode: string; conditionGrade?: string }
+interface ApiActiveRental {
   id: string;
   unit?: {
     unitCode?: string;
@@ -123,8 +128,8 @@ type ApiActiveRental = {
     pickupBranch?: { name?: string } | null;
     customer?: { user?: { displayName?: string; phone?: string | null } | null } | null;
   };
-};
-type ApiInventoryUnit = {
+}
+interface ApiInventoryUnit {
   id: string;
   unitCode: string;
   operationalStatus: Unit['status'];
@@ -136,16 +141,16 @@ type ApiInventoryUnit = {
     model?: { name?: string };
   } | null;
   currentBranch?: { name?: string } | null;
-};
-type ApiCustomer = {
+}
+interface ApiCustomer {
   userId: string;
   customerCode: string;
   displayName: string;
   phone?: string | null;
   email?: string | null;
   preferredBranchId?: string | null;
-};
-type ApiCrmCase = {
+}
+interface ApiCrmCase {
   id: string;
   caseCode: string;
   customerUserId: string;
@@ -166,22 +171,22 @@ type ApiCrmCase = {
   branch?: { id?: string; name?: string } | null;
   order?: { id?: string; orderCode?: string } | null;
   owner?: { user?: { id?: string; displayName?: string } | null } | null;
-};
-type ApiCaseHistory = {
+}
+interface ApiCaseHistory {
   occurredAt?: string;
   eventType?: string;
   note?: string | null;
   fromStatus?: string | null;
   toStatus?: string | null;
   actorUserId?: string | null;
-};
-type ApiInteraction = {
+}
+interface ApiInteraction {
   occurredAt?: string;
   interactionType?: string;
   channel?: string;
   summary?: string;
-};
-type ApiTransfer = {
+}
+interface ApiTransfer {
   id: string;
   transferCode: string;
   status: TransferStatus;
@@ -191,14 +196,14 @@ type ApiTransfer = {
   createdAt?: string;
   fromBranch: { id: string; name: string };
   toBranch: { id: string; name: string };
-  items: Array<{
+  items: {
     unitId: string;
     conditionOut?: string | null;
     conditionIn?: string | null;
     unit?: { unitCode?: string } | null;
-  }>;
-};
-type ApiPolicy = {
+  }[];
+}
+interface ApiPolicy {
   id: string;
   versionCode: string;
   effectiveFrom: string;
@@ -217,8 +222,8 @@ type ApiPolicy = {
   defaultCleaningBufferMinutes?: number;
   lateFeeFormulaVersion?: number;
   changeReason: string;
-};
-type ApiOverviewReport = {
+}
+interface ApiOverviewReport {
   from: string;
   to: string;
   branchId?: string | null;
@@ -227,21 +232,21 @@ type ApiOverviewReport = {
   rentalRevenueVnd: string | number | bigint;
   depositsHeldVnd: string | number | bigint;
   completedRefundVnd?: string | number | bigint;
-};
-type ApiRentalReport = { totalOrders: number; overdueOrders: number };
-type ApiPaymentReport = {
-  byStatus: Array<{ status: string; count: number }>;
-  byMethod: Array<{ method: string; count: number }>;
-};
+}
+interface ApiRentalReport { totalOrders: number; overdueOrders: number }
+interface ApiPaymentReport {
+  byStatus: { status: string; count: number }[];
+  byMethod: { method: string; count: number }[];
+}
 
-export type RentalEvidence = {
+export interface RentalEvidence {
   uploadKey: string;
   contentType: 'image/jpeg' | 'image/png' | 'image/webp';
   size: number;
   capturedAt?: string;
-};
+}
 
-export type SettlementSnapshot = {
+export interface SettlementSnapshot {
   orderId: string;
   status: string;
   rental: { dueVnd: string; paidVnd: string; remainingVnd: string };
@@ -258,16 +263,16 @@ export type SettlementSnapshot = {
   outstandingVnd: string;
   canPickup: boolean;
   canComplete: boolean;
-};
+}
 
-export type PaymentRecord = {
+export interface PaymentRecord {
   id: string;
-  purpose: 'RENTAL' | 'DEPOSIT' | 'EXTRA' | string;
+  purpose: string;
   method: string;
   amountVnd: string | number;
   status: string;
   transactionReference?: string | null;
-};
+}
 
 const configuredBaseUrl =
   (import.meta.env.VITE_API_URL as string | undefined) ??
@@ -427,13 +432,13 @@ export async function currentUser() {
     displayName: string;
     email: string;
     phone?: string | null;
-    roles: Array<{
+    roles: {
       roleCode: string;
       name: string;
       actorGroup: string;
       branchId: string | null;
-      permissions: Array<{ code: string; scope: string }>;
-    }>;
+      permissions: { code: string; scope: string }[];
+    }[];
   }>('/api/v1/auth/me');
 }
 
@@ -482,7 +487,7 @@ export async function listManagedBranches(): Promise<Branch[]> {
   );
   return page.items.map(branchFromApi);
 }
-export async function listCatalogCategories(): Promise<Array<{ id: string; name: string }>> {
+export async function listCatalogCategories(): Promise<{ id: string; name: string }[]> {
   const page = await request<Page<ApiCategory>>(
     '/api/v1/catalog/categories?page=1&pageSize=100&sortBy=name&sortOrder=asc',
   );
@@ -619,7 +624,7 @@ export async function saveCatalogVariant(variant: Variant): Promise<Variant> {
     variantCode: variant.code,
     sizeCode: variant.size,
     colorCode: variant.color,
-    editionLabel: variant.edition || undefined,
+    editionLabel: optionalText(variant.edition),
     fitNotes: variant.fit || undefined,
     dailyRentalPriceVnd: Math.round(variant.price),
     depositAmountVnd: Math.round(variant.deposit),
@@ -1060,21 +1065,21 @@ export async function listDashboardTasks(branchName?: string): Promise<QueueTask
     }];
   });
 }
-type ApiPermission = {
+interface ApiPermission {
   id: string;
   code: string;
   module: string;
   action: string;
   scope: Permission['scope'];
   description?: string | null;
-};
-type ApiRole = {
+}
+interface ApiRole {
   id: string;
   roleCode: string;
   name: string;
   actorGroup: Role['group'];
-  rolePermissions?: Array<{ permission: ApiPermission }>;
-};
+  rolePermissions?: { permission: ApiPermission }[];
+}
 export async function listRbacRoles(): Promise<Role[]> {
   const [page, permissions] = await Promise.all([
     request<ApiRole[]>('/api/v1/rbac/roles'),
@@ -1131,19 +1136,19 @@ export async function replaceRbacRolePermissions(roleCode: string, permissionCod
     body: JSON.stringify({ permissionIds }),
   });
 }
-type ApiStaff = {
+interface ApiStaff {
   id: string;
   email: string;
   displayName: string;
   status: Employee['accountStatus'];
   employee?: { employeeCode: string; employmentStatus: Employee['employmentStatus'] } | null;
-  roleAssignments?: Array<{
+  roleAssignments?: {
     id: string;
     role: { roleCode: string };
     branch?: { name?: string } | null;
     branchId?: string | null;
-  }>;
-};
+  }[];
+}
 function mapStaff(staff: ApiStaff): Employee {
   const code = staff.employee?.employeeCode ?? staff.id;
   const assignments = new Map<string, string>();
@@ -1173,7 +1178,7 @@ export async function listStaff(branchName?: string, search?: string): Promise<E
   return page.items.map(mapStaff);
 }
 export async function saveStaff(employee: Employee) {
-  let reference = staffRefs.get(employee.code);
+  const reference = staffRefs.get(employee.code);
   if (!reference) {
     if (roleRefs.size === 0) await listRbacRoles();
     if (branchIds.size === 0) await listBranches();
@@ -1188,7 +1193,7 @@ export async function saveStaff(employee: Employee) {
       body: JSON.stringify({
         email: employee.email,
         displayName: employee.name,
-        employeeCode: employee.employeeCode?.trim() || employee.code,
+        employeeCode: employee.employeeCode?.trim() ? employee.employeeCode.trim() : employee.code,
         joinedAt: new Date().toISOString(),
         assignments,
       }),
@@ -1314,11 +1319,11 @@ export async function listCrmAssignees(branchName: string): Promise<Employee[]> 
   const branchId = branchIds.get(branchName);
   if (!branchId)
     throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không tìm thấy chi nhánh CRM.');
-  const assignees = await request<Array<{
+  const assignees = await request<{
     userId: string;
     employeeCode: string;
     displayName: string;
-  }>>(`/api/v1/crm/assignees?branchId=${encodeURIComponent(branchId)}`);
+  }[]>(`/api/v1/crm/assignees?branchId=${encodeURIComponent(branchId)}`);
   return assignees.map((assignee) => {
     crmAssigneeRefs.set(`${branchName}|${assignee.displayName}`, assignee.userId);
     return {
@@ -1402,7 +1407,7 @@ export async function saveCrmCase(value: Case): Promise<Case> {
         // neutral seed category for customer support cases.
         caseType: 'SUPPORT',
         priority: value.priority,
-        ownerUserId: await ownerUserId(value.owner, value.branch) || undefined,
+        ownerUserId: optionalText(await ownerUserId(value.owner, value.branch)),
         note: value.history[0],
       }),
     });
@@ -1763,7 +1768,7 @@ export async function uploadCatalogMedia(
   const path = ownerType === 'model' ? 'models' : 'variants';
   return request(`/api/v1/catalog/${path}/${encodeURIComponent(ownerId)}/media`, {
     method: 'POST',
-    body: JSON.stringify({ uploadKey: presigned.objectKey, sortOrder: 0, altText: altText || undefined }),
+    body: JSON.stringify({ uploadKey: presigned.objectKey, sortOrder: 0, altText: optionalText(altText) }),
   });
 }
 
@@ -1825,7 +1830,7 @@ export async function reallocateOrder(
 export async function pickupOrder(
   orderCode: string,
   expectedVersion: number,
-  items: Array<{ orderItemId: string; conditionGrade: 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED'; conditionNotes?: string; evidence: RentalEvidence[] }>,
+  items: { orderItemId: string; conditionGrade: 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED'; conditionNotes?: string; evidence: RentalEvidence[] }[],
 ) {
   return request<ApiOrder>(`/api/v1/rentals/orders/${encodeURIComponent(orderApiId(orderCode))}/pickup`, {
     method: 'POST',
@@ -1838,7 +1843,7 @@ export async function returnOrder(
   expectedVersion: number,
   partial: boolean,
   returnNotes: string,
-  items: Array<{
+  items: {
     orderItemId: string;
     returnConditionGrade: 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED';
     isMissing: boolean;
@@ -1846,8 +1851,8 @@ export async function returnOrder(
     nextOperationalStatus: 'CLEANING' | 'REPAIR';
     repairBlockedUntil?: string;
     evidence: RentalEvidence[];
-    accessories: Array<{ accessoryId: string; quantityReturned: number; conditionIn?: 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED' | null }>;
-  }>,
+    accessories: { accessoryId: string; quantityReturned: number; conditionIn?: 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED' | null }[];
+  }[],
 ) {
   return request<ApiOrder>(`/api/v1/rentals/orders/${encodeURIComponent(orderApiId(orderCode))}/return`, {
     method: 'POST',
@@ -1858,7 +1863,7 @@ export async function returnOrder(
 export async function assessOrderReturn(
   orderCode: string,
   expectedVersion: number,
-  items: Array<{ orderItemId: string; damageFeeVnd: number; missingFeeVnd: number; accessories: Array<{ accessoryId: string; damageFeeVnd: number; missingFeeVnd: number }> }>,
+  items: { orderItemId: string; damageFeeVnd: number; missingFeeVnd: number; accessories: { accessoryId: string; damageFeeVnd: number; missingFeeVnd: number }[] }[],
 ) {
   return request<ApiOrder>(`/api/v1/rentals/orders/${encodeURIComponent(orderApiId(orderCode))}/assessment`, {
     method: 'POST',

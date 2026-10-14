@@ -31,7 +31,7 @@ concurrency:
 
 jobs:
   api-ci:
-    name: Lint, Typecheck, Test, Build API
+    name: Lint, Test, Typecheck, Build API and Web
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -86,6 +86,8 @@ jobs:
 
       - name: Verify web
         run: |
+          pnpm --filter @costume/web lint
+          pnpm --filter @costume/web test
           pnpm --filter @costume/web typecheck
           pnpm --filter @costume/web build
 

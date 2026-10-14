@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { Navigate } from '../App';
 import { Button, Feedback, Field, SelectField, TextAreaField, StatusLabel } from '../components/ui';
 import {
@@ -280,10 +280,14 @@ export function TransfersPage({ scenario, branch, canManage = true }: { scenario
   const [selected, setSelected] = useState('DC-001');
   const [from, setFrom] = useState(branch);
   const [to, setTo] = useState(realApiMode ? '' : branch === 'Chi nhánh Quận 1' ? 'Chi nhánh Thủ Đức' : 'Chi nhánh Quận 1');
-  const [unitCode, setUnitCode] = useState(realApiMode ? '' : 'BC-012');
-  useEffect(() => {
-    if (realApiMode) setUnitCode('');
-  }, [realApiMode]);
+  const [unitCodeEntry, setUnitCodeEntry] = useState(() => ({
+    apiMode: realApiMode,
+    value: realApiMode ? '' : 'BC-012',
+  }));
+  const unitCode = unitCodeEntry.apiMode === realApiMode
+    ? unitCodeEntry.value
+    : realApiMode ? '' : 'BC-012';
+  const setUnitCode = (value: string) => setUnitCodeEntry({ apiMode: realApiMode, value });
   const [note, setNote] = useState('');
   const [checks, setChecks] = useState<Record<string, string>>({});
   const [reason, setReason] = useState('');
