@@ -19,6 +19,11 @@ import {
   ApiClientError,
   apiEnabled,
   getOrderSettlement,
+  getReturnSettlementOrder,
+  completeOrderSettlement,
+  assessOrderReturn,
+  prepareOrderSettlement,
+  listOrderRefunds,
   hasAccessToken,
   listOrderPayments,
   pickupOrder as pickupApiOrder,
@@ -27,6 +32,8 @@ import {
   returnOrder as returnApiOrder,
   validatePickupOrder,
   type SettlementSnapshot,
+  type ReturnSettlementOrderDetails,
+  type OrderRefundRecord,
   uploadRentalEvidence,
 } from '../api/client';
 
@@ -44,6 +51,451 @@ function settlementMoney(value: unknown): string {
 
 const loadOrders = (scenario: DemoScenario) => fixtureAdapter.listOrders(scenario);
 
+type ReturnWorkflowDetailsResource =
+  | { orderId: string; status: 'loading' }
+  | { orderId: string; status: 'success'; details: ReturnSettlementOrderDetails }
+  | { orderId: string; status: 'error'; message: string };
+type RefundsResource =
+  | { orderId: string; status: 'loading' }
+  | { orderId: string; status: 'success'; refunds: OrderRefundRecord[] }
+  | { orderId: string; status: 'error'; message: string };
+
+function amountText(value: string | number | bigint | null | undefined) {
+  return String(value ?? '0');
+}
+function validVndInput(value: string) {
+  return /^\d+$/.test(value);
+}
+function inspectionLabel(status: string | null | undefined) {
+  if (status === 'PENDING_ASSESSMENT') return 'Chờ đánh giá';
+  if (status === 'PASSED') return 'Đã đánh giá · không có phí';
+  if (status === 'HAS_DAMAGE') return 'Đã đánh giá · có hư hỏng/thiếu';
+  if (status === 'HAS_MISSING_ITEM') return 'Đã đánh giá · có đồ thiếu';
+  return status || 'Chưa có trạng thái';
+}
+function refundLabel(status: string) {
+  if (status === 'COMPLETED') return 'Máy chủ ghi nhận hoàn tất';
+  if (status === 'PROCESSING' || status === 'REQUESTED' || status === 'PENDING') return 'Đang chờ xử lý';
+  if (status === 'FAILED') return 'Thất bại';
+  if (status === 'CANCELLED') return 'Đã hủy';
+  return status;
+}
+
+function ReturnSettlementWorkflow({
+  order,
+  snapshot,
+  canReadPayments,
+  canAssess,
+  canPrepare,
+  canComplete,
+  onRefresh,
+  onCompleted,
+}: {
+  order: Order;
+  snapshot?: SettlementSnapshot;
+  canReadPayments: boolean;
+  canAssess: boolean;
+  canPrepare: boolean;
+  canComplete: boolean;
+  onRefresh: () => void;
+  onCompleted: () => void;
+}) {
+  const [detailsResource, setDetailsResource] = useState<ReturnWorkflowDetailsResource>({
+    orderId: order.id,
+    status: 'loading',
+  });
+  const [refundsResource, setRefundsResource] = useState<RefundsResource>({
+    orderId: order.id,
+    status: canReadPayments ? 'loading' : 'error',
+    ...(canReadPayments ? {} : { message: 'Bạn chưa có quyền đọc trạng thái thanh toán.' }),
+  } as RefundsResource);
+  const [assessmentDraft, setAssessmentDraft] = useState<Record<string, { damage: string; missing: string }>>({});
+  const [settlementDraft, setSettlementDraft] = useState({ depositDeduction: '0', otherFee: '0', note: '' });
+  const [busy, setBusy] = useState(false);
+  const [issue, setIssue] = useState('');
+  const [message, setMessage] = useState('');
+  const [reloadRevision, setReloadRevision] = useState(0);
+  const currentDetailsResource = detailsResource.orderId === order.id ? detailsResource : undefined;
+  const details = currentDetailsResource?.status === 'success' ? currentDetailsResource.details : undefined;
+  const currentRefundsResource = refundsResource.orderId === order.id ? refundsResource : undefined;
+  const refunds = currentRefundsResource?.status === 'success' ? currentRefundsResource.refunds : undefined;
+  const detailsLoading = !currentDetailsResource || currentDetailsResource.status === 'loading';
+  const detailsError = currentDetailsResource?.status === 'error' ? currentDetailsResource.message : '';
+  const refundsLoading = canReadPayments && (!currentRefundsResource || currentRefundsResource.status === 'loading');
+  const refundsError = currentRefundsResource?.status === 'error' ? currentRefundsResource.message : '';
+  const assessmentComplete = !!details && ['PASSED', 'HAS_DAMAGE', 'HAS_MISSING_ITEM'].includes(details.inspectionStatus ?? '');
+
+  useEffect(() => {
+    let active = true;
+    setDetailsResource({ orderId: order.id, status: 'loading' });
+    if (canReadPayments) setRefundsResource({ orderId: order.id, status: 'loading' });
+    void getReturnSettlementOrder(order.id)
+      .then((loaded) => {
+        if (!active) return;
+        setDetailsResource({ orderId: order.id, status: 'success', details: loaded });
+        setAssessmentDraft(Object.fromEntries(loaded.items.map((item) => [
+          item.id,
+          { damage: amountText(item.damageFeeVnd), missing: amountText(item.missingFeeVnd) },
+        ])));
+        setSettlementDraft({
+          depositDeduction: amountText(loaded.depositDeductionVnd),
+          otherFee: amountText(loaded.otherFeeVnd),
+          note: loaded.settlementNote ?? '',
+        });
+      })
+      .catch((caught: unknown) => {
+        if (active) setDetailsResource({
+          orderId: order.id,
+          status: 'error',
+          message: caught instanceof Error ? caught.message : 'Không tải được biên bản kiểm tra.',
+        });
+      });
+    if (canReadPayments) {
+      void listOrderRefunds(order.id)
+        .then((loaded) => {
+          if (active) setRefundsResource({ orderId: order.id, status: 'success', refunds: loaded });
+        })
+        .catch((caught: unknown) => {
+          if (active) setRefundsResource({
+            orderId: order.id,
+            status: 'error',
+            message: caught instanceof Error ? caught.message : 'Không tải được trạng thái hoàn cọc.',
+          });
+        });
+    }
+    return () => { active = false; };
+  }, [order.id, order.version, canReadPayments, reloadRevision]);
+
+  const refreshWorkflow = () => {
+    setMessage('');
+    setReloadRevision((revision) => revision + 1);
+    onRefresh();
+  };
+  const assess = async () => {
+    if (!details || details.status !== 'RETURN_INSPECTION' || !canAssess || busy) return;
+    const items = details.items.map((item) => {
+      const fee = assessmentDraft[item.id] ?? {
+        damage: amountText(item.damageFeeVnd),
+        missing: amountText(item.missingFeeVnd),
+      };
+      return {
+        orderItemId: item.id,
+        damageFeeVnd: fee.damage,
+        missingFeeVnd: fee.missing,
+        accessories: item.accessories.map((accessory) => {
+          const feeKey = `${item.id}:${accessory.id}`;
+          const accessoryFee = assessmentDraft[feeKey] ?? {
+            damage: amountText(accessory.damageFeeVnd),
+            missing: amountText(accessory.missingFeeVnd),
+          };
+          return {
+            accessoryId: accessory.id,
+            damageFeeVnd: accessoryFee.damage,
+            missingFeeVnd: accessoryFee.missing,
+          };
+        }),
+      };
+    });
+    if (items.some((item) =>
+      !validVndInput(item.damageFeeVnd) ||
+      !validVndInput(item.missingFeeVnd) ||
+      item.accessories.some((accessory) =>
+        !validVndInput(accessory.damageFeeVnd) || !validVndInput(accessory.missingFeeVnd),
+      ),
+    )) {
+      setIssue('Nhập phí bằng số nguyên VND không âm cho từng bộ và phụ kiện.');
+      return;
+    }
+    setBusy(true);
+    setIssue('');
+    setMessage('');
+    try {
+      await assessOrderReturn(order.id, details.version, items);
+      setMessage('Đã lưu đánh giá trên máy chủ. Đang tải lại version và số liệu mới nhất.');
+      setReloadRevision((revision) => revision + 1);
+      onRefresh();
+    } catch (caught: unknown) {
+      setIssue(caught instanceof Error ? caught.message : 'Không lưu được đánh giá.');
+      setReloadRevision((revision) => revision + 1);
+      onRefresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const prepare = async () => {
+    if (!details || details.status !== 'RETURN_INSPECTION' ||
+      !assessmentComplete || !canPrepare || busy) return;
+    if (!validVndInput(settlementDraft.depositDeduction) || !validVndInput(settlementDraft.otherFee)) {
+      setIssue('Nhập khoản cấn trừ và phí khác bằng số nguyên VND không âm.');
+      return;
+    }
+    setBusy(true);
+    setIssue('');
+    setMessage('');
+    try {
+      await prepareOrderSettlement(
+        order.id,
+        details.version,
+        settlementDraft.depositDeduction,
+        settlementDraft.otherFee,
+        settlementDraft.note,
+      );
+      setMessage('Đã lưu khoản cấn trừ và phí khác trên máy chủ; đang tải lại quyết toán.');
+      setReloadRevision((revision) => revision + 1);
+      onRefresh();
+    } catch (caught: unknown) {
+      setIssue(caught instanceof Error ? caught.message : 'Không lưu được quyết toán.');
+      setReloadRevision((revision) => revision + 1);
+      onRefresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const complete = async () => {
+    if (!canComplete || !canReadPayments || busy || !details) return;
+    setBusy(true);
+    setIssue('');
+    setMessage('');
+    try {
+      await completeOrderSettlement(order.id);
+      setMessage('Máy chủ đã hoàn tất đơn sau khi lấy snapshot và version mới nhất; đang tải lại danh sách.');
+      onCompleted();
+      setReloadRevision((revision) => revision + 1);
+      onRefresh();
+    } catch (caught: unknown) {
+      setIssue(caught instanceof Error ? caught.message : 'Không thể hoàn tất đơn.');
+      setReloadRevision((revision) => revision + 1);
+      onRefresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const setFee = (key: string, field: 'damage' | 'missing', value: string) => {
+    setAssessmentDraft((current) => ({
+      ...current,
+      [key]: { ...(current[key] ?? { damage: '0', missing: '0' }), [field]: value },
+    }));
+  };
+
+  return (
+    <section className="task-card return-settlement-workflow" aria-labelledby="return-workflow-title">
+      <div className="task-card-heading">
+        <span className="round-step">04</span>
+        <div>
+          <p className="eyebrow">KIỂM TRA VÀ QUYẾT TOÁN</p>
+          <h2 id="return-workflow-title">Biên bản trả và bước tiếp theo</h2>
+        </div>
+      </div>
+      {busy && (
+        <p className="section-help" role="status" aria-live="polite">
+          Đang gửi thao tác đến máy chủ. Vui lòng đợi phản hồi và không gửi lại.
+        </p>
+      )}
+      {detailsLoading && <Feedback title="Đang tải biên bản từ máy chủ">Đang đọc version đơn, trạng thái kiểm tra và phí đã lưu.</Feedback>}
+      {detailsError && (
+        <Feedback tone="danger" title="Không tải được biên bản">
+          {detailsError}
+          <Button variant="secondary" disabled={busy} onClick={refreshWorkflow}>Tải lại trạng thái</Button>
+        </Feedback>
+      )}
+      {details && (
+        <>
+          <Feedback tone={details.inspectionStatus === 'PENDING_ASSESSMENT' ? 'warning' : 'info'} title={inspectionLabel(details.inspectionStatus)}>
+            Đơn đang ở bước kiểm tra trả · version {details.version}. Phí và điều kiện hoàn tất do máy chủ xác nhận.
+          </Feedback>
+          <div className="return-assessment-list">
+            {details.items.map((item, index) => {
+              const mappedItem = order.items.find((entry) => entry.id === item.id);
+              const draft = assessmentDraft[item.id] ?? {
+                damage: amountText(item.damageFeeVnd),
+                missing: amountText(item.missingFeeVnd),
+              };
+              return (
+                <fieldset className="check-unit" key={item.id}>
+                  <legend>{mappedItem?.costume ?? `Bộ ${index + 1}`} · {mappedItem?.variant ?? item.id}</legend>
+                  <p className="section-help">
+                    {mappedItem?.unitCode ? `Mã bộ ${mappedItem.unitCode} · ` : ''}
+                    Tình trạng trả: {item.returnConditionGrade ?? 'Chưa có dữ liệu'} · {item.isMissing === true ? 'Ghi nhận thiếu' : item.isMissing === false ? 'Không ghi nhận thiếu' : 'Chưa có dữ liệu'}
+                  </p>
+                  <div className="two-fields">
+                    <Field
+                      label="Phí hư hỏng theo policy hiện hành (VND)"
+                      type="text"
+                      inputMode="numeric"
+                      value={draft.damage}
+                      disabled={!canAssess || busy}
+                      aria-label={`Phí hư hỏng bộ ${mappedItem?.unitCode ?? item.id} VND`}
+                      onChange={(event) => setFee(item.id, 'damage', event.target.value)}
+                    />
+                    <Field
+                      label="Phí thiếu theo policy hiện hành (VND)"
+                      type="text"
+                      inputMode="numeric"
+                      value={draft.missing}
+                      disabled={!canAssess || busy}
+                      aria-label={`Phí thiếu bộ ${mappedItem?.unitCode ?? item.id} VND`}
+                      onChange={(event) => setFee(item.id, 'missing', event.target.value)}
+                    />
+                  </div>
+                  {item.accessories.map((accessory) => {
+                    const key = `${item.id}:${accessory.id}`;
+                    const accessoryDraft = assessmentDraft[key] ?? {
+                      damage: amountText(accessory.damageFeeVnd),
+                      missing: amountText(accessory.missingFeeVnd),
+                    };
+                    return (
+                      <div className="return-accessory-assessment" key={accessory.id}>
+                        <strong>{accessory.accessoryName ?? 'Phụ kiện'} · đã trả {accessory.quantityReturned ?? 0}/{accessory.quantityOut}</strong>
+                        <div className="two-fields">
+                          <Field
+                            label="Phí hư hỏng phụ kiện (VND)"
+                            type="text"
+                            inputMode="numeric"
+                            value={accessoryDraft.damage}
+                            disabled={!canAssess || busy}
+                            aria-label={`Phí hư hỏng phụ kiện ${accessory.accessoryName ?? accessory.id} VND`}
+                            onChange={(event) => setFee(key, 'damage', event.target.value)}
+                          />
+                          <Field
+                            label="Phí thiếu phụ kiện (VND)"
+                            type="text"
+                            inputMode="numeric"
+                            value={accessoryDraft.missing}
+                            disabled={!canAssess || busy}
+                            aria-label={`Phí thiếu phụ kiện ${accessory.accessoryName ?? accessory.id} VND`}
+                            onChange={(event) => setFee(key, 'missing', event.target.value)}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </fieldset>
+              );
+            })}
+          </div>
+          {canAssess ? (
+            <div className="task-final">
+              <p className="section-help">
+                Nhập mức phí theo policy do Studio phê duyệt. Máy chủ là nơi kiểm tra và tính số liệu quyết toán.
+              </p>
+              <Button disabled={busy || details.items.length === 0} loading={busy} onClick={() => void assess()}>
+                {details.inspectionStatus === 'PENDING_ASSESSMENT' ? 'Lưu đánh giá' : 'Cập nhật đánh giá'}
+              </Button>
+            </div>
+          ) : (
+            <Feedback tone="warning" title="Bạn chưa có quyền đánh giá">
+              Cần quyền rentals.assessment hoặc rentals.manage tại phạm vi chi nhánh.
+            </Feedback>
+          )}
+          {!assessmentComplete ? (
+            <Feedback tone="warning" title="Chưa thể chuẩn bị quyết toán">
+              Lưu đánh giá đủ tất cả bộ và phụ kiện trước. Không tạo khoản thu hoặc hoàn cọc tại bước này.
+            </Feedback>
+          ) : (
+            <div className="return-settlement-form">
+              <h3>Chuẩn bị quyết toán</h3>
+              <p className="section-help">Các khoản phí theo policy hiện hành; máy chủ kiểm tra giới hạn và số dư. Không tự tính tổng tại giao diện.</p>
+              <div className="two-fields">
+                <Field
+                  label="Cấn trừ từ tiền cọc (VND)"
+                  type="text"
+                  inputMode="numeric"
+                  value={settlementDraft.depositDeduction}
+                  disabled={!canPrepare || busy}
+                  onChange={(event) => setSettlementDraft((current) => ({ ...current, depositDeduction: event.target.value }))}
+                />
+                <Field
+                  label="Phí khác đã được duyệt (VND)"
+                  type="text"
+                  inputMode="numeric"
+                  value={settlementDraft.otherFee}
+                  disabled={!canPrepare || busy}
+                  onChange={(event) => setSettlementDraft((current) => ({ ...current, otherFee: event.target.value }))}
+                />
+              </div>
+              <TextAreaField
+                label="Ghi chú quyết toán"
+                rows={3}
+                value={settlementDraft.note}
+                disabled={!canPrepare || busy}
+                onChange={(event) => setSettlementDraft((current) => ({ ...current, note: event.target.value }))}
+              />
+              {canPrepare ? (
+                <Button disabled={busy || details.status !== 'RETURN_INSPECTION' || !assessmentComplete} loading={busy} onClick={() => void prepare()}>Lưu quyết toán trên máy chủ</Button>
+              ) : (
+                <Feedback tone="warning" title="Bạn chưa có quyền chuẩn bị quyết toán">
+                  Cần quyền payments.manage tại phạm vi chi nhánh.
+                </Feedback>
+              )}
+            </div>
+          )}
+          {canReadPayments && (
+            <div className="return-refund-history" aria-live="polite">
+              <h3>Trạng thái hoàn cọc</h3>
+              {refundsLoading && <Feedback title="Đang tải giao dịch hoàn cọc">Đang đọc các bản ghi do máy chủ trả về.</Feedback>}
+              {refundsError && (
+                <Feedback tone="danger" title="Không tải được giao dịch hoàn cọc">
+                  {refundsError}
+                  <Button variant="secondary" disabled={busy} onClick={refreshWorkflow}>Tải lại trạng thái</Button>
+                </Feedback>
+              )}
+              {refunds && (refunds.length ? (
+                <ul className="return-refund-list">
+                  {refunds.map((refund) => (
+                    <li key={refund.id}>
+                      <strong>{settlementMoney(refund.amountVnd)}</strong>
+                      <span>{refundLabel(refund.status)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="section-help">Máy chủ chưa trả về bản ghi hoàn cọc nào cho đơn này.</p>
+              ))}
+              <Feedback tone="warning" title="Phương thức và thời hạn hoàn cọc cần Studio chốt">
+                Chỉ hiển thị số tiền và trạng thái do máy chủ ghi nhận. Màn hình này không tạo, không đánh dấu và không xác nhận đã chuyển tiền hoàn.
+              </Feedback>
+            </div>
+          )}
+          {canComplete && (
+            <div className="task-final">
+              <Button
+                disabled={
+                  busy ||
+                  !canReadPayments ||
+                  !snapshot ||
+                  snapshot.orderId !== details.id ||
+                  snapshot.status !== 'RETURN_INSPECTION' ||
+                  snapshot.canComplete !== true ||
+                  details.status !== 'RETURN_INSPECTION' ||
+                  !assessmentComplete ||
+                  detailsLoading ||
+                  !!detailsError ||
+                  refundsLoading ||
+                  !!refundsError
+                }
+                loading={busy}
+                onClick={() => void complete()}
+              >
+                Hoàn tất đơn theo xác nhận của máy chủ
+              </Button>
+              {!canReadPayments && <p role="status">Cần quyền đọc thanh toán để xác minh snapshot trước khi đóng đơn.</p>}
+              {snapshot?.canComplete !== true && <p role="status">Nút chỉ mở khi snapshot mới nhất từ máy chủ báo đủ điều kiện.</p>}
+            </div>
+          )}
+        </>
+      )}
+      {issue && (
+        <Feedback tone="danger" title="Thao tác chưa hoàn tất">
+          {issue}
+          <Button variant="secondary" disabled={busy} onClick={refreshWorkflow}>Tải lại trạng thái, không gửi lại thao tác</Button>
+        </Feedback>
+      )}
+      {message && <Feedback tone="success" title="Đã nhận phản hồi từ máy chủ">{message}</Feedback>}
+    </section>
+  );
+}
+
+
 export function OrderDetailShell({
   scenario,
   mode,
@@ -52,6 +504,10 @@ export function OrderDetailShell({
   initialBranch,
   canReadPayments = true,
   canCollectPayments = true,
+  canReturn = true,
+  canAssessReturn = true,
+  canPrepareSettlement = true,
+  canCompleteSettlement = true,
 }: {
   scenario: DemoScenario;
   mode: 'handover' | 'return';
@@ -60,6 +516,10 @@ export function OrderDetailShell({
   initialBranch: string;
   canReadPayments?: boolean;
   canCollectPayments?: boolean;
+  canReturn?: boolean;
+  canAssessReturn?: boolean;
+  canPrepareSettlement?: boolean;
+  canCompleteSettlement?: boolean;
 }) {
   const realApiMode = apiEnabled && hasAccessToken();
   const [branch, setBranch] = useState(initialBranch);
@@ -474,6 +934,10 @@ export function OrderDetailShell({
       previewReturn();
       return;
     }
+    if (!canReturn) {
+      setOperationIssue('Bạn chưa có quyền nhận trả tại phạm vi chi nhánh.');
+      return;
+    }
     if (!order || !scannedEnough || !allChecked || !allEvidenceSelected || restricted) return;
     if (order.status !== 'ACTIVE') {
       setOperationIssue('Đơn đã ở bước kiểm tra/quyết toán. Không gửi lại thao tác nhận trả; hãy xử lý biên bản và hoàn cọc theo quyền được cấp.');
@@ -683,6 +1147,7 @@ export function OrderDetailShell({
                 </span>
               </div>
             </section>
+            {!backendReturnReady && (
             <section className="task-card" id="task-scan">
               <div className="task-card-heading">
                 <span className="round-step">01</span>
@@ -763,6 +1228,8 @@ export function OrderDetailShell({
                 </p>
               )}
             </section>
+            )}
+            {!backendReturnReady && (
             <section className="task-card" id="task-check">
               <div className="task-card-heading">
                 <span className="round-step">02</span>
@@ -955,6 +1422,7 @@ export function OrderDetailShell({
                   : 'Ảnh bằng chứng chỉ là lựa chọn xem trước; khi có API, ảnh sẽ được gắn với từng bộ.'}
               </p>
             </section>
+            )}
             <section className="task-card" id="task-money">
               <div className="task-card-heading">
                 <span className="round-step">03</span>
@@ -1206,6 +1674,21 @@ export function OrderDetailShell({
                       </Feedback>
                     </>
                   )}
+                  {realApiMode && backendReturnReady && order && (
+                    <ReturnSettlementWorkflow
+                      order={order}
+                      snapshot={backendSettlement}
+                      canReadPayments={canReadPayments}
+                      canAssess={canAssessReturn}
+                      canPrepare={canPrepareSettlement}
+                      canComplete={canCompleteSettlement}
+                      onRefresh={() => {
+                        retry();
+                        void refreshSettlement();
+                      }}
+                      onCompleted={() => setResult({ text: 'Đơn đã được máy chủ đóng sau khi snapshot xác nhận đủ điều kiện.', signature: previewSignature })}
+                    />
+                  )}
                   {!realApiMode &&
                     settlement &&
                 allReturnItemsScanned &&
@@ -1342,7 +1825,7 @@ export function OrderDetailShell({
                   )}
                 </div>
               )}
-              <div className="task-final">
+              {!backendReturnReady && <div className="task-final">
                 <Button
                   onClick={() => { void (mode === 'handover' ? performHandover() : performReturn()); }}
                   loading={operationBusy}
@@ -1353,6 +1836,7 @@ export function OrderDetailShell({
                     needsAssessmentNote ||
                     restricted ||
                     backendReturnReady ||
+                    (realApiMode && mode === 'return' && !canReturn) ||
                     (realApiMode && mode === 'handover' && (!canCollectPayments || !handoverPaymentReady)) ||
                     (mode === 'handover' &&
                       ((effectiveMethod === 'CASH' && !cashChecksComplete) ||
@@ -1398,6 +1882,9 @@ export function OrderDetailShell({
                 {realApiMode && backendReturnReady && (
                   <p role="status">Đơn đã ở bước kiểm tra trả. Hãy dùng quyền quyết toán/hoàn cọc riêng; không gửi lại nhận trả.</p>
                 )}
+                {realApiMode && mode === 'return' && order.status === 'ACTIVE' && !canReturn && (
+                  <p role="status">Bạn có quyền xem hoặc đánh giá đơn nhưng chưa có quyền nhận trả tại phạm vi chi nhánh.</p>
+                )}
                 {mode === 'handover' &&
                   scannedEnough &&
                   allChecked &&
@@ -1416,11 +1903,11 @@ export function OrderDetailShell({
                       ? 'Sau khi nhận trả, đơn chuyển sang kiểm tra và chờ quyết toán cọc theo quyền được cấp.'
                       : 'Cọc chỉ hoàn sau kiểm tra và quyết toán được xác nhận.'}
                 </p>
-              </div>
+              </div>}
             </section>
           </div>
           <aside className="task-side">
-            <MoneyBreakdown lines={order.money} title="Trạng thái tiền của đơn" />
+            {!(realApiMode && backendReturnReady) && <MoneyBreakdown lines={order.money} title="Trạng thái tiền của đơn" />}
             <div className="task-side-note">
               <p className="eyebrow">TRẠNG THÁI NHIỀU CHIỀU</p>
               <p>
