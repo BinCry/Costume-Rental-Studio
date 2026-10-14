@@ -80,6 +80,12 @@ export function CrmPage({
   const [busy, setBusy] = useState(false);
   const [apiInteractions, setApiInteractions] = useState<Record<string, string[]>>({});
   const [apiCaseHistory, setApiCaseHistory] = useState<Record<string, string[]>>({});
+  const [apiInteractionErrors, setApiInteractionErrors] = useState<Record<string, boolean>>({});
+  const [apiCaseHistoryErrors, setApiCaseHistoryErrors] = useState<Record<string, boolean>>({});
+  const [apiInteractionLoading, setApiInteractionLoading] = useState<Record<string, boolean>>({});
+  const [apiCaseHistoryLoading, setApiCaseHistoryLoading] = useState<Record<string, boolean>>({});
+  const [interactionRetry, setInteractionRetry] = useState(0);
+  const [caseHistoryRetry, setCaseHistoryRetry] = useState(0);
   const [interactionNote, setInteractionNote] = useState('');
   const [interactionType, setInteractionType] = useState<
     'INQUIRY' | 'CONSULTATION' | 'COMPLAINT' | 'FOLLOW_UP' | 'NOTE'
@@ -101,31 +107,41 @@ export function CrmPage({
   useEffect(() => {
     if (!realApiMode || !activeCustomer) return;
     let active = true;
+    setApiInteractionLoading((current) => ({ ...current, [activeCustomerCode]: true }));
+    setApiInteractionErrors((current) => ({ ...current, [activeCustomerCode]: false }));
     void listCustomerInteractions(activeCustomerCode, branch)
       .then((items) => {
         if (active) setApiInteractions((current) => ({ ...current, [activeCustomerCode]: items }));
       })
       .catch(() => {
-        if (active) setApiInteractions((current) => ({ ...current, [activeCustomerCode]: [] }));
+        if (active) setApiInteractionErrors((current) => ({ ...current, [activeCustomerCode]: true }));
+      })
+      .finally(() => {
+        if (active) setApiInteractionLoading((current) => ({ ...current, [activeCustomerCode]: false }));
       });
     return () => {
       active = false;
     };
-  }, [activeCustomer, activeCustomerCode, branch, realApiMode]);
+  }, [activeCustomer, activeCustomerCode, branch, interactionRetry, realApiMode]);
   useEffect(() => {
     if (!realApiMode || !caseCode || !casesResource.data?.some((item) => item.code === caseCode)) return;
     let active = true;
+    setApiCaseHistoryLoading((current) => ({ ...current, [caseCode]: true }));
+    setApiCaseHistoryErrors((current) => ({ ...current, [caseCode]: false }));
     void listCrmCaseHistory(caseCode)
       .then((items) => {
         if (active) setApiCaseHistory((current) => ({ ...current, [caseCode]: items }));
       })
       .catch(() => {
-        if (active) setApiCaseHistory((current) => ({ ...current, [caseCode]: [] }));
+        if (active) setApiCaseHistoryErrors((current) => ({ ...current, [caseCode]: true }));
+      })
+      .finally(() => {
+        if (active) setApiCaseHistoryLoading((current) => ({ ...current, [caseCode]: false }));
       });
     return () => {
       active = false;
     };
-  }, [caseCode, casesResource.data, realApiMode]);
+  }, [caseCode, caseHistoryRetry, casesResource.data, realApiMode]);
   const switchView = (kind: 'customer' | 'case' | 'newCase', code: string) => {
     if (draft) {
       setPendingView({ kind, code });
@@ -233,10 +249,10 @@ export function CrmPage({
         const current = related.find((c) => c.code === caseCode) ?? related[0];
         const editing = draft ?? current;
         const personInteractions = person
-          ? apiInteractions[person.code] ?? person.interactions
+          ? apiInteractions[person.code] ?? (realApiMode ? [] : person.interactions)
           : [];
         const currentHistory = current
-          ? apiCaseHistory[current.code] ?? current.history
+          ? apiCaseHistory[current.code] ?? (realApiMode ? [] : current.history)
           : [];
         const eligibleOwners = (employeesResource.data ?? []).filter(
           (employee) =>
@@ -319,7 +335,19 @@ export function CrmPage({
                     <h3>Lịch sử thuê</h3>
                     <Timeline items={person.history} />
                     <h3>Tương tác</h3>
-                    <Timeline items={personInteractions} />
+                    {realApiMode && apiInteractionLoading[person.code] ? (
+                      <p className="muted" role="status">Đang tải tương tác…</p>
+                    ) : realApiMode && apiInteractionErrors[person.code] ? (
+                      <Feedback
+                        tone="danger"
+                        title="Chưa tải được lịch sử tương tác"
+                        action={<Button variant="secondary" onClick={() => setInteractionRetry((value) => value + 1)}>Thử lại</Button>}
+                      >
+                        Dữ liệu chưa được xác minh; thử tải lại để xem lịch sử mới nhất.
+                      </Feedback>
+                    ) : (
+                      <Timeline items={personInteractions} />
+                    )}
                     {realApiMode && canManage && (
                       <div className="stack-form">
                         <SelectField
@@ -576,9 +604,19 @@ export function CrmPage({
                       )}
                     </fieldset>
                     <h3>Lịch sử case</h3>
-                    <Timeline items={
-                      editing === current ? currentHistory : editing.history
-                    } />
+                    {realApiMode && editing === current && apiCaseHistoryLoading[current?.code ?? ''] ? (
+                      <p className="muted" role="status">Đang tải lịch sử case…</p>
+                    ) : realApiMode && editing === current && current && apiCaseHistoryErrors[current.code] ? (
+                      <Feedback
+                        tone="danger"
+                        title="Chưa tải được lịch sử case"
+                        action={<Button variant="secondary" onClick={() => setCaseHistoryRetry((value) => value + 1)}>Thử lại</Button>}
+                      >
+                        Timeline chưa được tải từ máy chủ.
+                      </Feedback>
+                    ) : (
+                      <Timeline items={editing === current ? currentHistory : editing.history} />
+                    )}
                   </Panel>
                 ) : (
                   <Panel title="Chi tiết case">
