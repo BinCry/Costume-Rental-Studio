@@ -235,9 +235,11 @@ export function CrmPage({
         interactionType,
         channel: interactionChannel,
       });
+      const interactionKey = JSON.stringify([customerCode, branch]);
+      setApiInteractionErrors((current) => ({ ...current, [interactionKey]: false }));
       setApiInteractions((current) => ({
         ...current,
-        [customerCode]: [line, ...(current[customerCode] ?? [])],
+        [interactionKey]: [line, ...(current[interactionKey] ?? [])],
       }));
       setInteractionNote('');
       setNotice('Đã ghi tương tác vào hồ sơ khách.');
