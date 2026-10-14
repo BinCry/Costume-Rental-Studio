@@ -41,6 +41,44 @@ afterEach(() => {
 });
 
 describe('web API client session and error handling', () => {
+  it('groups public catalog variants under one model and follows API pagination', async () => {
+    const model = { id: 'model-1', name: 'Đầm thử', category: { name: 'Đầm' }, media: [{ mediaUrl: 'https://img.example.test/dam.jpg', altText: 'Đầm xanh' }] };
+    const variant = (id, size, code) => ({
+      id,
+      modelId: 'model-1',
+      variantCode: code,
+      sizeCode: size,
+      colorCode: 'Xanh',
+      dailyRentalPriceVnd: 150000,
+      depositAmountVnd: 500000,
+      model,
+    });
+    globalThis.fetch
+      .mockResolvedValueOnce(success({
+        items: [variant('variant-s', 'S', 'DAM-S-XANH')],
+        pagination: { page: 1, pageSize: 1, totalItems: 2, totalPages: 2 },
+      }))
+      .mockResolvedValueOnce(success({
+        items: [variant('variant-m', 'M', 'DAM-M-XANH')],
+        pagination: { page: 2, pageSize: 1, totalItems: 2, totalPages: 2 },
+      }));
+    const { listCatalog } = await import('../src/api/client.ts');
+
+    const catalog = await listCatalog();
+
+    expect(catalog).toHaveLength(1);
+    expect(catalog[0]).toMatchObject({
+      id: 'model-1',
+      imageUrl: 'https://img.example.test/dam.jpg',
+      sizes: ['M', 'S'],
+      apiVariants: [
+        { id: 'variant-s', code: 'DAM-S-XANH', size: 'S', color: 'Xanh' },
+        { id: 'variant-m', code: 'DAM-M-XANH', size: 'M', color: 'Xanh' },
+      ],
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
   it('stores a login token and attaches it to later requests', async () => {
     const fetchMock = globalThis.fetch;
     fetchMock
