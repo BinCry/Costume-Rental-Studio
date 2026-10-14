@@ -42,7 +42,7 @@ export interface CatalogItem {
   imageUrl?: string;
   imageAlt?: string;
   /** Public variant IDs and price snapshots used by availability checks. */
-  apiVariants?: { id: string; size: string; color: string; price: number; deposit: number }[];
+  apiVariants?: { id: string; code: string; size: string; color: string; edition?: string; price: number; deposit: number }[];
 }
 
 export interface UnitOption {
