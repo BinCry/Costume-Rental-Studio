@@ -1003,7 +1003,7 @@ export function OrderDetailShell({
                         {money(realApiMode ? parseVndAmount(backendSettlement?.rental.dueVnd) ?? 0 : rental?.amount ?? 0)}
                       </span>
                       <span>
-                        <span className="collection-mobile-label">Đã đánh dấu nhận</span>
+                        <span className="collection-mobile-label">{realApiMode ? 'Đã ghi nhận' : 'Đánh dấu nhận (demo)'}</span>
                         {realApiMode
                           ? settlementMoney(backendSettlement?.rental.paidVnd)
                           : effectiveMethod === 'CASH' && rentPreview ? money(rental?.amount ?? 0) : money(0)}
