@@ -181,7 +181,6 @@ export function OrderDetailShell({
       backendSettlement.rental.remainingVnd,
       backendSettlement.deposit.dueVnd,
       backendSettlement.deposit.paidVnd,
-      backendSettlement.deposit.remainingVnd,
       backendSettlement.deposit.deductionVnd,
       backendSettlement.deposit.refundedVnd,
       backendSettlement.deposit.refundAvailableVnd ??
@@ -193,7 +192,9 @@ export function OrderDetailShell({
     ? (parseVndAmount(backendSettlement?.rental.remainingVnd) ?? 0)
     : (rental?.amount ?? 0);
   const depositRemaining = realApiMode
-    ? (parseVndAmount(backendSettlement?.deposit.remainingVnd) ?? 0)
+    ? (parseVndAmount(backendSettlement?.deposit.remainingVnd) ??
+      Math.max(0, (parseVndAmount(backendSettlement?.deposit.dueVnd) ?? 0) -
+        (parseVndAmount(backendSettlement?.deposit.paidVnd) ?? 0)))
     : (deposit?.amount ?? 0);
   const pendingRental = (order?.apiPayments ?? []).some((payment) =>
     payment.purpose === 'RENTAL' && ['PENDING', 'PROCESSING'].includes(payment.status),
@@ -1029,7 +1030,7 @@ export function OrderDetailShell({
                       <span>
                         <span className="collection-mobile-label">Còn thiếu</span>
                         {realApiMode
-                          ? settlementMoney(backendSettlement?.deposit.remainingVnd)
+                          ? money(depositRemaining)
                           : effectiveMethod === 'CASH' && depositPreview ? money(0) : money(deposit?.amount ?? 0)}
                       </span>
                     </div>
