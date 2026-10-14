@@ -3,6 +3,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['tests/*-postgres-concurrency.test.ts'],
+    fileParallelism: false,
     env: {
       NODE_ENV: 'test',
       PORT: '4000',

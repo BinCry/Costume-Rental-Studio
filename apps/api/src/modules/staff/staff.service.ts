@@ -6,6 +6,11 @@ import type { CreateStaffInput } from './staff.schema.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { lockUserAuthentication } from '../auth/token.service.js';
 import { lockActiveBranch } from '../branches/branch.service.js';
+import {
+  assertActiveGlobalAdmin,
+  isActiveGlobalAdmin,
+  lockGlobalAdminInvariant,
+} from '../rbac/admin-invariant.js';
 
 export async function listStaff(
   actor: AuthenticatedActor,
@@ -102,7 +107,24 @@ export async function createStaff(actor: AuthenticatedActor, input: CreateStaffI
             },
           },
         },
-        include: { employee: true },
+        select: {
+          id: true,
+          email: true,
+          phone: true,
+          displayName: true,
+          avatarUrl: true,
+          status: true,
+          employee: {
+            select: {
+              userId: true,
+              employeeCode: true,
+              employmentStatus: true,
+              joinedAt: true,
+              activatedAt: true,
+              terminatedAt: true,
+            },
+          },
+        },
       });
       for (const assignment of input.assignments) {
         await tx.userRoleAssignment.create({
@@ -114,7 +136,7 @@ export async function createStaff(actor: AuthenticatedActor, input: CreateStaffI
           },
         });
       }
-      return user;
+      return safeCreatedStaffUser(user);
     });
   } catch (error) {
     if (isUnique(error))
@@ -128,29 +150,50 @@ export async function updateStaff(
   data: { displayName?: string; phone?: string | null; employmentStatus?: 'ACTIVE' | 'ON_LEAVE' },
 ) {
   assertPermission(actor, { module: 'staff', action: 'manage' });
-  const user = await prisma.user.findUnique({ where: { id: userId }, include: { employee: true } });
-  if (!user?.employee) throw new AppError(404, 'STAFF_NOT_FOUND', 'Staff member not found');
   return prisma.$transaction(async (tx) => {
+    if (data.employmentStatus) {
+      await lockGlobalAdminInvariant(tx);
+      await lockUserAuthentication(tx, userId);
+    }
+    const user = await tx.user.findUnique({
+      where: { id: userId },
+      select: { employee: { select: { userId: true } } },
+    });
+    if (!user?.employee) throw new AppError(404, 'STAFF_NOT_FOUND', 'Staff member not found');
+
+    const protectsAdmin =
+      data.employmentStatus === 'ON_LEAVE' && (await isActiveGlobalAdmin(tx, userId));
     const updated = await tx.user.update({
       where: { id: userId },
       data: { displayName: data.displayName, phone: data.phone },
+      select: {
+        id: true,
+        email: true,
+        phone: true,
+        displayName: true,
+        avatarUrl: true,
+        status: true,
+      },
     });
     if (data.employmentStatus)
       await tx.employee.update({
         where: { userId },
         data: { employmentStatus: data.employmentStatus },
       });
-    return updated;
+    if (protectsAdmin) await assertActiveGlobalAdmin(tx);
+    return safeStaffUser(updated);
   });
 }
 export async function terminateStaff(actor: AuthenticatedActor, userId: string) {
   assertPermission(actor, { module: 'staff', action: 'manage' });
   if (actor.id === userId)
     throw new AppError(409, 'SELF_TERMINATION', 'You cannot terminate yourself');
-  const employee = await prisma.employee.findUnique({ where: { userId } });
-  if (!employee) throw new AppError(404, 'STAFF_NOT_FOUND', 'Staff member not found');
   await prisma.$transaction(async (tx) => {
+    await lockGlobalAdminInvariant(tx);
     await lockUserAuthentication(tx, userId);
+    const employee = await tx.employee.findUnique({ where: { userId } });
+    if (!employee) throw new AppError(404, 'STAFF_NOT_FOUND', 'Staff member not found');
+    const protectsAdmin = await isActiveGlobalAdmin(tx, userId);
     await tx.employee.update({
       where: { userId },
       data: { employmentStatus: 'TERMINATED', terminatedAt: new Date() },
@@ -160,6 +203,7 @@ export async function terminateStaff(actor: AuthenticatedActor, userId: string) 
       where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    if (protectsAdmin) await assertActiveGlobalAdmin(tx);
   });
   return { userId, status: 'TERMINATED' };
 }
@@ -199,11 +243,79 @@ export async function removeAssignment(
   assignmentId: string,
 ) {
   assertPermission(actor, { module: 'staff', action: 'manage' });
-  const assignment = await prisma.userRoleAssignment.findFirst({
-    where: { id: assignmentId, userId },
+  await prisma.$transaction(async (tx) => {
+    await lockGlobalAdminInvariant(tx);
+    const assignment = await tx.userRoleAssignment.findFirst({
+      where: { id: assignmentId, userId },
+      include: { role: true },
+    });
+    if (!assignment)
+      throw new AppError(404, 'ASSIGNMENT_NOT_FOUND', 'Role assignment not found');
+    if (
+      actor.id === userId &&
+      assignment.branchId === null &&
+      assignment.role.roleCode === 'ADMIN'
+    )
+      throw new AppError(
+        409,
+        'SELF_ADMIN_ASSIGNMENT_REMOVAL',
+        'You cannot remove your own global administrator assignment',
+      );
+
+    const protectsAdmin =
+      assignment.branchId === null &&
+      assignment.role.roleCode === 'ADMIN' &&
+      (await isActiveGlobalAdmin(tx, userId));
+    await tx.userRoleAssignment.delete({ where: { id: assignmentId } });
+    if (protectsAdmin) await assertActiveGlobalAdmin(tx);
   });
-  if (!assignment) throw new AppError(404, 'ASSIGNMENT_NOT_FOUND', 'Role assignment not found');
-  await prisma.userRoleAssignment.delete({ where: { id: assignmentId } });
+}
+function safeCreatedStaffUser(user: {
+  id: string;
+  email: string | null;
+  phone: string | null;
+  displayName: string;
+  avatarUrl: string | null;
+  status: string;
+  employee: {
+    userId: string;
+    employeeCode: string;
+    employmentStatus: string;
+    joinedAt: Date;
+    activatedAt: Date | null;
+    terminatedAt: Date | null;
+  } | null;
+}) {
+  return {
+    ...safeStaffUser(user),
+    employee: user.employee
+      ? {
+          userId: user.employee.userId,
+          employeeCode: user.employee.employeeCode,
+          employmentStatus: user.employee.employmentStatus,
+          joinedAt: user.employee.joinedAt,
+          activatedAt: user.employee.activatedAt,
+          terminatedAt: user.employee.terminatedAt,
+        }
+      : null,
+  };
+}
+function safeStaffUser(user: {
+  id: string;
+  email: string | null;
+  phone: string | null;
+  displayName: string;
+  avatarUrl: string | null;
+  status: string;
+}) {
+  return {
+    id: user.id,
+    email: user.email,
+    phone: user.phone,
+    displayName: user.displayName,
+    avatarUrl: user.avatarUrl,
+    status: user.status,
+  };
 }
 function isUnique(error: unknown) {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';

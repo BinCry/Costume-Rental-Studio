@@ -18,10 +18,16 @@ const mocks = vi.hoisted(() => ({
   createUser: vi.fn(),
   updateUser: vi.fn(),
   updateCustomer: vi.fn(),
+  findCustomer: vi.fn(),
+  refreshSessionUpdateMany: vi.fn(),
+}));
+vi.mock('../src/modules/auth/token.service.js', () => ({
+  lockUserAuthentication: vi.fn(),
 }));
 vi.mock('../src/database/prisma.js', () => ({
   prisma: {
     user: { findUnique: mocks.actor },
+    customer: { findUnique: mocks.findCustomer },
     $transaction: mocks.transaction,
   },
 }));
@@ -60,7 +66,8 @@ interface MockTransaction {
     create: typeof mocks.createUser;
     update: typeof mocks.updateUser;
   };
-  customer: { update: typeof mocks.updateCustomer };
+  customer: { findUnique: typeof mocks.findCustomer; update: typeof mocks.updateCustomer };
+  refreshSession: { updateMany: typeof mocks.refreshSessionUpdateMany };
 }
 
 async function token(options: { expired?: boolean; secret?: string; audience?: string } = {}) {
@@ -105,6 +112,8 @@ beforeEach(() => {
     return branch ? [branch] : [];
   });
   mocks.findUser.mockResolvedValue(null);
+  mocks.findCustomer.mockResolvedValue({ userId });
+  mocks.refreshSessionUpdateMany.mockResolvedValue({ count: 1 });
   mocks.createUser.mockResolvedValue({ ...existing, displayName: 'Customer' });
   mocks.updateUser.mockResolvedValue({ ...existing, displayName: 'Updated name' });
   mocks.updateCustomer.mockResolvedValue(existing.customer);
@@ -113,7 +122,8 @@ beforeEach(() => {
       $queryRaw: mocks.queryRaw,
       branch: { findUnique: mocks.branch },
       user: { findUnique: mocks.findUser, create: mocks.createUser, update: mocks.updateUser },
-      customer: { update: mocks.updateCustomer },
+      customer: { findUnique: mocks.findCustomer, update: mocks.updateCustomer },
+      refreshSession: { updateMany: mocks.refreshSessionUpdateMany },
     }),
   );
 });
@@ -235,6 +245,71 @@ describe('POST /api/v1/customers', () => {
       .expect(200);
     expect((response.body as ResultBody).data.created).toBe(false);
     expect(mocks.transaction).toHaveBeenCalledTimes(2);
+  });
+});
+
+
+describe('POST /api/v1/customers/:userId/deactivate', () => {
+  it('returns an allowlisted account response without credentials', async () => {
+    mocks.actor.mockResolvedValue({
+      ...actor('ADMIN', 'ALL', null),
+      roleAssignments: [
+        {
+          branchId: null,
+          branch: null,
+          role: {
+            isActive: true,
+            roleCode: 'ADMIN',
+            rolePermissions: [
+              { permission: { module: 'customers', action: 'update', scope: 'ALL' } },
+            ],
+          },
+        },
+      ],
+    });
+    const now = new Date('2026-10-15T10:00:00.000Z');
+    mocks.updateUser.mockResolvedValue({
+      id: userId,
+      email: 'customer@example.com',
+      phone: '+84901234567',
+      displayName: 'Customer',
+      avatarUrl: null,
+      status: 'INACTIVE',
+      passwordHash: 'secret-hash',
+      emailVerifiedAt: now,
+      phoneVerifiedAt: now,
+      authIdentities: [{ providerSubject: 'private-subject' }],
+    });
+
+    const response = await request(createApp())
+      .post(`/api/v1/customers/${userId}/deactivate`)
+      .auth(await token(), { type: 'bearer' })
+      .expect(200);
+
+    expect(response.body.data).toEqual({
+      id: userId,
+      email: 'customer@example.com',
+      phone: '+84901234567',
+      displayName: 'Customer',
+      avatarUrl: null,
+      status: 'INACTIVE',
+    });
+    expect(JSON.stringify(response.body)).not.toMatch(
+      /passwordHash|emailVerifiedAt|phoneVerifiedAt|authIdentities|secret-hash|private-subject/,
+    );
+    expect(mocks.updateUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: {
+          id: true,
+          email: true,
+          phone: true,
+          displayName: true,
+          avatarUrl: true,
+          status: true,
+        },
+      }),
+    );
+    expect(mocks.refreshSessionUpdateMany).toHaveBeenCalled();
   });
 });
 

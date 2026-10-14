@@ -399,11 +399,33 @@ export async function listUnitEvents(
   const [items, totalItems] = await prisma.$transaction([
     prisma.unitEvent.findMany({
       where,
-      include: { fromBranch: true, toBranch: true, recorder: { include: { user: true } } },
+      include: {
+        fromBranch: true,
+        toBranch: true,
+        recorder: {
+          select: {
+            employeeCode: true,
+            user: { select: { id: true, displayName: true, avatarUrl: true } },
+          },
+        },
+      },
       orderBy: [{ occurredAt: query.sortOrder }, { id: 'asc' }],
       ...pagination(query),
     }),
     prisma.unitEvent.count({ where }),
   ]);
-  return pageResult(items, totalItems, query);
+  const safeItems = items.map((event) => ({
+    ...event,
+    recorder: event.recorder
+      ? {
+          employeeCode: event.recorder.employeeCode,
+          user: {
+            id: event.recorder.user.id,
+            displayName: event.recorder.user.displayName,
+            avatarUrl: event.recorder.user.avatarUrl,
+          },
+        }
+      : null,
+  }));
+  return pageResult(safeItems, totalItems, query);
 }

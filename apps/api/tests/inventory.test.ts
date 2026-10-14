@@ -293,14 +293,52 @@ describe('Inventory unit API', () => {
       .expect(200);
   });
 
-  it('lists events after checking the unit and branch permission', async () => {
-    await request(createApp())
+  it('lists events without exposing recorder credentials', async () => {
+    mocks.eventFindMany.mockResolvedValueOnce([
+      {
+        id: 'event-id',
+        unitId,
+        eventType: 'INSPECTED',
+        occurredAt: new Date('2026-10-15T10:00:00.000Z'),
+        recorder: {
+          employeeCode: 'EMP-001',
+          user: {
+            id: actorId,
+            displayName: 'Inventory staff',
+            avatarUrl: null,
+            passwordHash: 'secret-hash',
+            emailVerifiedAt: new Date('2026-10-15T10:00:00.000Z'),
+            authIdentities: [{ providerSubject: 'private-subject' }],
+          },
+        },
+      },
+    ]);
+    const response = await request(createApp())
       .get(`/api/v1/inventory/units/${unitId}/events?page=1&pageSize=10`)
       .auth(await token(), { type: 'bearer' })
       .expect(200);
-    expect(mocks.eventFindMany.mock.calls[0]?.[0]).toMatchObject({
+
+    expect(response.body.data.items[0].recorder).toEqual({
+      employeeCode: 'EMP-001',
+      user: { id: actorId, displayName: 'Inventory staff', avatarUrl: null },
+    });
+    expect(JSON.stringify(response.body)).not.toMatch(
+      /passwordHash|emailVerifiedAt|authIdentities|secret-hash|private-subject/,
+    );
+    const query = mocks.eventFindMany.mock.calls[0]?.[0] as {
+      include: { recorder: { select: Record<string, unknown> } };
+    };
+    expect(query).toMatchObject({
       where: { unitId },
       orderBy: [{ occurredAt: 'desc' }, { id: 'asc' }],
+      include: {
+        recorder: {
+          select: {
+            employeeCode: true,
+            user: { select: { id: true, displayName: true, avatarUrl: true } },
+          },
+        },
+      },
     });
   });
 });
