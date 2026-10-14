@@ -66,7 +66,7 @@ describe('web API client session and error handling', () => {
     expect(new Headers(fetchMock.mock.calls[1][1].headers).get('Authorization')).toBe('Bearer access-1');
   });
 
-  it('preserves validation status, code, message and details from the API', async () => {
+  it('maps validation errors to a safe Vietnamese message and keeps structured details', async () => {
     globalThis.fetch.mockResolvedValueOnce(error(422, 'VALIDATION_ERROR', 'Email chưa hợp lệ', {
       email: 'Kiểm tra định dạng email',
     }));
@@ -76,8 +76,19 @@ describe('web API client session and error handling', () => {
       name: ApiClientError.name,
       status: 422,
       code: 'VALIDATION_ERROR',
-      message: 'Email chưa hợp lệ',
+      message: 'Thông tin chưa hợp lệ. Hãy kiểm tra các trường đã nhập.',
       details: { email: 'Kiểm tra định dạng email' },
+    });
+  });
+
+  it('handles a non-JSON server error without exposing its body', async () => {
+    globalThis.fetch.mockResolvedValueOnce(new Response('<html>secret stack trace</html>', { status: 502 }));
+    const { login } = await import('../src/api/client.ts');
+
+    await expect(login('khach@example.com', 'password-test')).rejects.toMatchObject({
+      status: 502,
+      code: 'API_REQUEST_FAILED',
+      message: 'Máy chủ đang gặp sự cố. Thử lại sau ít phút.',
     });
   });
 
@@ -122,7 +133,7 @@ describe('web API client session and error handling', () => {
     const { hasAccessToken, logout } = await import('../src/api/client.ts');
 
     expect(hasAccessToken()).toBe(true);
-    await expect(logout()).rejects.toThrow('network down');
+    await expect(logout()).rejects.toMatchObject({ status: 0, code: 'NETWORK_ERROR', message: 'Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.' });
     expect(hasAccessToken()).toBe(false);
     expect(values.has(accessTokenKey)).toBe(false);
   });
