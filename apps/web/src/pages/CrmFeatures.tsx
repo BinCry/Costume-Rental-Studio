@@ -112,7 +112,6 @@ export function CrmPage({
     ? visibleApiCustomers.find((customer) => customer.code === selected) ?? visibleApiCustomers[0]
     : undefined;
   const activeCustomerCode = activeCustomer?.code ?? selected;
-  const activeInteractionKey = JSON.stringify([activeCustomerCode, branch]);
   const activeCaseCode = (casesResource.data ?? []).find(
     (item) => item.customerCode === activeCustomerCode && item.code === caseCode,
   )?.code ?? (casesResource.data ?? []).find(
@@ -121,7 +120,7 @@ export function CrmPage({
   useEffect(() => {
     if (!realApiMode || !activeCustomer) return;
     let active = true;
-        void listCustomerRentalHistory(activeCustomerCode)
+    void listCustomerRentalHistory(activeCustomerCode)
       .then((items) => {
         if (active) setApiRentalHistory((current) => ({ ...current, [activeCustomerCode]: items }));
       })
@@ -138,7 +137,7 @@ export function CrmPage({
     const interactionKey = JSON.stringify([activeCustomerCode, branch]);
     void listCustomerInteractions(activeCustomerCode, branch)
       .then((items) => {
-        if (active) setApiInteractions((current) => ({ ...current, [activeCustomerCode]: items }));
+        if (active) setApiInteractions((current) => ({ ...current, [interactionKey]: items }));
       })
       .catch(() => {
         if (active) setApiInteractionErrors((current) => ({ ...current, [interactionKey]: true }));
@@ -150,7 +149,7 @@ export function CrmPage({
   useEffect(() => {
     if (!realApiMode || !activeCaseCode) return;
     let active = true;
-        void listCrmCaseHistory(activeCaseCode)
+    void listCrmCaseHistory(activeCaseCode)
       .then((items) => {
         if (active) setApiCaseHistory((current) => ({ ...current, [activeCaseCode]: items }));
       })
@@ -374,7 +373,7 @@ export function CrmPage({
                     <h3>Tương tác</h3>
                     {realApiMode && (apiInteractions[JSON.stringify([person.code, branch])] === undefined && !apiInteractionErrors[JSON.stringify([person.code, branch])]) ? (
                       <p className="muted" role="status">Đang tải tương tác…</p>
-                    ) : realApiMode && apiInteractionErrors[person.code] ? (
+                    ) : realApiMode && apiInteractionErrors[JSON.stringify([person.code, branch])] ? (
                       <Feedback
                         tone="danger"
                         title="Chưa tải được lịch sử tương tác"
@@ -649,7 +648,7 @@ export function CrmPage({
                         tone="danger"
                         title="Chưa tải được lịch sử case"
                         action={<Button variant="secondary" onClick={() => {
-                          setApiCaseHistoryErrors((current) => ({ ...current, [current.code]: false }));
+                          setApiCaseHistoryErrors((errors) => ({ ...errors, [current.code]: false }));
                           setCaseHistoryRetry((value) => value + 1);
                         }}>Thử lại</Button>}
                       >
