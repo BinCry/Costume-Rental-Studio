@@ -651,9 +651,7 @@ export function CrmPage({
                       )}
                     </fieldset>
                     <h3>Lịch sử case</h3>
-                    {realApiMode && editing === current && current && (apiCaseHistoryLoading[current.code] || apiCaseHistory[current.code] === undefined) ? (
-                      <p className="muted" role="status">Đang tải lịch sử case…</p>
-                    ) : realApiMode && editing === current && current && apiCaseHistoryErrors[current.code] ? (
+                    {realApiMode && editing === current && current && apiCaseHistoryErrors[current.code] ? (
                       <Feedback
                         tone="danger"
                         title="Chưa tải được lịch sử case"
@@ -661,6 +659,8 @@ export function CrmPage({
                       >
                         Timeline chưa được tải từ máy chủ.
                       </Feedback>
+                    ) : realApiMode && editing === current && current && (apiCaseHistoryLoading[current.code] || apiCaseHistory[current.code] === undefined) ? (
+                      <p className="muted" role="status">Đang tải lịch sử case…</p>
                     ) : (
                       <Timeline items={editing === current ? currentHistory : editing.history} />
                     )}
