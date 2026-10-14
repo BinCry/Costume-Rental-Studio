@@ -208,6 +208,211 @@ describe('web API client session and error handling', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(3);
   });
 
+  it('does not POST completion unless the latest server snapshot explicitly allows it', async () => {
+    const order = {
+      id: 'order-1',
+      orderCode: 'RT-TEST-01',
+      status: 'RETURN_INSPECTION',
+      version: 4,
+      plannedStartAt: '2026-10-14T03:00:00.000Z',
+      plannedDueAt: '2026-10-15T03:00:00.000Z',
+      pickupBranch: { id: 'branch-1', name: 'Chi nhánh Quận 1' },
+      inspectionStatus: 'PASSED',
+      depositDeductionVnd: '0',
+      otherFeeVnd: '0',
+      items: [],
+      payments: [],
+    };
+    const snapshot = {
+      orderId: 'order-1',
+      status: 'RETURN_INSPECTION',
+      rental: { dueVnd: '0', paidVnd: '0', remainingVnd: '0' },
+      deposit: { dueVnd: '0', paidVnd: '0', deductionVnd: '0', refundedVnd: '0', refundRemainingVnd: '0' },
+      extra: { dueVnd: '0', paidVnd: '0', remainingVnd: '0' },
+      outstandingVnd: '0',
+      canPickup: true,
+      canComplete: false,
+    };
+    globalThis.fetch
+      .mockResolvedValueOnce(success({
+        items: [{ ...order, items: [] }],
+        pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+      }))
+      .mockResolvedValueOnce(success(order))
+      .mockResolvedValueOnce(success(snapshot));
+    const { ApiClientError, completeOrderSettlement, listOrders } = await import('../src/api/client.ts');
+    await listOrders({ loadPendingAvailability: false });
+
+    await expect(completeOrderSettlement('RT-TEST-01')).rejects.toMatchObject({
+      name: ApiClientError.name,
+      status: 409,
+      code: 'SETTLEMENT_NOT_READY',
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+    expect(globalThis.fetch.mock.calls[2][0]).toBe(
+      'https://api.example.test/api/v1/payments/orders/order-1/summary',
+    );
+  });
+
+  it('fetches current order and snapshot, then sends the exact prepared values only when eligible', async () => {
+    const order = {
+      id: 'order-1',
+      orderCode: 'RT-TEST-02',
+      status: 'RETURN_INSPECTION',
+      version: 7,
+      plannedStartAt: '2026-10-14T03:00:00.000Z',
+      plannedDueAt: '2026-10-15T03:00:00.000Z',
+      pickupBranch: { id: 'branch-1', name: 'Chi nhánh Quận 1' },
+      inspectionStatus: 'HAS_DAMAGE',
+      depositDeductionVnd: '9007199254740993',
+      otherFeeVnd: '12',
+      settlementNote: 'Đã đối chiếu',
+      items: [],
+      payments: [],
+    };
+    const snapshot = {
+      orderId: 'order-1',
+      status: 'RETURN_INSPECTION',
+      rental: { dueVnd: '0', paidVnd: '0', remainingVnd: '0' },
+      deposit: { dueVnd: '0', paidVnd: '0', deductionVnd: '9007199254740993', refundedVnd: '0', refundRemainingVnd: '0' },
+      extra: { dueVnd: '0', paidVnd: '0', remainingVnd: '0' },
+      outstandingVnd: '0',
+      canPickup: true,
+      canComplete: true,
+    };
+    globalThis.fetch
+      .mockResolvedValueOnce(success({
+        items: [{ ...order, items: [] }],
+        pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+      }))
+      .mockResolvedValueOnce(success(order))
+      .mockResolvedValueOnce(success(snapshot))
+      .mockResolvedValueOnce(success({ ...order, status: 'COMPLETED', version: 8 }));
+    const { completeOrderSettlement, listOrders } = await import('../src/api/client.ts');
+    await listOrders({ loadPendingAvailability: false });
+    await completeOrderSettlement('RT-TEST-02');
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(4);
+    expect(globalThis.fetch.mock.calls[1][0]).toBe(
+      'https://api.example.test/api/v1/rentals/orders/order-1',
+    );
+    expect(globalThis.fetch.mock.calls[2][0]).toBe(
+      'https://api.example.test/api/v1/payments/orders/order-1/summary',
+    );
+    expect(globalThis.fetch.mock.calls[3][0]).toBe(
+      'https://api.example.test/api/v1/rentals/orders/order-1/complete',
+    );
+    expect(JSON.parse(globalThis.fetch.mock.calls[3][1].body)).toEqual({
+      expectedVersion: 7,
+      depositDeductionVnd: '9007199254740993',
+      otherFeeVnd: '12',
+      settlementNote: 'Đã đối chiếu',
+    });
+  });
+
+  it('posts a complete assessment with each order item and accessory row exactly once', async () => {
+    const order = {
+      id: 'order-1',
+      orderCode: 'RT-TEST-04',
+      status: 'RETURN_INSPECTION',
+      version: 5,
+      plannedStartAt: '2026-10-14T03:00:00.000Z',
+      plannedDueAt: '2026-10-15T03:00:00.000Z',
+      pickupBranch: { id: 'branch-1', name: 'Chi nhánh Quận 1' },
+      items: [],
+      payments: [],
+    };
+    globalThis.fetch
+      .mockResolvedValueOnce(success({
+        items: [order],
+        pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+      }))
+      .mockResolvedValueOnce(success({ ...order, version: 6 }));
+    const { assessOrderReturn, listOrders } = await import('../src/api/client.ts');
+    await listOrders({ loadPendingAvailability: false });
+    await assessOrderReturn('RT-TEST-04', 5, [{
+      orderItemId: 'item-1',
+      damageFeeVnd: '1200',
+      missingFeeVnd: '0',
+      accessories: [{ accessoryId: 'rental-accessory-row-1', damageFeeVnd: '0', missingFeeVnd: '250' }],
+    }]);
+
+    expect(globalThis.fetch.mock.calls[1][0]).toBe(
+      'https://api.example.test/api/v1/rentals/orders/order-1/assessment',
+    );
+    expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body)).toEqual({
+      expectedVersion: 5,
+      items: [{
+        orderItemId: 'item-1',
+        damageFeeVnd: '1200',
+        missingFeeVnd: '0',
+        accessories: [{ accessoryId: 'rental-accessory-row-1', damageFeeVnd: '0', missingFeeVnd: '250' }],
+      }],
+    });
+  });
+
+  it('reads refund rows with GET only', async () => {
+    const order = {
+      id: 'order-1',
+      orderCode: 'RT-TEST-05',
+      status: 'RETURN_INSPECTION',
+      version: 3,
+      plannedStartAt: '2026-10-14T03:00:00.000Z',
+      plannedDueAt: '2026-10-15T03:00:00.000Z',
+      pickupBranch: { id: 'branch-1', name: 'Chi nhánh Quận 1' },
+      items: [],
+      payments: [],
+    };
+    globalThis.fetch
+      .mockResolvedValueOnce(success({
+        items: [order],
+        pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+      }))
+      .mockResolvedValueOnce(success([{
+        id: 'refund-1', paymentId: 'payment-1', amountVnd: '5000', status: 'PROCESSING',
+      }]));
+    const { listOrderRefunds, listOrders } = await import('../src/api/client.ts');
+    await listOrders({ loadPendingAvailability: false });
+    await expect(listOrderRefunds('RT-TEST-05')).resolves.toMatchObject([
+      { id: 'refund-1', amountVnd: '5000', status: 'PROCESSING' },
+    ]);
+
+    expect(globalThis.fetch.mock.calls[1][0]).toBe(
+      'https://api.example.test/api/v1/payments/orders/order-1/refunds',
+    );
+    expect(globalThis.fetch.mock.calls[1][1].method).toBeUndefined();
+  });
+
+  it('preserves large string amounts when preparing settlement instead of rounding them in the browser', async () => {
+    const order = {
+      id: 'order-1',
+      orderCode: 'RT-TEST-03',
+      status: 'RETURN_INSPECTION',
+      version: 2,
+      plannedStartAt: '2026-10-14T03:00:00.000Z',
+      plannedDueAt: '2026-10-15T03:00:00.000Z',
+      pickupBranch: { id: 'branch-1', name: 'Chi nhánh Quận 1' },
+      items: [],
+      payments: [],
+    };
+    globalThis.fetch
+      .mockResolvedValueOnce(success({
+        items: [order],
+        pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+      }))
+      .mockResolvedValueOnce(success({ ...order, version: 3 }));
+    const { listOrders, prepareOrderSettlement } = await import('../src/api/client.ts');
+    await listOrders({ loadPendingAvailability: false });
+    await prepareOrderSettlement('RT-TEST-03', 2, '9007199254740993', '1200', 'Theo policy đã duyệt');
+
+    expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body)).toEqual({
+      expectedVersion: 2,
+      depositDeductionVnd: '9007199254740993',
+      otherFeeVnd: '1200',
+      settlementNote: 'Theo policy đã duyệt',
+    });
+  });
+
   it('clears the local session even when logout cannot reach the API', async () => {
     values.set(accessTokenKey, 'access-before-logout');
     globalThis.fetch.mockRejectedValueOnce(new Error('network down'));
