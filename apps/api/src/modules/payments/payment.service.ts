@@ -172,9 +172,9 @@ function paymentDue(
       order.additionalRentalFeeVnd,
     );
   if (purpose === 'DEPOSIT') return depositDueVnd(order.items);
-  return (
-    order.additionalRentalFeeVnd + damageDueVnd(order.items) + order.lateFeeVnd + order.otherFeeVnd
-  );
+  const extraDue =
+    order.additionalRentalFeeVnd + damageDueVnd(order.items) + order.lateFeeVnd + order.otherFeeVnd;
+  return extraDue > order.depositDeductionVnd ? extraDue - order.depositDeductionVnd : 0n;
 }
 
 function reservedForPurpose(

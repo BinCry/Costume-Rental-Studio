@@ -154,6 +154,116 @@ describe('payment service settlement snapshot', () => {
   });
 });
 
+const staffActor = {
+  id: '10000000-0000-4000-8000-000000000004',
+  status: 'ACTIVE',
+  employee: { employmentStatus: 'ACTIVE' },
+  roleAssignments: [
+    {
+      branchId: 'branch-1',
+      branch: { status: 'ACTIVE' },
+      role: {
+        isActive: true,
+        rolePermissions: [
+          { permission: { module: 'payments', action: 'collect', scope: 'BRANCH' } },
+          { permission: { module: 'payments', action: 'read', scope: 'BRANCH' } },
+        ],
+      },
+    },
+  ],
+} as never;
+
+describe('payment service EXTRA collection balance', () => {
+  it('caps collection after deposit deduction and keeps exact idempotent retries safe', async () => {
+    const order = {
+      id: orderId,
+      status: 'RETURN_INSPECTION',
+      customerUserId: customerId,
+      pickupBranchId: 'branch-1',
+      items: [
+        {
+          billableDays: 1,
+          unitDailyPriceVnd: 0n,
+          unitDepositVnd: 500_000n,
+          damageFeeVnd: 0n,
+          missingFeeVnd: 0n,
+          accessories: [],
+        },
+      ],
+      promotionDiscountVnd: 0n,
+      additionalRentalFeeVnd: 0n,
+      lateFeeVnd: 0n,
+      otherFeeVnd: 500_000n,
+      depositDeductionVnd: 200_000n,
+      payments: [{ purpose: 'DEPOSIT', amountVnd: 500_000n, status: 'SUCCEEDED' }],
+    };
+    const extraPayment = {
+      id: paymentId,
+      orderId,
+      purpose: 'EXTRA',
+      method: 'CASH',
+      amountVnd: 300_000n,
+      status: 'SUCCEEDED',
+      idempotencyKey: 'extra-300k',
+      order: { id: orderId, pickupBranchId: 'branch-1', customerUserId: customerId },
+    };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: orderId }]),
+      rentalOrder: { findUniqueOrThrow: vi.fn().mockResolvedValue(order) },
+      payment: { create: vi.fn().mockResolvedValue(extraPayment) },
+    };
+    mocks.paymentFindUnique.mockResolvedValue(null);
+    mocks.transaction.mockImplementation((callback: (client: typeof tx) => Promise<unknown>) =>
+      callback(tx),
+    );
+
+    await expect(
+      service.createCashPayment(staffActor, orderId, {
+        purpose: 'EXTRA',
+        amountVnd: 300_001n,
+        idempotencyKey: 'extra-over-limit',
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'PAYMENT_AMOUNT_EXCEEDS_BALANCE',
+    });
+    expect(tx.payment.create).not.toHaveBeenCalled();
+
+    await expect(
+      service.createCashPayment(staffActor, orderId, {
+        purpose: 'EXTRA',
+        amountVnd: 300_000n,
+        idempotencyKey: 'extra-300k',
+      }),
+    ).resolves.toMatchObject({ id: paymentId, amountVnd: 300_000n });
+    expect(tx.payment.create).toHaveBeenCalledOnce();
+
+    order.payments.push(extraPayment);
+    mocks.paymentFindUnique.mockResolvedValue(extraPayment);
+    await expect(
+      service.createCashPayment(staffActor, orderId, {
+        purpose: 'EXTRA',
+        amountVnd: 300_000n,
+        idempotencyKey: 'extra-300k',
+      }),
+    ).resolves.toMatchObject({ id: paymentId, amountVnd: 300_000n });
+    expect(tx.payment.create).toHaveBeenCalledOnce();
+
+    mocks.paymentFindUnique.mockResolvedValue(null);
+    await expect(
+      service.createCashPayment(staffActor, orderId, {
+        purpose: 'EXTRA',
+        amountVnd: 1n,
+        idempotencyKey: 'extra-after-balance',
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'PAYMENT_AMOUNT_EXCEEDS_BALANCE',
+    });
+    expect(tx.payment.create).toHaveBeenCalledOnce();
+  });
+});
+
 describe('payment service payOS flow', () => {
   it('allows an own-order customer to replay checkout, but rejects another customer order', async () => {
     mocks.paymentFindUnique.mockResolvedValue(gatewayPayment());
