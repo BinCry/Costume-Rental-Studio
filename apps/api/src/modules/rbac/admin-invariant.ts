@@ -4,7 +4,7 @@ import type { Prisma } from '../../generated/prisma/client.js';
 const invariantLockKey = 'costume-rental:global-admin-invariant';
 
 export async function lockGlobalAdminInvariant(tx: Prisma.TransactionClient) {
-  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${invariantLockKey}, 0))`;
+  await tx.$queryRaw<{ locked: boolean }[]>`SELECT pg_advisory_xact_lock(hashtextextended(${invariantLockKey}, 0)) IS NOT NULL AS locked`;
 }
 
 async function countActiveGlobalAdmins(tx: Prisma.TransactionClient, userId?: string) {
