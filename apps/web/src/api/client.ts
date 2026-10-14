@@ -650,8 +650,10 @@ export async function listCatalog(): Promise<CatalogItem[]> {
     imageAlt: group.imageAlt,
     apiVariants: group.variants.map((variant) => ({
       id: variant.id,
+      code: variant.variantCode,
       size: variant.sizeCode,
       color: variant.colorCode,
+      edition: variant.editionLabel ?? undefined,
       price: numberValue(variant.dailyRentalPriceVnd),
       deposit: numberValue(variant.depositAmountVnd),
     })),
@@ -989,7 +991,11 @@ export async function getQuote(
 ): Promise<QuoteSnapshot> {
   if (!branchIds.has(draft.branch)) await listBranches();
   const branchId = branchIds.get(draft.branch);
-  const variant = variants.get(draft.costumeId);
+  const variant = variants.get(draft.variant) ?? variants.get(draft.costumeId) ??
+    [...variants.values()].find((entry) =>
+      entry.modelId === draft.costumeId &&
+      (entry.variantCode === draft.variant || `${entry.sizeCode} / ${entry.colorCode}` === draft.variant),
+    );
   if (!branchId || !variant) throw new ApiClientError(422, 'API_CONTEXT_MISSING', 'Cần tải lại chi nhánh và mẫu trang phục');
   const customerUserId = options.customerCode
     ? customerRefs.get(options.customerCode)?.userId
