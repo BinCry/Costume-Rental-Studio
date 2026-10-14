@@ -79,6 +79,49 @@ describe('web API client session and error handling', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 
+  it('maps the rental accessory row id and allocation status for return scanning', async () => {
+    globalThis.fetch.mockResolvedValueOnce(success({
+      items: [{
+        id: 'order-1',
+        orderCode: 'RT-TEST-01',
+        status: 'ACTIVE',
+        version: 3,
+        plannedStartAt: '2026-10-14T03:00:00.000Z',
+        plannedDueAt: '2026-10-15T03:00:00.000Z',
+        pickupBranch: { id: 'branch-1', name: 'Chi nhánh Quận 1' },
+        items: [{
+          id: 'order-item-1',
+          allocationStatus: 'ACTIVE',
+          returnConditionGrade: null,
+          variantId: 'variant-1',
+          variant: { sizeCode: 'M', colorCode: 'Đỏ', model: { name: 'Đầm thử' } },
+          unit: { id: 'unit-1', unitCode: 'BC-TEST-01', operationalStatus: 'ACTIVE' },
+          unitDailyPriceVnd: 100000,
+          unitDepositVnd: 300000,
+          billableDays: 1,
+          accessories: [{
+            id: 'rental-accessory-row-1',
+            modelAccessoryId: 'catalog-accessory-id',
+            accessoryName: 'Khăn',
+            quantityOut: 1,
+            quantityReturned: null,
+          }],
+        }],
+        payments: [],
+      }],
+      pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+    }));
+    const { listOrders } = await import('../src/api/client.ts');
+
+    const [order] = await listOrders({ loadPendingAvailability: false });
+
+    expect(order.items[0]).toMatchObject({
+      id: 'order-item-1',
+      apiAllocationStatus: 'ACTIVE',
+      accessories: [{ id: 'rental-accessory-row-1', name: 'Khăn', quantityOut: 1 }],
+    });
+  });
+
   it('stores a login token and attaches it to later requests', async () => {
     const fetchMock = globalThis.fetch;
     fetchMock
