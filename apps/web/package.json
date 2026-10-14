@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -b --pretty false",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "pnpm --filter @costume/api exec vitest run --globals --root ../web"
   },
   "dependencies": {
     "react": "^19.2.8",
