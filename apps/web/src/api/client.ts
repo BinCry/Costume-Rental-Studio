@@ -1527,6 +1527,33 @@ export async function listCrmCaseHistory(caseCode: string) {
   );
   return page.map(historyLine);
 }
+function rentalHistoryLine(order: ApiOrder) {
+  const statusLabels: Record<Order['status'], string> = {
+    DRAFT: 'Bản nháp',
+    PENDING_CONFIRMATION: 'Chờ studio xác nhận',
+    CONFIRMED: 'Đã xác nhận',
+    PREPARING: 'Đang chuẩn bị',
+    READY_FOR_PICKUP: 'Chờ nhận đồ',
+    ACTIVE: 'Đang thuê',
+    RETURN_INSPECTION: 'Đang kiểm tra đồ trả',
+    COMPLETED: 'Đã hoàn tất',
+    REJECTED: 'Đã từ chối',
+    CANCELLED: 'Đã hủy',
+    NO_SHOW: 'Không đến nhận',
+  };
+  return `${formatDate(order.plannedStartAt)} · ${order.orderCode} · ${statusLabels[order.status] ?? 'Đã cập nhật'}`;
+}
+export async function listCustomerRentalHistory(customerCode: string): Promise<string[]> {
+  if (!customerRefs.has(customerCode)) await listCustomers();
+  const customerUserId = customerRefs.get(customerCode)?.userId;
+  if (!customerUserId)
+    throw new ApiClientError(404, 'CUSTOMER_NOT_FOUND', 'Không tìm thấy hồ sơ khách. Hãy tải lại danh sách.');
+  const orders = await requestAllPages<ApiOrder>(
+    '/api/v1/rentals/orders',
+    new URLSearchParams({ customerUserId, sortBy: 'createdAt', sortOrder: 'desc' }),
+  );
+  return orders.map(rentalHistoryLine);
+}
 export async function listCustomerInteractions(customerCode: string, branchName?: string) {
   if (!customerRefs.has(customerCode)) await listCustomers(branchName);
   const reference = customerRefs.get(customerCode);
