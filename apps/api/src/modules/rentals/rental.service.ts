@@ -1714,23 +1714,24 @@ export async function assessReturn(actor: AuthenticatedActor, id: string, input:
     const wasAssessed = order.inspectionStatus !== 'PENDING_ASSESSMENT';
     if (order.financiallySettledAt)
       throw new AppError(409, 'ASSESSMENT_LOCKED', 'Settlement is already completed');
-    const unresolvedPostReturnExtra = order.payments.some(
+    const unresolvedExtraPayment = order.payments.some(
       (payment) =>
         payment.purpose === 'EXTRA' &&
-        ['PENDING', 'SUCCEEDED'].includes(payment.status) &&
-        !!order.returnedAt &&
-        payment.createdAt >= order.returnedAt,
+        (['PENDING', 'PROCESSING'].includes(payment.status) ||
+          (payment.status === 'SUCCEEDED' &&
+            !!order.returnedAt &&
+            payment.createdAt >= order.returnedAt)),
     );
     const unresolvedRefund = order.payments.some((payment) =>
       payment.refunds.some((refund) =>
         ['REQUESTED', 'PROCESSING', 'COMPLETED'].includes(refund.status),
       ),
     );
-    if (unresolvedPostReturnExtra || unresolvedRefund)
+    if (unresolvedExtraPayment || unresolvedRefund)
       throw new AppError(
         409,
         'ASSESSMENT_LOCKED',
-        'Resolve post-return extra payments or deposit refunds before changing assessment',
+        'Resolve pending extra payments and refunds before changing assessment',
       );
     assertAssessmentItems(order, input);
     const before = damageDueVnd(order.items);
