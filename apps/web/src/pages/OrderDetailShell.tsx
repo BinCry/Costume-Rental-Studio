@@ -777,7 +777,14 @@ export function OrderDetailShell({
           : returnConditions[item.id] === 'PENDING_ASSESSMENT',
       ));
   const needsAssessmentNote =
-    (needsAssessment && !note.trim()) ||
+    ((accessoryNeedsAssessment ||
+      selectedReturnItems.some((item) =>
+        !missingItems[item.id] &&
+        (realApiMode
+          ? ['FAIR', 'POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')
+          : returnConditions[item.id] === 'PENDING_ASSESSMENT'),
+      )) &&
+      !note.trim()) ||
     (mode === 'return' &&
       selectedReturnItems.some((item) =>
         !!missingItems[item.id] && (!missingConfirmed[item.id] || !missingNotes[item.id]?.trim()),
@@ -1444,7 +1451,7 @@ export function OrderDetailShell({
                       type="checkbox"
                       aria-label={`Đối chiếu phụ kiện ${item.unitCode ?? item.costume}`}
                       checked={!!checks[`${item.id}-accessories`]}
-                      disabled={!matchedCodes.includes(item.unitCode ?? '')}
+                      disabled={!matchedCodes.includes(item.unitCode ?? '') && !missingItems[item.id]}
                       onChange={(event) =>
                         setChecks((current) => ({
                           ...current,
@@ -1459,9 +1466,12 @@ export function OrderDetailShell({
                     </span>
                   </label>
                   {((mode === 'handover' && matchedCodes.includes(item.unitCode ?? '')) ||
-                    (mode === 'return' && matchedCodes.includes(item.unitCode ?? ''))) && (
+                    (mode === 'return' && (matchedCodes.includes(item.unitCode ?? '') || !!missingItems[item.id]))) && (
                     <label className="field file-field">
-                      <span>Ảnh bằng chứng {realApiMode ? '(bắt buộc)' : '(tuỳ chọn)'}</span>
+                      <span>
+                        Ảnh bằng chứng {realApiMode ? '(bắt buộc)' : '(tuỳ chọn)'}
+                        {mode === 'return' && missingItems[item.id] ? ' · liên quan đến thất lạc' : ''}
+                      </span>
                       <input
                         type="file"
                         accept="image/jpeg,image/png,image/webp"
@@ -1476,7 +1486,9 @@ export function OrderDetailShell({
                       <small>
                         {(evidenceFiles[item.id]?.length ?? 0) > 0
                           ? `Đã chọn ${evidenceFiles[item.id]?.length ?? 0} ảnh`
-                          : 'Chọn ảnh tình trạng thực tế của bộ'}
+                          : mode === 'return' && missingItems[item.id]
+                            ? 'Chọn ảnh/chứng từ liên quan đến việc xác minh thất lạc'
+                            : 'Chọn ảnh tình trạng thực tế của bộ'}
                       </small>
                     </label>
                   )}
