@@ -16,6 +16,9 @@ export default defineConfig({
       PAYOS_ORDER_CODE_PREFIX: '999',
       PAYOS_RETURN_URL: 'http://localhost:3000/payments/success',
       PAYOS_CANCEL_URL: 'http://localhost:3000/payments/cancel',
+      AI_SERVICE_URL: 'http://localhost:8001',
+      AI_SERVICE_TIMEOUT_MS: '30000',
+      AI_INTERNAL_API_KEY: 'test-ai-internal-key-at-least-32-characters',
     },
   },
 });

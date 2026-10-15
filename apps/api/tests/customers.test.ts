@@ -54,7 +54,6 @@ const existing = {
 interface ResultBody {
   data: { created: boolean; customer: { displayName: string } };
 }
-
 interface ProfileUpdateResultBody {
   data: { displayName: string; phone: string; email: string };
 }
