@@ -212,6 +212,7 @@ describe('payment service EXTRA collection balance', () => {
     const order = {
       id: orderId,
       status: 'RETURN_INSPECTION',
+      inspectionStatus: 'HAS_DAMAGE',
       customerUserId: customerId,
       pickupBranchId: 'branch-1',
       items: [
@@ -293,6 +294,19 @@ describe('payment service EXTRA collection balance', () => {
     ).rejects.toMatchObject({
       statusCode: 409,
       code: 'PAYMENT_AMOUNT_EXCEEDS_BALANCE',
+    });
+    expect(tx.payment.create).toHaveBeenCalledOnce();
+
+    order.inspectionStatus = 'PENDING_ASSESSMENT';
+    await expect(
+      service.createCashPayment(staffActor, orderId, {
+        purpose: 'EXTRA',
+        amountVnd: 1n,
+        idempotencyKey: 'extra-before-assessment',
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'PAYMENT_NOT_ALLOWED',
     });
     expect(tx.payment.create).toHaveBeenCalledOnce();
   });
