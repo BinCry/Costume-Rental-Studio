@@ -333,7 +333,7 @@ describe.skipIf(!runDatabaseTests)('Global administrator lockout protection with
       await deleteFixtures([admin.user.id]);
     }
 
-    const admin = await createAdmin();
+    await createAdmin();
     const rbacPermission = await prisma.permission.findUniqueOrThrow({
       where: { code: 'rbac.manage.all' },
     });
