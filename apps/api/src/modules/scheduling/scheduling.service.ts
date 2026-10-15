@@ -138,6 +138,14 @@ export async function listUnitBlocks(actor: AuthenticatedActor, query: ListUnitB
     { ...query, sortBy: 'blockedFrom', sortOrder: 'asc' },
   );
 }
+
+export async function getUnitBlock(actor: AuthenticatedActor, id: string) {
+  requireActor(actor);
+  const block = await prisma.unitBlock.findUnique({ where: { id }, include: blockInclude() });
+  if (!block) throw new AppError(404, 'UNIT_BLOCK_NOT_FOUND', 'Unit block not found');
+  assertRead(actor, block.unit.currentBranchId);
+  return block;
+}
 export async function createUnitBlock(actor: AuthenticatedActor, input: CreateUnitBlockInput) {
   requireActor(actor);
   return prisma.$transaction(async (tx) => {

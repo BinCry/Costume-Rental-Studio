@@ -61,6 +61,7 @@ const permissionDefinitions = [
   ['promotions.manage.all', 'promotions', 'manage', PermissionScope.ALL],
   ['policies.read.all', 'policies', 'read', PermissionScope.ALL],
   ['policies.manage.all', 'policies', 'manage', PermissionScope.ALL],
+  ['knowledge.read.all', 'knowledge', 'read', PermissionScope.ALL],
 ] as const;
 
 export interface CoreSeedContext {

@@ -88,6 +88,21 @@ const envSchema = z
     PAYOS_CHECKOUT_BASE_URL: optionalUrl.default('https://pay.payos.vn/web'),
     PAYOS_RETURN_URL: optionalUrl,
     PAYOS_CANCEL_URL: optionalUrl,
+    AI_SERVICE_URL: optionalUrl,
+    AI_SERVICE_TIMEOUT_MS: optionalPositiveInteger.default(30_000),
+    AI_INTERNAL_API_KEY: optionalString,
+    // Agent mutations remain disabled until their confirmation, approval, and
+    // reconciliation flows are deployed. Read tools can be switched off
+    // independently during an incident without taking RAG offline.
+    AGENT_READ_TOOLS_ENABLED: optionalBoolean.default(true),
+    AGENT_SCHEDULING_WRITE_ENABLED: optionalBoolean.default(false),
+    AGENT_RENTAL_WRITE_ENABLED: optionalBoolean.default(false),
+    AGENT_TRANSFER_WRITE_ENABLED: optionalBoolean.default(false),
+    AGENT_FINANCIAL_WRITE_ENABLED: optionalBoolean.default(false),
+    TRUST_PROXY_HOPS: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.coerce.number().int().min(1).optional(),
+    ),
   })
   .superRefine((value, context) => {
     if (value.OTP_DELIVERY_MODE === 'smtp') {
@@ -174,6 +189,32 @@ const envSchema = z
         path: ['PAYOS_ORDER_CODE_PREFIX'],
         message: 'PAYOS_ORDER_CODE_PREFIX must be between 1 and 999',
       });
+    }
+
+    if (value.AI_INTERNAL_API_KEY !== undefined && value.AI_INTERNAL_API_KEY.length < 32) {
+      context.addIssue({
+        code: 'custom',
+        path: ['AI_INTERNAL_API_KEY'],
+        message: 'AI_INTERNAL_API_KEY must contain at least 32 characters',
+      });
+    }
+    if (value.AI_SERVICE_URL) {
+      const serviceUrl = new URL(value.AI_SERVICE_URL);
+      if (
+        !['http:', 'https:'].includes(serviceUrl.protocol) ||
+        serviceUrl.username ||
+        serviceUrl.password ||
+        serviceUrl.pathname !== '/' ||
+        serviceUrl.search ||
+        serviceUrl.hash
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['AI_SERVICE_URL'],
+          message:
+            'AI_SERVICE_URL must be an http(s) origin without credentials, path, query, or hash',
+        });
+      }
     }
   });
 

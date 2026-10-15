@@ -9,6 +9,16 @@ export const openApiDocument = {
   servers: [{ url: '/api/v1', description: 'Current server' }],
   tags: [
     {
+      name: 'Knowledge',
+      description:
+        'RAG answers from approved business knowledge. Authentication is optional; guests receive customer-safe content only.',
+    },
+    {
+      name: 'Agent',
+      description:
+        'Authenticated Ops Agent case API. The initial release supports grounded RAG cases and safe read-only internal tools; business writes remain feature-gated.',
+    },
+    {
       name: 'Catalog',
       description: 'Costume category, model, variant, accessory, and media management.',
     },
@@ -483,13 +493,267 @@ export const openApiDocument = {
     },
   },
   paths: {
+    '/agent/messages': {
+      post: {
+        tags: ['Agent'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Create an agent case or send the first message for a new case',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['message'],
+                properties: {
+                  message: { type: 'string', minLength: 2, maxLength: 2000 },
+                  caseId: { type: 'string', format: 'uuid' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Agent case result, evidence, and current state' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '429': { description: 'AGENT_RATE_LIMITED' },
+          '503': { description: 'Agent dependency unavailable' },
+        },
+      },
+    },
+    '/agent/cases/{caseId}': {
+      get: {
+        tags: ['Agent'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Read an agent case owned by the authenticated actor',
+        parameters: [
+          {
+            name: 'caseId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': { description: 'Agent case result' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '404': { $ref: '#/components/responses/NotFound' },
+          '503': { description: 'Agent dependency unavailable' },
+        },
+      },
+    },
+    '/agent/cases/{caseId}/confirmations/{confirmationId}/confirm': {
+      post: {
+        tags: ['Agent'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Confirm and synchronously resume a frozen agent action',
+        parameters: [
+          {
+            name: 'caseId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+          {
+            name: 'confirmationId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': { description: 'Action completed or paused for approval' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '409': { $ref: '#/components/responses/Conflict' },
+          '504': { description: 'Agent request timed out before a safe result' },
+        },
+      },
+    },
+    '/agent/cases/{caseId}/confirmations/{confirmationId}/reject': {
+      post: {
+        tags: ['Agent'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Reject a pending agent action',
+        parameters: [
+          {
+            name: 'caseId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+          {
+            name: 'confirmationId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': { description: 'Confirmation rejected and case cancelled' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/agent/approvals/{approvalId}/approve': {
+      post: {
+        tags: ['Agent'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Approve and synchronously execute a high-risk agent action',
+        parameters: [
+          {
+            name: 'approvalId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': { description: 'Approved action completed and read-back verified' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/agent/approvals/{approvalId}/reject': {
+      post: {
+        tags: ['Agent'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Reject a high-risk agent action',
+        parameters: [
+          {
+            name: 'approvalId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': { description: 'Approval rejected; transfer rejection is read-back verified' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/agent/cases/{caseId}/cancel': {
+      post: {
+        tags: ['Agent'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Cancel a non-terminal agent case',
+        parameters: [
+          {
+            name: 'caseId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': { description: 'Agent case cancelled' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/knowledge/answer': {
+      post: {
+        tags: ['Knowledge'],
+        summary: 'Answer a knowledge-base question',
+        description:
+          'Guests and customers can retrieve customer/shared documents. Authorized staff can retrieve staff-internal/shared documents. Supplying an invalid token returns 401.',
+        security: [{}, { bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['query'],
+                properties: {
+                  query: { type: 'string', minLength: 2, maxLength: 1000 },
+                  topK: { type: 'integer', minimum: 1, maximum: 6, default: 5 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Knowledge answer completed with source references',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['success', 'data', 'message'],
+                  properties: {
+                    success: { type: 'boolean', enum: [true] },
+                    message: { type: 'string' },
+                    data: {
+                      type: 'object',
+                      required: ['result'],
+                      properties: {
+                        result: {
+                          type: 'object',
+                          required: ['outcome', 'answer', 'sources', 'provisional'],
+                          properties: {
+                            outcome: {
+                              type: 'string',
+                              enum: ['answered', 'insufficient_context'],
+                            },
+                            answer: { type: 'string' },
+                            provisional: { type: 'boolean' },
+                            sources: {
+                              type: 'array',
+                              items: {
+                                type: 'object',
+                                required: [
+                                  'documentId',
+                                  'heading',
+                                  'citation',
+                                  'domain',
+                                  'status',
+                                  'businessAuthority',
+                                ],
+                                properties: {
+                                  documentId: { type: 'string' },
+                                  heading: { type: 'string' },
+                                  citation: { type: 'string' },
+                                  domain: { type: 'string' },
+                                  status: { type: 'string' },
+                                  businessAuthority: { type: 'boolean' },
+                                },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '429': { description: 'Knowledge request rate limit exceeded' },
+          '503': { description: 'Knowledge service unavailable or not configured' },
+          '504': { description: 'Knowledge service timed out' },
+        },
+      },
+    },
     '/public/branches': {
       get: {
         tags: ['Branches'],
         summary: 'List active branches for public booking',
         parameters: [
           { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1, default: 1 } },
-          { name: 'pageSize', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 } },
+          {
+            name: 'pageSize',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          },
           { name: 'search', in: 'query', schema: { type: 'string' } },
         ],
         responses: { '200': { description: 'Public branches loaded' } },
@@ -501,7 +765,11 @@ export const openApiDocument = {
         summary: 'List active costume variants for public discovery',
         parameters: [
           { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1, default: 1 } },
-          { name: 'pageSize', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 } },
+          {
+            name: 'pageSize',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          },
           { name: 'search', in: 'query', schema: { type: 'string' } },
           { name: 'categoryId', in: 'query', schema: { type: 'string', format: 'uuid' } },
           { name: 'modelId', in: 'query', schema: { type: 'string', format: 'uuid' } },
@@ -527,10 +795,30 @@ export const openApiDocument = {
         tags: ['Catalog'],
         summary: 'Check public availability for a variant and rental period',
         parameters: [
-          { name: 'variantId', in: 'query', required: true, schema: { type: 'string', format: 'uuid' } },
-          { name: 'pickupBranchId', in: 'query', required: true, schema: { type: 'string', format: 'uuid' } },
-          { name: 'plannedStartAt', in: 'query', required: true, schema: { type: 'string', format: 'date-time' } },
-          { name: 'plannedDueAt', in: 'query', required: true, schema: { type: 'string', format: 'date-time' } },
+          {
+            name: 'variantId',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+          {
+            name: 'pickupBranchId',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+          {
+            name: 'plannedStartAt',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', format: 'date-time' },
+          },
+          {
+            name: 'plannedDueAt',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', format: 'date-time' },
+          },
         ],
         responses: {
           '200': { description: 'Public availability loaded' },
@@ -549,7 +837,13 @@ export const openApiDocument = {
             'application/json': {
               schema: {
                 type: 'object',
-                required: ['customerUserId', 'pickupBranchId', 'plannedStartAt', 'plannedDueAt', 'items'],
+                required: [
+                  'customerUserId',
+                  'pickupBranchId',
+                  'plannedStartAt',
+                  'plannedDueAt',
+                  'items',
+                ],
                 properties: {
                   customerUserId: { type: 'string', format: 'uuid' },
                   pickupBranchId: { type: 'string', format: 'uuid' },
@@ -587,7 +881,11 @@ export const openApiDocument = {
         summary: 'Find active rentals with renter, due date, branch, and unit information',
         parameters: [
           { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1, default: 1 } },
-          { name: 'pageSize', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 } },
+          {
+            name: 'pageSize',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          },
           { name: 'search', in: 'query', schema: { type: 'string' } },
           { name: 'branchId', in: 'query', schema: { type: 'string', format: 'uuid' } },
           { name: 'overdue', in: 'query', schema: { type: 'boolean' } },

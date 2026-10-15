@@ -334,6 +334,29 @@ export async function getPayment(actor: AuthenticatedActor, paymentId: string) {
   return payment;
 }
 
+export async function getPaymentByIdempotencyKey(
+  actor: AuthenticatedActor,
+  idempotencyKey: string,
+) {
+  const payment = await prisma.payment.findUnique({
+    where: { idempotencyKey },
+    include: paymentInclude(),
+  });
+  if (!payment) throw new AppError(404, 'PAYMENT_NOT_FOUND', 'Payment not found');
+  assertRead(actor, payment.order);
+  return payment;
+}
+
+export async function getRefundByIdempotencyKey(actor: AuthenticatedActor, idempotencyKey: string) {
+  const refund = await prisma.refund.findUnique({
+    where: { idempotencyKey },
+    include: { payment: { include: { order: true } } },
+  });
+  if (!refund) throw new AppError(404, 'REFUND_NOT_FOUND', 'Refund not found');
+  assertRead(actor, refund.payment.order);
+  return refund;
+}
+
 export async function createCashPayment(
   actor: AuthenticatedActor,
   orderId: string,

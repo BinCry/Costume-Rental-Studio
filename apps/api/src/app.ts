@@ -30,10 +30,14 @@ import { reportRouter } from './modules/reports/report.route.js';
 import { crmRouter } from './modules/crm/crm.route.js';
 import { schedulingRouter } from './modules/scheduling/scheduling.route.js';
 import { publicRouter } from './modules/public/public.route.js';
+import { knowledgeRouter } from './modules/knowledge/knowledge.route.js';
+import { agentRouter } from './modules/agent/agent.route.js';
+import { agentToolsInternalRouter } from './modules/agent-tools/agent-tools.route.js';
 import { openApiDocument } from './openapi.js';
 
 export function createApp() {
   const app = express();
+  if (env.TRUST_PROXY_HOPS !== undefined) app.set('trust proxy', env.TRUST_PROXY_HOPS);
   app.set('json replacer', (_key: string, value: unknown) =>
     typeof value === 'bigint' ? value.toString() : value,
   );
@@ -123,6 +127,9 @@ export function createApp() {
 
   app.use('/api/v1/customers', customerRouter);
   app.use('/api/v1/public', publicRouter);
+  app.use('/api/v1/knowledge', knowledgeRouter);
+  app.use('/api/v1/agent', agentRouter);
+  app.use('/api/v1/internal/agent-tools', agentToolsInternalRouter);
   app.use('/api/v1/branches', branchRouter);
   app.use('/api/v1/catalog', catalogRouter);
   app.use('/api/v1/inventory', inventoryRouter);

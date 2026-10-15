@@ -7,9 +7,14 @@ import { env } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
 import { authenticatedActorSelect, requireActor } from './authorization.js';
 
-export const requireAuthentication: RequestHandler = async (request, response, next) => {
+async function authenticate(
+  request: Parameters<RequestHandler>[0],
+  response: Parameters<RequestHandler>[1],
+) {
   const match = /^Bearer ([^\s]+)$/i.exec(request.headers.authorization ?? '');
-  if (!match?.[1]) throw new AppError(401, 'UNAUTHENTICATED', 'A bearer access token is required');
+  if (!match?.[1]) {
+    throw new AppError(401, 'INVALID_ACCESS_TOKEN', 'Access token is invalid or expired');
+  }
   if (!env.JWT_ACCESS_SECRET) {
     throw new AppError(503, 'AUTH_NOT_CONFIGURED', 'Authentication is not configured');
   }
@@ -34,5 +39,22 @@ export const requireAuthentication: RequestHandler = async (request, response, n
     select: authenticatedActorSelect,
   });
   response.locals.actor = requireActor(user ?? undefined);
+}
+
+export const requireAuthentication: RequestHandler = async (request, response, next) => {
+  if (request.headers.authorization === undefined) {
+    throw new AppError(401, 'UNAUTHENTICATED', 'A bearer access token is required');
+  }
+  await authenticate(request, response);
+  next();
+};
+
+/** Authenticate when credentials are present; an absent header remains an anonymous request. */
+export const optionalAuthentication: RequestHandler = async (request, response, next) => {
+  if (request.headers.authorization === undefined) {
+    next();
+    return;
+  }
+  await authenticate(request, response);
   next();
 };
