@@ -1,44 +1,39 @@
 # Biên bản bàn giao sản phẩm web
 
 **Dự án:** Costume Rental Studio  
-**Ngày rà soát:** 14/10/2026  
-**Phạm vi:** Website khách hàng và khu vận hành kết nối API hiện có. **Ops Agent API không thuộc phạm vi**; màn hình Ops Agent còn lại là fixture/demo.
+**Ngày rà soát:** 15/10/2026  
+**Phạm vi:** Website khách hàng và khu vận hành kết nối API hiện có. **Ops Agent API không thuộc phạm vi**; màn hình Ops Agent tiếp tục ở chế độ fixture/demo.
 
 ## 1. Kết quả đã hoàn thiện
 
-- Catalog gộp các size/màu theo một mẫu, dùng ảnh đã công khai từ API, và tạo bộ lọc từ dữ liệu đang có.
-- Chọn biến thể xuyên suốt trang chi tiết → đặt thuê → báo giá bằng đúng mã biến thể; kiểm tra lịch theo từng biến thể, chi nhánh và khoảng thời gian. Trạng thái lỗi có thể thử lại và không hiển thị kết quả cũ sau khi đổi kỳ.
-- Bàn giao và nhận trả dùng dữ liệu trả thực tế: tình trạng trang phục, số phụ kiện nhận được và tình trạng phụ kiện. Ảnh chứng từ đã tải được giữ lại khi thử lại cùng thao tác; khoản thu đang chờ xác minh không tự tạo lại.
-- Hồ sơ CRM đọc lịch sử thuê, tương tác và lịch sử case từ các endpoint hiện hữu, phân biệt đang tải/lỗi/rỗng và có hành động thử lại.
-- Bảng việc chỉ hiển thị nhóm việc mà API hiện trả về. Không trình bày số liệu giả cho hàng đợi giao dịch trong chế độ API.
-- Thông báo lỗi mạng/API được chuẩn hóa tiếng Việt; các danh sách web đọc đủ trang.
-- CI được bổ sung bộ PostgreSQL concurrency tests trên database CI đã chạy migration.
-
-Các thay đổi không bổ sung năng lực nghiệp vụ mới, không sửa Prisma schema, không thay chính sách tiền và không ghi vào database production.
+- Catalog gom size/màu theo mẫu, dùng ảnh công khai từ API và tạo bộ lọc theo dữ liệu thực. Trang chi tiết và đặt thuê giữ đúng biến thể đến bước báo giá; kiểm tra lịch theo biến thể, chi nhánh và khoảng ngày.
+- Đơn thuê tải toàn bộ trang dữ liệu API, phân biệt trạng thái rỗng/lỗi/đang tải và có hành động khôi phục. Các lỗi API phía web được chuẩn hóa tiếng Việt.
+- Bàn giao và nhận trả lưu bằng chứng theo từng bộ, kiểm tra grade thực tế và số lượng/tình trạng phụ kiện. Khi lỗi version hoặc trạng thái, nhân viên tải lại dữ liệu rồi quét lại thay vì gửi lại thao tác cũ.
+- Luồng nhận đồ thất lạc tách khỏi quét barcode: nhân viên phải ghi lý do, đính kèm chứng từ/hình ảnh liên quan và xác nhận rõ thao tác. API sẽ đưa bộ đồ sang trạng thái ngừng khai thác; form không bắt nhân viên bịa tình trạng hay lịch sửa cho món không được nhận về.
+- Luồng quyết toán cho phép nhân viên có quyền ghi nhận tiền mặt hoặc chuyển khoản đã đối soát cho khoản phí bổ sung. Số thu lấy từ snapshot mới nhất của máy chủ; khoản đang chờ đối soát chặn lần thu tiếp. Khóa idempotency tách từng lần thu để retry cùng thao tác không tạo khoản trùng.
+- API chặn thu phí bổ sung và tạo hoàn cọc trong lúc biên bản còn chờ đánh giá; phí gia hạn đã thu trước thời điểm trả không tự khóa việc đánh giá. Hoàn tất đơn từ chối thu dư so với số phí ròng phải thu; số dư phí không âm.
+- Màn hình hoàn cọc chỉ hiển thị bản ghi và trạng thái máy chủ. Không có nút tạo/đánh dấu hoàn vì phương thức và thời hạn hoàn cọc chưa được Studio chốt.
+- CRM đọc lịch sử thuê, tương tác và case từ endpoint hiện có. Bảng việc chỉ hiển thị nhóm công việc API đang cung cấp; Ops Agent vẫn gắn nhãn fixture/demo.
+- Không thay đổi Prisma schema, không thêm migration, không ghi production database và không deploy.
 
 ## 2. Kiểm tra kỹ thuật
 
 PR: [#4 – Hoàn thiện UX/API web và kiểm thử production](https://github.com/BinCry/Costume-Rental-Studio/pull/4)
 
-GitHub Actions chạy trên PR:
-- API: lint, typecheck, unit tests, build và kiểm tra migrations.
-- PostgreSQL: concurrency suite với database CI riêng.
-- Web: lint, test, typecheck và build.
+GitHub Actions trên PR chạy API lint/typecheck/unit tests/build, kiểm tra migrations, PostgreSQL concurrency suite và web lint/test/typecheck/build. CI cần được xác nhận thành công trên commit mới nhất trước khi merge; trạng thái được cập nhật tại PR.
 
-**Kết quả:** đang chờ CI hoàn tất; cập nhật trạng thái cuối tại PR trước khi merge.
+Rà soát này không thực hiện đăng nhập staging, kiểm tra trình duyệt trên nhiều thiết bị, gọi giao dịch PayOS thật hay deploy. CI xác nhận mã nguồn build/test theo workflow, không chứng minh cấu hình hạ tầng đang chạy.
 
-Rà soát này không thực hiện đăng nhập staging, kiểm tra trình duyệt trên nhiều thiết bị, gọi giao dịch PayOS thật hay deploy. Kết quả CI xác nhận build/test tự động, không xác nhận hoạt động của hạ tầng đang chạy.
+## 3. Việc cần đóng trước khi gọi là production
 
-## 3. Cổng cần đóng trước phát hành production
-
-1. **Chốt chính sách kinh doanh:** khoảng ân hạn, phí trả trễ, phí hủy, thời hạn/cách hoàn cọc. Các con số trong seed hiện là dữ liệu cấu hình tham khảo, chưa được chủ studio duyệt làm chính sách cuối. Quy tắc đệm lịch 12 giờ trước + 12 giờ sau đã được thống nhất là cấu hình có thể chỉnh, không hard-code.
-2. **Đối soát thanh toán:** backend cần chốt cách xử lý phí hủy và callback PayOS đến muộn. Khi giao dịch chưa xác minh, nhân viên cần đối chiếu trạng thái nhà cung cấp; giao diện không tự đánh dấu đã thu/đã hoàn.
-3. **Kiểm tra môi trường staging:** đăng nhập thường/Google, CORS và domain web, email, tải ảnh, PayOS webhook, quyền theo vai trò/chi nhánh và smoke test toàn bộ luồng đơn.
-4. **Rà migration dữ liệu:** diễn tập migration backfill trên bản sao database gần production để tìm xung đột lịch đã tồn tại trước khi cập nhật dữ liệu thật.
-5. **Bảo vệ nhánh:** yêu cầu CI thành công trước khi nhập vào main; sau deploy cần health check và smoke test riêng. CI PR không thay thế bước này.
-6. **Quyền CRM:** API lịch sử thuê dùng endpoint đọc đơn theo khách. Nếu tài khoản CRM không có quyền đọc đơn, giao diện giữ thông báo lỗi và cho thử lại; cần chốt ma trận quyền để cấp đúng quyền tối thiểu.
-7. **Các API còn thiếu:** hàng đợi thanh toán và trạng thái “chờ xác nhận lâu” chưa được API dashboard cung cấp. Chúng bị ẩn ở chế độ API cho đến khi backend hỗ trợ.
+1. **Chốt chính sách kinh doanh:** khoảng ân hạn, phí trả trễ, phí hủy và cách/thời hạn hoàn cọc. Quy tắc đệm lịch 12 giờ trước + 12 giờ sau được thống nhất là cấu hình có thể chỉnh, không hard-code. Phương thức và SLA hoàn cọc vẫn để mở.
+2. **Đối soát thanh toán:** cần kiểm chứng PayOS thật, webhook đến muộn, khoản thu đang chờ/đã hủy và đối soát chuyển khoản. Phí hủy và các trường hợp thanh toán muộn cần quyết định nghiệp vụ cuối.
+3. **Smoke test staging:** đăng nhập thường/Google, CORS/domain, email, lưu ảnh, phân quyền vai trò/chi nhánh, đặt thuê, nhận trả, thu tiền, hoàn cọc và CRM.
+4. **Diễn tập migration:** chạy migration/backfill trên bản sao database gần production, kiểm tra dữ liệu lịch thuê chồng lấn và khả năng khôi phục.
+5. **Bảo vệ nhánh:** bật required checks cho main. Công cụ hiện không xác nhận được cấu hình branch protection; cần quản trị repo kiểm tra trực tiếp.
+6. **Kiểm tra sau deploy:** health check, luồng đăng nhập, đặt thuê và giao dịch thử ở môi trường production theo quy trình vận hành của Studio.
+7. **Ops Agent:** API agent chưa hoàn tất và bị loại khỏi phạm vi bàn giao này; trang hiện tại là fixture/demo, không được xem như tích hợp production.
 
 ## 4. Trạng thái bàn giao
 
-Mã nguồn đã được đưa lên nhánh review và PR #4. Có thể xem đây là **release candidate để review kỹ thuật**, chưa phải xác nhận hệ thống đã sẵn sàng phát hành production. Chỉ merge sau khi CI thành công và các cổng kinh doanh/hạ tầng ở mục 3 đã được xử lý hoặc được chủ dự án chấp nhận bằng văn bản.
+Mã nguồn nằm trên nhánh review và PR #4, chưa được merge hoặc deploy. Đây là **release candidate để review và staging**, không phải chứng nhận production đã sẵn sàng. Chỉ có thể chốt trạng thái sau khi CI cuối thành công và các cổng nghiệp vụ/hạ tầng ở mục 3 được xử lý hoặc được chủ dự án chấp nhận.
