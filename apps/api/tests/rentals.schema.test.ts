@@ -63,13 +63,41 @@ describe('rental order schemas', () => {
         items: [
           {
             orderItemId: itemId,
-            returnConditionGrade: 'DAMAGED',
+            returnConditionGrade: 'GOOD',
             nextOperationalStatus: 'CLEANING',
             evidence: [{ uploadKey: 'rental-staging/a.jpg', contentType: 'image/jpeg', size: 10 }],
           },
         ],
       }).success,
     ).toBe(true);
+  });
+
+  it('allows a missing costume report without a physical-return condition', () => {
+    expect(
+      returnSchema.safeParse({
+        expectedVersion: 2,
+        items: [
+          {
+            orderItemId: itemId,
+            isMissing: true,
+            damageNotes: 'Khách báo thất lạc; đã xác minh qua cuộc gọi.',
+            evidence: [{ uploadKey: 'rental-staging/report.jpg', contentType: 'image/jpeg', size: 10 }],
+          },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(
+      returnSchema.safeParse({
+        expectedVersion: 2,
+        items: [
+          {
+            orderItemId: itemId,
+            isMissing: false,
+            evidence: [{ uploadKey: 'rental-staging/return.jpg', contentType: 'image/jpeg', size: 10 }],
+          },
+        ],
+      }).success,
+    ).toBe(false);
   });
 
   it('validates optimistic extension and amendment payloads', () => {
