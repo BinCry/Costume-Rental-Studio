@@ -181,6 +181,9 @@ describe('staff service', () => {
       select: {
         id: boolean;
         email: boolean;
+        phone: boolean;
+        displayName: boolean;
+        avatarUrl: boolean;
         status: boolean;
         employee: {
           select: {
@@ -197,6 +200,9 @@ describe('staff service', () => {
     expect(createArgs.select).toEqual({
       id: true,
       email: true,
+      phone: true,
+      displayName: true,
+      avatarUrl: true,
       status: true,
       employee: {
         select: {
