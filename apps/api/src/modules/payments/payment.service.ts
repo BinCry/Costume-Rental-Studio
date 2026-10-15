@@ -143,7 +143,11 @@ async function lockRefund(tx: Prisma.TransactionClient, refundId: string) {
   return tx.refund.findUniqueOrThrow({ where: { id: refundId }, include: { payment: true } });
 }
 
-function assertPaymentOrderStatus(status: string, purpose: CreatePaymentInput['purpose']) {
+function assertPaymentOrderStatus(
+  status: string,
+  purpose: CreatePaymentInput['purpose'],
+  inspectionStatus?: string,
+) {
   if (terminalOrderStatuses.includes(status))
     throw new AppError(409, 'PAYMENT_NOT_ALLOWED', 'Payments are not allowed for a terminal order');
   if (!paymentOrderStatuses.includes(status))
@@ -153,6 +157,12 @@ function assertPaymentOrderStatus(status: string, purpose: CreatePaymentInput['p
       409,
       'PAYMENT_NOT_ALLOWED',
       'Extra payments are allowed for an active rental or after return inspection',
+    );
+  if (purpose === 'EXTRA' && status === 'RETURN_INSPECTION' && inspectionStatus === 'PENDING_ASSESSMENT')
+    throw new AppError(
+      409,
+      'PAYMENT_NOT_ALLOWED',
+      'Extra payments must wait until the return assessment is complete',
     );
 }
 
@@ -343,7 +353,7 @@ export async function createCashPayment(
     return await prisma.$transaction(async (tx) => {
       const order = await lockOrder(tx, orderId);
       assertCollect(actor, order.pickupBranchId);
-      assertPaymentOrderStatus(order.status, input.purpose);
+      assertPaymentOrderStatus(order.status, input.purpose, order.inspectionStatus);
       const due = paymentDue(order, input.purpose);
       const reserved = reservedForPurpose(order.payments, input.purpose);
       if (due - reserved < input.amountVnd)
@@ -918,6 +928,12 @@ export async function createRefund(
           409,
           'REFUND_NOT_ALLOWED',
           'The rental order is not eligible for a refund',
+        );
+      if (order.status === 'RETURN_INSPECTION' && order.inspectionStatus === 'PENDING_ASSESSMENT')
+        throw new AppError(
+          409,
+          'REFUND_NOT_ALLOWED',
+          'Deposit refunds must wait until the return assessment is complete',
         );
       const orderSettlement = settlement(order);
       const sourceRefunded = payment.refunds
