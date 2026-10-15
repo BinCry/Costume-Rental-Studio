@@ -153,9 +153,10 @@ describe.skipIf(!runDatabaseTests)('Global administrator lockout protection with
       await attemptCleanup('Remove test permissions', async () => {
         await prisma.permission.deleteMany({ where: { id: { in: createdPermissionIds } } });
       });
-    if (isolationBranchId && assignmentsRestored)
+    const branchToDeleteId = isolationBranchId;
+    if (branchToDeleteId && assignmentsRestored)
       await attemptCleanup('Remove isolation branch', async () => {
-        await prisma.branch.deleteMany({ where: { id: isolationBranchId } });
+        await prisma.branch.deleteMany({ where: { id: branchToDeleteId } });
       });
     await attemptCleanup('Disconnect PostgreSQL test client', async () => {
       await prisma.$disconnect();
