@@ -312,6 +312,120 @@ describe('payment service EXTRA collection balance', () => {
   });
 });
 
+const managerActor = {
+  id: '10000000-0000-4000-8000-000000000005',
+  status: 'ACTIVE',
+  employee: { employmentStatus: 'ACTIVE' },
+  roleAssignments: [
+    {
+      branchId: 'branch-1',
+      branch: { status: 'ACTIVE' },
+      role: {
+        isActive: true,
+        rolePermissions: [
+          { permission: { module: 'payments', action: 'manage', scope: 'BRANCH' } },
+        ],
+      },
+    },
+  ],
+} as never;
+
+describe('payment service settlement locking', () => {
+  const returnedAt = new Date('2026-10-15T10:00:00.000Z');
+
+  function createOrder(extraCreatedAt: Date) {
+    return {
+      id: orderId,
+      status: 'RETURN_INSPECTION',
+      inspectionStatus: 'HAS_DAMAGE',
+      returnedAt,
+      version: 3,
+      customerUserId: customerId,
+      pickupBranchId: 'branch-1',
+      items: [{
+        billableDays: 1,
+        unitDailyPriceVnd: 0n,
+        unitDepositVnd: 200_000n,
+        damageFeeVnd: 100_000n,
+        missingFeeVnd: 0n,
+        accessories: [],
+      }],
+      promotionDiscountVnd: 0n,
+      additionalRentalFeeVnd: 50_000n,
+      lateFeeVnd: 0n,
+      otherFeeVnd: 0n,
+      depositDeductionVnd: 0n,
+      settlementNote: null,
+      payments: [
+        {
+          purpose: 'EXTRA',
+          amountVnd: 50_000n,
+          status: 'SUCCEEDED',
+          createdAt: extraCreatedAt,
+          refunds: [],
+        },
+        {
+          purpose: 'DEPOSIT',
+          amountVnd: 200_000n,
+          status: 'SUCCEEDED',
+          createdAt: new Date('2026-10-15T08:00:00.000Z'),
+          refunds: [{ status: 'FAILED', amountVnd: 10_000n }],
+        },
+      ],
+    };
+  }
+
+  it('allows changing settlement after a pre-return extension charge and failed refund', async () => {
+    const order = createOrder(new Date('2026-10-15T09:00:00.000Z'));
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: orderId }]),
+      rentalOrder: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue(order),
+        update: vi.fn().mockResolvedValue({ ...order, otherFeeVnd: 100_000n, version: 4 }),
+      },
+    };
+    mocks.transaction.mockImplementation((callback: (client: typeof tx) => Promise<unknown>) =>
+      callback(tx),
+    );
+
+    await expect(
+      service.prepareSettlement(managerActor, orderId, {
+        expectedVersion: 3,
+        otherFeeVnd: 100_000n,
+        depositDeductionVnd: 0n,
+        settlementNote: 'Đã kiểm tra tại quầy',
+      }),
+    ).resolves.toMatchObject({ version: 4, otherFeeVnd: 100_000n });
+    expect(tx.rentalOrder.update).toHaveBeenCalledOnce();
+  });
+
+  it('locks settlement changes after an EXTRA payment collected after return', async () => {
+    const order = createOrder(new Date('2026-10-15T11:00:00.000Z'));
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: orderId }]),
+      rentalOrder: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue(order),
+        update: vi.fn(),
+      },
+    };
+    mocks.transaction.mockImplementation((callback: (client: typeof tx) => Promise<unknown>) =>
+      callback(tx),
+    );
+
+    await expect(
+      service.prepareSettlement(managerActor, orderId, {
+        expectedVersion: 3,
+        otherFeeVnd: 100_000n,
+        depositDeductionVnd: 0n,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'SETTLEMENT_LOCKED',
+    });
+    expect(tx.rentalOrder.update).not.toHaveBeenCalled();
+  });
+});
+
 describe('payment service payOS flow', () => {
   it('allows an own-order customer to replay checkout, but rejects another customer order', async () => {
     mocks.paymentFindUnique.mockResolvedValue(gatewayPayment());
