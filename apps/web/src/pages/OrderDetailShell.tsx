@@ -664,6 +664,9 @@ export function OrderDetailShell({
   const [returnConditions, setReturnConditions] = useState<
     Record<string, 'PASSED' | 'PENDING_ASSESSMENT' | 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED'>
   >({});
+  const [missingItems, setMissingItems] = useState<Record<string, boolean>>({});
+  const [missingConfirmed, setMissingConfirmed] = useState<Record<string, boolean>>({});
+  const [missingNotes, setMissingNotes] = useState<Record<string, string>>({});
   const [repairBlockedUntil, setRepairBlockedUntil] = useState<Record<string, string>>({});
   const [repairScheduleValidity, setRepairScheduleValidity] = useState<Record<string, boolean>>({});
   const [returnAccessories, setReturnAccessories] = useState<
@@ -715,17 +718,22 @@ export function OrderDetailShell({
     : order?.items ?? [];
   const operationItems = mode === 'return' ? returnableItems : order?.items ?? [];
   const scannedItems = operationItems.filter((item) => !!item.unitCode && matchedCodes.includes(item.unitCode));
+  const selectedReturnItems = mode === 'return'
+    ? operationItems.filter((item) =>
+        (!!item.unitCode && matchedCodes.includes(item.unitCode)) || !!missingItems[item.id],
+      )
+    : scannedItems;
   const allReturnItemsScanned = !!order && (
-    order.status === 'RETURN_INSPECTION' || scannedItems.length === returnableItems.length
+    order.status === 'RETURN_INSPECTION' || selectedReturnItems.length === returnableItems.length
   );
   const requiresChecks = order
-    ? (mode === 'return' ? scannedItems : order.items).flatMap((item) =>
+    ? (mode === 'return' ? selectedReturnItems : order.items).flatMap((item) =>
         mode === 'return'
           ? [`${item.id}-accessories`]
           : [`${item.id}-condition`, `${item.id}-accessories`],
       )
     : [];
-  const accessoryReviewComplete = !realApiMode || mode !== 'return' || scannedItems.every((item) =>
+  const accessoryReviewComplete = !realApiMode || mode !== 'return' || selectedReturnItems.every((item) =>
     (item.accessories ?? []).every((accessory) => {
       if (!accessory.id) return false;
       const review = returnAccessories[`${item.id}:${accessory.id}`];
@@ -735,32 +743,46 @@ export function OrderDetailShell({
         (quantity === 0 || !!review.conditionIn);
     }),
   );
-  const accessoryNeedsAssessment = realApiMode && mode === 'return' && scannedItems.some((item) =>
+  const accessoryNeedsAssessment = realApiMode && mode === 'return' && selectedReturnItems.some((item) =>
     (item.accessories ?? []).some((accessory) => {
       const review = returnAccessories[`${item.id}:${accessory.id}`];
       return !!review && Number(review.quantityReturned) < accessory.quantityOut ||
         (!!review?.conditionIn && ['FAIR', 'POOR', 'DAMAGED'].includes(review.conditionIn));
     }),
   );
-  const repairScheduleComplete = !realApiMode || mode !== 'return' || scannedItems.every((item) => {
-    if (!['POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')) return true;
+  const repairScheduleComplete = !realApiMode || mode !== 'return' || selectedReturnItems.every((item) => {
+    if (missingItems[item.id] || !['POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')) return true;
     const value = repairBlockedUntil[item.id];
     return !!value && Number.isFinite(Date.parse(value)) && repairScheduleValidity[item.id] === true;
   });
+  const missingReportsComplete =
+    !realApiMode ||
+    mode !== 'return' ||
+    selectedReturnItems.every((item) =>
+      !missingItems[item.id] || (!!missingConfirmed[item.id] && !!missingNotes[item.id]?.trim()),
+    );
   const allChecked =
     requiresChecks.length > 0 &&
     requiresChecks.every((key) => checks[key]) &&
-    (mode === 'handover' || scannedItems.every((item) => !!returnConditions[item.id])) &&
-    accessoryReviewComplete && repairScheduleComplete;
+    (mode === 'handover' ||
+      selectedReturnItems.every((item) => !!missingItems[item.id] || !!returnConditions[item.id])) &&
+    accessoryReviewComplete && repairScheduleComplete && missingReportsComplete;
   const needsAssessment =
     mode === 'return' &&
-    (accessoryNeedsAssessment || scannedItems.some((item) =>
-      realApiMode
-        ? ['FAIR', 'POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')
-        : returnConditions[item.id] === 'PENDING_ASSESSMENT',
-    ));
-  const needsAssessmentNote = needsAssessment && !note.trim();
-  const evidenceItems = mode === 'handover' ? order?.items ?? [] : scannedItems;
+    (accessoryNeedsAssessment ||
+      selectedReturnItems.some((item) => !!missingItems[item.id]) ||
+      selectedReturnItems.some((item) =>
+        realApiMode
+          ? ['FAIR', 'POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')
+          : returnConditions[item.id] === 'PENDING_ASSESSMENT',
+      ));
+  const needsAssessmentNote =
+    (needsAssessment && !note.trim()) ||
+    (mode === 'return' &&
+      selectedReturnItems.some((item) =>
+        !!missingItems[item.id] && (!missingConfirmed[item.id] || !missingNotes[item.id]?.trim()),
+      ));
+  const evidenceItems = mode === 'handover' ? order?.items ?? [] : selectedReturnItems;
   const allEvidenceSelected =
     !realApiMode || evidenceItems.every((item) => (evidenceFiles[item.id]?.length ?? 0) > 0);
   const backendReturnReady = realApiMode && mode === 'return' && order?.status === 'RETURN_INSPECTION';
@@ -858,6 +880,9 @@ export function OrderDetailShell({
     setMatchedCodes([]);
     setChecks({});
     setReturnConditions({});
+    setMissingItems({});
+    setMissingConfirmed({});
+    setMissingNotes({});
     setRepairBlockedUntil({});
     setReturnAccessories({});
     setRentPreview(false);
@@ -926,7 +951,12 @@ export function OrderDetailShell({
   const effectiveMethod = scenario === 'bankPending' ? 'BANK_TRANSFER' : method;
   const allScanned =
     !!order && order.items.every((item) => !!item.unitCode && matchedCodes.includes(item.unitCode));
-  const scannedEnough = mode === 'handover' ? allScanned : scannedItems.length > 0;
+  const scannedEnough =
+    mode === 'handover'
+      ? allScanned
+      : realApiMode
+        ? selectedReturnItems.length > 0
+        : scannedItems.length > 0;
   const previewSignature = JSON.stringify([
     scenario,
     mode,
@@ -936,6 +966,9 @@ export function OrderDetailShell({
     matchedCodes,
     checks,
     returnConditions,
+    missingItems,
+    missingConfirmed,
+    missingNotes,
     repairBlockedUntil,
     transactionReferences,
     effectiveMethod,
@@ -1074,8 +1107,8 @@ export function OrderDetailShell({
       setOperationIssue('Đơn đã ở bước kiểm tra/quyết toán. Không gửi lại thao tác nhận trả; hãy xử lý biên bản và hoàn cọc theo quyền được cấp.');
       return;
     }
-    const invalidRepairSchedule = scannedItems.find((item) => {
-      if (!['POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')) return false;
+    const invalidRepairSchedule = selectedReturnItems.find((item) => {
+      if (missingItems[item.id] || !['POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')) return false;
       const value = repairBlockedUntil[item.id];
       return !value || !Number.isFinite(Date.parse(value)) || Date.parse(value) <= Date.now();
     });
@@ -1088,17 +1121,23 @@ export function OrderDetailShell({
     setResult(null);
     try {
       const items = await Promise.all(
-        scannedItems.map(async (item) => ({
+        selectedReturnItems.map(async (item) => {
+          const isMissing = !!missingItems[item.id];
+          return {
           orderItemId: item.id,
-          returnConditionGrade: (['NEW', 'GOOD', 'FAIR', 'POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')
-            ? returnConditions[item.id]
-            : returnConditions[item.id] === 'PENDING_ASSESSMENT' ? 'FAIR' : 'GOOD') as 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED',
-          isMissing: false,
-          damageNotes: needsAssessment ? note.trim() : undefined,
-          nextOperationalStatus: ['POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '') ? 'REPAIR' as const : 'CLEANING' as const,
-          repairBlockedUntil: ['POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')
-            ? new Date(repairBlockedUntil[item.id]).toISOString()
-            : undefined,
+          ...(isMissing ? {} : {
+            returnConditionGrade: (['NEW', 'GOOD', 'FAIR', 'POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')
+              ? returnConditions[item.id]
+              : returnConditions[item.id] === 'PENDING_ASSESSMENT' ? 'FAIR' : 'GOOD') as 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED',
+          }),
+          isMissing,
+          damageNotes: isMissing ? missingNotes[item.id]?.trim() : needsAssessment ? note.trim() : undefined,
+          ...(!isMissing ? {
+            nextOperationalStatus: ['POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '') ? 'REPAIR' as const : 'CLEANING' as const,
+            repairBlockedUntil: ['POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')
+              ? new Date(repairBlockedUntil[item.id]).toISOString()
+              : undefined,
+          } : {}),
           evidence: await uploadEvidence(item.id, 'RETURN'),
           accessories: (item.accessories ?? []).map((accessory) => {
             const review = returnAccessories[`${item.id}:${accessory.id}`];
@@ -1109,14 +1148,15 @@ export function OrderDetailShell({
               conditionIn: quantityReturned > 0 ? review?.conditionIn as 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED' : null,
             };
           }),
-        })),
+          };
+        }),
       );
-      await returnApiOrder(order.id, order.version, scannedItems.length < returnableItems.length, note.trim(), items);
+      await returnApiOrder(order.id, order.version, selectedReturnItems.length < returnableItems.length, note.trim(), items);
       setResult({
         text:
-          scannedItems.length < returnableItems.length
-            ? `Đã ghi nhận trả ${scannedItems.length}/${returnableItems.length} bộ còn ở khách. Cọc vẫn được giữ để xử lý phần còn lại hoặc quyết toán.`
-            : 'Đã ghi nhận trả đủ bộ. Đơn đang chờ kiểm tra và quyết toán cọc theo quy trình.',
+          selectedReturnItems.length < returnableItems.length
+            ? `Đã ghi nhận ${selectedReturnItems.length}/${returnableItems.length} bộ đã trả hoặc báo thất lạc. Đơn còn bộ chưa xử lý; cọc vẫn được giữ.`
+            : 'Đã ghi nhận đủ bộ đã trả hoặc báo thất lạc. Đơn đang chờ đánh giá và quyết toán cọc.',
         signature: previewSignature,
       });
       retry();
@@ -1128,6 +1168,9 @@ export function OrderDetailShell({
         setMatchedCode('');
         setChecks({});
         setReturnConditions({});
+        setMissingItems({});
+        setMissingConfirmed({});
+        setMissingNotes({});
         setReturnAccessories({});
         setRepairBlockedUntil({});
         setEvidenceFiles({});
@@ -1354,8 +1397,8 @@ export function OrderDetailShell({
               </div>
               {mode === 'return' && returnableItems.length > 0 && (
                 <p className="section-help" role="status">
-                  Đã quét {scannedItems.length}/{returnableItems.length} bộ còn ở khách. Bộ đã ghi nhận ở lần trước không cần quét lại;
-                  cọc chỉ được quyết toán khi backend xác nhận điều kiện trả.
+                  Đã đối chiếu hoặc báo thất lạc {selectedReturnItems.length}/{returnableItems.length} bộ còn ở khách.
+                  Bộ đã ghi nhận ở lần trước không cần quét lại; cọc chỉ được quyết toán khi backend xác nhận điều kiện trả.
                 </p>
               )}
             </section>
@@ -1437,7 +1480,81 @@ export function OrderDetailShell({
                       </small>
                     </label>
                   )}
-                  {mode === 'return' && matchedCodes.includes(item.unitCode ?? '') && (
+                  {mode === 'return' && realApiMode && (
+                    <div className="return-missing-report">
+                      <label className="check-row">
+                        <input
+                          type="checkbox"
+                          checked={!!missingItems[item.id]}
+                          disabled={operationBusy || matchedCodes.includes(item.unitCode ?? '')}
+                          onChange={(event) => {
+                            const checked = event.target.checked;
+                            setMissingItems((current) => ({ ...current, [item.id]: checked }));
+                            setMissingConfirmed((current) => ({ ...current, [item.id]: false }));
+                            if (!checked) {
+                              setMissingNotes((current) => ({ ...current, [item.id]: '' }));
+                              setEvidenceFiles((current) => ({ ...current, [item.id]: [] }));
+                            }
+                          }}
+                        />
+                        <span>Ghi nhận bộ này thất lạc, không có mặt để nhận trả</span>
+                      </label>
+                      {missingItems[item.id] && (
+                        <>
+                          <Feedback tone="warning" title="Xác nhận thao tác có ảnh hưởng tồn kho">
+                            Máy chủ sẽ chuyển bộ này sang ngừng khai thác. Đính kèm bằng chứng liên quan
+                            và ghi rõ thông tin xác minh trước khi lưu.
+                          </Feedback>
+                          <TextAreaField
+                            label="Ghi chú về bộ thất lạc"
+                            rows={2}
+                            value={missingNotes[item.id] ?? ''}
+                            disabled={operationBusy}
+                            onChange={(event) => setMissingNotes((current) => ({ ...current, [item.id]: event.target.value }))}
+                          />
+                          <label className="check-row">
+                            <input
+                              type="checkbox"
+                              checked={!!missingConfirmed[item.id]}
+                              disabled={operationBusy || !missingNotes[item.id]?.trim()}
+                              onChange={(event) => setMissingConfirmed((current) => ({ ...current, [item.id]: event.target.checked }))}
+                            />
+                            <span>Tôi đã xác minh và xác nhận ghi nhận thất lạc cho bộ này</span>
+                          </label>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {((mode === 'handover' && matchedCodes.includes(item.unitCode ?? '')) ||
+                    (mode === 'return' && (matchedCodes.includes(item.unitCode ?? '') || !!missingItems[item.id]))) && (
+                    <label className="field file-field">
+                      <span>
+                        Ảnh bằng chứng {realApiMode ? '(bắt buộc)' : '(tuỳ chọn)'}
+                        {mode === 'return' && missingItems[item.id] ? ' · bằng chứng liên quan đến thất lạc' : ''}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        multiple
+                        onChange={(event) =>
+                          setEvidenceFiles((current) => ({
+                            ...current,
+                            [item.id]: Array.from(event.target.files ?? []).slice(0, 10),
+                          }))
+                        }
+                      />
+                      <small>
+                        {(evidenceFiles[item.id]?.length ?? 0) > 0
+                          ? `Đã chọn ${evidenceFiles[item.id]?.length ?? 0} ảnh`
+                          : mode === 'return' && missingItems[item.id]
+                            ? 'Chọn ảnh/chứng từ liên quan đến việc xác minh thất lạc'
+                            : 'Chọn ảnh tình trạng thực tế của bộ'}
+                      </small>
+                    </label>
+                  )}
+                  {mode === 'return' &&
+                    (matchedCodes.includes(item.unitCode ?? '') || !!missingItems[item.id]) &&
+                    !missingItems[item.id] && (
                     <>
                       <SelectField
                         label={`Tình trạng thực tế ${item.unitCode ?? item.costume}`}
