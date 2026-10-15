@@ -320,12 +320,12 @@ describe('Inventory unit API', () => {
 
     const eventResponse = response.body as {
       data: {
-        items: Array<{
+        items: {
           recorder: {
             employeeCode: string;
             user: { id: string; displayName: string; avatarUrl: string | null };
           } | null;
-        }>;
+        }[];
       };
     };
     expect(eventResponse.data.items[0]?.recorder).toEqual({
