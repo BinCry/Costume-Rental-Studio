@@ -122,6 +122,89 @@ describe('web API client session and error handling', () => {
     });
   });
 
+  it('keeps cash payment retries idempotent while allowing a later collection attempt', async () => {
+    const order = {
+      id: 'order-1',
+      orderCode: 'RT-CASH-01',
+      status: 'RETURN_INSPECTION',
+      version: 2,
+      plannedStartAt: '2026-10-14T03:00:00.000Z',
+      plannedDueAt: '2026-10-15T03:00:00.000Z',
+      pickupBranch: { id: 'branch-1', name: 'Chi nhánh Quận 1' },
+      items: [],
+      payments: [],
+    };
+    globalThis.fetch
+      .mockResolvedValueOnce(success({
+        items: [order],
+        pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+      }))
+      .mockResolvedValueOnce(success({ id: 'payment-1' }))
+      .mockResolvedValueOnce(success({ id: 'payment-1' }))
+      .mockResolvedValueOnce(success({ id: 'payment-2' }));
+    const { listOrders, recordCashPayment } = await import('../src/api/client.ts');
+    await listOrders({ loadPendingAvailability: false });
+    await recordCashPayment('RT-CASH-01', 'EXTRA', 125_000, 'attempt-1');
+    await recordCashPayment('RT-CASH-01', 'EXTRA', 125_000, 'attempt-1');
+    await recordCashPayment('RT-CASH-01', 'EXTRA', 125_000, 'attempt-2');
+
+    const firstKey = JSON.parse(globalThis.fetch.mock.calls[1][1].body).idempotencyKey;
+    const retryKey = JSON.parse(globalThis.fetch.mock.calls[2][1].body).idempotencyKey;
+    const nextKey = JSON.parse(globalThis.fetch.mock.calls[3][1].body).idempotencyKey;
+    expect(retryKey).toBe(firstKey);
+    expect(nextKey).not.toBe(firstKey);
+  });
+
+  it('sends a missing return without pretending the costume was physically inspected', async () => {
+    const order = {
+      id: 'order-1',
+      orderCode: 'RT-MISSING-01',
+      status: 'ACTIVE',
+      version: 4,
+      plannedStartAt: '2026-10-14T03:00:00.000Z',
+      plannedDueAt: '2026-10-15T03:00:00.000Z',
+      pickupBranch: { id: 'branch-1', name: 'Chi nhánh Quận 1' },
+      items: [],
+      payments: [],
+    };
+    globalThis.fetch
+      .mockResolvedValueOnce(success({
+        items: [order],
+        pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+      }))
+      .mockResolvedValueOnce(success({ ...order, status: 'RETURN_INSPECTION', version: 5 }));
+    const { listOrders, returnOrder } = await import('../src/api/client.ts');
+    await listOrders({ loadPendingAvailability: false });
+    await returnOrder('RT-MISSING-01', 4, false, 'Đã xác minh với khách', [{
+      orderItemId: 'item-1',
+      isMissing: true,
+      damageNotes: 'Khách báo thất lạc trong quá trình sử dụng.',
+      evidence: [{
+        uploadKey: 'rental-staging/case.jpg',
+        contentType: 'image/jpeg',
+        size: 10,
+      }],
+      accessories: [],
+    }]);
+
+    expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body)).toEqual({
+      expectedVersion: 4,
+      partial: false,
+      returnNotes: 'Đã xác minh với khách',
+      items: [{
+        orderItemId: 'item-1',
+        isMissing: true,
+        damageNotes: 'Khách báo thất lạc trong quá trình sử dụng.',
+        evidence: [{
+          uploadKey: 'rental-staging/case.jpg',
+          contentType: 'image/jpeg',
+          size: 10,
+        }],
+        accessories: [],
+      }],
+    });
+  });
+
   it('stores a login token and attaches it to later requests', async () => {
     const fetchMock = globalThis.fetch;
     fetchMock
