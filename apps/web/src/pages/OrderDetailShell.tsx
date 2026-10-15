@@ -97,6 +97,7 @@ function ReturnSettlementWorkflow({
   canReadPayments,
   canAssess,
   canPrepare,
+  canCollect,
   canComplete,
   onRefresh,
   onCompleted,
@@ -106,6 +107,7 @@ function ReturnSettlementWorkflow({
   canReadPayments: boolean;
   canAssess: boolean;
   canPrepare: boolean;
+  canCollect: boolean;
   canComplete: boolean;
   onRefresh: () => void;
   onCompleted: () => void;
@@ -125,6 +127,9 @@ function ReturnSettlementWorkflow({
   const [assessmentDraft, setAssessmentDraft] = useState<Record<string, { damage: string; missing: string }>>({});
   const [settlementDraft, setSettlementDraft] = useState({ depositDeduction: '0', otherFee: '0', note: '' });
   const [busy, setBusy] = useState(false);
+  const [extraMethod, setExtraMethod] = useState<'CASH' | 'BANK_TRANSFER'>('CASH');
+  const [extraTransferReference, setExtraTransferReference] = useState('');
+  const [extraAttemptKey, setExtraAttemptKey] = useState(() => crypto.randomUUID());
   const [issue, setIssue] = useState('');
   const [message, setMessage] = useState('');
   const currentDetailsResource =
@@ -263,6 +268,39 @@ function ReturnSettlementWorkflow({
       onRefresh();
     } catch (caught: unknown) {
       setIssue(caught instanceof Error ? caught.message : 'Không lưu được quyết toán.');
+      setReloadRevision((revision) => revision + 1);
+      onRefresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const collectExtra = async () => {
+    if (!canCollect || !canReadPayments || busy || !details || !assessmentComplete) return;
+    if (extraMethod === 'BANK_TRANSFER' && !extraTransferReference.trim()) {
+      setIssue('Nhập mã giao dịch ngân hàng để đối chiếu trước khi ghi nhận.');
+      return;
+    }
+    setBusy(true);
+    setIssue('');
+    setMessage('');
+    try {
+      const current = await getOrderSettlement(order.id);
+      const amount = parseVndAmount(current.extra.remainingVnd);
+      if (current.orderId !== order.id || current.status !== 'RETURN_INSPECTION' || amount === null || amount <= 0)
+        throw new ApiClientError(409, 'SETTLEMENT_SNAPSHOT_STALE', 'Số phí còn phải thu đã thay đổi. Tải lại quyết toán trước khi tiếp tục.');
+      const payments = await listOrderPayments(order.id);
+      if (payments.some((payment) => payment.purpose === 'EXTRA' && ['PENDING', 'PROCESSING'].includes(payment.status)))
+        throw new ApiClientError(409, 'PAYMENT_RECONCILIATION_REQUIRED', 'Đang có khoản thu bổ sung chờ xác minh. Đối soát khoản đó trước khi thử lại.');
+      if (extraMethod === 'CASH')
+        await recordCashPayment(order.id, 'EXTRA', amount, extraAttemptKey);
+      else
+        await recordBankTransferPayment(order.id, 'EXTRA', amount, extraTransferReference.trim());
+      setExtraAttemptKey(crypto.randomUUID());
+      setMessage('Đã gửi khoản thu bổ sung. Đang tải lại số dư và trạng thái từ máy chủ.');
+      setReloadRevision((revision) => revision + 1);
+      onRefresh();
+    } catch (caught: unknown) {
+      setIssue(caught instanceof Error ? caught.message : 'Không ghi nhận được khoản thu bổ sung.');
       setReloadRevision((revision) => revision + 1);
       onRefresh();
     } finally {
@@ -455,6 +493,59 @@ function ReturnSettlementWorkflow({
               )}
             </div>
           )}
+          {assessmentComplete && canReadPayments && (
+            <div className="return-settlement-form">
+              <h3>Thu phí còn thiếu</h3>
+              <p className="section-help">
+                Số tiền lấy từ snapshot quyết toán mới nhất của máy chủ. Nhân viên không nhập lại số tiền;
+                nếu có khoản thu đang chờ đối soát, cần xử lý khoản đó trước khi thu tiếp.
+              </p>
+              {snapshot && (
+                <p role="status">
+                  Còn phải thu bổ sung: <strong>{settlementMoney(snapshot.extra.remainingVnd)}</strong>
+                </p>
+              )}
+              <SelectField
+                label="Phương thức thu"
+                value={extraMethod}
+                disabled={!canCollect || busy}
+                onChange={(event) => setExtraMethod(event.target.value as 'CASH' | 'BANK_TRANSFER')}
+              >
+                <option value="CASH">Tiền mặt</option>
+                <option value="BANK_TRANSFER">Chuyển khoản đã đối soát</option>
+              </SelectField>
+              {extraMethod === 'BANK_TRANSFER' && (
+                <Field
+                  label="Mã giao dịch ngân hàng"
+                  type="text"
+                  value={extraTransferReference}
+                  disabled={!canCollect || busy}
+                  onChange={(event) => setExtraTransferReference(event.target.value)}
+                  hint="Nhập mã giao dịch đã nhìn thấy trên tài khoản Studio."
+                />
+              )}
+              {canCollect ? (
+                <Button
+                  disabled={
+                    busy ||
+                    details.status !== 'RETURN_INSPECTION' ||
+                    !assessmentComplete ||
+                    !snapshot ||
+                    (parseVndAmount(snapshot.extra.remainingVnd) ?? 0) <= 0 ||
+                    (extraMethod === 'BANK_TRANSFER' && !extraTransferReference.trim())
+                  }
+                  loading={busy}
+                  onClick={() => void collectExtra()}
+                >
+                  Ghi nhận khoản thu bổ sung
+                </Button>
+              ) : (
+                <Feedback tone="warning" title="Bạn chưa có quyền thu tiền">
+                  Cần quyền thu thanh toán tại chi nhánh nhận đồ.
+                </Feedback>
+              )}
+            </div>
+          )}
           {canReadPayments && (
             <div className="return-refund-history" aria-live="polite">
               <h3>Trạng thái hoàn cọc</h3>
@@ -504,7 +595,22 @@ function ReturnSettlementWorkflow({
                 Hoàn tất đơn theo xác nhận của máy chủ
               </Button>
               {!canReadPayments && <p role="status">Cần quyền đọc thanh toán để xác minh snapshot trước khi đóng đơn.</p>}
-              {snapshot?.canComplete !== true && <p role="status">Nút chỉ mở khi snapshot mới nhất từ máy chủ báo đủ điều kiện.</p>}
+              {snapshot?.canComplete !== true && (
+                <div className="section-help" role="status">
+                  <p>Nút chỉ mở khi snapshot mới nhất từ máy chủ báo đủ điều kiện.</p>
+                  {parseVndAmount(snapshot?.extra.remainingVnd) !== null &&
+                    (parseVndAmount(snapshot?.extra.remainingVnd) ?? 0) > 0 && (
+                      <p>Còn phải thu bổ sung: {settlementMoney(snapshot?.extra.remainingVnd)}.</p>
+                    )}
+                  {parseVndAmount(snapshot?.deposit.refundRemainingVnd) !== null &&
+                    (parseVndAmount(snapshot?.deposit.refundRemainingVnd) ?? 0) > 0 && (
+                      <p>
+                        Còn phải xử lý hoàn cọc: {settlementMoney(snapshot?.deposit.refundRemainingVnd)}.
+                        Trạng thái hiển thị theo máy chủ; phương thức và thời hạn hoàn vẫn cần Studio chốt.
+                      </p>
+                    )}
+                </div>
+              )}
             </div>
           )}
         </>
@@ -1706,6 +1812,7 @@ export function OrderDetailShell({
                       canReadPayments={canReadPayments}
                       canAssess={canAssessReturn}
                       canPrepare={canPrepareSettlement}
+                      canCollect={canCollectPayments}
                       canComplete={canCompleteSettlement}
                       onRefresh={() => {
                         retry();
