@@ -148,10 +148,10 @@ export const returnSchema = versionSchema
         z
           .object({
             orderItemId: z.uuid(),
-            returnConditionGrade: z.enum(grade),
+            returnConditionGrade: z.enum(grade).optional(),
             isMissing: z.boolean().default(false),
             damageNotes: z.string().trim().max(10_000).nullable().optional(),
-            nextOperationalStatus: z.enum(['CLEANING', 'REPAIR']),
+            nextOperationalStatus: z.enum(['CLEANING', 'REPAIR']).optional(),
             repairBlockedUntil: z.coerce.date().optional(),
             evidence: z.array(evidenceSchema).min(1).max(10),
             accessories: z
@@ -166,7 +166,28 @@ export const returnSchema = versionSchema
               )
               .default([]),
           })
-          .strict(),
+          .strict()
+          .superRefine((item, context) => {
+            if (item.isMissing) return;
+            if (!item.returnConditionGrade)
+              context.addIssue({
+                code: 'custom',
+                path: ['returnConditionGrade'],
+                message: 'Returned items require a condition grade',
+              });
+            if (!item.nextOperationalStatus)
+              context.addIssue({
+                code: 'custom',
+                path: ['nextOperationalStatus'],
+                message: 'Returned items require the next operational status',
+              });
+            if (item.returnConditionGrade === 'DAMAGED' && item.nextOperationalStatus !== 'REPAIR')
+              context.addIssue({
+                code: 'custom',
+                path: ['nextOperationalStatus'],
+                message: 'Damaged items must enter repair',
+              });
+          }),
       )
       .min(1)
       .max(50),
