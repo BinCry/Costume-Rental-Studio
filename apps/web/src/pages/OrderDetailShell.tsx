@@ -73,7 +73,7 @@ function inspectionLabel(status: string | null | undefined) {
   if (status === 'HAS_MISSING_ITEM') return 'Đã đánh giá · có đồ thiếu';
   return status ?? 'Chưa có trạng thái';
 }
-export function returnConditionLabel(conditionIn: string | null | undefined) {
+function returnConditionLabel(conditionIn: string | null | undefined) {
   const labels: Record<string, string> = {
     NEW: 'Mới',
     GOOD: 'Tốt',
