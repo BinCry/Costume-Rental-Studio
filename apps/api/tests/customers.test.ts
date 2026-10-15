@@ -58,6 +58,16 @@ interface ResultBody {
 interface ProfileUpdateResultBody {
   data: { displayName: string; phone: string; email: string };
 }
+interface CustomerStatusResultBody {
+  data: {
+    id: string;
+    email: string | null;
+    phone: string | null;
+    displayName: string;
+    avatarUrl: string | null;
+    status: 'ACTIVE' | 'INACTIVE';
+  };
+}
 interface MockTransaction {
   $queryRaw: typeof mocks.queryRaw;
   branch: { findUnique: typeof mocks.branch };
@@ -286,7 +296,7 @@ describe('POST /api/v1/customers/:userId/deactivate', () => {
       .auth(await token(), { type: 'bearer' })
       .expect(200);
 
-    expect(response.body.data).toEqual({
+    expect((response.body as CustomerStatusResultBody).data).toEqual({
       id: userId,
       email: 'customer@example.com',
       phone: '+84901234567',
