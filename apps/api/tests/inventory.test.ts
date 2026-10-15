@@ -318,7 +318,17 @@ describe('Inventory unit API', () => {
       .auth(await token(), { type: 'bearer' })
       .expect(200);
 
-    expect(response.body.data.items[0].recorder).toEqual({
+    const eventResponse = response.body as {
+      data: {
+        items: Array<{
+          recorder: {
+            employeeCode: string;
+            user: { id: string; displayName: string; avatarUrl: string | null };
+          } | null;
+        }>;
+      };
+    };
+    expect(eventResponse.data.items[0]?.recorder).toEqual({
       employeeCode: 'EMP-001',
       user: { id: actorId, displayName: 'Inventory staff', avatarUrl: null },
     });
