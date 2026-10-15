@@ -2062,10 +2062,13 @@ export async function recordCashPayment(
   orderCode: string,
   purpose: 'RENTAL' | 'DEPOSIT' | 'EXTRA',
   amountVnd: number,
+  attemptKey?: string,
 ) {
+  const keyParts = [orderApiId(orderCode), purpose, Math.round(amountVnd)];
+  if (attemptKey) keyParts.push(attemptKey);
   return request<PaymentRecord>(`/api/v1/payments/orders/${encodeURIComponent(orderApiId(orderCode))}/cash`, {
     method: 'POST',
-    body: JSON.stringify({ purpose, amountVnd: String(Math.round(amountVnd)), idempotencyKey: idempotencyKey('cash', [orderApiId(orderCode), purpose, Math.round(amountVnd)].join(':')) }),
+    body: JSON.stringify({ purpose, amountVnd: String(Math.round(amountVnd)), idempotencyKey: idempotencyKey('cash', keyParts.join(':')) }),
   });
 }
 
@@ -2145,10 +2148,10 @@ export async function returnOrder(
   returnNotes: string,
   items: {
     orderItemId: string;
-    returnConditionGrade: 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED';
+    returnConditionGrade?: 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED';
     isMissing: boolean;
     damageNotes?: string;
-    nextOperationalStatus: 'CLEANING' | 'REPAIR';
+    nextOperationalStatus?: 'CLEANING' | 'REPAIR';
     repairBlockedUntil?: string;
     evidence: RentalEvidence[];
     accessories: { accessoryId: string; quantityReturned: number; conditionIn?: 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED' | null }[];
