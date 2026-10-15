@@ -20,7 +20,7 @@
 
 PR: [#4 – Hoàn thiện UX/API web và kiểm thử production](https://github.com/BinCry/Costume-Rental-Studio/pull/4)
 
-GitHub Actions trên PR chạy API lint/typecheck/unit tests/build, kiểm tra migrations, PostgreSQL concurrency suite và web lint/test/typecheck/build. Toàn bộ workflow đã thành công ở run [#202](https://github.com/BinCry/Costume-Rental-Studio/actions/runs/38681231691), kiểm tra commit mã nguồn `65892885389e2de52bc28c24cc9dd5a9b06103e0` (15/10/2026).
+GitHub Actions chạy API lint/typecheck/unit tests/build, kiểm tra migrations, PostgreSQL concurrency suite và web lint/test/typecheck/build. Workflow cuối thành công ở run [#203](https://github.com/BinCry/Costume-Rental-Studio/actions/runs/38681515160), kiểm tra commit cuối `a1207f3d8389395e3b463886563010ca22ce8d6a` (15/10/2026).
 
 Rà soát này không thực hiện đăng nhập staging, kiểm tra trình duyệt trên nhiều thiết bị, gọi giao dịch PayOS thật hay deploy. CI xác nhận mã nguồn build/test theo workflow, không chứng minh cấu hình hạ tầng đang chạy.
 
@@ -36,4 +36,12 @@ Rà soát này không thực hiện đăng nhập staging, kiểm tra trình duy
 
 ## 4. Trạng thái bàn giao
 
-Mã nguồn nằm trên nhánh review và PR #4; commit mã nguồn đã qua CI đầy đủ, nhưng PR chưa được merge và chưa deploy. Đây là **release candidate đã qua kiểm tra tự động, sẵn sàng cho review và staging**, không phải chứng nhận production đã sẵn sàng. Cần hoàn tất hoặc được chủ dự án chấp nhận các cổng nghiệp vụ/hạ tầng ở mục 3 trước khi phát hành thật.
+PR #4 đã được merge vào `main` ngày 15/10/2026 tại commit `2b7fa53efd6ad0673c7c52f95cdd233e8256fc6f`. Nhánh GitHub đã được dọn, chỉ còn `main`. Chưa deploy và chưa chạy smoke test staging; vì vậy trạng thái là **phase triển khai web đã hoàn tất, release candidate sẵn sàng cho staging**, không phải chứng nhận production đã sẵn sàng. Cần đóng hoặc được chủ dự án chấp nhận các cổng nghiệp vụ/hạ tầng ở mục 3 trước khi phát hành thật.
+
+## 5. Chốt phase và bước tiếp theo
+
+**Phase đã hoàn tất:** tích hợp các luồng Website khách hàng và khu vận hành với API hiện có; rà soát và tối ưu UX; kiểm thử tự động; hợp nhất thay đổi vào `main`. Ops Agent API và màn hình Ops Agent vẫn là ngoại lệ, chưa được nghiệm thu.
+
+**Bằng chứng đóng phase:** PR #4 đã merge; GitHub Actions run #203 xanh trên commit cuối; danh sách nhánh remote chỉ còn `main`. Không có thay đổi schema, migration, production database hay deployment trong phase này.
+
+**Phase đề xuất tiếp theo — kiểm chứng staging và sẵn sàng phát hành:** chủ Studio chốt các chính sách còn mở; đội vận hành cấu hình môi trường staging rồi chạy smoke test tích hợp thật; kiểm tra migration/backfill trên bản sao dữ liệu; xử lý kết quả và xin xác nhận nghiệm thu trước khi deploy. Phase tiếp theo chưa được bắt đầu trong biên bản này.
