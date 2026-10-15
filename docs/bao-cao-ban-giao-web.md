@@ -20,7 +20,7 @@
 
 PR: [#4 – Hoàn thiện UX/API web và kiểm thử production](https://github.com/BinCry/Costume-Rental-Studio/pull/4)
 
-GitHub Actions trên PR chạy API lint/typecheck/unit tests/build, kiểm tra migrations, PostgreSQL concurrency suite và web lint/test/typecheck/build. CI cần được xác nhận thành công trên commit mới nhất trước khi merge; trạng thái được cập nhật tại PR.
+GitHub Actions trên PR chạy API lint/typecheck/unit tests/build, kiểm tra migrations, PostgreSQL concurrency suite và web lint/test/typecheck/build. Toàn bộ workflow đã thành công ở run [#202](https://github.com/BinCry/Costume-Rental-Studio/actions/runs/38681231691), kiểm tra commit mã nguồn `65892885389e2de52bc28c24cc9dd5a9b06103e0` (15/10/2026).
 
 Rà soát này không thực hiện đăng nhập staging, kiểm tra trình duyệt trên nhiều thiết bị, gọi giao dịch PayOS thật hay deploy. CI xác nhận mã nguồn build/test theo workflow, không chứng minh cấu hình hạ tầng đang chạy.
 
@@ -36,4 +36,4 @@ Rà soát này không thực hiện đăng nhập staging, kiểm tra trình duy
 
 ## 4. Trạng thái bàn giao
 
-Mã nguồn nằm trên nhánh review và PR #4, chưa được merge hoặc deploy. Đây là **release candidate để review và staging**, không phải chứng nhận production đã sẵn sàng. Chỉ có thể chốt trạng thái sau khi CI cuối thành công và các cổng nghiệp vụ/hạ tầng ở mục 3 được xử lý hoặc được chủ dự án chấp nhận.
+Mã nguồn nằm trên nhánh review và PR #4; commit mã nguồn đã qua CI đầy đủ, nhưng PR chưa được merge và chưa deploy. Đây là **release candidate đã qua kiểm tra tự động, sẵn sàng cho review và staging**, không phải chứng nhận production đã sẵn sàng. Cần hoàn tất hoặc được chủ dự án chấp nhận các cổng nghiệp vụ/hạ tầng ở mục 3 trước khi phát hành thật.
