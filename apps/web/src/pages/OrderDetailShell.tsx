@@ -1388,7 +1388,7 @@ export function OrderDetailShell({
                 </Feedback>
               )}
               <div className="expected-units">
-                <span>Mã cần đối chiếu:</span>
+                <span>{mode === 'return' ? 'Mã bộ và trạng thái xử lý:' : 'Mã cần đối chiếu:'}</span>
                 {operationItems.map((item) => (
                   <span
                     className={
@@ -1397,7 +1397,11 @@ export function OrderDetailShell({
                     }
                     key={item.id}
                   >
-                    {matchedCodes.includes(item.unitCode ?? '') ? '✓ ' : ''}
+                    {missingItems[item.id]
+                      ? 'Báo thất lạc · '
+                      : matchedCodes.includes(item.unitCode ?? '')
+                        ? '✓ '
+                        : ''}
                     {item.unitCode ?? 'Chưa gán mã'}
                   </span>
                 ))}
