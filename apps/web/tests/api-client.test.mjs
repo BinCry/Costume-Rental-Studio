@@ -471,7 +471,7 @@ describe('web API client session and error handling', () => {
     const { getReturnSettlementOrder, listOrders } = await import('../src/api/client.ts');
     await listOrders({ loadPendingAvailability: false });
     const loaded = await getReturnSettlementOrder('RT-TEST-06');
-    const { returnConditionLabel } = await import('../src/pages/OrderDetailShell.tsx');
+    const { returnConditionLabel } = await import('../src/components/support.ts');
 
     expect(loaded.items[0].accessories[0]).toMatchObject({
       id: 'accessory-row-1',

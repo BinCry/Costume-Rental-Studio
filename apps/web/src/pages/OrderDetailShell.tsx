@@ -11,7 +11,7 @@ import {
   StatusLabel,
   TextAreaField,
 } from '../components/ui';
-import { money, orderStatus } from '../components/support';
+import { money, orderStatus, returnConditionLabel } from '../components/support';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { branches, fixtureAdapter, returnSnapshots } from '../fixtures/adapter';
 import type { DemoScenario, Order } from '../fixtures/types';
@@ -72,16 +72,6 @@ function inspectionLabel(status: string | null | undefined) {
   if (status === 'HAS_DAMAGE') return 'Đã đánh giá · có hư hỏng/thiếu';
   if (status === 'HAS_MISSING_ITEM') return 'Đã đánh giá · có đồ thiếu';
   return status ?? 'Chưa có trạng thái';
-}
-function returnConditionLabel(conditionIn: string | null | undefined) {
-  const labels: Record<string, string> = {
-    NEW: 'Mới',
-    GOOD: 'Tốt',
-    FAIR: 'Khá',
-    POOR: 'Kém',
-    DAMAGED: 'Hư hỏng',
-  };
-  return conditionIn ? labels[conditionIn] ?? 'Chưa ghi nhận' : 'Chưa ghi nhận';
 }
 function refundLabel(status: string) {
   if (status === 'COMPLETED') return 'Máy chủ ghi nhận hoàn tất';
