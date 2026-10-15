@@ -7,6 +7,11 @@ import { pageResult, pagination } from '../../common/http/query.js';
 import { assertPermission, type AuthenticatedActor } from '../auth/authorization.js';
 import { lockUserAuthentication } from '../auth/token.service.js';
 import { lockActiveBranch } from '../branches/branch.service.js';
+import {
+  assertActiveGlobalAdmin,
+  isActiveGlobalAdmin,
+  lockGlobalAdminInvariant,
+} from '../rbac/admin-invariant.js';
 import type { UpdateCustomerInput } from './customer.schema.js';
 
 export type CustomerActor = AuthenticatedActor;
@@ -189,19 +194,51 @@ export async function setCustomerStatus(
   status: 'ACTIVE' | 'INACTIVE',
 ) {
   assertPermission(actor, { module: 'customers', action: 'update' });
-  const customer = await prisma.customer.findUnique({ where: { userId } });
-  if (!customer) throw new AppError(404, 'CUSTOMER_NOT_FOUND', 'Customer not found');
   return prisma.$transaction(async (tx) => {
+    if (status === 'INACTIVE') await lockGlobalAdminInvariant(tx);
     await lockUserAuthentication(tx, userId);
-    const user = await tx.user.update({ where: { id: userId }, data: { status } });
+    const customer = await tx.customer.findUnique({ where: { userId } });
+    if (!customer) throw new AppError(404, 'CUSTOMER_NOT_FOUND', 'Customer not found');
+    const protectsAdmin = status === 'INACTIVE' && (await isActiveGlobalAdmin(tx, userId));
+    const user = await tx.user.update({
+      where: { id: userId },
+      data: { status },
+      select: {
+        id: true,
+        email: true,
+        phone: true,
+        displayName: true,
+        avatarUrl: true,
+        status: true,
+      },
+    });
     if (status === 'INACTIVE') {
       await tx.refreshSession.updateMany({
         where: { userId, revokedAt: null },
         data: { revokedAt: new Date() },
       });
     }
-    return user;
+    if (protectsAdmin) await assertActiveGlobalAdmin(tx);
+    return safeCustomerUser(user);
   });
+}
+
+function safeCustomerUser(user: {
+  id: string;
+  email: string | null;
+  phone: string | null;
+  displayName: string;
+  avatarUrl: string | null;
+  status: string;
+}) {
+  return {
+    id: user.id,
+    email: user.email,
+    phone: user.phone,
+    displayName: user.displayName,
+    avatarUrl: user.avatarUrl,
+    status: user.status,
+  };
 }
 
 function isUniqueConflict(error: unknown) {

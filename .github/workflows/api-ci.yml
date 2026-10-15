@@ -77,6 +77,11 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ci?schema=public
         run: pnpm --filter @costume/api db:migrate:deploy
 
+      - name: Verify PostgreSQL concurrency behavior
+        env:
+          DATABASE_TEST_URL: postgresql://postgres:postgres@localhost:5432/ci?schema=public
+        run: pnpm --filter @costume/api test:postgres
+
       - name: Run verification suite
         run: |
           pnpm --filter @costume/api lint

@@ -58,6 +58,7 @@ const priorityRank: Record<QueueTask['group'], number> = {
   'Trong 2 giờ tới': 1,
   'Chờ xác nhận lâu': 2,
   'Hôm nay': 3,
+  'Ngày khác': 4,
 };
 
 function TabPanel({ tab, children }: { tab: AgentTab; children: ReactNode }) {

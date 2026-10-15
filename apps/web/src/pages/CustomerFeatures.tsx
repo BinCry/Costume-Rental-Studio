@@ -31,7 +31,7 @@ import {
   apiEnabled,
   checkPublicAvailability,
   getOwnCustomerProfile,
-  getPublicVariant,
+  getPublicModelVariants,
   hasAccessToken,
   updateOwnCustomerProfile,
 } from '../api/client';
@@ -40,31 +40,34 @@ import { useBranchOptions } from '../components/useBranchOptions';
 const loadCostumeDetails = (id: string) => async (scenario: DemoScenario): Promise<CostumeDetail[]> => {
   if (!apiEnabled || (!hasAccessToken() && import.meta.env.DEV))
     return studioAdapter.details(scenario);
-  // The public detail endpoint is intentionally unauthenticated. It exposes only
-  // publishable catalog fields; private replacement values and unit identifiers stay
-  // out of the customer page.
-  const variant = await getPublicVariant(id);
+  // The public endpoint exposes only published model and variant data.
+  const variants = await getPublicModelVariants(id);
+  const first = variants[0];
+  if (!first) return [];
+  const image = first.model?.media?.find((media) => media.mediaUrl) ??
+    first.media?.find((media) => media.mediaUrl);
   return [
     {
-      id: variant.id,
-      name: variant.model?.name ?? variant.variantCode,
-      category: variant.model?.category?.name ?? 'Trang phục',
-      description: variant.model?.shortDescription ?? variant.model?.description ?? '',
-      material: variant.model?.material ?? 'Thông tin chất liệu sẽ được xác nhận tại studio.',
+      id,
+      name: first.model?.name ?? first.variantCode,
+      category: first.model?.category?.name ?? 'Trang phục',
+      description: first.model?.shortDescription ?? first.model?.description ?? '',
+      material: first.model?.material ?? 'Thông tin chất liệu sẽ được xác nhận tại studio.',
       accessories: [],
-      imagePosition: 'center',
-      variants: [
-        {
-          code: variant.variantCode,
-          modelId: variant.modelId,
-          size: variant.sizeCode,
-          color: variant.colorCode,
-          edition: variant.editionLabel ?? undefined,
-          fit: variant.fitNotes ?? 'Dáng và số đo được xác nhận khi nhận đồ.',
-          price: Number(variant.dailyRentalPriceVnd),
-          deposit: Number(variant.depositAmountVnd),
-        },
-      ],
+      imagePosition: image?.mediaUrl ? 'center' : 'missing',
+      imageUrl: image?.mediaUrl ?? undefined,
+      imageAlt: image?.altText ?? undefined,
+      variants: variants.map((variant) => ({
+        apiId: variant.id,
+        code: variant.variantCode,
+        modelId: variant.modelId,
+        size: variant.sizeCode,
+        color: variant.colorCode,
+        edition: variant.editionLabel ?? undefined,
+        fit: variant.fitNotes ?? 'Dáng và số đo được xác nhận khi nhận đồ.',
+        price: Number(variant.dailyRentalPriceVnd),
+        deposit: Number(variant.depositAmountVnd),
+      })),
     },
   ];
 };
@@ -103,16 +106,21 @@ export function CostumeDetailPage({
     requestedReturn?.trim() ? requestedReturn : defaultReturn,
   );
   const [photo, setPhoto] = useState(0);
+  const selectedVariant = data?.find((value) => value.id === id)?.variants.find(
+    (value) => value.code === variantCode,
+  ) ?? data?.find((value) => value.id === id)?.variants[0];
+  const apiVariantId = selectedVariant?.apiId;
   const [availabilityResult, setAvailabilityResult] = useState<{
     key: string;
     status: 'available' | 'unavailable' | 'error';
   }>();
-  const availabilityKey = JSON.stringify([id, branch, pickup, due]);
-  const hasAvailabilityInputs = usePublicApi && !!branch && !!pickup && !!due && !!id;
+  const [availabilityRetry, setAvailabilityRetry] = useState(0);
+  const availabilityKey = JSON.stringify([apiVariantId, branch, pickup, due]);
+  const hasAvailabilityInputs = usePublicApi && !!apiVariantId && !!branch && !!pickup && !!due;
   useEffect(() => {
-    if (!hasAvailabilityInputs) return;
+    if (!hasAvailabilityInputs || !apiVariantId) return;
     let active = true;
-    void checkPublicAvailability(id, branch, pickup, due)
+    void checkPublicAvailability(apiVariantId, branch, pickup, due)
       .then((result) => active && setAvailabilityResult({
         key: availabilityKey,
         status: result.available ? 'available' : 'unavailable',
@@ -121,7 +129,7 @@ export function CostumeDetailPage({
     return () => {
       active = false;
     };
-  }, [availabilityKey, branch, due, hasAvailabilityInputs, id, pickup]);
+  }, [availabilityKey, apiVariantId, availabilityRetry, branch, due, hasAvailabilityInputs, pickup]);
   const availability = hasAvailabilityInputs
     ? availabilityResult?.key === availabilityKey ? availabilityResult.status : 'loading'
     : 'idle';
@@ -146,8 +154,8 @@ export function CostumeDetailPage({
               </EmptyState>
             </div>
           );
-        const variant =
-          item.variants.find((value) => value.code === variantCode) ?? item.variants[0];
+        const variant = item.variants.find((value) => value.code === variantCode) ?? item.variants[0];
+        if (!variant) return <EmptyState title="Mẫu này chưa có biến thể để đặt thuê" />;
         const fixtureKnown =
           branch === 'Chi nhánh Quận 1' &&
           pickup === fixturePeriod.pickup &&
@@ -168,24 +176,33 @@ export function CostumeDetailPage({
             </button>
             <div className="costume-detail-grid">
               <div>
-                <div
-                  className={`detail-photo costume-${item.imagePosition} detail-photo-${photo}`}
-                  role="img"
-                  aria-label={`Ảnh minh họa ${item.name}, góc ${photo + 1}`}
-                />
-                <div className="photo-thumbs" aria-label="Chọn góc ảnh minh họa">
-                  {[0, 1, 2].map((n) => (
-                    <button
-                      key={n}
-                      onClick={() => setPhoto(n)}
-                      aria-pressed={photo === n}
-                      aria-label={`Xem ảnh ${n + 1}`}
-                      className={`costume-${item.imagePosition} ${photo === n ? 'selected' : ''}`}
+                <div className={`detail-photo costume-${item.imagePosition} detail-photo-${photo}`}>
+                  {item.imageUrl ? (
+                    <img
+                      src={item.imageUrl}
+                      alt={item.imageAlt ?? item.name}
+                      loading="eager"
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                     />
-                  ))}
+                  ) : (
+                    <span className="sr-only">{item.imagePosition === 'missing' ? 'Chưa có ảnh' : `Ảnh minh họa ${item.name}`}</span>
+                  )}
                 </div>
+                {!item.imageUrl && (
+                  <div className="photo-thumbs" aria-label="Chọn góc ảnh minh họa">
+                    {[0, 1, 2].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setPhoto(n)}
+                        aria-pressed={photo === n}
+                        aria-label={`Xem ảnh ${n + 1}`}
+                        className={`costume-${item.imagePosition} ${photo === n ? 'selected' : ''}`}
+                      />
+                    ))}
+                  </div>
+                )}
                 <p className="muted small-note">
-                  Ảnh biên tập minh họa; ảnh từng biến thể cần kết nối media từ API.
+                  {item.imageUrl ? 'Ảnh do studio cung cấp.' : 'Ảnh trang phục trong bản minh họa.'}
                 </p>
               </div>
               <div>
@@ -249,6 +266,9 @@ export function CostumeDetailPage({
                   )}
                   <Feedback
                     tone={known ? (available ? 'success' : 'warning') : 'info'}
+                    action={availability === 'error' ? (
+                      <Button variant="secondary" onClick={() => setAvailabilityRetry((value) => value + 1)}>Thử lại</Button>
+                    ) : undefined}
                     title={
                       availability === 'loading'
                         ? 'Đang kiểm tra khả dụng'
@@ -256,7 +276,7 @@ export function CostumeDetailPage({
                           ? 'Chưa kiểm tra được khả dụng'
                           : known
                             ? available
-                              ? 'Có khả năng còn bộ theo kỳ mẫu'
+                              ? 'Biến thể này đang có bộ khả dụng theo kỳ đã chọn'
                               : 'Không có bộ phù hợp theo kỳ mẫu'
                             : 'Chưa có dữ liệu khả dụng cho kỳ này'
                     }
@@ -271,7 +291,7 @@ export function CostumeDetailPage({
                     onClick={() =>
                       go('booking', {
                         costume: item.id,
-                        variant: `${variant.size} / ${variant.color}`,
+                        variant: variant.code,
                         branch,
                         pickup,
                         returnAt: due,

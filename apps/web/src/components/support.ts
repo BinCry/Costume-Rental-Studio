@@ -2,6 +2,17 @@ import type { OrderStatus, Tone } from '../fixtures/types';
 
 export const money = (value: number) => `${new Intl.NumberFormat('vi-VN').format(value)} đ`;
 
+export function returnConditionLabel(conditionIn: string | null | undefined) {
+  const labels: Record<string, string> = {
+    NEW: 'Mới',
+    GOOD: 'Tốt',
+    FAIR: 'Khá',
+    POOR: 'Kém',
+    DAMAGED: 'Hư hỏng',
+  };
+  return conditionIn ? labels[conditionIn] ?? 'Chưa ghi nhận' : 'Chưa ghi nhận';
+}
+
 export function defaultRentalDate(daysFromToday: number) {
   const date = new Date();
   date.setDate(date.getDate() + daysFromToday);

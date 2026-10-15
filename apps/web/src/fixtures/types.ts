@@ -38,6 +38,11 @@ export interface CatalogItem {
   depositFrom: number;
   availableAtFixturePeriod: boolean;
   description: string;
+  /** Published image from the catalog API; absent in fixture data. */
+  imageUrl?: string;
+  imageAlt?: string;
+  /** Public variant IDs and price snapshots used by availability checks. */
+  apiVariants?: { id: string; code: string; size: string; color: string; edition?: string; price: number; deposit: number }[];
 }
 
 export interface UnitOption {
@@ -57,8 +62,13 @@ export interface OrderItem {
   apiUnitId?: string;
   /** API-only variant key used to search eligible replacement units. */
   apiVariantId?: string;
+  /** API allocation state is used to offer only units still held by the customer for return. */
+  apiAllocationStatus?: string;
+  apiReturnConditionGrade?: string;
+  apiIsMissing?: boolean;
   accessories?: {
     id: string;
+    name?: string;
     quantityOut: number;
     quantityReturned?: number | null;
   }[];
@@ -85,6 +95,8 @@ export interface Order {
   apiPlannedDueAt?: string;
   dayPolicy: string;
   items: OrderItem[];
+  /** API payments used to distinguish recorded, pending, and remaining amounts at handover. */
+  apiPayments?: { purpose: string; amount: number; status: string; transactionReference?: string | null }[];
   money: MoneyLine[];
   history: string[];
   note: string;
@@ -101,7 +113,7 @@ export interface QueueTask {
   barcode?: string;
   task: string;
   urgency: string;
-  group: 'Quá hạn' | 'Trong 2 giờ tới' | 'Hôm nay' | 'Chờ xác nhận lâu';
+  group: 'Quá hạn' | 'Trong 2 giờ tới' | 'Hôm nay' | 'Ngày khác' | 'Chờ xác nhận lâu';
   kind: 'pending' | 'handover' | 'return' | 'overdue' | 'payment';
   owner: string;
   branch: string;

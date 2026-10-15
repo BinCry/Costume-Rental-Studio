@@ -1450,6 +1450,12 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
     for (const inputItem of input.items) {
       const orderItem = order.items.find((x) => x.id === inputItem.orderItemId)!;
       if (
+        !inputItem.isMissing &&
+        (!inputItem.returnConditionGrade || !inputItem.nextOperationalStatus)
+      )
+        throw new AppError(400, 'INVALID_RETURN_STATUS', 'Returned units require a condition and next status');
+      if (
+        !inputItem.isMissing &&
         inputItem.returnConditionGrade === 'DAMAGED' &&
         inputItem.nextOperationalStatus !== 'REPAIR'
       )
@@ -1480,6 +1486,7 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
           );
       }
       if (
+        !inputItem.isMissing &&
         inputItem.nextOperationalStatus === 'REPAIR' &&
         (!inputItem.repairBlockedUntil || inputItem.repairBlockedUntil <= returnedAt)
       )
@@ -1492,7 +1499,7 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
       await tx.rentalOrderItem.update({
         where: { id: orderItem.id },
         data: {
-          returnConditionGrade: inputItem.returnConditionGrade,
+          returnConditionGrade: inputItem.isMissing ? null : inputItem.returnConditionGrade!,
           isMissing: inputItem.isMissing,
           damageNotes: inputItem.damageNotes ?? null,
           returnEvidenceKey: null,
@@ -1521,9 +1528,9 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
         await tx.costumeUnit.update({
           where: { id: orderItem.unitId! },
           data: {
-            conditionGrade: inputItem.returnConditionGrade,
+            conditionGrade: inputItem.returnConditionGrade!,
             conditionNotes: inputItem.damageNotes ?? null,
-            operationalStatus: inputItem.nextOperationalStatus,
+            operationalStatus: inputItem.nextOperationalStatus!,
           },
         });
       if (!inputItem.isMissing) {
@@ -1645,7 +1652,8 @@ function outstanding(order: Awaited<ReturnType<typeof lockOrder>>) {
     .filter((refund) => ['REQUESTED', 'PROCESSING'].includes(refund.status))
     .reduce((sum, refund) => sum + refund.amountVnd, 0n);
   const rentalRemainingVnd = rentalDue - paidRental;
-  const extraRemainingVnd = extraDue - paidExtra - order.depositDeductionVnd;
+  const extraBalanceVnd = extraDue - paidExtra - order.depositDeductionVnd;
+  const extraRemainingVnd = extraBalanceVnd > 0n ? extraBalanceVnd : 0n;
   const refundRemainingVnd = paidDeposit - order.depositDeductionVnd - refundedVnd;
   return {
     rental: { dueVnd: rentalDue, paidVnd: paidRental, remainingVnd: rentalRemainingVnd },
@@ -1706,17 +1714,24 @@ export async function assessReturn(actor: AuthenticatedActor, id: string, input:
     const wasAssessed = order.inspectionStatus !== 'PENDING_ASSESSMENT';
     if (order.financiallySettledAt)
       throw new AppError(409, 'ASSESSMENT_LOCKED', 'Settlement is already completed');
-    if (
-      order.payments.some(
-        (payment) =>
-          payment.purpose === 'EXTRA' && ['PENDING', 'SUCCEEDED'].includes(payment.status),
-      ) ||
-      order.payments.some((payment) => payment.refunds.length > 0)
-    )
+    const unresolvedExtraPayment = order.payments.some(
+      (payment) =>
+        payment.purpose === 'EXTRA' &&
+        (['PENDING', 'PROCESSING'].includes(payment.status) ||
+          (payment.status === 'SUCCEEDED' &&
+            !!order.returnedAt &&
+            payment.createdAt >= order.returnedAt)),
+    );
+    const unresolvedRefund = order.payments.some((payment) =>
+      payment.refunds.some((refund) =>
+        ['REQUESTED', 'PROCESSING', 'COMPLETED'].includes(refund.status),
+      ),
+    );
+    if (unresolvedExtraPayment || unresolvedRefund)
       throw new AppError(
         409,
         'ASSESSMENT_LOCKED',
-        'Cancel pending extra payments and resolve refunds before changing assessment',
+        'Resolve pending extra payments and refunds before changing assessment',
       );
     assertAssessmentItems(order, input);
     const before = damageDueVnd(order.items);
@@ -1853,10 +1868,12 @@ export async function completeOrder(actor: AuthenticatedActor, id: string, input
     const paidRental = successfulPaymentTotal(order.payments, 'RENTAL');
     const paidExtra = successfulPaymentTotal(order.payments, 'EXTRA');
     const paidDeposit = successfulPaymentTotal(order.payments, 'DEPOSIT');
+    const extraPaymentDue =
+      extraDue > input.depositDeductionVnd ? extraDue - input.depositDeductionVnd : 0n;
     if (
       paidRental < rentalDue ||
       input.depositDeductionVnd > paidDeposit ||
-      paidExtra + input.depositDeductionVnd < extraDue
+      paidExtra !== extraPaymentDue
     )
       throw new AppError(
         409,

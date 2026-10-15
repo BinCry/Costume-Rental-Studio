@@ -391,7 +391,9 @@ export const fixtureAdapter = {
     scenario: DemoScenario,
     options: { customerCode?: string; channel?: string } = {},
   ): Promise<QuoteSnapshot> {
-    if (apiEnabled && hasAccessToken()) {
+    if (apiEnabled && (hasAccessToken() || !import.meta.env.DEV)) {
+      if (!hasAccessToken())
+        throw new FixtureIssue('AUTH_REQUIRED', 'Đăng nhập để lấy báo giá thuê từ máy chủ.');
       try {
         return await getApiQuote(draft, options);
       } catch (error) {
@@ -464,7 +466,9 @@ export const fixtureAdapter = {
     scenario: DemoScenario,
     assignedUnit?: { code: string; id: string },
   ): Promise<string> {
-    if (apiEnabled && hasAccessToken()) {
+    if (apiEnabled && (hasAccessToken() || !import.meta.env.DEV)) {
+      if (!hasAccessToken())
+        throw new FixtureIssue('AUTH_REQUIRED', 'Đăng nhập để gửi yêu cầu thuê lên máy chủ.');
       try {
         return await createApiOrder(draft, quote, assignedUnit);
       } catch (error) {

@@ -25,6 +25,7 @@ import {
   createCustomerInteraction,
   hasAccessToken,
   listCrmCaseHistory,
+  listCustomerRentalHistory,
   listCrmAssignees,
   listCustomerInteractions,
 } from '../api/client';
@@ -80,6 +81,13 @@ export function CrmPage({
   const [busy, setBusy] = useState(false);
   const [apiInteractions, setApiInteractions] = useState<Record<string, string[]>>({});
   const [apiCaseHistory, setApiCaseHistory] = useState<Record<string, string[]>>({});
+  const [apiRentalHistory, setApiRentalHistory] = useState<Record<string, string[]>>({});
+  const [apiRentalHistoryErrors, setApiRentalHistoryErrors] = useState<Record<string, boolean>>({});
+  const [rentalHistoryRetry, setRentalHistoryRetry] = useState(0);
+  const [apiInteractionErrors, setApiInteractionErrors] = useState<Record<string, boolean>>({});
+  const [apiCaseHistoryErrors, setApiCaseHistoryErrors] = useState<Record<string, boolean>>({});
+  const [interactionRetry, setInteractionRetry] = useState(0);
+  const [caseHistoryRetry, setCaseHistoryRetry] = useState(0);
   const [interactionNote, setInteractionNote] = useState('');
   const [interactionType, setInteractionType] = useState<
     'INQUIRY' | 'CONSULTATION' | 'COMPLAINT' | 'FOLLOW_UP' | 'NOTE'
@@ -94,38 +102,64 @@ export function CrmPage({
     useMobileDetailReveal<HTMLDivElement>();
   const { detailRef: caseDetailRef, revealDetail: revealCase } =
     useMobileDetailReveal<HTMLDivElement>();
-  const activeCustomer = realApiMode && data?.length
-    ? data.find((customer) => customer.code === selected) ?? data[0]
+  const visibleApiCustomers = (data ?? []).filter((customer) =>
+    customer.preferredBranch === branch &&
+    `${customer.name} ${customer.phone} ${customer.code}`
+      .toLocaleLowerCase('vi')
+      .includes(search.toLocaleLowerCase('vi')),
+  );
+  const activeCustomer = realApiMode
+    ? visibleApiCustomers.find((customer) => customer.code === selected) ?? visibleApiCustomers[0]
     : undefined;
   const activeCustomerCode = activeCustomer?.code ?? selected;
+  const activeCaseCode = (casesResource.data ?? []).find(
+    (item) => item.customerCode === activeCustomerCode && item.code === caseCode,
+  )?.code ?? (casesResource.data ?? []).find(
+    (item) => item.customerCode === activeCustomerCode,
+  )?.code;
   useEffect(() => {
     if (!realApiMode || !activeCustomer) return;
     let active = true;
+    void listCustomerRentalHistory(activeCustomerCode)
+      .then((items) => {
+        if (active) setApiRentalHistory((current) => ({ ...current, [activeCustomerCode]: items }));
+      })
+      .catch(() => {
+        if (active) setApiRentalHistoryErrors((current) => ({ ...current, [activeCustomerCode]: true }));
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeCustomer, activeCustomerCode, rentalHistoryRetry, realApiMode]);
+  useEffect(() => {
+    if (!realApiMode || !activeCustomer) return;
+    let active = true;
+    const interactionKey = JSON.stringify([activeCustomerCode, branch]);
     void listCustomerInteractions(activeCustomerCode, branch)
       .then((items) => {
-        if (active) setApiInteractions((current) => ({ ...current, [activeCustomerCode]: items }));
+        if (active) setApiInteractions((current) => ({ ...current, [interactionKey]: items }));
       })
       .catch(() => {
-        if (active) setApiInteractions((current) => ({ ...current, [activeCustomerCode]: [] }));
+        if (active) setApiInteractionErrors((current) => ({ ...current, [interactionKey]: true }));
       });
     return () => {
       active = false;
     };
-  }, [activeCustomer, activeCustomerCode, branch, realApiMode]);
+  }, [activeCustomer, activeCustomerCode, branch, interactionRetry, realApiMode]);
   useEffect(() => {
-    if (!realApiMode || !caseCode || !casesResource.data?.some((item) => item.code === caseCode)) return;
+    if (!realApiMode || !activeCaseCode) return;
     let active = true;
-    void listCrmCaseHistory(caseCode)
+    void listCrmCaseHistory(activeCaseCode)
       .then((items) => {
-        if (active) setApiCaseHistory((current) => ({ ...current, [caseCode]: items }));
+        if (active) setApiCaseHistory((current) => ({ ...current, [activeCaseCode]: items }));
       })
       .catch(() => {
-        if (active) setApiCaseHistory((current) => ({ ...current, [caseCode]: [] }));
+        if (active) setApiCaseHistoryErrors((current) => ({ ...current, [activeCaseCode]: true }));
       });
     return () => {
       active = false;
     };
-  }, [caseCode, casesResource.data, realApiMode]);
+  }, [activeCaseCode, caseHistoryRetry, realApiMode]);
   const switchView = (kind: 'customer' | 'case' | 'newCase', code: string) => {
     if (draft) {
       setPendingView({ kind, code });
@@ -133,9 +167,12 @@ export function CrmPage({
     }
     if (kind === 'customer') {
       setSelected(code);
+      setApiRentalHistoryErrors((current) => ({ ...current, [code]: false }));
+      setApiInteractionErrors((current) => ({ ...current, [JSON.stringify([code, branch])]: false }));
       setCaseCode('');
       revealCustomer();
     } else if (kind === 'case') {
+      setApiCaseHistoryErrors((current) => ({ ...current, [code]: false }));
       setCaseCode(code);
       revealCase();
     }
@@ -198,9 +235,11 @@ export function CrmPage({
         interactionType,
         channel: interactionChannel,
       });
+      const interactionKey = JSON.stringify([customerCode, branch]);
+      setApiInteractionErrors((current) => ({ ...current, [interactionKey]: false }));
       setApiInteractions((current) => ({
         ...current,
-        [customerCode]: [line, ...(current[customerCode] ?? [])],
+        [interactionKey]: [line, ...(current[interactionKey] ?? [])],
       }));
       setInteractionNote('');
       setNotice('Đã ghi tương tác vào hồ sơ khách.');
@@ -230,13 +269,13 @@ export function CrmPage({
         );
         const person = visible.find((c) => c.code === activeCustomerCode) ?? visible[0];
         const related = (casesResource.data ?? []).filter((c) => c.customerCode === person?.code);
-        const current = related.find((c) => c.code === caseCode) ?? related[0];
+        const current = related.find((c) => c.code === activeCaseCode) ?? related[0];
         const editing = draft ?? current;
         const personInteractions = person
-          ? apiInteractions[person.code] ?? person.interactions
+          ? apiInteractions[JSON.stringify([person.code, branch])] ?? (realApiMode ? [] : person.interactions)
           : [];
         const currentHistory = current
-          ? apiCaseHistory[current.code] ?? current.history
+          ? apiCaseHistory[current.code] ?? (realApiMode ? [] : current.history)
           : [];
         const eligibleOwners = (employeesResource.data ?? []).filter(
           (employee) =>
@@ -289,6 +328,7 @@ export function CrmPage({
                   {visible.map((c) => (
                     <button
                       className={`feature-list-row selectable ${person?.code === c.code ? 'selected' : ''}`}
+                      aria-pressed={person?.code === c.code}
                       key={c.code}
                       onClick={() => switchView('customer', c.code)}
                     >
@@ -317,9 +357,39 @@ export function CrmPage({
                       ]}
                     />
                     <h3>Lịch sử thuê</h3>
-                    <Timeline items={person.history} />
+                    {realApiMode && (apiRentalHistory[person.code] === undefined && !apiRentalHistoryErrors[person.code]) ? (
+                      <p className="muted" role="status">Đang tải lịch sử thuê…</p>
+                    ) : realApiMode && apiRentalHistoryErrors[person.code] ? (
+                      <Feedback
+                        tone="danger"
+                        title="Chưa tải được lịch sử thuê"
+                        action={<Button variant="secondary" onClick={() => {
+                          setApiRentalHistoryErrors((current) => ({ ...current, [person.code]: false }));
+                          setRentalHistoryRetry((value) => value + 1);
+                        }}>Thử lại</Button>}
+                      >
+                        Kiểm tra quyền xem đơn thuê của tài khoản rồi thử tải lại.
+                      </Feedback>
+                    ) : (
+                      <Timeline items={realApiMode ? apiRentalHistory[person.code] ?? [] : person.history} />
+                    )}
                     <h3>Tương tác</h3>
-                    <Timeline items={personInteractions} />
+                    {realApiMode && (apiInteractions[JSON.stringify([person.code, branch])] === undefined && !apiInteractionErrors[JSON.stringify([person.code, branch])]) ? (
+                      <p className="muted" role="status">Đang tải tương tác…</p>
+                    ) : realApiMode && apiInteractionErrors[JSON.stringify([person.code, branch])] ? (
+                      <Feedback
+                        tone="danger"
+                        title="Chưa tải được lịch sử tương tác"
+                        action={<Button variant="secondary" onClick={() => {
+                          setApiInteractionErrors((current) => ({ ...current, [JSON.stringify([person.code, branch])]: false }));
+                          setInteractionRetry((value) => value + 1);
+                        }}>Thử lại</Button>}
+                      >
+                        Dữ liệu chưa được xác minh; thử tải lại để xem lịch sử mới nhất.
+                      </Feedback>
+                    ) : (
+                      <Timeline items={personInteractions} />
+                    )}
                     {realApiMode && canManage && (
                       <div className="stack-form">
                         <SelectField
@@ -391,6 +461,7 @@ export function CrmPage({
                       {related.map((c) => (
                         <button
                           className={`feature-list-row selectable ${current?.code === c.code ? 'selected' : ''}`}
+                          aria-pressed={current?.code === c.code}
                           key={c.code}
                           onClick={() => switchView('case', c.code)}
                         >
@@ -576,9 +647,22 @@ export function CrmPage({
                       )}
                     </fieldset>
                     <h3>Lịch sử case</h3>
-                    <Timeline items={
-                      editing === current ? currentHistory : editing.history
-                    } />
+                    {realApiMode && editing === current && current && apiCaseHistoryErrors[current.code] ? (
+                      <Feedback
+                        tone="danger"
+                        title="Chưa tải được lịch sử case"
+                        action={<Button variant="secondary" onClick={() => {
+                          setApiCaseHistoryErrors((errors) => ({ ...errors, [current.code]: false }));
+                          setCaseHistoryRetry((value) => value + 1);
+                        }}>Thử lại</Button>}
+                      >
+                        Timeline chưa được tải từ máy chủ.
+                      </Feedback>
+                    ) : realApiMode && editing === current && current && (apiCaseHistory[current.code] === undefined && !apiCaseHistoryErrors[current.code]) ? (
+                      <p className="muted" role="status">Đang tải lịch sử case…</p>
+                    ) : (
+                      <Timeline items={editing === current ? currentHistory : editing.history} />
+                    )}
                   </Panel>
                 ) : (
                   <Panel title="Chi tiết case">
