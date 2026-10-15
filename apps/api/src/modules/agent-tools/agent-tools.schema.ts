@@ -94,7 +94,11 @@ export const agentToolExecutionSchema = z.discriminatedUnion('toolName', [
         reason: z.string().trim().min(1).max(10_000),
         notes: z.string().trim().max(10_000).nullable().optional(),
       })
-      .strict(),
+      .strict()
+      .refine((value) => value.blockedUntil > value.blockedFrom, {
+        path: ['blockedUntil'],
+        message: 'blockedUntil must be after blockedFrom',
+      }),
   }),
   baseCallSchema.extend({
     toolName: z.literal('update_unit_block'),

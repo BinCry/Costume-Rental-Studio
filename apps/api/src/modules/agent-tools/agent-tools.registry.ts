@@ -49,7 +49,7 @@ export const agentToolRegistry: Readonly<Record<AgentToolName, AgentToolDefiniti
   get_unit_schedule: {
     name: 'get_unit_schedule',
     mode: 'read',
-    requiredPermission: { module: 'scheduling', action: 'read' },
+    requiredPermission: { module: 'inventory', action: 'read' },
     retrySafe: true,
     featureFlag: 'AGENT_READ_TOOLS_ENABLED',
   },
@@ -91,21 +91,21 @@ export const agentToolRegistry: Readonly<Record<AgentToolName, AgentToolDefiniti
   create_unit_block: {
     name: 'create_unit_block',
     mode: 'write',
-    requiredPermission: { module: 'scheduling', action: 'manage' },
+    requiredPermission: { module: 'inventory', action: 'manage' },
     retrySafe: false,
     featureFlag: 'AGENT_SCHEDULING_WRITE_ENABLED',
   },
   update_unit_block: {
     name: 'update_unit_block',
     mode: 'write',
-    requiredPermission: { module: 'scheduling', action: 'manage' },
+    requiredPermission: { module: 'inventory', action: 'manage' },
     retrySafe: false,
     featureFlag: 'AGENT_SCHEDULING_WRITE_ENABLED',
   },
   cancel_unit_block: {
     name: 'cancel_unit_block',
     mode: 'write',
-    requiredPermission: { module: 'scheduling', action: 'manage' },
+    requiredPermission: { module: 'inventory', action: 'manage' },
     retrySafe: false,
     featureFlag: 'AGENT_SCHEDULING_WRITE_ENABLED',
   },
