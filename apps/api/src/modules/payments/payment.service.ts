@@ -146,7 +146,7 @@ async function lockRefund(tx: Prisma.TransactionClient, refundId: string) {
 function assertPaymentOrderStatus(
   status: string,
   purpose: CreatePaymentInput['purpose'],
-  inspectionStatus?: string,
+  inspectionStatus?: string | null,
 ) {
   if (terminalOrderStatuses.includes(status))
     throw new AppError(409, 'PAYMENT_NOT_ALLOWED', 'Payments are not allowed for a terminal order');
@@ -653,8 +653,17 @@ export async function prepareSettlement(
     const hasFinancialActivity =
       order.payments.some(
         (payment) =>
-          payment.purpose === 'EXTRA' && ['PENDING', 'SUCCEEDED'].includes(payment.status),
-      ) || order.payments.some((payment) => payment.refunds.length > 0);
+          payment.purpose === 'EXTRA' &&
+          (['PENDING', 'PROCESSING'].includes(payment.status) ||
+            (payment.status === 'SUCCEEDED' &&
+              !!order.returnedAt &&
+              payment.createdAt >= order.returnedAt)),
+      ) ||
+      order.payments.some((payment) =>
+        payment.refunds.some((refund) =>
+          ['REQUESTED', 'PROCESSING', 'COMPLETED'].includes(refund.status),
+        ),
+      );
     const settlementChanged =
       order.otherFeeVnd !== input.otherFeeVnd ||
       order.depositDeductionVnd !== input.depositDeductionVnd ||
@@ -663,7 +672,7 @@ export async function prepareSettlement(
       throw new AppError(
         409,
         'SETTLEMENT_LOCKED',
-        'Settlement cannot change after an extra payment or refund exists',
+        'Settlement cannot change after a pending or post-return extra payment or an active refund exists',
       );
     return tx.rentalOrder.update({
       where: { id: order.id },
