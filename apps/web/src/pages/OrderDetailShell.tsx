@@ -1131,30 +1131,45 @@ export function OrderDetailShell({
         selectedReturnItems.map(async (item) => {
           const isMissing = !!missingItems[item.id];
           return {
-          orderItemId: item.id,
-          ...(isMissing ? {} : {
-            returnConditionGrade: (['NEW', 'GOOD', 'FAIR', 'POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')
-              ? returnConditions[item.id]
-              : returnConditions[item.id] === 'PENDING_ASSESSMENT' ? 'FAIR' : 'GOOD') as 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED',
-          }),
-          isMissing,
-          damageNotes: isMissing ? missingNotes[item.id]?.trim() : needsAssessment ? note.trim() : undefined,
-          ...(!isMissing ? {
-            nextOperationalStatus: ['POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '') ? 'REPAIR' as const : 'CLEANING' as const,
-            repairBlockedUntil: ['POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')
-              ? new Date(repairBlockedUntil[item.id]).toISOString()
-              : undefined,
-          } : {}),
-          evidence: await uploadEvidence(item.id, 'RETURN'),
-          accessories: (item.accessories ?? []).map((accessory) => {
-            const review = returnAccessories[`${item.id}:${accessory.id}`];
-            const quantityReturned = Number(review?.quantityReturned);
-            return {
-              accessoryId: accessory.id,
-              quantityReturned,
-              conditionIn: quantityReturned > 0 ? review?.conditionIn as 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED' : null,
-            };
-          }),
+            orderItemId: item.id,
+            ...(isMissing
+              ? {}
+              : {
+                  returnConditionGrade: (['NEW', 'GOOD', 'FAIR', 'POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')
+                    ? returnConditions[item.id]
+                    : returnConditions[item.id] === 'PENDING_ASSESSMENT'
+                      ? 'FAIR'
+                      : 'GOOD') as 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED',
+                }),
+            isMissing,
+            damageNotes: isMissing
+              ? missingNotes[item.id]?.trim()
+              : needsAssessment
+                ? note.trim()
+                : undefined,
+            ...(!isMissing
+              ? {
+                  nextOperationalStatus: ['POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')
+                    ? 'REPAIR' as const
+                    : 'CLEANING' as const,
+                  repairBlockedUntil: ['POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '')
+                    ? new Date(repairBlockedUntil[item.id]).toISOString()
+                    : undefined,
+                }
+              : {}),
+            evidence: await uploadEvidence(item.id, 'RETURN'),
+            accessories: (item.accessories ?? []).map((accessory) => {
+              const review = returnAccessories[`${item.id}:${accessory.id}`];
+              const quantityReturned = Number(review?.quantityReturned);
+              return {
+                accessoryId: accessory.id,
+                quantityReturned,
+                conditionIn:
+                  quantityReturned > 0
+                    ? (review?.conditionIn as 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED')
+                    : null,
+              };
+            }),
           };
         }),
       );
@@ -1387,7 +1402,12 @@ export function OrderDetailShell({
                   </span>
                 </Feedback>
               )}
-              <div className="expected-units">
+              <div
+                className="expected-units"
+                role="status"
+                aria-live="polite"
+                aria-label={mode === 'return' ? 'Mã bộ và tình trạng nhận trả' : 'Mã bộ cần đối chiếu'}
+              >
                 <span>{mode === 'return' ? 'Mã bộ và trạng thái xử lý:' : 'Mã cần đối chiếu:'}</span>
                 {operationItems.map((item) => (
                   <span
