@@ -22,8 +22,9 @@ vi.mock('../src/modules/branches/branch.service.js', () => ({
 
 const service = await import('../src/modules/staff/staff.service.js');
 
+const actorId = '10000000-0000-4000-8000-000000000001';
 const actor = {
-  id: '10000000-0000-4000-8000-000000000001',
+  id: actorId,
   status: 'ACTIVE',
   employee: { employmentStatus: 'ACTIVE' },
   roleAssignments: [
@@ -131,7 +132,7 @@ describe('staff service', () => {
       joinedAt: new Date('2026-10-15T00:00:00.000Z'),
       activatedAt: null,
       terminatedAt: null,
-      createdBy: actor.id,
+      createdBy: actorId,
     };
     const createUser = vi.fn().mockResolvedValue({
       id: userId,
@@ -165,7 +166,7 @@ describe('staff service', () => {
       employeeCode: 'emp-new',
       joinedAt: employee.joinedAt,
       assignments: [{ roleId, branchId: null }],
-    } as never);
+    });
 
     expect(result).toMatchObject({
       id: userId,
@@ -176,25 +177,38 @@ describe('staff service', () => {
     expect(JSON.stringify(result)).not.toMatch(
       /passwordHash|emailVerifiedAt|phoneVerifiedAt|createdBy/,
     );
-    expect(createUser).toHaveBeenCalledWith(
-      expect.objectContaining({
-        select: expect.objectContaining({
-          id: true,
-          email: true,
-          status: true,
-          employee: {
-            select: {
-              userId: true,
-              employeeCode: true,
-              employmentStatus: true,
-              joinedAt: true,
-              activatedAt: true,
-              terminatedAt: true,
-            },
-          },
-        }),
-      }),
-    );
+    const createArgs = createUser.mock.calls[0]?.[0] as {
+      select: {
+        id: boolean;
+        email: boolean;
+        status: boolean;
+        employee: {
+          select: {
+            userId: boolean;
+            employeeCode: boolean;
+            employmentStatus: boolean;
+            joinedAt: boolean;
+            activatedAt: boolean;
+            terminatedAt: boolean;
+          };
+        };
+      };
+    };
+    expect(createArgs.select).toEqual({
+      id: true,
+      email: true,
+      status: true,
+      employee: {
+        select: {
+          userId: true,
+          employeeCode: true,
+          employmentStatus: true,
+          joinedAt: true,
+          activatedAt: true,
+          terminatedAt: true,
+        },
+      },
+    });
   });
 
 });
