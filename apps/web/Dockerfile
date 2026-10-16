@@ -13,6 +13,8 @@ COPY apps/web apps/web
 
 ARG VITE_API_URL=https://studio.api.bincrydev.id.vn
 ENV VITE_API_URL=$VITE_API_URL
+ARG VITE_OPS_AGENT_MODE=fixture
+ENV VITE_OPS_AGENT_MODE=$VITE_OPS_AGENT_MODE
 
 RUN pnpm --filter @costume/web build
 

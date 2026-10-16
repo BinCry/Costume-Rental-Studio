@@ -41,8 +41,165 @@ afterEach(() => {
 });
 
 describe('web API client session and error handling', () => {
+  it('sends Ops Agent chat through the authenticated public Agent endpoint', async () => {
+    const agentResult = {
+      caseId: '10000000-0000-4000-8000-000000000001',
+      state: 'SUCCEEDED',
+      message: 'Đơn đang chờ xác nhận.',
+      evidence: [
+        {
+          sourceType: 'live_tool',
+          sourceId: 'get_rental_order',
+          citation: 'RT-TEST-01 · phiên bản 2',
+          observedAt: '2026-10-17T09:00:00.000Z',
+        },
+      ],
+      completed: true,
+    };
+    values.set(accessTokenKey, 'studio-access-token');
+    globalThis.fetch.mockResolvedValueOnce(success(agentResult));
+    const { sendOpsAgentMessage } = await import('../src/api/client.ts');
+
+    await expect(
+      sendOpsAgentMessage('Kiểm tra đơn RT-TEST-01', agentResult.caseId),
+    ).resolves.toEqual(agentResult);
+
+    const [url, init] = globalThis.fetch.mock.calls[0];
+    expect(new URL(url).pathname).toBe('/api/v1/agent/messages');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({
+      message: 'Kiểm tra đơn RT-TEST-01',
+      caseId: agentResult.caseId,
+    });
+    expect(new Headers(init.headers).get('Authorization')).toBe('Bearer studio-access-token');
+  });
+
+  it('explains an unconfigured Agent service without falling back to fixture answers', async () => {
+    globalThis.fetch.mockResolvedValueOnce(error(503, 'AI_SERVICE_NOT_CONFIGURED', 'Unavailable'));
+    const { sendOpsAgentMessage } = await import('../src/api/client.ts');
+
+    await expect(sendOpsAgentMessage('Quy trình nhận đồ trả là gì?')).rejects.toMatchObject({
+      status: 503,
+      code: 'AI_SERVICE_NOT_CONFIGURED',
+      message:
+        'Ops Agent chưa được cấu hình dịch vụ AI. Hãy giữ nguyên câu hỏi và kiểm tra cấu hình máy chủ.',
+    });
+  });
+
+  it('loads Agent case state and exposes only the current case actions supported by Studio API', async () => {
+    const result = {
+      caseId: '10000000-0000-4000-8000-000000000002',
+      state: 'WAITING_CONFIRMATION',
+      message: 'Đang chờ người vận hành xác nhận.',
+      evidence: [],
+      pendingConfirmation: {
+        confirmationId: '10000000-0000-4000-8000-000000000003',
+        summary: 'Tạo yêu cầu chặn lịch vệ sinh.',
+        expiresAt: '2026-10-17T10:00:00.000Z',
+      },
+      completed: false,
+    };
+    values.set(accessTokenKey, 'studio-access-token');
+    globalThis.fetch
+      .mockResolvedValueOnce(success(result))
+      .mockResolvedValueOnce(
+        success({ ...result, state: 'WAITING_APPROVAL', pendingConfirmation: null }),
+      )
+      .mockResolvedValueOnce(
+        success({ ...result, state: 'REJECTED', pendingConfirmation: null, completed: true }),
+      )
+      .mockResolvedValueOnce(
+        success({ ...result, state: 'SUCCEEDED', pendingConfirmation: null, completed: true }),
+      )
+      .mockResolvedValueOnce(
+        success({ ...result, state: 'REJECTED', pendingConfirmation: null, completed: true }),
+      )
+      .mockResolvedValueOnce(
+        success({ ...result, state: 'CANCELLED', pendingConfirmation: null, completed: true }),
+      );
+    const {
+      getOpsAgentCase,
+      confirmOpsAgentCase,
+      rejectOpsAgentConfirmation,
+      approveOpsAgentAction,
+      rejectOpsAgentAction,
+      cancelOpsAgentCase,
+    } = await import('../src/api/client.ts');
+
+    await expect(getOpsAgentCase(result.caseId)).resolves.toEqual(result);
+    await confirmOpsAgentCase(result.caseId, result.pendingConfirmation.confirmationId);
+    await rejectOpsAgentConfirmation(result.caseId, result.pendingConfirmation.confirmationId);
+    await approveOpsAgentAction('10000000-0000-4000-8000-000000000004');
+    await rejectOpsAgentAction('10000000-0000-4000-8000-000000000005');
+    await cancelOpsAgentCase(result.caseId);
+
+    expect(
+      globalThis.fetch.mock.calls.map(([url, init]) => [new URL(url).pathname, init.method]),
+    ).toEqual([
+      ['/api/v1/agent/cases/' + result.caseId, undefined],
+      [
+        '/api/v1/agent/cases/' +
+          result.caseId +
+          '/confirmations/' +
+          result.pendingConfirmation.confirmationId +
+          '/confirm',
+        'POST',
+      ],
+      [
+        '/api/v1/agent/cases/' +
+          result.caseId +
+          '/confirmations/' +
+          result.pendingConfirmation.confirmationId +
+          '/reject',
+        'POST',
+      ],
+      ['/api/v1/agent/approvals/10000000-0000-4000-8000-000000000004/approve', 'POST'],
+      ['/api/v1/agent/approvals/10000000-0000-4000-8000-000000000005/reject', 'POST'],
+      ['/api/v1/agent/cases/' + result.caseId + '/cancel', 'POST'],
+    ]);
+    expect(JSON.parse(globalThis.fetch.mock.calls[3][1].body)).toEqual({});
+    expect(JSON.parse(globalThis.fetch.mock.calls[4][1].body)).toEqual({});
+    for (const [, init] of globalThis.fetch.mock.calls) {
+      expect(new Headers(init.headers).get('Authorization')).toBe('Bearer studio-access-token');
+    }
+  });
+
+  it('asks the live knowledge answer endpoint and preserves citation metadata', async () => {
+    const answer = {
+      outcome: 'answered',
+      answer: 'Đây là câu trả lời có căn cứ.',
+      provisional: true,
+      sources: [
+        {
+          documentId: 'policy-doc-1',
+          heading: 'Chính sách trả đồ',
+          citation: 'Mục 4 · trang 2',
+          domain: 'staff_internal',
+          status: 'UNVERIFIED',
+          businessAuthority: false,
+        },
+      ],
+    };
+    values.set(accessTokenKey, 'studio-access-token');
+    globalThis.fetch.mockResolvedValueOnce(success({ result: answer }));
+    const { answerOpsKnowledge } = await import('../src/api/client.ts');
+
+    await expect(answerOpsKnowledge('Chính sách trả đồ?', 4)).resolves.toEqual(answer);
+
+    const [url, init] = globalThis.fetch.mock.calls[0];
+    expect(new URL(url).pathname).toBe('/api/v1/knowledge/answer');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ query: 'Chính sách trả đồ?', topK: 4 });
+    expect(new Headers(init.headers).get('Authorization')).toBe('Bearer studio-access-token');
+  });
+
   it('groups public catalog variants under one model and follows API pagination', async () => {
-    const model = { id: 'model-1', name: 'Đầm thử', category: { name: 'Đầm' }, media: [{ mediaUrl: 'https://img.example.test/dam.jpg', altText: 'Đầm xanh' }] };
+    const model = {
+      id: 'model-1',
+      name: 'Đầm thử',
+      category: { name: 'Đầm' },
+      media: [{ mediaUrl: 'https://img.example.test/dam.jpg', altText: 'Đầm xanh' }],
+    };
     const variant = (id, size, code) => ({
       id,
       modelId: 'model-1',
@@ -54,14 +211,18 @@ describe('web API client session and error handling', () => {
       model,
     });
     globalThis.fetch
-      .mockResolvedValueOnce(success({
-        items: [variant('variant-s', 'S', 'DAM-S-XANH')],
-        pagination: { page: 1, pageSize: 1, totalItems: 2, totalPages: 2 },
-      }))
-      .mockResolvedValueOnce(success({
-        items: [variant('variant-m', 'M', 'DAM-M-XANH')],
-        pagination: { page: 2, pageSize: 1, totalItems: 2, totalPages: 2 },
-      }));
+      .mockResolvedValueOnce(
+        success({
+          items: [variant('variant-s', 'S', 'DAM-S-XANH')],
+          pagination: { page: 1, pageSize: 1, totalItems: 2, totalPages: 2 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        success({
+          items: [variant('variant-m', 'M', 'DAM-M-XANH')],
+          pagination: { page: 2, pageSize: 1, totalItems: 2, totalPages: 2 },
+        }),
+      );
     const { listCatalog } = await import('../src/api/client.ts');
 
     const catalog = await listCatalog();
@@ -80,37 +241,45 @@ describe('web API client session and error handling', () => {
   });
 
   it('maps the rental accessory row id and allocation status for return scanning', async () => {
-    globalThis.fetch.mockResolvedValueOnce(success({
-      items: [{
-        id: 'order-1',
-        orderCode: 'RT-TEST-01',
-        status: 'ACTIVE',
-        version: 3,
-        plannedStartAt: '2026-10-14T03:00:00.000Z',
-        plannedDueAt: '2026-10-15T03:00:00.000Z',
-        pickupBranch: { id: 'branch-1', name: 'Chi nhánh Quận 1' },
-        items: [{
-          id: 'order-item-1',
-          allocationStatus: 'ACTIVE',
-          returnConditionGrade: null,
-          variantId: 'variant-1',
-          variant: { sizeCode: 'M', colorCode: 'Đỏ', model: { name: 'Đầm thử' } },
-          unit: { id: 'unit-1', unitCode: 'BC-TEST-01', operationalStatus: 'ACTIVE' },
-          unitDailyPriceVnd: 100000,
-          unitDepositVnd: 300000,
-          billableDays: 1,
-          accessories: [{
-            id: 'rental-accessory-row-1',
-            modelAccessoryId: 'catalog-accessory-id',
-            accessoryName: 'Khăn',
-            quantityOut: 1,
-            quantityReturned: null,
-          }],
-        }],
-        payments: [],
-      }],
-      pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
-    }));
+    globalThis.fetch.mockResolvedValueOnce(
+      success({
+        items: [
+          {
+            id: 'order-1',
+            orderCode: 'RT-TEST-01',
+            status: 'ACTIVE',
+            version: 3,
+            plannedStartAt: '2026-10-14T03:00:00.000Z',
+            plannedDueAt: '2026-10-15T03:00:00.000Z',
+            pickupBranch: { id: 'branch-1', name: 'Chi nhánh Quận 1' },
+            items: [
+              {
+                id: 'order-item-1',
+                allocationStatus: 'ACTIVE',
+                returnConditionGrade: null,
+                variantId: 'variant-1',
+                variant: { sizeCode: 'M', colorCode: 'Đỏ', model: { name: 'Đầm thử' } },
+                unit: { id: 'unit-1', unitCode: 'BC-TEST-01', operationalStatus: 'ACTIVE' },
+                unitDailyPriceVnd: 100000,
+                unitDepositVnd: 300000,
+                billableDays: 1,
+                accessories: [
+                  {
+                    id: 'rental-accessory-row-1',
+                    modelAccessoryId: 'catalog-accessory-id',
+                    accessoryName: 'Khăn',
+                    quantityOut: 1,
+                    quantityReturned: null,
+                  },
+                ],
+              },
+            ],
+            payments: [],
+          },
+        ],
+        pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+      }),
+    );
     const { listOrders } = await import('../src/api/client.ts');
 
     const [order] = await listOrders({ loadPendingAvailability: false });
@@ -135,10 +304,12 @@ describe('web API client session and error handling', () => {
       payments: [],
     };
     globalThis.fetch
-      .mockResolvedValueOnce(success({
-        items: [order],
-        pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
-      }))
+      .mockResolvedValueOnce(
+        success({
+          items: [order],
+          pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+        }),
+      )
       .mockResolvedValueOnce(success({ id: 'payment-1' }))
       .mockResolvedValueOnce(success({ id: 'payment-1' }))
       .mockResolvedValueOnce(success({ id: 'payment-2' }));
@@ -168,40 +339,50 @@ describe('web API client session and error handling', () => {
       payments: [],
     };
     globalThis.fetch
-      .mockResolvedValueOnce(success({
-        items: [order],
-        pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
-      }))
+      .mockResolvedValueOnce(
+        success({
+          items: [order],
+          pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+        }),
+      )
       .mockResolvedValueOnce(success({ ...order, status: 'RETURN_INSPECTION', version: 5 }));
     const { listOrders, returnOrder } = await import('../src/api/client.ts');
     await listOrders({ loadPendingAvailability: false });
-    await returnOrder('RT-MISSING-01', 4, false, 'Đã xác minh với khách', [{
-      orderItemId: 'item-1',
-      isMissing: true,
-      damageNotes: 'Khách báo thất lạc trong quá trình sử dụng.',
-      evidence: [{
-        uploadKey: 'rental-staging/case.jpg',
-        contentType: 'image/jpeg',
-        size: 10,
-      }],
-      accessories: [],
-    }]);
+    await returnOrder('RT-MISSING-01', 4, false, 'Đã xác minh với khách', [
+      {
+        orderItemId: 'item-1',
+        isMissing: true,
+        damageNotes: 'Khách báo thất lạc trong quá trình sử dụng.',
+        evidence: [
+          {
+            uploadKey: 'rental-staging/case.jpg',
+            contentType: 'image/jpeg',
+            size: 10,
+          },
+        ],
+        accessories: [],
+      },
+    ]);
 
     expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body)).toEqual({
       expectedVersion: 4,
       partial: false,
       returnNotes: 'Đã xác minh với khách',
-      items: [{
-        orderItemId: 'item-1',
-        isMissing: true,
-        damageNotes: 'Khách báo thất lạc trong quá trình sử dụng.',
-        evidence: [{
-          uploadKey: 'rental-staging/case.jpg',
-          contentType: 'image/jpeg',
-          size: 10,
-        }],
-        accessories: [],
-      }],
+      items: [
+        {
+          orderItemId: 'item-1',
+          isMissing: true,
+          damageNotes: 'Khách báo thất lạc trong quá trình sử dụng.',
+          evidence: [
+            {
+              uploadKey: 'rental-staging/case.jpg',
+              contentType: 'image/jpeg',
+              size: 10,
+            },
+          ],
+          accessories: [],
+        },
+      ],
     });
   });
 
@@ -209,12 +390,14 @@ describe('web API client session and error handling', () => {
     const fetchMock = globalThis.fetch;
     fetchMock
       .mockResolvedValueOnce(success({ accessToken: 'access-1', user: { id: 'user-1' } }))
-      .mockResolvedValueOnce(success({
-        id: 'user-1',
-        displayName: 'Khách thử nghiệm',
-        email: 'khach@example.com',
-        roles: [],
-      }));
+      .mockResolvedValueOnce(
+        success({
+          id: 'user-1',
+          displayName: 'Khách thử nghiệm',
+          email: 'khach@example.com',
+          roles: [],
+        }),
+      );
 
     const { login, currentUser } = await import('../src/api/client.ts');
     await login('khach@example.com', 'password-test');
@@ -227,13 +410,17 @@ describe('web API client session and error handling', () => {
       email: 'khach@example.com',
       password: 'password-test',
     });
-    expect(new Headers(fetchMock.mock.calls[1][1].headers).get('Authorization')).toBe('Bearer access-1');
+    expect(new Headers(fetchMock.mock.calls[1][1].headers).get('Authorization')).toBe(
+      'Bearer access-1',
+    );
   });
 
   it('maps validation errors to a safe Vietnamese message and keeps structured details', async () => {
-    globalThis.fetch.mockResolvedValueOnce(error(422, 'VALIDATION_ERROR', 'Email chưa hợp lệ', {
-      email: 'Kiểm tra định dạng email',
-    }));
+    globalThis.fetch.mockResolvedValueOnce(
+      error(422, 'VALIDATION_ERROR', 'Email chưa hợp lệ', {
+        email: 'Kiểm tra định dạng email',
+      }),
+    );
     const { ApiClientError, login } = await import('../src/api/client.ts');
 
     await expect(login('sai-email', 'password-test')).rejects.toMatchObject({
@@ -246,7 +433,9 @@ describe('web API client session and error handling', () => {
   });
 
   it('handles a non-JSON server error without exposing its body', async () => {
-    globalThis.fetch.mockResolvedValueOnce(new Response('<html>secret stack trace</html>', { status: 502 }));
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response('<html>secret stack trace</html>', { status: 502 }),
+    );
     const { login } = await import('../src/api/client.ts');
 
     await expect(login('khach@example.com', 'password-test')).rejects.toMatchObject({
@@ -260,12 +449,14 @@ describe('web API client session and error handling', () => {
     globalThis.fetch
       .mockResolvedValueOnce(error(401, 'SESSION_EXPIRED', 'Phiên hết hạn'))
       .mockResolvedValueOnce(success({ accessToken: 'access-refreshed' }))
-      .mockResolvedValueOnce(success({
-        id: 'user-1',
-        displayName: 'Khách thử nghiệm',
-        email: 'khach@example.com',
-        roles: [],
-      }));
+      .mockResolvedValueOnce(
+        success({
+          id: 'user-1',
+          displayName: 'Khách thử nghiệm',
+          email: 'khach@example.com',
+          roles: [],
+        }),
+      );
 
     const { currentUser } = await import('../src/api/client.ts');
     const user = await currentUser();
@@ -310,20 +501,29 @@ describe('web API client session and error handling', () => {
       orderId: 'order-1',
       status: 'RETURN_INSPECTION',
       rental: { dueVnd: '0', paidVnd: '0', remainingVnd: '0' },
-      deposit: { dueVnd: '0', paidVnd: '0', deductionVnd: '0', refundedVnd: '0', refundRemainingVnd: '0' },
+      deposit: {
+        dueVnd: '0',
+        paidVnd: '0',
+        deductionVnd: '0',
+        refundedVnd: '0',
+        refundRemainingVnd: '0',
+      },
       extra: { dueVnd: '0', paidVnd: '0', remainingVnd: '0' },
       outstandingVnd: '0',
       canPickup: true,
       canComplete: false,
     };
     globalThis.fetch
-      .mockResolvedValueOnce(success({
-        items: [{ ...order, items: [] }],
-        pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
-      }))
+      .mockResolvedValueOnce(
+        success({
+          items: [{ ...order, items: [] }],
+          pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+        }),
+      )
       .mockResolvedValueOnce(success(order))
       .mockResolvedValueOnce(success(snapshot));
-    const { ApiClientError, completeOrderSettlement, listOrders } = await import('../src/api/client.ts');
+    const { ApiClientError, completeOrderSettlement, listOrders } =
+      await import('../src/api/client.ts');
     await listOrders({ loadPendingAvailability: false });
 
     await expect(completeOrderSettlement('RT-TEST-01')).rejects.toMatchObject({
@@ -357,17 +557,25 @@ describe('web API client session and error handling', () => {
       orderId: 'order-1',
       status: 'RETURN_INSPECTION',
       rental: { dueVnd: '0', paidVnd: '0', remainingVnd: '0' },
-      deposit: { dueVnd: '0', paidVnd: '0', deductionVnd: '9007199254740993', refundedVnd: '0', refundRemainingVnd: '0' },
+      deposit: {
+        dueVnd: '0',
+        paidVnd: '0',
+        deductionVnd: '9007199254740993',
+        refundedVnd: '0',
+        refundRemainingVnd: '0',
+      },
       extra: { dueVnd: '0', paidVnd: '0', remainingVnd: '0' },
       outstandingVnd: '0',
       canPickup: true,
       canComplete: true,
     };
     globalThis.fetch
-      .mockResolvedValueOnce(success({
-        items: [{ ...order, items: [] }],
-        pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
-      }))
+      .mockResolvedValueOnce(
+        success({
+          items: [{ ...order, items: [] }],
+          pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+        }),
+      )
       .mockResolvedValueOnce(success(order))
       .mockResolvedValueOnce(success(snapshot))
       .mockResolvedValueOnce(success({ ...order, status: 'COMPLETED', version: 8 }));
@@ -406,31 +614,41 @@ describe('web API client session and error handling', () => {
       payments: [],
     };
     globalThis.fetch
-      .mockResolvedValueOnce(success({
-        items: [order],
-        pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
-      }))
+      .mockResolvedValueOnce(
+        success({
+          items: [order],
+          pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+        }),
+      )
       .mockResolvedValueOnce(success({ ...order, version: 6 }));
     const { assessOrderReturn, listOrders } = await import('../src/api/client.ts');
     await listOrders({ loadPendingAvailability: false });
-    await assessOrderReturn('RT-TEST-04', 5, [{
-      orderItemId: 'item-1',
-      damageFeeVnd: '1200',
-      missingFeeVnd: '0',
-      accessories: [{ accessoryId: 'rental-accessory-row-1', damageFeeVnd: '0', missingFeeVnd: '250' }],
-    }]);
+    await assessOrderReturn('RT-TEST-04', 5, [
+      {
+        orderItemId: 'item-1',
+        damageFeeVnd: '1200',
+        missingFeeVnd: '0',
+        accessories: [
+          { accessoryId: 'rental-accessory-row-1', damageFeeVnd: '0', missingFeeVnd: '250' },
+        ],
+      },
+    ]);
 
     expect(globalThis.fetch.mock.calls[1][0]).toBe(
       'https://api.example.test/api/v1/rentals/orders/order-1/assessment',
     );
     expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body)).toEqual({
       expectedVersion: 5,
-      items: [{
-        orderItemId: 'item-1',
-        damageFeeVnd: '1200',
-        missingFeeVnd: '0',
-        accessories: [{ accessoryId: 'rental-accessory-row-1', damageFeeVnd: '0', missingFeeVnd: '250' }],
-      }],
+      items: [
+        {
+          orderItemId: 'item-1',
+          damageFeeVnd: '1200',
+          missingFeeVnd: '0',
+          accessories: [
+            { accessoryId: 'rental-accessory-row-1', damageFeeVnd: '0', missingFeeVnd: '250' },
+          ],
+        },
+      ],
     });
   });
 
@@ -449,24 +667,30 @@ describe('web API client session and error handling', () => {
     const detail = {
       ...listedOrder,
       inspectionStatus: 'PENDING_ASSESSMENT',
-      items: [{
-        id: 'order-item-1',
-        accessories: [{
-          id: 'accessory-row-1',
-          accessoryName: 'Khăn choàng',
-          quantityOut: 2,
-          quantityReturned: 1,
-          conditionIn: 'FAIR',
-          damageFeeVnd: '0',
-          missingFeeVnd: '0',
-        }],
-      }],
+      items: [
+        {
+          id: 'order-item-1',
+          accessories: [
+            {
+              id: 'accessory-row-1',
+              accessoryName: 'Khăn choàng',
+              quantityOut: 2,
+              quantityReturned: 1,
+              conditionIn: 'FAIR',
+              damageFeeVnd: '0',
+              missingFeeVnd: '0',
+            },
+          ],
+        },
+      ],
     };
     globalThis.fetch
-      .mockResolvedValueOnce(success({
-        items: [listedOrder],
-        pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
-      }))
+      .mockResolvedValueOnce(
+        success({
+          items: [listedOrder],
+          pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+        }),
+      )
       .mockResolvedValueOnce(success(detail));
     const { getReturnSettlementOrder, listOrders } = await import('../src/api/client.ts');
     await listOrders({ loadPendingAvailability: false });
@@ -496,13 +720,22 @@ describe('web API client session and error handling', () => {
       payments: [],
     };
     globalThis.fetch
-      .mockResolvedValueOnce(success({
-        items: [order],
-        pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
-      }))
-      .mockResolvedValueOnce(success([{
-        id: 'refund-1', paymentId: 'payment-1', amountVnd: '5000', status: 'PROCESSING',
-      }]));
+      .mockResolvedValueOnce(
+        success({
+          items: [order],
+          pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        success([
+          {
+            id: 'refund-1',
+            paymentId: 'payment-1',
+            amountVnd: '5000',
+            status: 'PROCESSING',
+          },
+        ]),
+      );
     const { listOrderRefunds, listOrders } = await import('../src/api/client.ts');
     await listOrders({ loadPendingAvailability: false });
     await expect(listOrderRefunds('RT-TEST-05')).resolves.toMatchObject([
@@ -528,14 +761,22 @@ describe('web API client session and error handling', () => {
       payments: [],
     };
     globalThis.fetch
-      .mockResolvedValueOnce(success({
-        items: [order],
-        pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
-      }))
+      .mockResolvedValueOnce(
+        success({
+          items: [order],
+          pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+        }),
+      )
       .mockResolvedValueOnce(success({ ...order, version: 3 }));
     const { listOrders, prepareOrderSettlement } = await import('../src/api/client.ts');
     await listOrders({ loadPendingAvailability: false });
-    await prepareOrderSettlement('RT-TEST-03', 2, '9007199254740993', '1200', 'Theo policy đã duyệt');
+    await prepareOrderSettlement(
+      'RT-TEST-03',
+      2,
+      '9007199254740993',
+      '1200',
+      'Theo policy đã duyệt',
+    );
 
     expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body)).toEqual({
       expectedVersion: 2,
@@ -551,7 +792,11 @@ describe('web API client session and error handling', () => {
     const { hasAccessToken, logout } = await import('../src/api/client.ts');
 
     expect(hasAccessToken()).toBe(true);
-    await expect(logout()).rejects.toMatchObject({ status: 0, code: 'NETWORK_ERROR', message: 'Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.' });
+    await expect(logout()).rejects.toMatchObject({
+      status: 0,
+      code: 'NETWORK_ERROR',
+      message: 'Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.',
+    });
     expect(hasAccessToken()).toBe(false);
     expect(values.has(accessTokenKey)).toBe(false);
   });

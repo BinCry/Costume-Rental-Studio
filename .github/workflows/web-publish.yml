@@ -85,6 +85,7 @@ jobs:
           push: true
           build-args: |
             VITE_API_URL=https://studio.api.bincrydev.id.vn
+            VITE_OPS_AGENT_MODE=api
           tags: |
             ${{ env.IMAGE_NAME }}:${{ env.STAGING_TAG }}
             ${{ env.IMAGE_NAME }}:staging-${{ steps.meta.outputs.short_sha }}

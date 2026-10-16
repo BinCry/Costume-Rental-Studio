@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/ui';
-import { apiEnabled, currentUser, hasAccessToken, listBranches, logout, restoreSession } from '../api/client';
+import {
+  apiEnabled,
+  currentUser,
+  hasAccessToken,
+  listBranches,
+  logout,
+  restoreSession,
+} from '../api/client';
 import type { DemoScenario } from '../fixtures/types';
 import { fixtureCustomers, fixtureEmployees, fixtureRoles } from '../fixtures/studio';
 import { CatalogPage } from '../pages/CatalogPage';
@@ -74,14 +81,29 @@ const staffNavGroups: { id: string; label: string; screens: Screen[] }[] = [
   { id: 'reports', label: 'Báo cáo', screens: ['reports'] },
 ];
 const isStaff = (screen: Screen) =>
-  !['catalog', 'detail', 'booking', 'myRentals', 'myRentalDetail', 'account', 'login', 'register', 'forgotPassword'].includes(screen);
+  ![
+    'catalog',
+    'detail',
+    'booking',
+    'myRentals',
+    'myRentalDetail',
+    'account',
+    'login',
+    'register',
+    'forgotPassword',
+  ].includes(screen);
 const requiredPermissions: Partial<Record<Screen, string[]>> = {
   dashboard: ['rentals.read.branch', 'rentals.read.all'],
   orders: ['rentals.read.branch', 'rentals.read.all'],
   counter: ['rentals.manage.branch', 'rentals.manage.all'],
   active: ['rentals.read.branch', 'rentals.read.all'],
   inventory: ['inventory.read.branch', 'inventory.read.all'],
-  transfers: ['transfers.read.branch', 'transfers.read.all', 'transfers.manage.branch', 'transfers.manage.all'],
+  transfers: [
+    'transfers.read.branch',
+    'transfers.read.all',
+    'transfers.manage.branch',
+    'transfers.manage.all',
+  ],
   crm: ['crm.read.branch', 'crm.read.all'],
   adminCatalog: ['catalog.read.all', 'catalog.manage.all'],
   employees: ['staff.read.all', 'staff.manage.all'],
@@ -104,8 +126,8 @@ export default function StudioApp() {
   const [branch, setBranch] = useState('Chi nhánh Quận 1');
   const [customerCode, setCustomerCode] = useState('KH-001');
   const [menuOpen, setMenuOpen] = useState(false);
-  const [expandedStaffGroup, setExpandedStaffGroup] = useState<string | null>(() =>
-    staffNavGroups.find((group) => group.screens.includes(route.screen))?.id ?? null,
+  const [expandedStaffGroup, setExpandedStaffGroup] = useState<string | null>(
+    () => staffNavGroups.find((group) => group.screens.includes(route.screen))?.id ?? null,
   );
   const [demoControlsOpen, setDemoControlsOpen] = useState(false);
   const [, setAccessRevision] = useState(0);
@@ -162,7 +184,9 @@ export default function StudioApp() {
         if (active) setApiSessionReady(true);
       }
     };
-    const refreshIdentity = () => { void syncIdentity(); };
+    const refreshIdentity = () => {
+      void syncIdentity();
+    };
     void syncIdentity();
     void loadBranches();
     window.addEventListener('api-session-changed', refreshIdentity);
@@ -191,13 +215,25 @@ export default function StudioApp() {
     setApiIdentity(identity);
     setApiSessionReady(true);
     window.dispatchEvent(new Event('api-session-changed'));
-    const staffIdentity = identity.roles.some((entry) => entry.actorGroup === 'ADMIN' || entry.actorGroup === 'STAFF');
+    const staffIdentity = identity.roles.some(
+      (entry) => entry.actorGroup === 'ADMIN' || entry.actorGroup === 'STAFF',
+    );
     let destination = pathFor(staffIdentity ? 'dashboard' : 'account');
     if (next) {
       try {
         const requested = new URL(next, window.location.origin);
-        const isAuthPath = ['/dang-nhap', '/dang-ky', '/quen-mat-khau', '/auth/google/callback'].includes(requested.pathname);
-        if (requested.origin === window.location.origin && requested.pathname.startsWith('/') && !requested.pathname.startsWith('//') && !isAuthPath) {
+        const isAuthPath = [
+          '/dang-nhap',
+          '/dang-ky',
+          '/quen-mat-khau',
+          '/auth/google/callback',
+        ].includes(requested.pathname);
+        if (
+          requested.origin === window.location.origin &&
+          requested.pathname.startsWith('/') &&
+          !requested.pathname.startsWith('//') &&
+          !isAuthPath
+        ) {
           destination = requested.pathname + requested.search + requested.hash;
         }
       } catch {
@@ -222,25 +258,32 @@ export default function StudioApp() {
     }
   };
   const activeRole: DemoRole =
-    (apiIdentity?.roles.find((entry) => entry.actorGroup === 'ADMIN' || entry.actorGroup === 'STAFF')
-      ?.roleCode as DemoRole | undefined) ??
+    (apiIdentity?.roles.find(
+      (entry) => entry.actorGroup === 'ADMIN' || entry.actorGroup === 'STAFF',
+    )?.roleCode as DemoRole | undefined) ??
     (apiIdentity?.roles.find((entry) => entry.actorGroup === 'CUSTOMER')?.roleCode as
-      | DemoRole
-      | undefined) ??
+      DemoRole | undefined) ??
     role;
-  const staffApiRoles = apiIdentity?.roles.filter(
-    (entry) => entry.actorGroup === 'ADMIN' || entry.actorGroup === 'STAFF',
-  ) ?? [];
+  const staffApiRoles =
+    apiIdentity?.roles.filter(
+      (entry) => entry.actorGroup === 'ADMIN' || entry.actorGroup === 'STAFF',
+    ) ?? [];
   const canSelectEveryApiBranch = staffApiRoles.some(
-    (entry) => entry.branchId === null && entry.permissions.some((permission) => permission.scope === 'ALL'),
+    (entry) =>
+      entry.branchId === null && entry.permissions.some((permission) => permission.scope === 'ALL'),
   );
   const apiBranchOptions = Object.entries(apiBranchIds)
-    .filter(([, id]) => canSelectEveryApiBranch || staffApiRoles.some((entry) => entry.branchId === id))
+    .filter(
+      ([, id]) => canSelectEveryApiBranch || staffApiRoles.some((entry) => entry.branchId === id),
+    )
     .map(([name]) => name)
     .sort((left, right) => left.localeCompare(right, 'vi'));
-  const activeBranch = apiIdentity && staffApiRoles.length > 0
-    ? apiBranchOptions.includes(branch) ? branch : apiBranchOptions[0] ?? ''
-    : branch;
+  const activeBranch =
+    apiIdentity && staffApiRoles.length > 0
+      ? apiBranchOptions.includes(branch)
+        ? branch
+        : (apiBranchOptions[0] ?? '')
+      : branch;
   const activeBranchId = apiBranchIds[activeBranch];
   const serverPermissions = Array.from(
     new Set(
@@ -250,27 +293,27 @@ export default function StudioApp() {
     ),
   );
   const staff = isStaff(route.screen);
-  const assigned =
-    apiIdentity
-      ? staffApiRoles.length > 0 &&
-        !!activeBranch &&
-        apiBranchOptions.includes(activeBranch)
-      : activeRole === 'ADMIN' ||
-        activeRole === 'CUSTOMER' ||
-        fixtureEmployees.some(
-          (employee) =>
-            employee.accountStatus === 'ACTIVE' &&
-            employee.employmentStatus === 'ACTIVE' &&
-            employee.assignments.some(
-              (assignment) => assignment.branch === activeBranch && assignment.roleCode === activeRole,
-            ),
-        );
+  const assigned = apiIdentity
+    ? staffApiRoles.length > 0 && !!activeBranch && apiBranchOptions.includes(activeBranch)
+    : activeRole === 'ADMIN' ||
+      activeRole === 'CUSTOMER' ||
+      fixtureEmployees.some(
+        (employee) =>
+          employee.accountStatus === 'ACTIVE' &&
+          employee.employmentStatus === 'ACTIVE' &&
+          employee.assignments.some(
+            (assignment) =>
+              assignment.branch === activeBranch && assignment.roleCode === activeRole,
+          ),
+      );
   const effectivePermissions = apiIdentity
     ? serverPermissions
-    : fixtureRoles.find((item) => item.code === activeRole)?.permissions ?? [];
+    : (fixtureRoles.find((item) => item.code === activeRole)?.permissions ?? []);
   const canReadPayments =
     !apiIdentity ||
-    ['payments.read.branch', 'payments.read.all'].some((permission) => effectivePermissions.includes(permission));
+    ['payments.read.branch', 'payments.read.all'].some((permission) =>
+      effectivePermissions.includes(permission),
+    );
   const canCollectPayments =
     !apiIdentity ||
     (canReadPayments &&
@@ -282,40 +325,67 @@ export default function StudioApp() {
       ].some((permission) => effectivePermissions.includes(permission)));
   const canReturn =
     !apiIdentity ||
-    ['rentals.return.branch', 'rentals.return.all', 'rentals.manage.branch', 'rentals.manage.all']
-      .some((permission) => effectivePermissions.includes(permission));
+    [
+      'rentals.return.branch',
+      'rentals.return.all',
+      'rentals.manage.branch',
+      'rentals.manage.all',
+    ].some((permission) => effectivePermissions.includes(permission));
   const canAssessReturn =
     !apiIdentity ||
-    ['rentals.assessment.branch', 'rentals.assessment.all', 'rentals.manage.branch', 'rentals.manage.all']
-      .some((permission) => effectivePermissions.includes(permission));
+    [
+      'rentals.assessment.branch',
+      'rentals.assessment.all',
+      'rentals.manage.branch',
+      'rentals.manage.all',
+    ].some((permission) => effectivePermissions.includes(permission));
   const canPrepareSettlement =
     !apiIdentity ||
-    ['payments.manage.branch', 'payments.manage.all']
-      .some((permission) => effectivePermissions.includes(permission));
+    ['payments.manage.branch', 'payments.manage.all'].some((permission) =>
+      effectivePermissions.includes(permission),
+    );
   const canCompleteSettlement =
     !apiIdentity ||
-    ['rentals.settlement.branch', 'rentals.settlement.all', 'rentals.manage.branch', 'rentals.manage.all']
-      .some((permission) => effectivePermissions.includes(permission));
+    [
+      'rentals.settlement.branch',
+      'rentals.settlement.all',
+      'rentals.manage.branch',
+      'rentals.manage.all',
+    ].some((permission) => effectivePermissions.includes(permission));
   const canOpen = (screen: Screen) => {
     if (!assigned) return false;
     if (screen === 'handover')
-      return ['rentals.handover.branch', 'rentals.handover.all', 'rentals.manage.branch', 'rentals.manage.all']
-        .some((permission) => effectivePermissions.includes(permission));
+      return [
+        'rentals.handover.branch',
+        'rentals.handover.all',
+        'rentals.manage.branch',
+        'rentals.manage.all',
+      ].some((permission) => effectivePermissions.includes(permission));
     if (screen === 'return') {
-      const canReadOrder = ['rentals.read.branch', 'rentals.read.all']
-        .some((permission) => effectivePermissions.includes(permission));
+      const canReadOrder = ['rentals.read.branch', 'rentals.read.all'].some((permission) =>
+        effectivePermissions.includes(permission),
+      );
       const canWorkReturn = [
-        'rentals.return.branch', 'rentals.return.all',
-        'rentals.manage.branch', 'rentals.manage.all',
-        'rentals.assessment.branch', 'rentals.assessment.all',
-        'payments.manage.branch', 'payments.manage.all',
-        'rentals.settlement.branch', 'rentals.settlement.all',
-        'payments.read.branch', 'payments.read.all',
+        'rentals.return.branch',
+        'rentals.return.all',
+        'rentals.manage.branch',
+        'rentals.manage.all',
+        'rentals.assessment.branch',
+        'rentals.assessment.all',
+        'payments.manage.branch',
+        'payments.manage.all',
+        'rentals.settlement.branch',
+        'rentals.settlement.all',
+        'payments.read.branch',
+        'payments.read.all',
       ].some((permission) => effectivePermissions.includes(permission));
       return canReadOrder && canWorkReturn;
     }
     if (screen === 'reports')
-      return effectivePermissions.includes('reports.read.all') || effectivePermissions.includes('reports.read.branch');
+      return (
+        effectivePermissions.includes('reports.read.all') ||
+        effectivePermissions.includes('reports.read.branch')
+      );
     if (apiIdentity) {
       const permissions = requiredPermissions[screen];
       return permissions?.some((permission) => effectivePermissions.includes(permission)) ?? false;
@@ -324,7 +394,9 @@ export default function StudioApp() {
     const item = staffNav.find((value) => value.screen === screen);
     if (!item?.roles.includes(activeRole)) return false;
     const permissions = requiredPermissions[screen];
-    return !permissions || permissions.some((permission) => effectivePermissions.includes(permission));
+    return (
+      !permissions || permissions.some((permission) => effectivePermissions.includes(permission))
+    );
   };
   const authScreen = ['login', 'register', 'forgotPassword'].includes(route.screen);
   const nav = authScreen ? [] : staff ? staffNav.filter((x) => canOpen(x.screen)) : customerNav;
@@ -353,7 +425,7 @@ export default function StudioApp() {
             ? 'Môi trường phát triển · Đang kết nối API'
             : apiEnabled
               ? 'Bản demo local · Đang dùng fixture khi chưa đăng nhập API'
-            : 'Bản demo giao diện · Dữ liệu fixture, thao tác không lưu lên máy chủ'
+              : 'Bản demo giao diện · Dữ liệu fixture, thao tác không lưu lên máy chủ'
           : 'Danh mục công khai · Đăng nhập để đặt thuê hoặc vào khu vận hành'}
       </div>
       <header className={`site-header ${authScreen ? 'site-header-auth' : ''}`}>
@@ -374,53 +446,77 @@ export default function StudioApp() {
             </span>
           </a>
           {!staff && (
-          <nav
-            id="main-navigation"
-            className={`top-nav ${menuOpen ? 'open' : ''} ${authScreen ? 'auth-nav-hidden' : ''}`}
-            aria-label="Điều hướng chính"
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                setMenuOpen(false);
-                menuButtonRef.current?.focus();
-              }
-            }}
-          >
-            {nav.map((item, index) => (
-              <a
-                key={item.screen}
-                href={pathFor(item.screen)}
-                className={`${route.screen === item.screen ? 'active' : ''} ${index >= 4 ? 'mobile-extra-nav' : ''}`.trim()}
-                onClick={(e) => {
-                  e.preventDefault();
-                  go(item.screen);
-                }}
-              >
-                {item.label}
-              </a>
-            ))}
-            {!authScreen && !apiIdentity && (
-              <>
-                <a className="mobile-auth-entry" href={pathFor('login')} onClick={(event) => { event.preventDefault(); go('login'); }}>
-                  Đăng nhập
+            <nav
+              id="main-navigation"
+              className={`top-nav ${menuOpen ? 'open' : ''} ${authScreen ? 'auth-nav-hidden' : ''}`}
+              aria-label="Điều hướng chính"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  setMenuOpen(false);
+                  menuButtonRef.current?.focus();
+                }
+              }}
+            >
+              {nav.map((item, index) => (
+                <a
+                  key={item.screen}
+                  href={pathFor(item.screen)}
+                  className={`${route.screen === item.screen ? 'active' : ''} ${index >= 4 ? 'mobile-extra-nav' : ''}`.trim()}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    go(item.screen);
+                  }}
+                >
+                  {item.label}
                 </a>
-                <a className="mobile-auth-entry mobile-auth-entry-primary" href={pathFor('register')} onClick={(event) => { event.preventDefault(); go('register'); }}>
-                  Tạo tài khoản
+              ))}
+              {!authScreen && !apiIdentity && (
+                <>
+                  <a
+                    className="mobile-auth-entry"
+                    href={pathFor('login')}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      go('login');
+                    }}
+                  >
+                    Đăng nhập
+                  </a>
+                  <a
+                    className="mobile-auth-entry mobile-auth-entry-primary"
+                    href={pathFor('register')}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      go('register');
+                    }}
+                  >
+                    Tạo tài khoản
+                  </a>
+                </>
+              )}
+              {!authScreen && apiIdentity && staffApiRoles.length > 0 && !staff && (
+                <a
+                  className="mobile-staff-entry"
+                  href={pathFor('dashboard')}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    go('dashboard');
+                  }}
+                >
+                  Khu vận hành <Icon name="arrow" size={16} />
                 </a>
-              </>
-            )}
-            {!authScreen && apiIdentity && staffApiRoles.length > 0 && !staff && (
-              <a className="mobile-staff-entry" href={pathFor('dashboard')} onClick={(event) => { event.preventDefault(); go('dashboard'); }}>
-                Khu vận hành <Icon name="arrow" size={16} />
-              </a>
-            )}
-          </nav>
+              )}
+            </nav>
           )}
           <div className="header-actions">
             {authScreen ? (
               <a
                 className="auth-header-link"
                 href={pathFor(authHeaderTarget, authHeaderParams)}
-                onClick={(event) => { event.preventDefault(); go(authHeaderTarget, authHeaderParams); }}
+                onClick={(event) => {
+                  event.preventDefault();
+                  go(authHeaderTarget, authHeaderParams);
+                }}
               >
                 {route.screen === 'register'
                   ? 'Đã có tài khoản? Đăng nhập'
@@ -442,25 +538,59 @@ export default function StudioApp() {
                     >
                       {apiBranchOptions.length === 0 ? (
                         <option value="">Không có chi nhánh được gán</option>
-                      ) : apiBranchOptions.map((name) => <option value={name} key={name}>{name}</option>)}
+                      ) : (
+                        apiBranchOptions.map((name) => (
+                          <option value={name} key={name}>
+                            {name}
+                          </option>
+                        ))
+                      )}
                     </select>
                   </label>
                 )}
                 {staffApiRoles.length > 0 && !staff && (
-                  <a className="area-switch" href="/van-hanh/tong-quan" onClick={(event) => { event.preventDefault(); go('dashboard'); }}>
+                  <a
+                    className="area-switch"
+                    href="/van-hanh/tong-quan"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      go('dashboard');
+                    }}
+                  >
                     Khu vận hành <Icon name="arrow" size={16} />
                   </a>
                 )}
-                <a className="header-account" href="/tai-khoan" onClick={(event) => { event.preventDefault(); go('account'); }}>
+                <a
+                  className="header-account"
+                  href="/tai-khoan"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    go('account');
+                  }}
+                >
                   {apiIdentity.displayName || 'Tài khoản'}
                 </a>
               </>
             ) : (
               <div className="auth-header-actions">
-                <a className="auth-header-link" href="/dang-nhap" onClick={(event) => { event.preventDefault(); go('login'); }}>
+                <a
+                  className="auth-header-link"
+                  href="/dang-nhap"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    go('login');
+                  }}
+                >
                   Đăng nhập
                 </a>
-                <a className="button button-primary auth-header-register" href="/dang-ky" onClick={(event) => { event.preventDefault(); go('register'); }}>
+                <a
+                  className="button button-primary auth-header-register"
+                  href="/dang-ky"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    go('register');
+                  }}
+                >
                   Tạo tài khoản
                 </a>
               </div>
@@ -531,7 +661,13 @@ export default function StudioApp() {
                 >
                   {apiBranchOptions.length === 0 ? (
                     <option value="">Không có chi nhánh được gán</option>
-                  ) : apiBranchOptions.map((name) => <option value={name} key={name}>{name}</option>)}
+                  ) : (
+                    apiBranchOptions.map((name) => (
+                      <option value={name} key={name}>
+                        {name}
+                      </option>
+                    ))
+                  )}
                 </select>
               </label>
             )}
@@ -550,10 +686,14 @@ export default function StudioApp() {
                       className="staff-nav-heading"
                       aria-expanded={expanded}
                       aria-controls={`staff-nav-items-${group.id}`}
-                      onClick={() => setExpandedStaffGroup((current) => current === group.id ? null : group.id)}
+                      onClick={() =>
+                        setExpandedStaffGroup((current) => (current === group.id ? null : group.id))
+                      }
                     >
                       <span>{group.label}</span>
-                      <span className="staff-nav-chevron" aria-hidden="true">⌄</span>
+                      <span className="staff-nav-chevron" aria-hidden="true">
+                        ⌄
+                      </span>
                     </button>
                     <div
                       className="staff-nav-items"
@@ -600,77 +740,81 @@ export default function StudioApp() {
         tabIndex={-1}
         key={`${route.screen}:${activeBranch}:${p.get('order') ?? ''}`}
       >
-      {showFixtureControls && (
-        <div className="demo-controls">
-          <div className="demo-controls-inner">
-            <span className="demo-controls-title">Kiểm tra UI fixture</span>
-            <button
-              type="button"
-              className="demo-controls-toggle"
-              aria-expanded={demoControlsOpen}
-              aria-controls="demo-control-fields"
-              onClick={() => setDemoControlsOpen((open) => !open)}
-            >
-              Kiểm tra UI fixture
-              <span aria-hidden="true">{demoControlsOpen ? '−' : '+'}</span>
-            </button>
-            <div
-              id="demo-control-fields"
-              className={`demo-control-fields ${demoControlsOpen ? 'open' : ''}`}
-            >
-              <div className="demo-control demo-control--scenario">
-                <label htmlFor="demo-scenario">Tình huống</label>
-                <select
-                  id="demo-scenario"
-                  value={scenario}
-                  onChange={(e) => setScenario(e.target.value as DemoScenario)}
-                >
-                  {scenarios.map((x) => (
-                    <option value={x.value} key={x.value}>
-                      {x.label}
-                    </option>
-                  ))}
-                </select>
+        {showFixtureControls && (
+          <div className="demo-controls">
+            <div className="demo-controls-inner">
+              <span className="demo-controls-title">Kiểm tra UI fixture</span>
+              <button
+                type="button"
+                className="demo-controls-toggle"
+                aria-expanded={demoControlsOpen}
+                aria-controls="demo-control-fields"
+                onClick={() => setDemoControlsOpen((open) => !open)}
+              >
+                Kiểm tra UI fixture
+                <span aria-hidden="true">{demoControlsOpen ? '−' : '+'}</span>
+              </button>
+              <div
+                id="demo-control-fields"
+                className={`demo-control-fields ${demoControlsOpen ? 'open' : ''}`}
+              >
+                <div className="demo-control demo-control--scenario">
+                  <label htmlFor="demo-scenario">Tình huống</label>
+                  <select
+                    id="demo-scenario"
+                    value={scenario}
+                    onChange={(e) => setScenario(e.target.value as DemoScenario)}
+                  >
+                    {scenarios.map((x) => (
+                      <option value={x.value} key={x.value}>
+                        {x.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="demo-control demo-control--role">
+                  <label htmlFor="demo-role">Vai trò</label>
+                  <select
+                    id="demo-role"
+                    value={activeRole}
+                    onChange={(e) => setRole(e.target.value as DemoRole)}
+                    disabled={!!apiIdentity}
+                  >
+                    <option value="ADMIN">Quản trị</option>
+                    <option value="SALES_STAFF">Nhân viên bán hàng</option>
+                    <option value="INVENTORY_STAFF">Nhân viên kho</option>
+                    <option value="CUSTOMER">Khách</option>
+                  </select>
+                </div>
+                <div className="demo-control demo-control--branch">
+                  <label htmlFor="demo-branch">Chi nhánh</label>
+                  <select
+                    id="demo-branch"
+                    value={branch}
+                    onChange={(e) => setBranch(e.target.value)}
+                  >
+                    <option>Chi nhánh Quận 1</option>
+                    <option>Chi nhánh Thủ Đức</option>
+                  </select>
+                </div>
+                <div className="demo-control demo-control--customer">
+                  <label htmlFor="demo-customer">Khách mẫu</label>
+                  <select
+                    id="demo-customer"
+                    value={customerCode}
+                    onChange={(e) => setCustomerCode(e.target.value)}
+                  >
+                    {fixtureCustomers.map((customer) => (
+                      <option value={customer.code} key={customer.code}>
+                        {customer.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div className="demo-control demo-control--role">
-                <label htmlFor="demo-role">Vai trò</label>
-                <select
-                  id="demo-role"
-                  value={activeRole}
-                  onChange={(e) => setRole(e.target.value as DemoRole)}
-                  disabled={!!apiIdentity}
-                >
-                  <option value="ADMIN">Quản trị</option>
-                  <option value="SALES_STAFF">Nhân viên bán hàng</option>
-                  <option value="INVENTORY_STAFF">Nhân viên kho</option>
-                  <option value="CUSTOMER">Khách</option>
-                </select>
-              </div>
-              <div className="demo-control demo-control--branch">
-                <label htmlFor="demo-branch">Chi nhánh</label>
-                <select id="demo-branch" value={branch} onChange={(e) => setBranch(e.target.value)}>
-                  <option>Chi nhánh Quận 1</option>
-                  <option>Chi nhánh Thủ Đức</option>
-                </select>
-              </div>
-              <div className="demo-control demo-control--customer">
-                <label htmlFor="demo-customer">Khách mẫu</label>
-                <select
-                  id="demo-customer"
-                  value={customerCode}
-                  onChange={(e) => setCustomerCode(e.target.value)}
-                >
-                  {fixtureCustomers.map((customer) => (
-                    <option value={customer.code} key={customer.code}>
-                      {customer.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            </div>
           </div>
-          </div>
-        </div>
-      )}
+        )}
 
         {productionConfigurationMissing ? (
           <div className="page">
@@ -684,13 +828,24 @@ export default function StudioApp() {
         ) : protectedArea ? (
           <div className="page">
             {sessionPending ? (
-              <div className="feature-skeleton shimmer" role="status">Đang xác minh phiên đăng nhập…</div>
+              <div className="feature-skeleton shimmer" role="status">
+                Đang xác minh phiên đăng nhập…
+              </div>
             ) : sessionMissing ? (
               <div className="feedback feedback-warning" role="status">
                 <div>
                   <strong>Đăng nhập để tiếp tục</strong>
-                  <p>Đăng nhập bằng tài khoản đã được cấp quyền. Trang sẽ đưa bạn trở lại đúng khu vực sau khi xác thực.</p>
-                  <button type="button" className="button button-secondary" onClick={() => go('login', { next: window.location.pathname + window.location.search })}>
+                  <p>
+                    Đăng nhập bằng tài khoản đã được cấp quyền. Trang sẽ đưa bạn trở lại đúng khu
+                    vực sau khi xác thực.
+                  </p>
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    onClick={() =>
+                      go('login', { next: window.location.pathname + window.location.search })
+                    }
+                  >
                     Đến trang đăng nhập
                   </button>
                 </div>
@@ -699,7 +854,9 @@ export default function StudioApp() {
               <div className="feedback feedback-danger" role="alert">
                 <div>
                   <strong>Không tải được danh sách chi nhánh</strong>
-                  <p>Chưa thể xác định phạm vi làm việc của tài khoản. Hãy thử tải lại danh sách.</p>
+                  <p>
+                    Chưa thể xác định phạm vi làm việc của tài khoản. Hãy thử tải lại danh sách.
+                  </p>
                   <button
                     type="button"
                     className="button button-secondary"
@@ -774,7 +931,9 @@ export default function StudioApp() {
                 }}
               />
             )}
-            {(route.screen === 'login' || route.screen === 'register' || route.screen === 'forgotPassword') && (
+            {(route.screen === 'login' ||
+              route.screen === 'register' ||
+              route.screen === 'forgotPassword') && (
               <AuthPage
                 key={route.screen}
                 mode={route.screen}
@@ -799,10 +958,30 @@ export default function StudioApp() {
                   effectivePermissions.includes('rentals.manage.branch') ||
                   effectivePermissions.includes('rentals.manage.all')
                 }
-                canConfirm={['rentals.confirm.branch', 'rentals.confirm.all', 'rentals.manage.branch', 'rentals.manage.all'].some((permission) => effectivePermissions.includes(permission))}
-                canPrepare={['rentals.prepare.branch', 'rentals.prepare.all', 'rentals.manage.branch', 'rentals.manage.all'].some((permission) => effectivePermissions.includes(permission))}
-                canHandover={['rentals.handover.branch', 'rentals.handover.all', 'rentals.manage.branch', 'rentals.manage.all'].some((permission) => effectivePermissions.includes(permission))}
-                canReturn={['rentals.return.branch', 'rentals.return.all', 'rentals.manage.branch', 'rentals.manage.all'].some((permission) => effectivePermissions.includes(permission))}
+                canConfirm={[
+                  'rentals.confirm.branch',
+                  'rentals.confirm.all',
+                  'rentals.manage.branch',
+                  'rentals.manage.all',
+                ].some((permission) => effectivePermissions.includes(permission))}
+                canPrepare={[
+                  'rentals.prepare.branch',
+                  'rentals.prepare.all',
+                  'rentals.manage.branch',
+                  'rentals.manage.all',
+                ].some((permission) => effectivePermissions.includes(permission))}
+                canHandover={[
+                  'rentals.handover.branch',
+                  'rentals.handover.all',
+                  'rentals.manage.branch',
+                  'rentals.manage.all',
+                ].some((permission) => effectivePermissions.includes(permission))}
+                canReturn={[
+                  'rentals.return.branch',
+                  'rentals.return.all',
+                  'rentals.manage.branch',
+                  'rentals.manage.all',
+                ].some((permission) => effectivePermissions.includes(permission))}
                 initialOrderId={p.get('order') ?? undefined}
                 initialFilter={p.get('filter') ?? undefined}
                 initialBranch={activeBranch}
@@ -854,7 +1033,11 @@ export default function StudioApp() {
                 scenario={scenario}
                 go={go}
                 branch={activeBranch}
-                canManage={!apiIdentity || effectivePermissions.includes('inventory.manage.branch') || effectivePermissions.includes('inventory.manage.all')}
+                canManage={
+                  !apiIdentity ||
+                  effectivePermissions.includes('inventory.manage.branch') ||
+                  effectivePermissions.includes('inventory.manage.all')
+                }
               />
             )}
             {route.screen === 'transfers' && (
@@ -872,7 +1055,11 @@ export default function StudioApp() {
               <CrmPage
                 scenario={scenario}
                 branch={activeBranch}
-                canManage={!apiIdentity || effectivePermissions.includes('crm.manage.branch') || effectivePermissions.includes('crm.manage.all')}
+                canManage={
+                  !apiIdentity ||
+                  effectivePermissions.includes('crm.manage.branch') ||
+                  effectivePermissions.includes('crm.manage.all')
+                }
               />
             )}
             {route.screen === 'adminCatalog' && (
@@ -917,7 +1104,17 @@ export default function StudioApp() {
       </main>
       <footer className="site-footer">
         <span>Studio Trang Phục</span>
-        <span>{route.screen === 'opsAgent' ? 'Ops Agent · Fixture demo · Không lưu dữ liệu' : import.meta.env.DEV ? apiIdentity ? 'Môi trường phát triển · Dữ liệu API' : 'Môi trường phát triển · Fixture demo' : 'Dữ liệu vận hành lấy từ API · Cần đăng nhập cho chức năng riêng tư'}</span>
+        <span>
+          {route.screen === 'opsAgent'
+            ? import.meta.env.VITE_OPS_AGENT_MODE === 'api'
+              ? 'Ops Agent · Hỏi Agent, hồ sơ và tri thức qua API · Hàng đợi fixture'
+              : 'Ops Agent · Fixture demo · Không lưu dữ liệu'
+            : import.meta.env.DEV
+              ? apiIdentity
+                ? 'Môi trường phát triển · Dữ liệu API'
+                : 'Môi trường phát triển · Fixture demo'
+              : 'Dữ liệu vận hành lấy từ API · Cần đăng nhập cho chức năng riêng tư'}
+        </span>
       </footer>
     </div>
   );
