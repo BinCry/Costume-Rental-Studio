@@ -8,7 +8,6 @@ import {
   Feedback,
   Field,
   Icon,
-  SelectField,
   StatusLabel,
   TextAreaField,
 } from '../components/ui';
@@ -18,7 +17,6 @@ import type { DemoScenario, QueueTask } from '../fixtures/types';
 import { opsAgentFixtureAdapter, opsAgentSources, opsAgentWorkflows } from '../fixtures/opsAgent';
 import {
   answerOpsKnowledge,
-  apiEnabled,
   approveOpsAgentAction,
   cancelOpsAgentCase,
   confirmOpsAgentCase,
@@ -56,40 +54,47 @@ const tabs: { id: AgentTab; label: string }[] = [
   { id: 'case', label: 'Hồ sơ Agent' },
 ];
 
+const apiTabs: { id: AgentTab; label: string }[] = [
+  { id: 'overview', label: 'Bàn làm việc' },
+  { id: 'chat', label: 'Hỏi trợ lý' },
+  { id: 'knowledge', label: 'Tra cứu hướng dẫn' },
+  { id: 'case', label: 'Yêu cầu hiện tại' },
+];
+
 const agentActionCopy: Record<
   AgentCaseAction,
   { title: string; confirmText: string; description: string; danger?: boolean }
 > = {
   confirm: {
-    title: 'Xác nhận yêu cầu của Agent',
+    title: 'Xác nhận yêu cầu',
     confirmText: 'Xác nhận và tiếp tục',
     description:
-      'Agent sẽ tiếp tục đúng yêu cầu đang chờ. Kiểm tra nội dung và quyền của bạn trước khi xác nhận.',
+      'Studio sẽ tiếp tục xử lý yêu cầu đang chờ. Hãy kiểm tra nội dung và đối tượng trước khi xác nhận.',
   },
   'reject-confirmation': {
     title: 'Từ chối yêu cầu đang chờ',
     confirmText: 'Từ chối yêu cầu',
     description:
-      'Agent sẽ dừng yêu cầu đang chờ xác nhận. Việc từ chối không thay đổi dữ liệu nghiệp vụ khác.',
+      'Yêu cầu đang chờ sẽ dừng lại. Việc từ chối không thay đổi các dữ liệu nghiệp vụ khác.',
     danger: true,
   },
   approve: {
-    title: 'Duyệt thao tác của Agent',
+    title: 'Duyệt thao tác',
     confirmText: 'Duyệt thao tác',
     description:
-      'Đây là thao tác cần quyền cao. Khi được duyệt, Agent sẽ gọi công cụ tương ứng và đọc lại kết quả từ Studio.',
+      'Yêu cầu này cần quyền duyệt. Chỉ tiếp tục khi bạn có thẩm quyền và đã kiểm tra đúng nội dung.',
   },
   'reject-approval': {
-    title: 'Từ chối thao tác của Agent',
+    title: 'Từ chối thao tác',
     confirmText: 'Từ chối thao tác',
-    description: 'Agent sẽ ghi nhận quyết định từ chối và không thực hiện thao tác đang chờ duyệt.',
+    description: 'Thao tác đang chờ sẽ không được thực hiện.',
     danger: true,
   },
   cancel: {
-    title: 'Hủy hồ sơ Agent',
-    confirmText: 'Hủy hồ sơ',
+    title: 'Hủy yêu cầu này?',
+    confirmText: 'Hủy yêu cầu',
     description:
-      'Hồ sơ sẽ không thể tiếp tục. Thao tác nghiệp vụ đã hoàn thành trước đó không bị hoàn tác.',
+      'Yêu cầu sẽ không thể tiếp tục. Những thao tác đã hoàn thành trước đó không bị hoàn tác.',
     danger: true,
   },
 };
@@ -316,6 +321,7 @@ export function OpsAgentPage({
   go: Navigate;
 }) {
   const useAgentApi = import.meta.env.VITE_OPS_AGENT_MODE === 'api';
+  const availableTabs = useAgentApi ? apiTabs : tabs;
   const [tab, setTab] = useState<AgentTab>('overview');
   const [queueFilter, setQueueFilter] = useState<QueueFilter>('all');
   const [queueSearch, setQueueSearch] = useState('');
@@ -324,7 +330,6 @@ export function OpsAgentPage({
   const [knowledgeType, setKnowledgeType] = useState('all');
   const [knowledgeStatus, setKnowledgeStatus] = useState('all');
   const [knowledgeQuery, setKnowledgeQuery] = useState('');
-  const [knowledgeTopK, setKnowledgeTopK] = useState('5');
   const [knowledgeAnswer, setKnowledgeAnswer] = useState<{
     query: string;
     result: OpsKnowledgeAnswer;
@@ -337,7 +342,7 @@ export function OpsAgentPage({
     return window.sessionStorage.getItem(agentCaseSessionKey) ?? undefined;
   });
   const [agentResult, setAgentResult] = useState<OpsAgentCaseResult>();
-  const [caseLoading, setCaseLoading] = useState(false);
+  const [caseLoading, setCaseLoading] = useState(() => Boolean(agentCaseId));
   const [caseActionLoading, setCaseActionLoading] = useState(false);
   const [caseError, setCaseError] = useState('');
   const [caseDialogAction, setCaseDialogAction] = useState<AgentCaseAction>();
@@ -348,13 +353,14 @@ export function OpsAgentPage({
   const [selectedTask, setSelectedTask] = useState<QueueTask>();
   const [selectedSourceId, setSelectedSourceId] = useState<string>();
   const [conflictCleared, setConflictCleared] = useState(false);
+  const caseLoadInFlight = useRef(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 0,
       role: 'assistant',
       text:
         import.meta.env.VITE_OPS_AGENT_MODE === 'api'
-          ? 'Đặt câu hỏi để chuyển qua API Agent. Hãy xem phần nguồn trong câu trả lời để phân biệt tài liệu và dữ liệu nghiệp vụ.'
+          ? 'Tôi có thể hỗ trợ tra cứu hướng dẫn và phân tích tình huống vận hành. Hãy mô tả việc bạn cần xử lý.'
           : 'Mình có thể gợi ý checklist từ nội dung demo. Câu trả lời không thay đổi đơn, xác nhận thanh toán hay ghi vào nhật ký.',
       sourceIds:
         import.meta.env.VITE_OPS_AGENT_MODE === 'api' ? [] : ['product-scope', 'safety-direction'],
@@ -436,29 +442,31 @@ export function OpsAgentPage({
 
   const focusTab = (next: AgentTab) => {
     setTab(next);
-    const index = tabs.findIndex((item) => item.id === next);
-    tabRefs.current[index]?.focus();
+    const index = availableTabs.findIndex((item) => item.id === next);
+    if (index >= 0) tabRefs.current[index]?.focus();
   };
 
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, current: AgentTab) => {
-    const index = tabs.findIndex((item) => item.id === current);
+    const index = availableTabs.findIndex((item) => item.id === current);
+    if (index < 0) return;
     const nextIndex =
       event.key === 'ArrowRight'
-        ? (index + 1) % tabs.length
+        ? (index + 1) % availableTabs.length
         : event.key === 'ArrowLeft'
-          ? (index - 1 + tabs.length) % tabs.length
+          ? (index - 1 + availableTabs.length) % availableTabs.length
           : event.key === 'Home'
             ? 0
             : event.key === 'End'
-              ? tabs.length - 1
+              ? availableTabs.length - 1
               : undefined;
     if (nextIndex === undefined) return;
     event.preventDefault();
-    focusTab(tabs[nextIndex].id);
+    focusTab(availableTabs[nextIndex].id);
   };
 
-  const reloadAgentCase = async () => {
-    if (!agentCaseId || caseLoading) return;
+  const reloadAgentCase = useCallback(async () => {
+    if (!agentCaseId || caseLoadInFlight.current) return;
+    caseLoadInFlight.current = true;
     setCaseLoading(true);
     setCaseError('');
     try {
@@ -466,9 +474,32 @@ export function OpsAgentPage({
     } catch (loadError) {
       setCaseError(loadError instanceof Error ? loadError.message : 'Không tải được hồ sơ Agent.');
     } finally {
+      caseLoadInFlight.current = false;
       setCaseLoading(false);
     }
-  };
+  }, [agentCaseId]);
+
+  useEffect(() => {
+    if (!useAgentApi || !agentCaseId || agentResult) return;
+    let isCurrent = true;
+    void getOpsAgentCase(agentCaseId)
+      .then((result) => {
+        if (isCurrent) setAgentResult(result);
+      })
+      .catch((loadError: unknown) => {
+        if (isCurrent) {
+          setCaseError(
+            loadError instanceof Error ? loadError.message : 'Không tải được yêu cầu hiện tại.',
+          );
+        }
+      })
+      .finally(() => {
+        if (isCurrent) setCaseLoading(false);
+      });
+    return () => {
+      isCurrent = false;
+    };
+  }, [agentCaseId, agentResult, useAgentApi]);
 
   const forgetAgentCaseReference = () => {
     setAgentCaseId(undefined);
@@ -534,7 +565,7 @@ export function OpsAgentPage({
     setKnowledgeLoading(true);
     setKnowledgeError('');
     try {
-      const result = await answerOpsKnowledge(query, Number(knowledgeTopK));
+      const result = await answerOpsKnowledge(query, 5);
       setKnowledgeAnswer({ query, result });
     } catch (lookupError) {
       setKnowledgeError(knowledgeRequestError(lookupError));
@@ -665,63 +696,62 @@ export function OpsAgentPage({
     ]);
   };
 
-  const suggestedQuestions = [
-    'Tôi nên đối chiếu yêu cầu thuê thế nào?',
-    'Checklist chuẩn bị giao đồ gồm gì?',
-    'Có thể xác nhận chuyển khoản ở đây không?',
-    'Chính sách hoàn cọc đã được chốt chưa?',
-  ];
+  const suggestedQuestions = useAgentApi
+    ? [
+        'Hướng dẫn kiểm tra đồ khi giao cho khách',
+        'Cách đối chiếu yêu cầu thuê mới',
+        'Cần lưu ý gì khi nhận lại đồ thuê?',
+        'Chính sách hoàn cọc cần kiểm tra ở đâu?',
+      ]
+    : [
+        'Tôi nên đối chiếu yêu cầu thuê thế nào?',
+        'Checklist chuẩn bị giao đồ gồm gì?',
+        'Có thể xác nhận chuyển khoản ở đây không?',
+        'Chính sách hoàn cọc đã được chốt chưa?',
+      ];
 
   return (
     <div className="page staff-page ops-agent-page">
       <div className="staff-page-heading ops-agent-heading">
         <div>
-          <p className="eyebrow">HỖ TRỢ VẬN HÀNH</p>
-          <h1>Ops Agent</h1>
+          <p className="eyebrow">{useAgentApi ? 'KHU VẬN HÀNH' : 'HỖ TRỢ VẬN HÀNH'}</p>
+          <h1>{useAgentApi ? 'Trợ lý vận hành' : 'Ops Agent'}</h1>
           <p>
             {useAgentApi
-              ? 'Tra cứu tài liệu, hỏi Agent và xử lý yêu cầu có API hỗ trợ. Hàng đợi mẫu không thay thế dữ liệu vận hành.'
+              ? 'Tra cứu hướng dẫn, hỏi về tình huống vận hành và xem lại yêu cầu cần bạn xử lý.'
               : 'Tra cứu checklist và việc cần chú ý tại chi nhánh. Nhân viên vẫn xử lý trên màn hình Studio.'}
           </p>
         </div>
-        <div className="ops-agent-heading-meta">
-          <span className="ops-demo-badge">
-            <span aria-hidden="true">●</span>{' '}
-            {useAgentApi ? 'AGENT API · HÀNG ĐỢI FIXTURE' : 'DEMO · FIXTURE'}
-          </span>
-          <span className="date-pill">
-            <Icon name="pin" size={17} />
-            {branch || 'Chưa chọn chi nhánh'}
-          </span>
-          <span className="ops-fixture-time">
-            <Icon name="clock" size={16} />
-            {useAgentApi ? 'Mốc giờ fixture · ' : 'Dữ liệu mẫu · '}
-            {formatFixtureTime()}
-          </span>
-        </div>
+        {!useAgentApi && (
+          <div className="ops-agent-heading-meta">
+            <span className="ops-demo-badge">
+              <span aria-hidden="true">●</span> DEMO · FIXTURE
+            </span>
+            <span className="date-pill">
+              <Icon name="pin" size={17} />
+              {branch || 'Chưa chọn chi nhánh'}
+            </span>
+            <span className="ops-fixture-time">
+              <Icon name="clock" size={16} />
+              Dữ liệu mẫu · {formatFixtureTime()}
+            </span>
+          </div>
+        )}
       </div>
 
-      <div className="ops-agent-notice" role="status">
-        <Icon name="spark" size={18} />
-        <p>
-          {useAgentApi ? (
-            <>
-              <strong>Đang dùng chế độ API Studio.</strong> Tra cứu tài liệu và hồ sơ/tác vụ đang mở
-              gọi API; danh sách hàng đợi, checklist và danh mục nguồn vẫn là fixture. Thao tác ghi
-              chỉ thực hiện sau xác nhận và kiểm tra quyền ở máy chủ.
-            </>
-          ) : (
-            <>
-              <strong>Chỉ hướng dẫn tham khảo.</strong> Không có kết nối trợ lý trực tuyến, không
-              ghi dữ liệu và không xác nhận nghiệp vụ.
-            </>
-          )}
-        </p>
-      </div>
+      {!useAgentApi && (
+        <div className="ops-agent-notice" role="status">
+          <Icon name="spark" size={18} />
+          <p>
+            <strong>Chỉ hướng dẫn tham khảo.</strong> Không có kết nối trợ lý trực tuyến, không ghi
+            dữ liệu và không xác nhận nghiệp vụ.
+          </p>
+        </div>
+      )}
 
       <div className="ops-tabs-wrap">
         <div className="ops-agent-tabs" role="tablist" aria-label="Các khu vực Ops Agent">
-          {tabs.map((item, index) => (
+          {availableTabs.map((item, index) => (
             <button
               key={item.id}
               ref={(element) => {
@@ -743,7 +773,7 @@ export function OpsAgentPage({
         </div>
       </div>
 
-      {scenario === 'conflict' && !conflictCleared && (
+      {!useAgentApi && scenario === 'conflict' && !conflictCleared && (
         <Feedback
           tone="warning"
           title="Tình huống xung đột fixture"
@@ -777,191 +807,319 @@ export function OpsAgentPage({
       )}
 
       <TabPanel tab={tab}>
-        {tab === 'overview' && (
-          <div className="ops-overview">
-            <div className="ops-metric-grid">
-              <article className="ops-metric-card">
-                <span>Việc tại chi nhánh</span>
-                <strong>{loading ? '—' : branchQueue.length}</strong>
-                <small>
-                  {loading
-                    ? 'Đang đọc dữ liệu mẫu'
-                    : unassignedCount + ' việc chưa có người phụ trách'}
-                </small>
-              </article>
-              <article className="ops-metric-card">
-                <span>Cần nhân viên chú ý</span>
-                <strong>{loading ? '—' : attentionCount}</strong>
-                <small>Quá hạn, sắp đến hạn hoặc chờ lâu</small>
-              </article>
-              <article className="ops-metric-card">
-                <span>Quá hạn</span>
-                <strong>{loading ? '—' : overdueCount}</strong>
-                <small>Đối chiếu trên đơn gốc</small>
-              </article>
-              <article className="ops-metric-card">
-                <span>Nguồn cần xác minh</span>
-                <strong>{verificationCount}</strong>
-                <small>Chính sách và quy trình chưa duyệt</small>
-              </article>
-            </div>
+        {tab === 'overview' &&
+          (useAgentApi ? (
+            <div className="ops-live-home">
+              <section className="ops-live-home-hero">
+                <div>
+                  <p className="eyebrow">HỖ TRỢ CA LÀM VIỆC</p>
+                  <h2>Bạn cần xử lý việc gì?</h2>
+                  <p>
+                    Hỏi về tình huống đang gặp hoặc tra cứu hướng dẫn. Hãy xem câu trả lời và nguồn
+                    trước khi thực hiện bước tiếp theo.
+                  </p>
+                </div>
+                <Button onClick={() => setTab('chat')}>
+                  Hỏi trợ lý <Icon name="arrow" size={17} />
+                </Button>
+              </section>
 
-            <div className="ops-overview-grid">
-              <section className="feature-panel ops-overview-queue">
+              <div className="ops-live-home-actions" aria-label="Tác vụ nhanh">
+                <button
+                  type="button"
+                  className="ops-live-home-action"
+                  onClick={() => setTab('chat')}
+                >
+                  <span className="ops-live-home-action-icon">
+                    <Icon name="spark" size={19} />
+                  </span>
+                  <strong>Hỏi trợ lý vận hành</strong>
+                  <span>Mô tả việc cần hỗ trợ và xem các bước gợi ý.</span>
+                  <Icon name="arrow" size={17} />
+                </button>
+                <button
+                  type="button"
+                  className="ops-live-home-action"
+                  onClick={() => setTab('knowledge')}
+                >
+                  <span className="ops-live-home-action-icon">
+                    <Icon name="search" size={19} />
+                  </span>
+                  <strong>Tra cứu hướng dẫn</strong>
+                  <span>Tìm câu trả lời kèm nguồn tài liệu phù hợp.</span>
+                  <Icon name="arrow" size={17} />
+                </button>
+              </div>
+
+              <section className="feature-panel ops-live-home-request">
                 <div className="feature-panel-head">
                   <div>
-                    <p className="eyebrow">ƯU TIÊN MẪU · FIXTURE</p>
-                    <h2>Việc cần xem</h2>
+                    <p className="eyebrow">PHIÊN LÀM VIỆC</p>
+                    <h2>Yêu cầu hiện tại</h2>
                   </div>
-                  <Button variant="quiet" onClick={() => setTab('queue')}>
-                    Mở hàng đợi
-                  </Button>
+                  {agentResult && (
+                    <StatusLabel
+                      text={agentStateLabel(agentResult.state)}
+                      tone={agentStateTone(agentResult.state)}
+                    />
+                  )}
                 </div>
-                {loading ? (
-                  <div className="ops-queue-skeleton" role="status" aria-label="Đang tải hàng đợi">
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                ) : error ? (
-                  <Feedback
-                    tone="danger"
-                    title="Không tải được hàng đợi fixture"
-                    action={
-                      <Button variant="secondary" onClick={retry}>
-                        Thử lại
+                {agentCaseId ? (
+                  caseLoading && !agentResult ? (
+                    <div className="ops-queue-skeleton" role="status" aria-label="Đang tải yêu cầu">
+                      <span />
+                      <span />
+                    </div>
+                  ) : caseError && !agentResult ? (
+                    <Feedback
+                      tone="danger"
+                      title="Chưa thể tải yêu cầu"
+                      action={
+                        <Button
+                          variant="secondary"
+                          onClick={() => void reloadAgentCase()}
+                          loading={caseLoading}
+                        >
+                          Thử lại
+                        </Button>
+                      }
+                    >
+                      {caseError}
+                    </Feedback>
+                  ) : agentResult ? (
+                    <div className="ops-live-home-request-content">
+                      <div>
+                        <strong>{agentResult.goal?.summary ?? 'Yêu cầu hỗ trợ vận hành'}</strong>
+                        <p>
+                          {agentResult.pendingApproval?.summary ??
+                            agentResult.pendingConfirmation?.summary ??
+                            agentResult.message}
+                        </p>
+                      </div>
+                      <Button variant="secondary" onClick={() => setTab('case')}>
+                        Xem yêu cầu <Icon name="arrow" size={16} />
                       </Button>
-                    }
-                  >
-                    {error}
-                  </Feedback>
-                ) : branchQueue.length === 0 ? (
-                  <EmptyState title="Chưa có việc trong hàng đợi">
-                    Không có dữ liệu mẫu cho chi nhánh này.
-                  </EmptyState>
+                    </div>
+                  ) : (
+                    <EmptyState
+                      title="Yêu cầu đang được tải"
+                      action={
+                        <Button variant="secondary" onClick={() => void reloadAgentCase()}>
+                          Tải lại trạng thái
+                        </Button>
+                      }
+                    >
+                      Hệ thống đang lấy trạng thái mới nhất cho phiên này.
+                    </EmptyState>
+                  )
                 ) : (
-                  <div className="ops-overview-task-list">
-                    {branchQueue.slice(0, 3).map((task) => (
-                      <button
-                        type="button"
-                        className="ops-overview-task"
-                        key={task.id}
-                        onClick={() => askAboutTask(task)}
-                      >
-                        <span className="ops-overview-task-time">{task.due}</span>
-                        <span>
-                          <strong>{task.task}</strong>
-                          <small>
-                            {task.orderId} · {task.customer}
-                          </small>
-                        </span>
-                        <Icon name="arrow" size={17} />
-                      </button>
-                    ))}
+                  <div className="ops-live-home-request-empty">
+                    <div>
+                      <strong>Chưa có yêu cầu nào trong phiên này</strong>
+                      <p>
+                        Khi bạn gửi một yêu cầu cho trợ lý, trạng thái xử lý sẽ hiển thị tại đây.
+                      </p>
+                    </div>
+                    <Button variant="secondary" onClick={() => setTab('chat')}>
+                      Bắt đầu hỏi
+                    </Button>
                   </div>
                 )}
               </section>
 
-              <section className="feature-panel ops-runtime-card">
-                <div className="feature-panel-head">
-                  <div>
-                    <p className="eyebrow">TRẠNG THÁI HỆ THỐNG</p>
-                    <h2>{useAgentApi ? 'Phạm vi API hiện có' : 'Bản thiết kế demo'}</h2>
-                  </div>
-                  <StatusLabel
-                    text={useAgentApi ? 'API bật' : 'Fixture'}
-                    tone={useAgentApi ? 'info' : 'neutral'}
-                  />
-                </div>
-                {useAgentApi ? (
-                  <dl className="key-facts">
-                    <div>
-                      <dt>Hỏi Agent</dt>
-                      <dd>API Studio</dd>
-                    </div>
-                    <div>
-                      <dt>Hồ sơ Agent</dt>
-                      <dd>Đọc, xác nhận, từ chối, duyệt và hủy theo quyền máy chủ</dd>
-                    </div>
-                    <div>
-                      <dt>Tra cứu tài liệu</dt>
-                      <dd>API hỏi đáp có nguồn</dd>
-                    </div>
-                    <div>
-                      <dt>Hàng đợi / checklist</dt>
-                      <dd>Fixture, không phải dữ liệu live</dd>
-                    </div>
-                    <div>
-                      <dt>Nhật ký tập trung</dt>
-                      <dd>Chưa có API trên UI</dd>
-                    </div>
-                  </dl>
-                ) : (
-                  <dl className="key-facts">
-                    <div>
-                      <dt>Hàng đợi</dt>
-                      <dd>Fixture tĩnh từ Studio</dd>
-                    </div>
-                    <div>
-                      <dt>Kết nối trực tuyến</dt>
-                      <dd>Ngoại tuyến</dd>
-                    </div>
-                    <div>
-                      <dt>Bộ điều phối</dt>
-                      <dd>Chưa tích hợp</dd>
-                    </div>
-                    <div>
-                      <dt>Mô hình / dịch vụ AI</dt>
-                      <dd>Chưa kết nối</dd>
-                    </div>
-                    <div>
-                      <dt>Thao tác ghi</dt>
-                      <dd>Đang tắt</dd>
-                    </div>
-                    <div>
-                      <dt>Lưu hội thoại</dt>
-                      <dd>Chỉ trong trình duyệt</dd>
-                    </div>
-                  </dl>
-                )}
-                <p className="small-note">
-                  API bật chỉ cho biết cấu hình tích hợp ở giao diện; mỗi yêu cầu vẫn có thể lỗi
-                  hoặc bị từ chối theo quyền máy chủ.
-                </p>
-                <ol className="ops-flow">
-                  <li>
-                    <span>1</span>
-                    <div>
-                      <strong>Đọc dữ liệu theo chi nhánh</strong>
-                      <small>Fixture minh họa</small>
-                    </div>
-                  </li>
-                  <li>
-                    <span>2</span>
-                    <div>
-                      <strong>Đối chiếu nguồn tài liệu</strong>
-                      <small>Hiển thị nguồn và trạng thái</small>
-                    </div>
-                  </li>
-                  <li>
-                    <span>3</span>
-                    <div>
-                      <strong>Gợi ý checklist</strong>
-                      <small>Nhân viên tự kiểm tra</small>
-                    </div>
-                  </li>
-                  <li>
-                    <span>4</span>
-                    <div>
-                      <strong>Thực hiện trong Studio</strong>
-                      <small>Hệ thống nghiệp vụ mới ghi nhận kết quả</small>
-                    </div>
-                  </li>
-                </ol>
-              </section>
+              <p className="ops-live-home-note">
+                Khi trợ lý đề xuất thao tác, hãy kiểm tra nội dung và nguồn trước khi xác nhận.
+              </p>
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="ops-overview">
+              <div className="ops-metric-grid">
+                <article className="ops-metric-card">
+                  <span>Việc tại chi nhánh</span>
+                  <strong>{loading ? '—' : branchQueue.length}</strong>
+                  <small>
+                    {loading
+                      ? 'Đang đọc dữ liệu mẫu'
+                      : unassignedCount + ' việc chưa có người phụ trách'}
+                  </small>
+                </article>
+                <article className="ops-metric-card">
+                  <span>Cần nhân viên chú ý</span>
+                  <strong>{loading ? '—' : attentionCount}</strong>
+                  <small>Quá hạn, sắp đến hạn hoặc chờ lâu</small>
+                </article>
+                <article className="ops-metric-card">
+                  <span>Quá hạn</span>
+                  <strong>{loading ? '—' : overdueCount}</strong>
+                  <small>Đối chiếu trên đơn gốc</small>
+                </article>
+                <article className="ops-metric-card">
+                  <span>Nguồn cần xác minh</span>
+                  <strong>{verificationCount}</strong>
+                  <small>Chính sách và quy trình chưa duyệt</small>
+                </article>
+              </div>
+
+              <div className="ops-overview-grid">
+                <section className="feature-panel ops-overview-queue">
+                  <div className="feature-panel-head">
+                    <div>
+                      <p className="eyebrow">ƯU TIÊN MẪU · FIXTURE</p>
+                      <h2>Việc cần xem</h2>
+                    </div>
+                    <Button variant="quiet" onClick={() => setTab('queue')}>
+                      Mở hàng đợi
+                    </Button>
+                  </div>
+                  {loading ? (
+                    <div
+                      className="ops-queue-skeleton"
+                      role="status"
+                      aria-label="Đang tải hàng đợi"
+                    >
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                  ) : error ? (
+                    <Feedback
+                      tone="danger"
+                      title="Không tải được hàng đợi fixture"
+                      action={
+                        <Button variant="secondary" onClick={retry}>
+                          Thử lại
+                        </Button>
+                      }
+                    >
+                      {error}
+                    </Feedback>
+                  ) : branchQueue.length === 0 ? (
+                    <EmptyState title="Chưa có việc trong hàng đợi">
+                      Không có dữ liệu mẫu cho chi nhánh này.
+                    </EmptyState>
+                  ) : (
+                    <div className="ops-overview-task-list">
+                      {branchQueue.slice(0, 3).map((task) => (
+                        <button
+                          type="button"
+                          className="ops-overview-task"
+                          key={task.id}
+                          onClick={() => askAboutTask(task)}
+                        >
+                          <span className="ops-overview-task-time">{task.due}</span>
+                          <span>
+                            <strong>{task.task}</strong>
+                            <small>
+                              {task.orderId} · {task.customer}
+                            </small>
+                          </span>
+                          <Icon name="arrow" size={17} />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="feature-panel ops-runtime-card">
+                  <div className="feature-panel-head">
+                    <div>
+                      <p className="eyebrow">TRẠNG THÁI HỆ THỐNG</p>
+                      <h2>{useAgentApi ? 'Phạm vi API hiện có' : 'Bản thiết kế demo'}</h2>
+                    </div>
+                    <StatusLabel
+                      text={useAgentApi ? 'API bật' : 'Fixture'}
+                      tone={useAgentApi ? 'info' : 'neutral'}
+                    />
+                  </div>
+                  {useAgentApi ? (
+                    <dl className="key-facts">
+                      <div>
+                        <dt>Hỏi Agent</dt>
+                        <dd>API Studio</dd>
+                      </div>
+                      <div>
+                        <dt>Hồ sơ Agent</dt>
+                        <dd>Đọc, xác nhận, từ chối, duyệt và hủy theo quyền máy chủ</dd>
+                      </div>
+                      <div>
+                        <dt>Tra cứu tài liệu</dt>
+                        <dd>API hỏi đáp có nguồn</dd>
+                      </div>
+                      <div>
+                        <dt>Hàng đợi / checklist</dt>
+                        <dd>Fixture, không phải dữ liệu live</dd>
+                      </div>
+                      <div>
+                        <dt>Nhật ký tập trung</dt>
+                        <dd>Chưa có API trên UI</dd>
+                      </div>
+                    </dl>
+                  ) : (
+                    <dl className="key-facts">
+                      <div>
+                        <dt>Hàng đợi</dt>
+                        <dd>Fixture tĩnh từ Studio</dd>
+                      </div>
+                      <div>
+                        <dt>Kết nối trực tuyến</dt>
+                        <dd>Ngoại tuyến</dd>
+                      </div>
+                      <div>
+                        <dt>Bộ điều phối</dt>
+                        <dd>Chưa tích hợp</dd>
+                      </div>
+                      <div>
+                        <dt>Mô hình / dịch vụ AI</dt>
+                        <dd>Chưa kết nối</dd>
+                      </div>
+                      <div>
+                        <dt>Thao tác ghi</dt>
+                        <dd>Đang tắt</dd>
+                      </div>
+                      <div>
+                        <dt>Lưu hội thoại</dt>
+                        <dd>Chỉ trong trình duyệt</dd>
+                      </div>
+                    </dl>
+                  )}
+                  <p className="small-note">
+                    API bật chỉ cho biết cấu hình tích hợp ở giao diện; mỗi yêu cầu vẫn có thể lỗi
+                    hoặc bị từ chối theo quyền máy chủ.
+                  </p>
+                  <ol className="ops-flow">
+                    <li>
+                      <span>1</span>
+                      <div>
+                        <strong>Đọc dữ liệu theo chi nhánh</strong>
+                        <small>Fixture minh họa</small>
+                      </div>
+                    </li>
+                    <li>
+                      <span>2</span>
+                      <div>
+                        <strong>Đối chiếu nguồn tài liệu</strong>
+                        <small>Hiển thị nguồn và trạng thái</small>
+                      </div>
+                    </li>
+                    <li>
+                      <span>3</span>
+                      <div>
+                        <strong>Gợi ý checklist</strong>
+                        <small>Nhân viên tự kiểm tra</small>
+                      </div>
+                    </li>
+                    <li>
+                      <span>4</span>
+                      <div>
+                        <strong>Thực hiện trong Studio</strong>
+                        <small>Hệ thống nghiệp vụ mới ghi nhận kết quả</small>
+                      </div>
+                    </li>
+                  </ol>
+                </section>
+              </div>
+            </div>
+          ))}
 
         {tab === 'queue' && (
           <div className="ops-queue-view">
@@ -1147,13 +1305,13 @@ export function OpsAgentPage({
             <div className="ops-live-knowledge">
               <div className="feature-heading">
                 <div>
-                  <h2>Hỏi kho tri thức</h2>
+                  <h2>Tra cứu hướng dẫn</h2>
                   <p>
-                    API trả lời dựa trên tài liệu được phép và kèm trích dẫn. Kết quả chưa đủ căn cứ
-                    sẽ được nêu rõ.
+                    Tìm câu trả lời từ tài liệu được phép. Nguồn đi kèm giúp bạn kiểm tra căn cứ
+                    trước khi áp dụng.
                   </p>
                 </div>
-                <StatusLabel text="API · có nguồn" tone="info" />
+                <StatusLabel text="Dẫn nguồn khi có căn cứ" tone="neutral" />
               </div>
               <section className="feature-panel ops-live-knowledge-panel">
                 <form
@@ -1163,36 +1321,27 @@ export function OpsAgentPage({
                   }}
                 >
                   <TextAreaField
-                    label="Câu hỏi về tài liệu hoặc chính sách"
-                    hint="Không nhập thông tin cá nhân khách hàng. Tối đa 1.000 ký tự."
-                    placeholder="Ví dụ: Quy trình nhận đồ trả cần kiểm tra những gì?"
+                    label="Bạn muốn tìm hiểu điều gì?"
+                    hint="Không nhập mật khẩu, mã OTP hoặc toàn bộ thông tin thanh toán."
+                    placeholder="Ví dụ: Khi nhận đồ trả cần kiểm tra những gì?"
                     value={knowledgeQuery}
                     maxLength={1000}
                     required
                     rows={3}
                     onChange={(event) => setKnowledgeQuery(event.target.value)}
                   />
-                  <SelectField
-                    label="Số đoạn nguồn tối đa"
-                    value={knowledgeTopK}
-                    onChange={(event) => setKnowledgeTopK(event.target.value)}
-                  >
-                    <option value="3">3 nguồn</option>
-                    <option value="5">5 nguồn</option>
-                    <option value="6">6 nguồn</option>
-                  </SelectField>
                   <Button
                     type="submit"
                     disabled={knowledgeQuery.trim().length < 2 || knowledgeLoading}
                     loading={knowledgeLoading}
                   >
-                    {knowledgeLoading ? 'Đang tra cứu…' : 'Tra cứu'}
+                    {knowledgeLoading ? 'Đang tìm…' : 'Tìm hướng dẫn'}
                   </Button>
                 </form>
                 {knowledgeLoading && (
                   <div className="ops-knowledge-loading" role="status" aria-live="polite">
                     <span className="button-spinner" aria-hidden="true" /> Đang tìm câu trả lời và
-                    đối chiếu nguồn được phép…
+                    kiểm tra nguồn…
                   </div>
                 )}
                 {knowledgeError && (
@@ -1215,8 +1364,9 @@ export function OpsAgentPage({
                   </Feedback>
                 )}
                 {!knowledgeAnswer && !knowledgeError && !knowledgeLoading && (
-                  <EmptyState title="Chưa có kết quả tra cứu">
-                    Nhập câu hỏi để nhận nội dung trả lời và các trích dẫn mà API Agent cung cấp.
+                  <EmptyState title="Tìm hướng dẫn cho công việc">
+                    Nhập một câu hỏi ngắn, ví dụ về quy trình nhận đồ, trả đồ hoặc xử lý yêu cầu
+                    thuê.
                   </EmptyState>
                 )}
                 {knowledgeAnswer && (
@@ -1227,13 +1377,13 @@ export function OpsAgentPage({
                   >
                     <div className="ops-knowledge-answer-head">
                       <div>
-                        <p className="eyebrow">CÂU HỎI</p>
+                        <p className="eyebrow">NỘI DUNG TRA CỨU</p>
                         <h3>{knowledgeAnswer.query}</h3>
                       </div>
                       <StatusLabel
                         text={
                           knowledgeAnswer.result.outcome === 'insufficient_context'
-                            ? 'Chưa đủ căn cứ'
+                            ? 'Chưa tìm thấy căn cứ'
                             : knowledgeAnswer.result.provisional
                               ? 'Câu trả lời tạm'
                               : 'Có câu trả lời'
@@ -1247,6 +1397,26 @@ export function OpsAgentPage({
                       />
                     </div>
                     <p className="ops-knowledge-answer-text">{knowledgeAnswer.result.answer}</p>
+                    {knowledgeAnswer.result.outcome === 'insufficient_context' && (
+                      <Feedback
+                        tone="warning"
+                        title="Đừng xử lý theo suy đoán"
+                        action={
+                          <Button
+                            variant="secondary"
+                            onClick={() => {
+                              setChatDraft(knowledgeAnswer.query);
+                              setTab('chat');
+                            }}
+                          >
+                            Hỏi trợ lý về tình huống này
+                          </Button>
+                        }
+                      >
+                        Chưa có hướng dẫn phù hợp để làm căn cứ. Hãy xác nhận quy định đang áp dụng
+                        với người phụ trách trước khi xử lý.
+                      </Feedback>
+                    )}
                     {knowledgeAnswer.result.provisional && (
                       <Feedback tone="warning" title="Cần người có thẩm quyền đối chiếu">
                         API đánh dấu nội dung này là tạm thời. Không dùng làm chính sách đã duyệt
@@ -1254,11 +1424,11 @@ export function OpsAgentPage({
                       </Feedback>
                     )}
                     <div className="ops-knowledge-citations">
-                      <h3>Nguồn được API trả về</h3>
+                      <h3>Nguồn tham khảo</h3>
                       {knowledgeAnswer.result.sources.length === 0 ? (
-                        <EmptyState title="Không có nguồn trích dẫn">
-                          Kết quả hiện chưa có tài liệu đủ liên quan. Hãy kiểm tra chính sách gốc
-                          trong Studio.
+                        <EmptyState title="Chưa có nguồn để đối chiếu">
+                          Chỉ áp dụng câu trả lời khi có hướng dẫn phù hợp hoặc đã được người phụ
+                          trách xác nhận.
                         </EmptyState>
                       ) : (
                         <ul>
@@ -1285,10 +1455,6 @@ export function OpsAgentPage({
                   </section>
                 )}
               </section>
-              <Feedback tone="info" title="Phần quản lý kho tri thức đang chờ API">
-                API hiện chỉ có hỏi đáp kèm nguồn. Danh sách tài liệu, tìm kiếm thuần, tải lên, lập
-                chỉ mục, phiên bản và duyệt tài liệu chưa có endpoint để giao diện kết nối.
-              </Feedback>
             </div>
           ) : (
             <div className="ops-knowledge-view">
@@ -1468,17 +1634,17 @@ export function OpsAgentPage({
         )}
 
         {tab === 'chat' && (
-          <div className="ops-chat-layout">
+          <div className={useAgentApi ? 'ops-chat-layout ops-chat-live' : 'ops-chat-layout'}>
             <section className="feature-panel ops-chat-main" aria-label="Hỏi Ops Agent">
               <div className="ops-chat-heading">
                 <div>
                   <p className="eyebrow">
-                    {useAgentApi ? 'API AGENT · BẰNG CHỨNG RAG / TOOL' : 'TRẢ LỜI THEO TỪ KHÓA'}
+                    {useAgentApi ? 'TRỢ LÝ VẬN HÀNH' : 'TRẢ LỜI THEO TỪ KHÓA'}
                   </p>
-                  <h2>Hỏi Agent</h2>
+                  <h2>{useAgentApi ? 'Hỏi trợ lý' : 'Hỏi Agent'}</h2>
                   <p>
                     {useAgentApi
-                      ? 'Câu hỏi đi qua backend Studio; xem bằng chứng để biết Agent dùng tài liệu hay công cụ nghiệp vụ.'
+                      ? 'Mô tả việc cần hỗ trợ. Khi có căn cứ, câu trả lời sẽ kèm nguồn để bạn kiểm tra.'
                       : 'Không có mô hình AI. Câu trả lời mẫu chỉ dựa trên từ khóa và nguồn fixture.'}
                   </p>
                 </div>
@@ -1492,20 +1658,18 @@ export function OpsAgentPage({
                       : undefined
                   }
                 >
-                  Cuộc trò chuyện mới
+                  {useAgentApi ? 'Yêu cầu mới' : 'Cuộc trò chuyện mới'}
                 </Button>
               </div>
               <div className="ops-chat-context">
-                <Icon name="pin" size={16} />
-                <span>Phạm vi: {branch}</span>
-                {!useAgentApi && selectedTask && <span>· Đơn mẫu: {selectedTask.orderId}</span>}
-                <span className="ops-offline-label">
-                  {useAgentApi
-                    ? apiEnabled
-                      ? 'API được cấu hình'
-                      : 'Thiếu VITE_API_URL'
-                    : 'Ngoại tuyến'}
-                </span>
+                {!useAgentApi && (
+                  <>
+                    <Icon name="pin" size={16} />
+                    <span>Phạm vi: {branch}</span>
+                    {selectedTask && <span>· Đơn mẫu: {selectedTask.orderId}</span>}
+                    <span className="ops-offline-label">Ngoại tuyến</span>
+                  </>
+                )}
                 {useAgentApi && agentCaseId && (
                   <Button
                     variant="quiet"
@@ -1514,7 +1678,7 @@ export function OpsAgentPage({
                       if (!agentResult) void reloadAgentCase();
                     }}
                   >
-                    Xem hồ sơ{agentResult ? ` · ${agentStateLabel(agentResult.state)}` : ''}
+                    Yêu cầu hiện tại{agentResult ? ` · ${agentStateLabel(agentResult.state)}` : ''}
                   </Button>
                 )}
               </div>
@@ -1523,14 +1687,15 @@ export function OpsAgentPage({
                 (agentResult.pendingConfirmation ?? agentResult.pendingApproval) && (
                   <Feedback
                     tone="warning"
-                    title="Cần xử lý yêu cầu đang chờ"
+                    title="Yêu cầu cần bạn xem"
                     action={
                       <Button variant="secondary" onClick={() => setTab('case')}>
-                        Mở hồ sơ Agent
+                        Xem yêu cầu
                       </Button>
                     }
                   >
-                    Mở hồ sơ Agent để xác nhận hoặc từ chối trước khi gửi tin nhắn tiếp theo.
+                    Kiểm tra nội dung và nguồn trước khi xác nhận hoặc từ chối. Bạn có thể tiếp tục
+                    sau khi yêu cầu này được xử lý.
                   </Feedback>
                 )}
               <div className="ops-chat-thread" aria-label="Nội dung trò chuyện" aria-live="polite">
@@ -1545,7 +1710,7 @@ export function OpsAgentPage({
                       {message.role === 'user'
                         ? 'Bạn'
                         : useAgentApi
-                          ? 'Ops Agent · API'
+                          ? 'Trợ lý vận hành'
                           : 'Ops Agent · DEMO'}
                     </span>
                     <p>{message.text}</p>
@@ -1580,8 +1745,8 @@ export function OpsAgentPage({
                             >
                               <strong>
                                 {item.sourceType === 'knowledge'
-                                  ? 'Tài liệu · RAG'
-                                  : 'Dữ liệu · tool'}
+                                  ? 'Tài liệu tham khảo'
+                                  : 'Thông tin từ Studio'}
                               </strong>
                               <span>{evidenceLabel(item)}</span>
                               {item.observedAt && (
@@ -1593,7 +1758,7 @@ export function OpsAgentPage({
                           ))
                         ) : (
                           <span className="ops-chat-evidence">
-                            Agent không trả bằng chứng nguồn cho câu trả lời này.
+                            Câu trả lời này chưa kèm nguồn để đối chiếu.
                           </span>
                         )}
                       </div>
@@ -1624,8 +1789,16 @@ export function OpsAgentPage({
                 <div className="ops-chat-input">
                   <TextAreaField
                     label="Câu hỏi"
-                    hint="Enter để gửi · Shift + Enter để xuống dòng. Không nhập thông tin khách thật."
-                    placeholder="Hỏi về checklist hoặc nguồn tài liệu..."
+                    hint={
+                      useAgentApi
+                        ? 'Enter để gửi · Shift + Enter để xuống dòng. Dùng mã đơn thay tên hoặc số điện thoại; không gửi mật khẩu hay mã OTP.'
+                        : 'Enter để gửi · Shift + Enter để xuống dòng. Không nhập thông tin khách thật.'
+                    }
+                    placeholder={
+                      useAgentApi
+                        ? 'Mô tả tình huống hoặc yêu cầu bạn cần hỗ trợ…'
+                        : 'Hỏi về checklist hoặc nguồn tài liệu...'
+                    }
                     value={chatDraft}
                     maxLength={2000}
                     onChange={(event) => setChatDraft(event.target.value)}
@@ -1657,12 +1830,25 @@ export function OpsAgentPage({
                 <Feedback
                   tone="danger"
                   title={
-                    sendOutcomeUnknown ? 'Kết quả gửi chưa xác định' : 'Không gửi được câu hỏi'
+                    sendOutcomeUnknown ? 'Chưa xác nhận được kết quả gửi' : 'Không gửi được câu hỏi'
+                  }
+                  action={
+                    sendOutcomeUnknown && agentCaseId ? (
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          setTab('case');
+                          void reloadAgentCase();
+                        }}
+                      >
+                        Kiểm tra yêu cầu
+                      </Button>
+                    ) : undefined
                   }
                 >
-                  {sendError}
+                  {sendError}{' '}
                   {sendOutcomeUnknown
-                    ? ' API chưa có cách tra hồ sơ vừa tạo khi phản hồi bị mất. Câu hỏi vẫn được giữ; hãy đối chiếu trạng thái trước khi chủ động gửi lại.'
+                    ? 'Câu hỏi vẫn được giữ. Hãy kiểm tra yêu cầu hiện tại trước khi gửi lại để tránh tạo thao tác trùng.'
                     : ''}
                 </Feedback>
               )}
@@ -1671,27 +1857,18 @@ export function OpsAgentPage({
               <div className="feature-panel-head">
                 <div>
                   <p className="eyebrow">HƯỚNG DẪN</p>
-                  <h2>{useAgentApi ? 'Giới hạn khi thử API' : 'Giới hạn của bản demo'}</h2>
+                  <h2>{useAgentApi ? 'Cách làm việc an toàn' : 'Giới hạn của bản demo'}</h2>
                 </div>
               </div>
               <ul className="ops-chat-limits">
                 {useAgentApi ? (
                   <>
+                    <li>Mô tả rõ việc cần làm; dùng mã đơn nếu cần nhắc đến một hồ sơ cụ thể.</li>
+                    <li>Kiểm tra câu trả lời và nguồn tham khảo trước khi làm theo.</li>
                     <li>
-                      Câu hỏi được gửi tới backend Agent; không nhập thông tin khách thật vào môi
-                      trường thử nghiệm.
+                      Khi có yêu cầu xác nhận, chỉ tiếp tục nếu nội dung và đối tượng đều chính xác.
                     </li>
-                    <li>
-                      Hàng đợi và checklist vẫn là dữ liệu fixture, không phải trạng thái live.
-                    </li>
-                    <li>
-                      Bằng chứng hiển thị loại nguồn do backend trả về: tài liệu hoặc tool nghiệp
-                      vụ.
-                    </li>
-                    <li>
-                      Backend kiểm tra quyền của tài khoản trước mỗi lần xác nhận hoặc duyệt thao
-                      tác Agent.
-                    </li>
+                    <li>Không gửi mật khẩu, mã OTP hoặc thông tin thanh toán đầy đủ.</li>
                   </>
                 ) : (
                   <>
@@ -1703,7 +1880,7 @@ export function OpsAgentPage({
                 )}
               </ul>
               <Button variant="quiet" onClick={() => setTab('knowledge')}>
-                {useAgentApi ? 'Hỏi kho tri thức' : 'Xem nguồn mẫu'}
+                {useAgentApi ? 'Tra cứu hướng dẫn' : 'Xem nguồn mẫu'}
               </Button>
             </aside>
           </div>
@@ -1713,10 +1890,11 @@ export function OpsAgentPage({
           <div className="ops-agent-case-view">
             <div className="feature-heading">
               <div>
-                <h2>Hồ sơ Agent hiện tại</h2>
+                <h2>{useAgentApi ? 'Yêu cầu hiện tại' : 'Hồ sơ Agent'}</h2>
                 <p>
-                  API hỗ trợ đọc lại trạng thái hồ sơ đang mở. Hiện chưa có danh sách hồ sơ hoặc
-                  lịch sử hội thoại để tra cứu.
+                  {useAgentApi
+                    ? 'Theo dõi kết quả và xử lý yêu cầu đang chờ bạn xác nhận.'
+                    : 'Theo dõi hồ sơ được tạo trong bản demo.'}
                 </p>
               </div>
               {agentResult && (
@@ -1733,25 +1911,24 @@ export function OpsAgentPage({
               </Feedback>
             ) : !agentCaseId ? (
               <EmptyState
-                title="Chưa có hồ sơ Agent đang mở"
+                title="Chưa có yêu cầu trong phiên này"
                 action={
                   <Button variant="secondary" onClick={() => setTab('chat')}>
-                    Mở Hỏi Agent
+                    Hỏi trợ lý
                   </Button>
                 }
               >
-                Gửi câu hỏi trong mục Hỏi Agent để tạo hồ sơ. Hồ sơ mới tạo sẽ xuất hiện ở đây cùng
-                trạng thái và các bước cần bạn xử lý.
+                Gửi yêu cầu cho trợ lý. Trạng thái và các bước cần bạn xử lý sẽ xuất hiện tại đây.
               </EmptyState>
             ) : caseLoading && !agentResult ? (
-              <div className="ops-queue-skeleton" role="status" aria-label="Đang tải hồ sơ Agent">
+              <div className="ops-queue-skeleton" role="status" aria-label="Đang tải yêu cầu">
                 <span />
                 <span />
               </div>
             ) : caseError && !agentResult ? (
               <Feedback
                 tone="danger"
-                title="Không tải được hồ sơ Agent"
+                title="Không tải được yêu cầu"
                 action={
                   <div className="ops-agent-case-recovery-actions">
                     <Button
@@ -1764,17 +1941,17 @@ export function OpsAgentPage({
                       Thử tải lại
                     </Button>
                     <Button variant="quiet" onClick={forgetAgentCaseReference}>
-                      Bỏ tham chiếu trong tab
+                      Bỏ liên kết phiên
                     </Button>
                   </div>
                 }
               >
-                {caseError} Có thể thử lại hoặc xóa mã tham chiếu đang lưu trong tab này. Xóa tham
-                chiếu không hủy hồ sơ trên máy chủ.
+                {caseError} Bạn có thể thử lại hoặc bỏ liên kết với yêu cầu trong phiên này. Việc bỏ
+                liên kết không hủy yêu cầu đã gửi.
               </Feedback>
             ) : !agentResult ? (
               <EmptyState
-                title="Cần tải trạng thái hồ sơ"
+                title="Cần cập nhật trạng thái yêu cầu"
                 action={
                   <Button
                     variant="secondary"
@@ -1783,11 +1960,11 @@ export function OpsAgentPage({
                     }}
                     loading={caseLoading}
                   >
-                    Tải hồ sơ
+                    Cập nhật trạng thái
                   </Button>
                 }
               >
-                Có mã hồ sơ trong phiên hiện tại nhưng chưa tải được dữ liệu hiển thị.
+                Yêu cầu đã được ghi nhận trong phiên này, nhưng trạng thái mới nhất chưa hiển thị.
               </EmptyState>
             ) : (
               <>
@@ -1803,7 +1980,7 @@ export function OpsAgentPage({
                         }}
                         loading={caseLoading}
                       >
-                        Tải lại trạng thái
+                        Cập nhật trạng thái
                       </Button>
                     }
                   >
@@ -1814,35 +1991,17 @@ export function OpsAgentPage({
                 <section className="feature-panel ops-agent-case-card">
                   <div className="feature-panel-head">
                     <div>
-                      <p className="eyebrow">TRẠNG THÁI TỪ API STUDIO</p>
-                      <h3>{agentResult.goal?.summary ?? 'Hồ sơ hỗ trợ vận hành'}</h3>
+                      <p className="eyebrow">YÊU CẦU HỖ TRỢ</p>
+                      <h3>{agentResult.goal?.summary ?? 'Yêu cầu hỗ trợ vận hành'}</h3>
                     </div>
                     <StatusLabel
                       text={agentStateLabel(agentResult.state)}
                       tone={agentStateTone(agentResult.state)}
                     />
                   </div>
-                  <div className="ops-agent-case-facts">
-                    <div>
-                      <span>Trạng thái xử lý</span>
-                      <strong>{agentStateLabel(agentResult.runStatus ?? agentResult.state)}</strong>
-                    </div>
-                    {typeof agentResult.stepsUsed === 'number' && (
-                      <div>
-                        <span>Bước đã chạy</span>
-                        <strong>{agentResult.stepsUsed}</strong>
-                      </div>
-                    )}
-                    {agentResult.terminationReason && (
-                      <div>
-                        <span>Kết thúc vì</span>
-                        <strong>{agentResult.terminationReason}</strong>
-                      </div>
-                    )}
-                  </div>
                   <div className="ops-agent-case-message">
                     <h4>Kết quả gần nhất</h4>
-                    <p>{agentResult.message || 'API chưa trả nội dung kết quả.'}</p>
+                    <p>{agentResult.message || 'Chưa có nội dung kết quả.'}</p>
                   </div>
                   {agentResult.pendingInput && (
                     <Feedback tone="warning" title="Agent cần bạn bổ sung thông tin">
@@ -1911,7 +2070,7 @@ export function OpsAgentPage({
                   )}
                   {agentResult.evidence.length > 0 && (
                     <div className="ops-agent-case-evidence">
-                      <h4>Bằng chứng</h4>
+                      <h4>Nguồn đã đối chiếu</h4>
                       <ul>
                         {agentResult.evidence.map((evidence, index) => (
                           <li key={`${evidence.sourceType}:${evidence.sourceId}:${index}`}>
@@ -1941,8 +2100,8 @@ export function OpsAgentPage({
                   )}
                   <div className="ops-agent-case-footer">
                     <p>
-                      Hồ sơ này thuộc tài khoản đang đăng nhập. API kiểm tra quyền ở mỗi lần đọc và
-                      thao tác.
+                      Yêu cầu này thuộc phiên làm việc hiện tại. Thao tác cần quyền sẽ được kiểm tra
+                      trước khi thực hiện.
                     </p>
                     <div>
                       {!agentResult.completed && (
@@ -1951,7 +2110,7 @@ export function OpsAgentPage({
                           onClick={() => setCaseDialogAction('cancel')}
                           disabled={caseActionLoading}
                         >
-                          Hủy hồ sơ Agent
+                          Hủy yêu cầu
                         </Button>
                       )}
                       <Button
@@ -1961,7 +2120,7 @@ export function OpsAgentPage({
                         }}
                         loading={caseLoading}
                       >
-                        Tải lại trạng thái
+                        Cập nhật trạng thái
                       </Button>
                     </div>
                   </div>

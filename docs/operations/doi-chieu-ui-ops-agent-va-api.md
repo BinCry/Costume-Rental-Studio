@@ -18,23 +18,30 @@
 
 API Agent yêu cầu phiên Studio đăng nhập. Cấp quyền và phạm vi dữ liệu do backend kiểm tra theo actor; giao diện không tự suy quyền để quyết định kết quả. Nếu một thao tác trả lỗi hoặc hết thời gian chờ, UI yêu cầu tải lại trạng thái hồ sơ trước khi thử tiếp.
 
+## Quy ước trải nghiệm khi chạy production
+
+- Chế độ production chỉ hiển thị Bàn làm việc, Hỏi trợ lý, Tra cứu hướng dẫn và Yêu cầu hiện tại. Các mục này dẫn tới hành động hoặc trạng thái mà nhân viên có thể sử dụng ngay.
+- Hàng đợi, checklist, danh mục nguồn mẫu và nhật ký fixture chỉ xuất hiện trong bản demo. Chúng không nằm trong điều hướng production và không được dùng làm số liệu của ca làm việc.
+- Nhân viên nhìn thấy trạng thái và căn cứ nghiệp vụ cần để quyết định. Tên route, thuật ngữ nội bộ như RAG/tool, mã UUID và cấu hình API không xuất hiện trong luồng thường ngày.
+- Khi chưa đủ nguồn, màn tra cứu đưa nhân viên sang hỏi trợ lý hoặc nhắc đối chiếu với người phụ trách. Khi chưa rõ kết quả gửi, UI giữ câu hỏi và hướng dẫn kiểm tra yêu cầu trước khi gửi lại.
+- Trạng thái kết nối được thể hiện theo từng thao tác. Bật cấu hình API không được xem là bằng chứng rằng Agent hay kho tri thức đang hoạt động.
+
 ## Nội dung vẫn dùng fixture
 
-- Tổng quan số việc, hàng đợi, nhóm ưu tiên và các tình huống lỗi/xung đột.
-- Bốn checklist quy trình minh họa.
-- Danh mục nguồn mẫu trong chế độ fixture.
+- Tổng quan số việc, hàng đợi, nhóm ưu tiên và các tình huống lỗi/xung đột trong chế độ demo.
+- Bốn checklist quy trình minh họa và danh mục nguồn mẫu trong chế độ demo.
 
-Khi bật API, hàng đợi và checklist tiếp tục được gắn nhãn fixture. Mã đơn trong fixture không được đưa vào câu hỏi gửi Agent, và nút mở đơn mẫu bị khóa để không điều hướng sang đơn thật.
+Các trang fixture bị ẩn khỏi điều hướng khi build production. Mã đơn trong fixture không được đưa vào câu hỏi gửi Agent, và nút mở đơn mẫu bị khóa để không điều hướng sang đơn thật.
 
 ## Chờ Agent/API bổ sung
 
 | Nhu cầu | API còn thiếu | Trạng thái UI hiện tại |
 |---|---|---|
-| Duyệt hàng đợi hồ sơ của nhiều nhân viên | `GET /agent/cases` có phân trang, lọc trạng thái và phạm vi chi nhánh | Không giả lập hàng đợi Agent; giao diện chỉ đọc hồ sơ hiện tại của người dùng. |
-| Mở lại nội dung hội thoại | API đọc các message theo hồ sơ | Tin nhắn chỉ còn trong state của tab; sau khi tải lại chỉ có trạng thái/kết quả mới nhất từ `GET case`. |
-| Nhật ký hoạt động và audit | API sự kiện có actor, hành động, nguồn, thời gian, kết quả, quyền và phân trang | Tab Nhật ký nêu rõ chưa có API; không tạo sự kiện mẫu. |
-| Liệt kê và quản lý nguồn tri thức | API danh sách tài liệu, metadata/version, tải lên, ingestion/index, trạng thái duyệt và lịch sử | Chế độ API chỉ có màn hình hỏi đáp. Không hiển thị danh mục fixture như nguồn thật. |
-| Tìm tài liệu không cần sinh câu trả lời | Endpoint tìm kiếm trả đoạn trích và score/citation | Dùng endpoint `knowledge/answer` hiện có; chưa có màn hình tìm kiếm thuần. |
+| Duyệt hàng đợi hồ sơ của nhiều nhân viên | `GET /agent/cases` có phân trang, lọc trạng thái và phạm vi chi nhánh | Chưa mở hàng đợi nhóm trong production; mỗi nhân viên chỉ xem yêu cầu hiện tại của phiên mình. |
+| Mở lại nội dung hội thoại | API đọc các message theo hồ sơ | Yêu cầu hiện tại hiển thị kết quả gần nhất; không gọi đó là lịch sử hội thoại. |
+| Nhật ký hoạt động và audit | API sự kiện có actor, hành động, nguồn, thời gian, kết quả, quyền và phân trang | Nhật ký không xuất hiện trong điều hướng production cho tới khi có API và quyền truy cập tương ứng. |
+| Liệt kê và quản lý nguồn tri thức | API danh sách tài liệu, metadata/version, tải lên, ingestion/index, trạng thái duyệt và lịch sử | Production chỉ có tra cứu hướng dẫn bằng `knowledge/answer`; không hiển thị danh mục fixture hoặc chức năng quản lý giả. |
+| Tìm tài liệu không cần sinh câu trả lời | Endpoint tìm kiếm trả đoạn trích và score/citation | Chưa có màn tìm kiếm thuần; hiện có thể hỏi hướng dẫn và xem các nguồn mà API trả về. |
 | Khôi phục một lần tạo hồ sơ mới khi mất response | Idempotency key hoặc API tra cứu theo request ID | Không retry ngầm. Nếu lỗi tạo mới có kết quả chưa rõ, nhân viên cần đối chiếu trước khi gửi yêu cầu mới. |
 | Trạng thái runtime trên UI | Endpoint health/capability được API Studio proxy cho actor | Giao diện không khẳng định runtime đang khỏe chỉ vì build ở chế độ API; từng thao tác hiển thị trạng thái thực tế. |
 

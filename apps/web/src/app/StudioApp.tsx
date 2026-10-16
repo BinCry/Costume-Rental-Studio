@@ -56,7 +56,11 @@ const customerNav: { screen: Screen; label: string }[] = [
 ];
 const staffNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
   { screen: 'dashboard', label: 'Bảng việc', roles: ['ADMIN', 'SALES_STAFF', 'INVENTORY_STAFF'] },
-  { screen: 'opsAgent', label: 'Ops Agent', roles: ['ADMIN', 'SALES_STAFF', 'INVENTORY_STAFF'] },
+  {
+    screen: 'opsAgent',
+    label: 'Trợ lý vận hành',
+    roles: ['ADMIN', 'SALES_STAFF', 'INVENTORY_STAFF'],
+  },
   { screen: 'orders', label: 'Đơn thuê', roles: ['ADMIN', 'SALES_STAFF', 'INVENTORY_STAFF'] },
   { screen: 'counter', label: 'Tạo tại quầy', roles: ['ADMIN', 'SALES_STAFF'] },
   { screen: 'active', label: 'Đang thuê', roles: ['ADMIN', 'SALES_STAFF', 'INVENTORY_STAFF'] },
@@ -1107,7 +1111,7 @@ export default function StudioApp() {
         <span>
           {route.screen === 'opsAgent'
             ? import.meta.env.VITE_OPS_AGENT_MODE === 'api'
-              ? 'Ops Agent · Hỏi Agent, hồ sơ và tri thức qua API · Hàng đợi fixture'
+              ? 'Trợ lý vận hành · Tra cứu hướng dẫn · Hỗ trợ xử lý yêu cầu'
               : 'Ops Agent · Fixture demo · Không lưu dữ liệu'
             : import.meta.env.DEV
               ? apiIdentity
