@@ -36,7 +36,12 @@ function activeOrder(overrides: Record<string, unknown> = {}) {
     version: 7,
     plannedStartAt: new Date('2026-10-10T08:00:00.000Z'),
     plannedDueAt: new Date('2026-10-12T08:00:00.000Z'),
-    policyVersion: { billingDayMode: 'ROLLING_24H', maxRentalDays: 14, lateReturnBufferMinutes: 720, defaultCleaningBufferMinutes: 720 },
+    policyVersion: {
+      billingDayMode: 'ROLLING_24H',
+      maxRentalDays: 14,
+      lateReturnBufferMinutes: 720,
+      defaultCleaningBufferMinutes: 720,
+    },
     payments: [],
     items: [
       {
@@ -73,7 +78,10 @@ function transactionFor(order: ReturnType<typeof activeOrder>) {
         },
       ]),
     },
-    rentalOrderItem: { findFirst: vi.fn().mockResolvedValue(null) },
+    rentalOrderItem: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
     unitBlock: { findFirst: vi.fn().mockResolvedValue(null) },
     stockTransferItem: { findFirst: vi.fn().mockResolvedValue(null) },
     rentalOrderEvent: { create: vi.fn().mockResolvedValue({}) },
@@ -113,7 +121,15 @@ describe('rental timing and late-fee policy', () => {
       { id: '10000000-0000-4000-8000-000000000012', unitDailyPriceVnd: 1n, billableDays: 1 },
     ];
     const now = new Date('2026-10-12T08:00:00.000Z');
-    const result = service.calculateItemLateFees(items, items.map((item) => item.id), now, now, 0, 0, 100n);
+    const result = service.calculateItemLateFees(
+      items,
+      items.map((item) => item.id),
+      now,
+      now,
+      0,
+      0,
+      100n,
+    );
     expect(result.items.every((item) => BigInt(item.baseRentalVnd) >= 0n)).toBe(true);
     expect(result.items.reduce((sum, item) => sum + BigInt(item.baseRentalVnd), 0n)).toBe(4n);
   });
@@ -125,16 +141,53 @@ describe('rental timing and late-fee policy', () => {
     const due = new Date('2026-10-12T08:00:00.000Z');
     const graceEnd = new Date('2026-10-12T09:00:00.000Z');
     const threeLateDays = new Date(graceEnd.getTime() + 2 * 86_400_000 + 1);
-    const partial = service.calculateItemLateFees(items, [itemId], due, threeLateDays, 60, 30, 30_000n);
+    const partial = service.calculateItemLateFees(
+      items,
+      [itemId],
+      due,
+      threeLateDays,
+      60,
+      30,
+      30_000n,
+    );
     expect(partial.items).toEqual([
       { orderItemId: itemId, baseRentalVnd: '180000', lateDays: 3, lateFeeVnd: '162000' },
     ]);
-    const capped = service.calculateItemLateFees(items, [itemId], due, new Date(graceEnd.getTime() + 4 * 86_400_000), 60, 30, 30_000n);
+    const capped = service.calculateItemLateFees(
+      items,
+      [itemId],
+      due,
+      new Date(graceEnd.getTime() + 4 * 86_400_000),
+      60,
+      30,
+      30_000n,
+    );
     expect(capped.lateFeeVnd).toBe(180_000n);
   });
 });
 
 describe('rental extension and amendment service', () => {
+  it('leaves unassigned items unassigned when cancelling an order', async () => {
+    const order = activeOrder({
+      status: 'PENDING_CONFIRMATION',
+      items: [
+        {
+          ...activeOrder().items[0],
+          unitId: null,
+          allocationStatus: 'UNASSIGNED',
+        },
+      ],
+    });
+    const tx = transactionFor(order);
+
+    await service.cancelOrder(actor, orderId, 7, 'Customer request');
+
+    expect(tx.rentalOrderItem.updateMany).toHaveBeenCalledWith({
+      where: { orderId, unitId: { not: null } },
+      data: { allocationStatus: 'RELEASED' },
+    });
+  });
+
   it('extends every allocation atomically and records the extension fee as EXTRA', async () => {
     const order = activeOrder();
     const tx = transactionFor(order);
@@ -297,7 +350,6 @@ describe('rental extension and amendment service', () => {
     );
   });
 });
-
 
 describe('legacy late-fee formula compatibility', () => {
   it('preserves the original gross-order calculation for legacy policy versions', () => {

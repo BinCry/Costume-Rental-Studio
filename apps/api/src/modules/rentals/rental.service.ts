@@ -172,10 +172,7 @@ export function bookingReservationUntil(
 ) {
   // Late-return reserve and garment preparation are separate intervals, so both are reserved.
   const lateReserveMinutes = Math.max(0, lateReturnBufferMinutes);
-  const preparationMinutes = Math.max(
-    0,
-    cleaningBufferMinutes ?? defaultCleaningBufferMinutes,
-  );
+  const preparationMinutes = Math.max(0, cleaningBufferMinutes ?? defaultCleaningBufferMinutes);
   return new Date(plannedDueAt.getTime() + (lateReserveMinutes + preparationMinutes) * 60_000);
 }
 
@@ -198,17 +195,19 @@ export function calculateItemLateFees(
     (sum, item) => sum + item.unitDailyPriceVnd * BigInt(item.billableDays),
     0n,
   );
-  const discount = promotionDiscountVnd < 0n
-    ? 0n
-    : promotionDiscountVnd > totalBase
-      ? totalBase
-      : promotionDiscountVnd;
+  const discount =
+    promotionDiscountVnd < 0n
+      ? 0n
+      : promotionDiscountVnd > totalBase
+        ? totalBase
+        : promotionDiscountVnd;
   const itemBases = items.map((item) => item.unitDailyPriceVnd * BigInt(item.billableDays));
   const discounts = itemBases.map((base) => (totalBase > 0n ? (discount * base) / totalBase : 0n));
   let undistributedDiscount = discount - discounts.reduce((sum, value) => sum + value, 0n);
   for (let index = 0; index < discounts.length && undistributedDiscount > 0n; index += 1) {
     const remainingCapacity = itemBases[index]! - discounts[index]!;
-    const allocation = remainingCapacity < undistributedDiscount ? remainingCapacity : undistributedDiscount;
+    const allocation =
+      remainingCapacity < undistributedDiscount ? remainingCapacity : undistributedDiscount;
     discounts[index] = discounts[index]! + allocation;
     undistributedDiscount -= allocation;
   }
@@ -451,7 +450,8 @@ export async function createQuote(actor: AuthenticatedActor, input: QuoteInput) 
         dailyRentalPriceVnd: variant.dailyRentalPriceVnd,
         depositAmountVnd: variant.depositAmountVnd,
         rentalAmountVnd: variant.dailyRentalPriceVnd * BigInt(days),
-        availableUnits: availability.find((item) => item.variantId === variant.id)?.availableUnits ?? 0,
+        availableUnits:
+          availability.find((item) => item.variantId === variant.id)?.availableUnits ?? 0,
       })),
       promotion: promotion
         ? { id: promotion.id, code: promotion.code, discountVnd: discount }
@@ -730,7 +730,15 @@ export async function createOrder(actor: AuthenticatedActor, input: CreateOrderI
         promotionDiscountVnd: discount,
         quoteExpiresAt: new Date(Date.now() + policy.quoteValidHours * 3_600_000),
         createdBy: actor.id,
-        items: { create: itemCreateData(input, variants, days, policy.lateReturnBufferMinutes, policy.defaultCleaningBufferMinutes) },
+        items: {
+          create: itemCreateData(
+            input,
+            variants,
+            days,
+            policy.lateReturnBufferMinutes,
+            policy.defaultCleaningBufferMinutes,
+          ),
+        },
       },
       include: includeOrder(),
     });
@@ -782,7 +790,16 @@ export async function updateOrder(actor: AuthenticatedActor, id: string, input: 
         promotionCode: promotion?.code ?? null,
         promotionDiscountVnd: discount,
         quoteExpiresAt: new Date(Date.now() + policy.quoteValidHours * 3_600_000),
-        items: { deleteMany: {}, create: itemCreateData(input, variants, days, policy.lateReturnBufferMinutes, policy.defaultCleaningBufferMinutes) },
+        items: {
+          deleteMany: {},
+          create: itemCreateData(
+            input,
+            variants,
+            days,
+            policy.lateReturnBufferMinutes,
+            policy.defaultCleaningBufferMinutes,
+          ),
+        },
         version: { increment: 1 },
       },
       include: includeOrder(),
@@ -1147,9 +1164,25 @@ async function transition(
   }, transactionOptions);
 }
 export const prepareOrder = (actor: AuthenticatedActor, id: string, expectedVersion: number) =>
-  transition(actor, id, expectedVersion, ['CONFIRMED'], 'PREPARING', 'PREPARATION_STARTED', 'prepare');
+  transition(
+    actor,
+    id,
+    expectedVersion,
+    ['CONFIRMED'],
+    'PREPARING',
+    'PREPARATION_STARTED',
+    'prepare',
+  );
 export const markOrderReady = (actor: AuthenticatedActor, id: string, expectedVersion: number) =>
-  transition(actor, id, expectedVersion, ['PREPARING'], 'READY_FOR_PICKUP', 'ORDER_READY', 'prepare');
+  transition(
+    actor,
+    id,
+    expectedVersion,
+    ['PREPARING'],
+    'READY_FOR_PICKUP',
+    'ORDER_READY',
+    'prepare',
+  );
 export async function rejectOrder(
   actor: AuthenticatedActor,
   id: string,
@@ -1230,7 +1263,7 @@ async function finishOrder(
   reason: string,
 ) {
   await tx.rentalOrderItem.updateMany({
-    where: { orderId: order.id },
+    where: { orderId: order.id, unitId: { not: null } },
     data: { allocationStatus: 'RELEASED' },
   });
   const result = await tx.rentalOrder.update({
@@ -1288,7 +1321,9 @@ async function assertPickupUnitsReady(
   tx: Prisma.TransactionClient,
   order: Awaited<ReturnType<typeof lockOrder>>,
 ) {
-  const unitIds = order.items.map((item) => item.unitId).filter((value): value is string => Boolean(value));
+  const unitIds = order.items
+    .map((item) => item.unitId)
+    .filter((value): value is string => Boolean(value));
   if (unitIds.length !== order.items.length || new Set(unitIds).size !== unitIds.length)
     throw new AppError(409, 'UNIT_NOT_READY', 'Every order item must have its own assigned unit');
   const units = await lockUnits(tx, unitIds);
@@ -1325,7 +1360,10 @@ async function assertPickupUnitsReady(
         select: { id: true },
       }),
       tx.stockTransferItem.findFirst({
-        where: { unitId: unit.id, transfer: { status: { in: ['REQUESTED', 'APPROVED', 'IN_TRANSIT'] } } },
+        where: {
+          unitId: unit.id,
+          transfer: { status: { in: ['REQUESTED', 'APPROVED', 'IN_TRANSIT'] } },
+        },
         select: { id: true },
       }),
     ]);
@@ -1436,16 +1474,23 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
           ? 'A partial return must contain at least one, but not all, active order items'
           : 'Every active order item must be supplied exactly once',
       );
-    const units = await lockUnits(tx, input.items.map((inputItem) => {
-      const orderItem = order.items.find((item) => item.id === inputItem.orderItemId);
-      if (
-        !orderItem ||
-        !['ACTIVE', 'CONFIRMED'].includes(orderItem.allocationStatus) ||
-        !orderItem.unitId
-      )
-        throw new AppError(400, 'INVALID_RETURN_ITEMS', 'Only active order items can be returned');
-      return orderItem.unitId;
-    }));
+    const units = await lockUnits(
+      tx,
+      input.items.map((inputItem) => {
+        const orderItem = order.items.find((item) => item.id === inputItem.orderItemId);
+        if (
+          !orderItem ||
+          !['ACTIVE', 'CONFIRMED'].includes(orderItem.allocationStatus) ||
+          !orderItem.unitId
+        )
+          throw new AppError(
+            400,
+            'INVALID_RETURN_ITEMS',
+            'Only active order items can be returned',
+          );
+        return orderItem.unitId;
+      }),
+    );
     const returnedAt = new Date();
     for (const inputItem of input.items) {
       const orderItem = order.items.find((x) => x.id === inputItem.orderItemId)!;
@@ -1453,7 +1498,11 @@ export async function returnOrder(actor: AuthenticatedActor, id: string, input: 
         !inputItem.isMissing &&
         (!inputItem.returnConditionGrade || !inputItem.nextOperationalStatus)
       )
-        throw new AppError(400, 'INVALID_RETURN_STATUS', 'Returned units require a condition and next status');
+        throw new AppError(
+          400,
+          'INVALID_RETURN_STATUS',
+          'Returned units require a condition and next status',
+        );
       if (
         !inputItem.isMissing &&
         inputItem.returnConditionGrade === 'DAMAGED' &&
