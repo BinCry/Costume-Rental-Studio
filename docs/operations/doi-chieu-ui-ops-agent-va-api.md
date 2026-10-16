@@ -3,6 +3,8 @@
 **Ngày đối chiếu:** 17/10/2026
 **Phạm vi:** giao diện Ops Agent trong Costume Rental Studio và các route Agent/Knowledge công khai trên Studio API.
 
+Yêu cầu triển khai cụ thể cho đội AI Agent, gồm hợp đồng tool, RAG, ranh giới quyền và tiêu chí nghiệm thu: [`yeu-cau-hoan-thien-ai-agent.md`](yeu-cau-hoan-thien-ai-agent.md).
+
 ## API đã có màn hình
 
 | API | Màn hình trong UI | Cách dùng |
@@ -33,7 +35,9 @@ API Agent yêu cầu phiên Studio đăng nhập. Cấp quyền và phạm vi d�
 
 Các trang fixture bị ẩn khỏi điều hướng khi build production. Mã đơn trong fixture không được đưa vào câu hỏi gửi Agent, và nút mở đơn mẫu bị khóa để không điều hướng sang đơn thật.
 
-## Chờ Agent/API bổ sung
+## Đang chờ API hoặc quyết định sản phẩm
+
+Các mục dưới đây chưa thuộc phạm vi màn hình production hiện tại. Không dựng bằng fixture. Xem [`yeu-cau-hoan-thien-ai-agent.md`](yeu-cau-hoan-thien-ai-agent.md) để biết tiêu chí hiện tại của đội AI và ranh giới các phần chờ.
 
 | Nhu cầu | API còn thiếu | Trạng thái UI hiện tại |
 |---|---|---|
