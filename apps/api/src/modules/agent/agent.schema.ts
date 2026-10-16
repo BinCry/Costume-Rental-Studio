@@ -75,6 +75,12 @@ export const aiAgentResponseSchema = z.object({
   message: z.string(),
 });
 
+export const aiAgentCaseResponseSchema = z.object({
+  success: z.literal(true),
+  data: agentCaseResultSchema,
+  message: z.string(),
+});
+
 export type AgentMessageInput = z.infer<typeof agentMessageInputSchema>;
 export type AgentDecisionInput = z.infer<typeof agentDecisionInputSchema>;
 export type AgentCaseResult = z.infer<typeof agentCaseResultSchema>;

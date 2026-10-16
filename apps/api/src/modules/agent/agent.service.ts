@@ -6,6 +6,7 @@ import {
 } from '../knowledge/knowledge.service.js';
 import type { AuthenticatedActor } from '../auth/authorization.js';
 import {
+  aiAgentCaseResponseSchema,
   aiAgentResponseSchema,
   type AgentCaseResult,
   type AgentDecisionInput,
@@ -70,6 +71,7 @@ async function callAgent(
   init: RequestInit,
   actor: KnowledgeActorContext,
   requestId?: string,
+  responseEnvelope: 'message' | 'case' = 'case',
 ): Promise<AgentCaseResult> {
   if (!env.AI_SERVICE_URL) {
     throw new AppError(503, 'AI_SERVICE_NOT_CONFIGURED', 'Agent service is not configured');
@@ -93,11 +95,14 @@ async function callAgent(
     if (error instanceof AppError) throw error;
     throw new AppError(503, 'AI_SERVICE_INVALID_RESPONSE', 'Agent service returned invalid data');
   }
-  const parsed = aiAgentResponseSchema.safeParse(body);
-  if (!parsed.success) {
-    throw new AppError(503, 'AI_SERVICE_INVALID_RESPONSE', 'Agent service returned invalid data');
+  if (responseEnvelope === 'message') {
+    const parsed = aiAgentResponseSchema.safeParse(body);
+    if (parsed.success) return parsed.data.data.result;
+  } else {
+    const parsed = aiAgentCaseResponseSchema.safeParse(body);
+    if (parsed.success) return parsed.data.data;
   }
-  return parsed.data.data.result;
+  throw new AppError(503, 'AI_SERVICE_INVALID_RESPONSE', 'Agent service returned invalid data');
 }
 
 export async function sendAgentMessage(
@@ -110,6 +115,7 @@ export async function sendAgentMessage(
     { method: 'POST', body: JSON.stringify(input) },
     knowledgeActorContext(actor),
     requestId,
+    'message',
   );
 }
 
