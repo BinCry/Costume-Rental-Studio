@@ -182,8 +182,31 @@ export interface ReportSnapshot {
   overdueOrders?: number;
   /** Completed deposit refunds reported by the API, in VND. */
   completedRefund?: number;
+  revenuePeriods?: ReportRevenuePeriod[];
+  dailySnapshots?: ReportDailySnapshot[];
   transactions: { status: string; count: number }[];
   refunds: { status: string; count: number }[];
+}
+export interface ReportRevenuePeriod {
+  period: string;
+  rentalVnd: number;
+  extraVnd: number;
+  totalVnd: number;
+}
+export interface ReportDailySnapshot {
+  date: string;
+  rentalCount: number;
+  rentalRevenue: number;
+  depositsHeld: number;
+  overdueUnits: number;
+  completedRefund: number;
+  transactions: { status: string; count: number }[];
+  refunds: { status: string; count: number }[];
+}
+export interface ReportRange {
+  from: string;
+  to: string;
+  groupBy: 'day' | 'week' | 'month';
 }
 export interface CustomerOrder {
   id: string;
@@ -712,6 +735,51 @@ const reports: ReportSnapshot[] = [
       { status: 'REQUESTED', count: 1 },
       { status: 'FAILED', count: 0 },
     ],
+    dailySnapshots: [
+      {
+        date: '2026-10-11',
+        rentalCount: 1,
+        rentalRevenue: 320000,
+        depositsHeld: 250000,
+        overdueUnits: 0,
+        completedRefund: 0,
+        transactions: [{ status: 'SUCCEEDED', count: 1 }],
+        refunds: [],
+      },
+      {
+        date: '2026-10-12',
+        rentalCount: 1,
+        rentalRevenue: 360000,
+        depositsHeld: 250000,
+        overdueUnits: 0,
+        completedRefund: 0,
+        transactions: [{ status: 'SUCCEEDED', count: 1 }],
+        refunds: [],
+      },
+      {
+        date: '2026-10-15',
+        rentalCount: 1,
+        rentalRevenue: 340000,
+        depositsHeld: 300000,
+        overdueUnits: 0,
+        completedRefund: 0,
+        transactions: [{ status: 'SUCCEEDED', count: 1 }],
+        refunds: [],
+      },
+      {
+        date: '2026-10-17',
+        rentalCount: 1,
+        rentalRevenue: 400000,
+        depositsHeld: 300000,
+        overdueUnits: 1,
+        completedRefund: 0,
+        transactions: [
+          { status: 'SUCCEEDED', count: 1 },
+          { status: 'PENDING', count: 1 },
+        ],
+        refunds: [{ status: 'REQUESTED', count: 1 }],
+      },
+    ],
   },
   {
     branch: 'Chi nhánh Thủ Đức',
@@ -728,6 +796,7 @@ const reports: ReportSnapshot[] = [
       { status: 'REQUESTED', count: 0 },
       { status: 'FAILED', count: 0 },
     ],
+    dailySnapshots: [],
   },
 ];
 const customerOrders: CustomerOrder[] = [
@@ -940,6 +1009,53 @@ const branchObligations = (name: string) => ({
       ['REQUESTED', 'APPROVED', 'IN_TRANSIT'].includes(transfer.status),
   ).length,
 });
+
+function reportBucket(date: string, groupBy: ReportRange['groupBy']) {
+  if (groupBy === 'month') return date.slice(0, 7);
+  if (groupBy === 'day') return date;
+  const monday = new Date(`${date}T00:00:00.000Z`);
+  const daysSinceMonday = (monday.getUTCDay() + 6) % 7;
+  monday.setUTCDate(monday.getUTCDate() - daysSinceMonday);
+  return monday.toISOString().slice(0, 10);
+}
+
+function summarizeFixtureReport(report: ReportSnapshot, range: ReportRange): ReportSnapshot {
+  const days = (report.dailySnapshots ?? []).filter(
+    (item) => item.date >= range.from && item.date <= range.to,
+  );
+  const sum = (select: (day: ReportDailySnapshot) => number) =>
+    days.reduce((total, day) => total + select(day), 0);
+  const sumStatus = (key: 'transactions' | 'refunds') => {
+    const counts = new Map<string, number>();
+    for (const day of days) {
+      for (const entry of day[key]) {
+        counts.set(entry.status, (counts.get(entry.status) ?? 0) + entry.count);
+      }
+    }
+    return [...counts.entries()].map(([status, count]) => ({ status, count }));
+  };
+  const revenueByPeriod = new Map<string, number>();
+  for (const day of days) {
+    const bucket = reportBucket(day.date, range.groupBy);
+    revenueByPeriod.set(bucket, (revenueByPeriod.get(bucket) ?? 0) + day.rentalRevenue);
+  }
+  return {
+    ...report,
+    period: `${range.from} → ${range.to}`,
+    rentalCount: sum((day) => day.rentalCount),
+    rentalRevenue: sum((day) => day.rentalRevenue),
+    // The production report treats held deposits as the current amount for the
+    // selected branch, independent of the revenue date range.
+    depositsHeld: report.depositsHeld,
+    overdueUnits: sum((day) => day.overdueUnits),
+    completedRefund: sum((day) => day.completedRefund),
+    transactions: sumStatus('transactions'),
+    refunds: sumStatus('refunds'),
+    revenuePeriods: [...revenueByPeriod.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([period, rentalVnd]) => ({ period, rentalVnd, extraVnd: 0, totalVnd: rentalVnd })),
+  };
+}
 
 export const studioAdapter = {
   recordBooking(id: string, draft: BookingDraft, quote: QuoteSnapshot) {
@@ -1273,10 +1389,10 @@ export const studioAdapter = {
     }
     return list(policies, scenario);
   },
-  async reports(scenario: DemoScenario, branch?: string) {
+  async reports(scenario: DemoScenario, branch?: string, range?: ReportRange) {
     if (apiEnabled && hasAccessToken()) {
       try {
-        return await listApiReports(branch);
+        return await listApiReports(branch, range);
       } catch (error) {
         throw error instanceof FixtureIssue
           ? error
@@ -1286,7 +1402,12 @@ export const studioAdapter = {
             );
       }
     }
-    return list(reports, scenario);
+    const result = await list(reports, scenario);
+    return range
+      ? result
+          .filter((report) => !branch || report.branch === branch)
+          .map((report) => summarizeFixtureReport(report, range))
+      : result;
   },
   async customerOrders(this: void, scenario: DemoScenario) {
     if (apiEnabled && hasAccessToken()) return listApiCustomerOrders();

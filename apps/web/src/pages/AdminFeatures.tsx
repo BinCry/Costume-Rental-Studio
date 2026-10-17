@@ -12,7 +12,6 @@ import {
 import { money } from '../components/support';
 import {
   BranchSelector,
-  FilterBar,
   InlineIssue,
   KeyFacts,
   PageHeading,
@@ -32,6 +31,8 @@ import {
   type CostumeDetail,
   type Employee,
   type Policy,
+  type ReportRange,
+  type ReportSnapshot,
   type Variant,
 } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
@@ -1438,6 +1439,155 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
   );
 }
 
+type ReportPreset = '7' | '30' | '90' | 'custom';
+
+function dateKeyInStudio(value = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(value);
+}
+
+function shiftDateKey(value: string, days: number) {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function recentDateRange(days: number) {
+  const to = dateKeyInStudio();
+  return { from: shiftDateKey(to, 1 - days), to };
+}
+
+function formatReportDate(value: string) {
+  return new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'UTC',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(new Date(`${value}T00:00:00.000Z`));
+}
+
+function reportRangeDays(from: string, to: string) {
+  return (Date.parse(`${to}T00:00:00.000Z`) - Date.parse(`${from}T00:00:00.000Z`)) / 86400000;
+}
+
+function compactMoney(value: number) {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tr`;
+  if (value >= 1_000) return `${Math.round(value / 1_000).toLocaleString('vi-VN')}k`;
+  return value.toLocaleString('vi-VN');
+}
+
+function formatReportBucket(value: string, groupBy: ReportRange['groupBy']) {
+  if (/^\d{4}-\d{2}$/.test(value)) return value.slice(5).replace('-', '/') + `/${value.slice(2, 4)}`;
+  const shortDate = formatReportDate(value).slice(0, 5);
+  return groupBy === 'week' ? `Tuần ${shortDate}` : shortDate;
+}
+
+function RevenueTrendChart({
+  points,
+  groupBy,
+}: {
+  points: NonNullable<ReportSnapshot['revenuePeriods']>;
+  groupBy: ReportRange['groupBy'];
+}) {
+  if (!points.length)
+    return (
+      <div className="report-chart-empty">
+        Chưa có doanh thu thuê đã ghi nhận trong khoảng thời gian này.
+      </div>
+    );
+
+  const width = 820;
+  const height = 280;
+  const left = 72;
+  const right = 20;
+  const top = 18;
+  const bottom = 52;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+  const baseline = top + plotHeight;
+  const peak = Math.max(...points.map((point) => point.rentalVnd), 0);
+  const scale = peak > 0 ? 10 ** Math.ceil(Math.log10(peak)) : 1;
+  const ceiling = Math.ceil(peak / scale * 4) * scale / 4 || scale;
+  const step = plotWidth / points.length;
+  const barWidth = Math.max(2, Math.min(22, step * 0.58));
+  const labelIndexes = new Set(
+    [0, Math.round((points.length - 1) / 2), points.length - 1],
+  );
+
+  return (
+    <div className="report-chart-scroll">
+      <svg
+        className="report-revenue-chart"
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={`Biểu đồ doanh thu tiền thuê theo ${groupBy === 'day' ? 'ngày' : groupBy === 'week' ? 'tuần' : 'tháng'}`}
+      >
+        {[0, 0.5, 1].map((fraction) => {
+          const y = baseline - plotHeight * fraction;
+          return (
+            <g key={fraction}>
+              <line x1={left} x2={width - right} y1={y} y2={y} className="report-chart-gridline" />
+              <text x={left - 10} y={y + 4} textAnchor="end" className="report-chart-axis-label">
+                {compactMoney(ceiling * fraction)}
+              </text>
+            </g>
+          );
+        })}
+        {points.map((point, index) => {
+          const barHeight = Math.max(0, (point.rentalVnd / ceiling) * plotHeight);
+          const x = left + index * step + (step - barWidth) / 2;
+          const y = baseline - barHeight;
+          return (
+            <g key={point.period}>
+              <rect
+                x={x}
+                y={y}
+                width={barWidth}
+                height={barHeight}
+                rx={Math.min(5, barWidth / 2)}
+                className="report-chart-bar"
+              >
+                <title>{`${formatReportBucket(point.period, groupBy)} · ${money(point.rentalVnd)}`}</title>
+              </rect>
+              {labelIndexes.has(index) && (
+                <text
+                  x={left + index * step + step / 2}
+                  y={baseline + 25}
+                  textAnchor="middle"
+                  className="report-chart-axis-label"
+                >
+                  {formatReportBucket(point.period, groupBy)}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+const paymentStatusLabel = (status: string) =>
+  ({
+    SUCCEEDED: 'Thành công',
+    PENDING: 'Chờ xử lý',
+    FAILED: 'Thất bại',
+    CANCELLED: 'Đã hủy',
+  })[status] ?? status;
+
+const refundStatusLabel = (status: string) =>
+  ({
+    REQUESTED: 'Chờ xử lý',
+    PROCESSING: 'Đang xử lý',
+    COMPLETED: 'Đã hoàn',
+    FAILED: 'Thất bại',
+    CANCELLED: 'Đã hủy',
+  })[status] ?? status;
+
 export function ReportsPage({
   scenario,
   branch,
@@ -1446,16 +1596,47 @@ export function ReportsPage({
   branch: string;
 }) {
   const realApiMode = apiEnabled && hasAccessToken();
+  const [preset, setPreset] = useState<ReportPreset>('30');
+  const [range, setRange] = useState(() => recentDateRange(30));
+  const [draftFrom, setDraftFrom] = useState(range.from);
+  const [draftTo, setDraftTo] = useState(range.to);
+  const [groupBy, setGroupBy] = useState<ReportRange['groupBy']>('day');
+  const today = dateKeyInStudio();
+  const draftRangeValid =
+    !!draftFrom &&
+    !!draftTo &&
+    draftFrom <= draftTo &&
+    draftTo <= today &&
+    reportRangeDays(draftFrom, draftTo) <= 365;
   const loadReports = useCallback(
     (currentScenario: DemoScenario) =>
-      branch ? studioAdapter.reports(currentScenario, branch) : Promise.resolve([]),
-    [branch],
+      branch
+        ? studioAdapter.reports(currentScenario, branch, {
+            from: range.from,
+            to: range.to,
+            groupBy,
+          })
+        : Promise.resolve([]),
+    [branch, range.from, range.to, groupBy],
   );
   const { loading, error, data, retry } = useFixtureResource(
     scenario,
     loadReports,
-    branch,
+    `${branch}:${range.from}:${range.to}:${groupBy}`,
   );
+  const choosePreset = (nextPreset: Exclude<ReportPreset, 'custom'>) => {
+    const nextRange = recentDateRange(Number(nextPreset));
+    setPreset(nextPreset);
+    setRange(nextRange);
+    setDraftFrom(nextRange.from);
+    setDraftTo(nextRange.to);
+    setGroupBy(nextPreset === '90' ? 'week' : 'day');
+  };
+  const applyCustomRange = () => {
+    if (!draftRangeValid) return;
+    setRange({ from: draftFrom, to: draftTo });
+  };
+  const periodLabel = `${formatReportDate(range.from)} – ${formatReportDate(range.to)}`;
   return (
     <StateGate
       loading={loading}
@@ -1463,69 +1644,147 @@ export function ReportsPage({
       data={data}
       retry={retry}
       emptyTitle="Chưa có báo cáo"
+      allowEmpty
     >
       {(reports) => {
         const scoped = reports.filter((report) => report.branch === branch);
+        const report = scoped[0];
         return (
           <div className="page">
             <PageHeading
               eyebrow="QUẢN TRỊ / BÁO CÁO"
               title="Báo cáo vận hành"
-              description="Số liệu của chi nhánh đang chọn trong khoảng 30 ngày gần nhất. Tiền cọc đang giữ được theo dõi riêng, không tính vào doanh thu thuê."
+              description={`Theo dõi tình hình thuê và thu chi tại ${branch || 'chi nhánh đang chọn'}.`}
             />
-            <FilterBar>
-              <p>
-                Chi nhánh: <strong>{branch || 'Chưa chọn'}</strong>
-              </p>
-            </FilterBar>
-            {scoped.length === 0 && (
-              <EmptyState
-                title={branch ? 'Chưa có số liệu cho chi nhánh này' : 'Chưa có chi nhánh được chọn'}
-              >
-                <p>
-                  {branch
-                    ? 'Thử chọn khoảng thời gian khác hoặc quay lại sau khi có hoạt động thuê.'
-                    : 'Chọn một chi nhánh được phân công để xem báo cáo.'}
-                </p>
+            <section className="report-control-panel" aria-label="Bộ lọc báo cáo">
+              <div className="report-control-heading">
+                <div>
+                  <span className="report-control-label">CHI NHÁNH ĐANG XEM</span>
+                  <strong>{branch || 'Chưa chọn chi nhánh'}</strong>
+                </div>
+                <span className="report-active-period">{periodLabel}</span>
+              </div>
+              <div className="report-control-row">
+                <div className="report-period-switch" role="group" aria-label="Chọn khoảng thời gian">
+                  {([
+                    ['7', '7 ngày'],
+                    ['30', '30 ngày'],
+                    ['90', '90 ngày'],
+                    ['custom', 'Tùy chỉnh'],
+                  ] as const).map(([value, label]) => (
+                    <button
+                      type="button"
+                      className={preset === value ? 'active' : ''}
+                      aria-pressed={preset === value}
+                      key={value}
+                      onClick={() =>
+                        value === 'custom' ? setPreset('custom') : choosePreset(value)
+                      }
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <SelectField
+                  label="Gom số liệu theo"
+                  value={groupBy}
+                  onChange={(event) => setGroupBy(event.target.value as ReportRange['groupBy'])}
+                >
+                  <option value="day">Ngày</option>
+                  <option value="week">Tuần</option>
+                  <option value="month">Tháng</option>
+                </SelectField>
+              </div>
+              {preset === 'custom' && (
+                <div className="report-custom-range">
+                  <Field
+                    label="Từ ngày"
+                    type="date"
+                    value={draftFrom}
+                    max={draftTo || today}
+                    onChange={(event) => setDraftFrom(event.target.value)}
+                  />
+                  <Field
+                    label="Đến ngày"
+                    type="date"
+                    value={draftTo}
+                    min={draftFrom}
+                    max={today}
+                    onChange={(event) => setDraftTo(event.target.value)}
+                  />
+                  <Button variant="primary" disabled={!draftRangeValid} onClick={applyCustomRange}>
+                    Áp dụng khoảng ngày
+                  </Button>
+                  {!draftRangeValid && (
+                    <p className="report-range-error" role="alert">
+                      Chọn ngày hợp lệ trong tối đa 366 ngày và không vượt quá hôm nay.
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
+            {!branch || !report ? (
+              <EmptyState title={branch ? 'Chưa có số liệu trong kỳ này' : 'Chưa chọn chi nhánh'}>
+                Chọn một chi nhánh được phân công hoặc thử khoảng ngày khác.
               </EmptyState>
-            )}
-            {scoped.map((report) => (
-              <div key={report.branch}>
-                <p className="muted">
-                  {report.period} · {report.branch}
+            ) : (
+              <>
+                <p className="report-period-caption">
+                  Kỳ báo cáo: <strong>{periodLabel}</strong> · Tiền cọc đang giữ được theo dõi riêng,
+                  không tính vào doanh thu.
                 </p>
                 <div className="report-grid">
                   <Panel title="Lượt thuê">
-                    <strong className="report-number">{report.rentalCount}</strong>
+                    <strong className="report-number">{report.rentalCount.toLocaleString('vi-VN')}</strong>
+                    <p className="report-card-note">Đơn tạo trong kỳ</p>
                   </Panel>
                   <Panel title="Doanh thu tiền thuê">
                     <strong className="report-number">{money(report.rentalRevenue)}</strong>
+                    <p className="report-card-note">Không gồm tiền cọc</p>
                   </Panel>
                   <Panel title="Cọc đang giữ">
                     <strong className="report-number">{money(report.depositsHeld)}</strong>
-                    <p className="muted">Khoản phải hoàn/đối soát; không là doanh thu.</p>
+                    <p className="report-card-note">Khoản cần hoàn hoặc đối soát</p>
                   </Panel>
                   <Panel title={realApiMode ? 'Đơn quá hạn' : 'Bộ quá hạn'}>
                     <strong className="report-number">
                       {realApiMode ? report.overdueOrders ?? 0 : report.overdueUnits}
                     </strong>
-                    {realApiMode && <p className="muted">Đơn có hạn trả đã qua theo dữ liệu báo cáo.</p>}
+                    <p className="report-card-note">Cần được nhân viên theo dõi</p>
                   </Panel>
                   {realApiMode && (
                     <Panel title="Đã hoàn cọc">
                       <strong className="report-number">{money(report.completedRefund ?? 0)}</strong>
-                      <p className="muted">Tổng tiền hoàn cọc đã ghi nhận trong kỳ.</p>
+                      <p className="report-card-note">Hoàn tất trong kỳ báo cáo</p>
                     </Panel>
                   )}
                 </div>
-                <div className="feature-two-column">
-                  <Panel title="Giao dịch">
+                <Panel
+                  title="Doanh thu thuê theo thời gian"
+                  className="report-chart-panel"
+                  action={
+                    <div className="report-chart-total">
+                      <span>Tổng trong kỳ</span>
+                      <strong>{money(report.rentalRevenue)}</strong>
+                    </div>
+                  }
+                >
+                  <div className="report-chart-legend">
+                    <span aria-hidden="true" /> Tiền thuê đã ghi nhận
+                  </div>
+                  <RevenueTrendChart points={report.revenuePeriods ?? []} groupBy={groupBy} />
+                </Panel>
+                <div className="feature-two-column report-detail-grid">
+                  <Panel title="Giao dịch theo trạng thái">
                     <KeyFacts
-                      rows={report.transactions.map((t) => ({ label: t.status, value: t.count }))}
+                      rows={report.transactions.map((item) => ({
+                        label: paymentStatusLabel(item.status),
+                        value: item.count,
+                      }))}
                     />
                     {scenario === 'bankPending' && (
-                      <Feedback tone="warning" title="Chuyển khoản chờ đối soát">
-                        Khoản pending chưa được tính đã thu.
+                      <Feedback tone="warning" title="Chuyển khoản đang chờ đối soát">
+                        Khoản này chưa được tính là đã thu.
                       </Feedback>
                     )}
                   </Panel>
@@ -1536,7 +1795,10 @@ export function ReportsPage({
                       </p>
                     ) : (
                       <KeyFacts
-                        rows={report.refunds.map((t) => ({ label: t.status, value: t.count }))}
+                        rows={report.refunds.map((item) => ({
+                          label: refundStatusLabel(item.status),
+                          value: item.count,
+                        }))}
                       />
                     )}
                     {scenario === 'refundFailed' && (
@@ -1546,8 +1808,8 @@ export function ReportsPage({
                     )}
                   </Panel>
                 </div>
-              </div>
-            ))}
+              </>
+            )}
           </div>
         );
       }}

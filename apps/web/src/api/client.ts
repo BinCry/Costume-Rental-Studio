@@ -9,6 +9,7 @@ import type {
   Employee,
   Permission,
   Policy,
+  ReportRange,
   ReportSnapshot,
   Role,
   Transfer,
@@ -279,6 +280,15 @@ interface ApiRentalReport {
 interface ApiPaymentReport {
   byStatus: { status: string; count: number }[];
   byMethod: { method: string; count: number }[];
+}
+interface ApiRevenueReport {
+  totalRevenueVnd: string | number | bigint;
+  periods: {
+    period: string;
+    rentalVnd: string | number | bigint;
+    extraVnd: string | number | bigint;
+    totalVnd: string | number | bigint;
+  }[];
 }
 
 export interface RentalEvidence {
@@ -2250,23 +2260,41 @@ export async function savePolicy(policy: Policy): Promise<Policy> {
   });
   return policyFromApi(created);
 }
-export async function listReports(branchName?: string): Promise<ReportSnapshot[]> {
+export async function listReports(
+  branchName?: string,
+  range?: ReportRange,
+): Promise<ReportSnapshot[]> {
   if (branchIds.size === 0 || (branchName && !branchIds.has(branchName))) await listBranches();
   const branchId = branchName ? branchIds.get(branchName) : undefined;
-  const params = new URLSearchParams({ groupBy: 'day' });
+  if (branchName && !branchId)
+    throw new ApiClientError(
+      422,
+      'BRANCH_CONTEXT_MISSING',
+      'Không xác định được chi nhánh để tải báo cáo.',
+    );
+  const params = new URLSearchParams({ groupBy: range?.groupBy ?? 'day' });
   if (branchId) params.set('branchId', branchId);
+  if (range) {
+    const toExclusive = new Date(`${range.to}T00:00:00+07:00`);
+    toExclusive.setUTCDate(toExclusive.getUTCDate() + 1);
+    params.set('from', new Date(`${range.from}T00:00:00+07:00`).toISOString());
+    params.set('to', toExclusive.toISOString());
+  }
   const query = params.toString();
-  const [overview, rentals, payments] = await Promise.all([
+  const [overview, rentals, payments, revenue] = await Promise.all([
     request<ApiOverviewReport>('/api/v1/reports/overview?' + query),
     request<ApiRentalReport>('/api/v1/reports/rentals?' + query),
     request<ApiPaymentReport>('/api/v1/reports/payments?' + query),
+    request<ApiRevenueReport>('/api/v1/reports/revenue?' + query),
   ]);
   const branch =
     branchName ?? (overview.branchId ? branchNameById(overview.branchId) : 'Toàn chuỗi');
   return [
     {
       branch,
-      period: `${overview.from.slice(0, 10)} → ${overview.to.slice(0, 10)}`,
+      period: range
+        ? `${range.from} → ${range.to}`
+        : `${overview.from.slice(0, 10)} → ${overview.to.slice(0, 10)}`,
       rentalCount: overview.ordersCreated,
       rentalRevenue: numberValue(overview.rentalRevenueVnd),
       depositsHeld: numberValue(overview.depositsHeldVnd),
@@ -2274,6 +2302,12 @@ export async function listReports(branchName?: string): Promise<ReportSnapshot[]
       overdueUnits: 0,
       overdueOrders: rentals.overdueOrders,
       completedRefund: numberValue(overview.completedRefundVnd ?? 0),
+      revenuePeriods: revenue.periods.map((item) => ({
+        period: item.period,
+        rentalVnd: numberValue(item.rentalVnd),
+        extraVnd: numberValue(item.extraVnd),
+        totalVnd: numberValue(item.totalVnd),
+      })),
       transactions: payments.byStatus,
       // The overview endpoint returns the exact amount, but not a refund count.
       // Keep the count list empty instead of presenting an invented quantity.

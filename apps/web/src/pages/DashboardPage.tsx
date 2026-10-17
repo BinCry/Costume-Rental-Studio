@@ -50,11 +50,7 @@ export function DashboardPage({
   const [workDateOverride, setWorkDateOverride] = useState<string>();
   const defaultWorkDate = realApiMode ? localDateKey(new Date()) : '2026-10-03';
   const workDate = workDateOverride ?? defaultWorkDate;
-  const extraFilterCount = [
-    priority !== 'all',
-    taskStatus !== 'all',
-    workDate !== defaultWorkDate,
-  ].filter(Boolean).length;
+  const extraFilterCount = [priority !== 'all', taskStatus !== 'all'].filter(Boolean).length;
   const [search, setSearch] = useState('');
   const [stale, setStale] = useState<string[]>([]);
   const [notice, setNotice] = useState('');
@@ -119,7 +115,7 @@ export function DashboardPage({
           {dateText}
         </div>
       </div>
-      <div className="staff-toolbar">
+      <div className={`staff-toolbar dashboard-toolbar ${realApiMode ? 'api-mode' : ''}`}>
         {!realApiMode && (
           <SelectField
             label="Chi nhánh đang làm việc"
@@ -152,6 +148,12 @@ export function DashboardPage({
             </option>
           ))}
         </SelectField>
+        <Field
+          label="Ngày cần xử lý"
+          type="date"
+          value={workDate}
+          onChange={(event) => setWorkDateOverride(event.target.value)}
+        />
       </div>
       <details className="queue-filter-disclosure">
         <summary>
@@ -159,7 +161,7 @@ export function DashboardPage({
           <span className="queue-filter-count">
             {extraFilterCount
               ? `${extraFilterCount} đang áp dụng`
-              : 'Mức ưu tiên · trạng thái · ngày'}
+              : 'Mức ưu tiên · trạng thái'}
           </span>
         </summary>
         <div className="queue-extra-filters">
@@ -182,20 +184,8 @@ export function DashboardPage({
             <option>Cần xử lý</option>
             <option>Đang xử lý</option>
           </SelectField>
-          <Field
-            label="Ngày cần xử lý"
-            type="date"
-            value={workDate}
-            onChange={(event) => setWorkDateOverride(event.target.value)}
-          />
         </div>
       </details>
-      {realApiMode && (
-        <p className="section-help" role="status">
-          Hàng đợi API hiện trả về việc duyệt, giao và trả. Chưa có dữ liệu riêng cho giao dịch cần
-          xử lý hoặc mức “chờ xác nhận lâu”.
-        </p>
-      )}
       <section className="queue-summary" aria-label="Tóm tắt hàng đợi">
         {displayedSummary.map((entry) => (
           <button
@@ -303,7 +293,7 @@ export function DashboardPage({
       )}
       <p className="fixture-caption">
         {realApiMode
-          ? 'Danh sách được tổng hợp từ trạng thái đơn và hạn trả trên máy chủ. Thứ tự ưu tiên không thay thế SLA vận hành của studio.'
+          ? 'Thứ tự ưu tiên giúp sắp xếp công việc; hãy kiểm tra hạn trả và trạng thái đơn trước khi xử lý.'
           : 'Ngưỡng “trong 2 giờ” và các mốc hạn chỉ là dữ liệu minh họa. SLA thực tế cần cấu hình theo chính sách studio.'}
       </p>
     </div>

@@ -41,6 +41,85 @@ afterEach(() => {
 });
 
 describe('web API client session and error handling', () => {
+  it('requests every report for the selected branch and date range', async () => {
+    values.set(accessTokenKey, 'studio-access-token');
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        success({
+          items: [{ id: 'branch-1', name: 'Chi nhánh Quận 1' }],
+          pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        success({
+          from: '2026-10-01T00:00:00.000Z',
+          to: '2026-10-08T00:00:00.000Z',
+          branchId: 'branch-1',
+          ordersCreated: 2,
+          overdueOrders: 1,
+          rentalRevenueVnd: '1200000',
+          depositsHeldVnd: '800000',
+          completedRefundVnd: '100000',
+        }),
+      )
+      .mockResolvedValueOnce(success({ totalOrders: 2, overdueOrders: 1 }))
+      .mockResolvedValueOnce(success({ byStatus: [{ status: 'SUCCEEDED', count: 2 }], byMethod: [] }))
+      .mockResolvedValueOnce(
+        success({
+          totalRevenueVnd: '1200000',
+          periods: [
+            {
+              period: '2026-10-03',
+              rentalVnd: '1200000',
+              extraVnd: '0',
+              totalVnd: '1200000',
+            },
+          ],
+        }),
+      );
+
+    const { listReports } = await import('../src/api/client.ts');
+    await expect(
+      listReports('Chi nhánh Quận 1', {
+        from: '2026-10-01',
+        to: '2026-10-07',
+        groupBy: 'day',
+      }),
+    ).resolves.toMatchObject([
+      {
+        branch: 'Chi nhánh Quận 1',
+        rentalCount: 2,
+        rentalRevenue: 1200000,
+        revenuePeriods: [{ period: '2026-10-03', rentalVnd: 1200000 }],
+      },
+    ]);
+
+    const reportCalls = globalThis.fetch.mock.calls.slice(1);
+    expect(reportCalls).toHaveLength(4);
+    for (const [url] of reportCalls) {
+      const parsed = new URL(url);
+      expect(parsed.searchParams.get('branchId')).toBe('branch-1');
+      expect(parsed.searchParams.get('from')).toBe('2026-09-30T17:00:00.000Z');
+      expect(parsed.searchParams.get('to')).toBe('2026-10-07T17:00:00.000Z');
+      expect(parsed.searchParams.get('groupBy')).toBe('day');
+    }
+  });
+
+  it('does not fall back to a chain-wide report when the selected branch is unknown', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      success({
+        items: [],
+        pagination: { page: 1, pageSize: 100, totalItems: 0, totalPages: 0 },
+      }),
+    );
+    const { listReports } = await import('../src/api/client.ts');
+
+    await expect(listReports('Chi nhánh chưa tải được')).rejects.toMatchObject({
+      code: 'BRANCH_CONTEXT_MISSING',
+    });
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+  });
+
   it('sends Ops Agent chat through the authenticated public Agent endpoint', async () => {
     const agentResult = {
       caseId: '10000000-0000-4000-8000-000000000001',

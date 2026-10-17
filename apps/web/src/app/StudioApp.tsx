@@ -165,6 +165,9 @@ export default function StudioApp() {
   const [branch, setBranch] = useState('Chi nhánh Quận 1');
   const [customerCode, setCustomerCode] = useState('KH-001');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [navHovered, setNavHovered] = useState(false);
+  const [navFocused, setNavFocused] = useState(false);
+  const [navPinned, setNavPinned] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [expandedStaffGroup, setExpandedStaffGroup] = useState<string | null>(
     () =>
@@ -252,6 +255,7 @@ export default function StudioApp() {
     window.history.pushState(null, '', pathFor(screen, params));
     syncRoute(readRoute());
     setMenuOpen(false);
+    setNavPinned(false);
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
   const finishAuthentication = async (next?: string) => {
@@ -347,6 +351,7 @@ export default function StudioApp() {
         : (apiBranchOptions[0] ?? '')
       : branch;
   const activeBranchId = apiBranchIds[activeBranch];
+  const staffNavExpanded = menuOpen || navHovered || navFocused || navPinned;
   const serverPermissions = Array.from(
     new Set(
       apiIdentity?.roles
@@ -708,14 +713,28 @@ export default function StudioApp() {
           <aside
             ref={sectionNavRef}
             id="staff-navigation"
-            className={`section-nav ${menuOpen ? 'open' : ''}`}
+            className={`section-nav ${menuOpen ? 'open' : ''} ${navHovered ? 'pointer-open' : ''} ${navFocused ? 'focus-open' : ''} ${navPinned ? 'pinned' : ''}`}
             role={menuOpen ? 'dialog' : undefined}
             aria-modal={menuOpen ? true : undefined}
             aria-label="Điều hướng khu vận hành"
+            onMouseEnter={() => setNavHovered(true)}
+            onMouseLeave={() => setNavHovered(false)}
+            onFocusCapture={() => setNavFocused(true)}
+            onBlurCapture={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget))
+                setNavFocused(false);
+            }}
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
                 setMenuOpen(false);
-                menuButtonRef.current?.focus();
+                setNavPinned(false);
+                setNavFocused(false);
+                if (window.matchMedia('(max-width: 1199px)').matches)
+                  menuButtonRef.current?.focus();
+                else
+                  sectionNavRef.current
+                    ?.querySelector<HTMLButtonElement>('.staff-nav-handle')
+                    ?.focus();
               } else if (event.key === 'Tab' && menuOpen) {
                 const focusable = Array.from(
                   event.currentTarget.querySelectorAll<HTMLElement>(
@@ -734,6 +753,16 @@ export default function StudioApp() {
               }
             }}
           >
+            <button
+              type="button"
+              className="staff-nav-handle"
+              aria-label={staffNavExpanded ? 'Thu gọn menu điều hướng' : 'Mở menu điều hướng'}
+              aria-controls="staff-navigation"
+              aria-expanded={staffNavExpanded}
+              onClick={() => setNavPinned((current) => !current)}
+            >
+              <Icon name="menu" size={18} />
+            </button>
             <button
               type="button"
               className="staff-nav-close"
@@ -1226,9 +1255,9 @@ export default function StudioApp() {
               : 'Ops Agent · Fixture demo · Không lưu dữ liệu'
             : import.meta.env.DEV
               ? apiIdentity
-                ? 'Môi trường phát triển · Dữ liệu API'
-                : 'Môi trường phát triển · Fixture demo'
-              : 'Dữ liệu vận hành lấy từ API · Cần đăng nhập cho chức năng riêng tư'}
+                ? 'Khu vận hành · Chi nhánh hiện tại'
+                : 'Bản xem trước · Dữ liệu minh họa'
+              : 'Studio Trang Phục · Quản lý theo chi nhánh'}
         </span>
       </footer>
     </div>
