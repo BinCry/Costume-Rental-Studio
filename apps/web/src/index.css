@@ -6732,3 +6732,22 @@ small {
     padding-left: 8px;
   }
 }
+
+
+/* Keep the mobile account card after the menu items without a large dead gap. */
+@media (max-width: 1199px) {
+  .app-staff .section-nav > nav {
+    flex: 0 1 auto;
+    max-height: calc(100dvh - 250px);
+  }
+
+  .staff-menu-account {
+    margin: 12px 0 0;
+  }
+}
+
+@media (max-width: 1199px) and (max-height: 600px) {
+  .app-staff .section-nav > nav {
+    max-height: calc(100dvh - 190px);
+  }
+}
