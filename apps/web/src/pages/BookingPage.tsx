@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Navigate } from '../App';
+import { ImageWithFallback } from '../components/ImageWithFallback';
 import {
   Button,
   EmptyState,
@@ -347,7 +348,13 @@ export function BookingPage({
                         role="img"
                         aria-label={entry.imageAlt ?? `Ảnh ${entry.name}`}
                       >
-                        {entry.imageUrl && <img src={entry.imageUrl} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                        <ImageWithFallback
+                          src={entry.imageUrl}
+                          alt=""
+                          compact
+                          missingText="Chưa có ảnh"
+                          failedText="Ảnh chưa tải được"
+                        />
                       </span>
                       <span>
                         <strong>{entry.name}</strong>
@@ -660,3 +667,4 @@ export function BookingPage({
     </div>
   );
 }
+

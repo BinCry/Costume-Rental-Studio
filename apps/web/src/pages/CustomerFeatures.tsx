@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { Navigate } from '../App';
+import { ImageWithFallback } from '../components/ImageWithFallback';
 import {
   Button,
   ConfirmDialog,
@@ -177,16 +178,11 @@ export function CostumeDetailPage({
             <div className="costume-detail-grid">
               <div>
                 <div className={`detail-photo costume-${item.imagePosition} detail-photo-${photo}`}>
-                  {item.imageUrl ? (
-                    <img
-                      src={item.imageUrl}
-                      alt={item.imageAlt ?? item.name}
-                      loading="eager"
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
-                  ) : (
-                    <span className="sr-only">{item.imagePosition === 'missing' ? 'Chưa có ảnh' : `Ảnh minh họa ${item.name}`}</span>
-                  )}
+                  <ImageWithFallback
+                    src={item.imageUrl}
+                    alt={item.imageAlt ?? item.name}
+                    loading="eager"
+                  />
                 </div>
                 {!item.imageUrl && (
                   <div className="photo-thumbs" aria-label="Chọn góc ảnh minh họa">
@@ -878,3 +874,4 @@ export function AccountPage({
     </div>
   );
 }
+

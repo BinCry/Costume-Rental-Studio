@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type TransitionEvent } from 'react';
 import type { Navigate } from '../App';
+import { ImageWithFallback } from '../components/ImageWithFallback';
 import {
   Button,
   EmptyState,
@@ -281,7 +282,7 @@ function CostumeCard({
         aria-label={item.imageUrl ? undefined : (item.imageAlt ?? `Ảnh minh họa mẫu ${item.name}`)}
       >
         {item.imageUrl ? (
-          <img src={item.imageUrl} alt={item.imageAlt ?? item.name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <ImageWithFallback src={item.imageUrl} alt={item.imageAlt ?? item.name} />
         ) : item.imagePosition === 'missing' ? (
           <span className="media-placeholder">
             <Icon name="spark" size={30} /> Chưa có ảnh
@@ -601,10 +602,17 @@ export function CatalogPage({
                 >
                   <div
                     className={`catalog-preview-image costume-${selectedItem.imagePosition}`}
-                    role={selectedItem.imageUrl ? undefined : 'img'}
-                    aria-label={selectedItem.imageUrl ? undefined : (selectedItem.imageAlt ?? `Ảnh minh họa ${selectedItem.name}`)}
                   >
-                    {selectedItem.imageUrl && <img src={selectedItem.imageUrl} alt={selectedItem.imageAlt ?? selectedItem.name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                    {selectedItem.imageUrl ? (
+                      <ImageWithFallback
+                        src={selectedItem.imageUrl}
+                        alt={selectedItem.imageAlt ?? selectedItem.name}
+                      />
+                    ) : (
+                      <ImageWithFallback
+                        alt={selectedItem.imageAlt ?? selectedItem.name}
+                      />
+                    )}
                   </div>
                   <div className="catalog-preview-copy">
                     <div className="preview-top">
@@ -718,3 +726,4 @@ export function CatalogPage({
     </div>
   );
 }
+
