@@ -247,7 +247,7 @@ describe('Ops Agent read projections', () => {
   };
 
   it('returns only operational fields for a unit schedule block', async () => {
-    mocks.getUnitBlock.mockResolvedValueOnce(block as never);
+    mocks.getUnitBlock.mockResolvedValueOnce(block);
     const result = await executeAgentTool(
       actor,
       {
@@ -292,7 +292,7 @@ describe('Ops Agent read projections', () => {
     mocks.listUnitBlocks.mockResolvedValueOnce({
       items: [block],
       pagination: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 },
-    } as never);
+    });
     const result = await executeAgentTool(
       actor,
       {
@@ -413,7 +413,7 @@ describe('Ops Agent read projections', () => {
         },
       ],
     };
-    mocks.getTransfer.mockResolvedValueOnce(transfer as never);
+    mocks.getTransfer.mockResolvedValueOnce(transfer);
     const result = await executeAgentTool(
       actor,
       {
@@ -466,7 +466,7 @@ describe('Ops Agent read projections', () => {
       qrCode: 'private-qr-data',
       failureReason: 'internal failure details',
       order: { id: '10000000-0000-4000-8000-000000000071', pickupBranchId: 'branch-1' },
-    } as never);
+    });
 
     const result = await executeAgentTool(
       actor,
