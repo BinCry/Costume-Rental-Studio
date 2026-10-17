@@ -5,9 +5,13 @@
 **Phạm vi:** hoàn thiện dịch vụ Ops Agent để khớp giao diện production của Costume Rental Studio.
 **Đối tượng:** đội phát triển AI Agent/RAG/tool và đội Studio API phụ trách hợp đồng tích hợp.
 
+Kế hoạch sản phẩm và thứ tự triển khai: [`ke-hoach-phat-trien-ops-agent.md`](ke-hoach-phat-trien-ops-agent.md). Phạm vi chỉ có Costume Rental Studio và các chi nhánh của Studio; tên đề tài rộng hơn không đồng nghĩa hệ thống đang phục vụ nhiều doanh nghiệp.
+
 ## 1. Mục tiêu sản phẩm đã chốt
 
 Ops Agent là trợ lý cho nhân viên studio: trả lời quy trình dựa trên tài liệu được duyệt, tra cứu dữ liệu vận hành hiện thời và hỗ trợ một số thao tác qua Studio API. Agent không thay nhân viên quyết định ngoại lệ, không tự đặt chính sách và không ghi thẳng vào cơ sở dữ liệu.
+
+**Trạng thái thực thi hiện tại:** đường hỏi đáp/tra cứu và tool đọc đã có hợp đồng; 11 tool ghi mới được khai báo, đang bị Studio API chặn toàn bộ bằng `AGENT_WRITE_TOOLS_NOT_READY`. Các mô tả thao tác ghi dưới đây là yêu cầu cho giai đoạn tiếp theo, không phải khả năng đã phát hành.
 
 Ở production, nhân viên dùng bốn khu vực: **Bàn làm việc**, **Hỏi trợ lý**, **Tra cứu hướng dẫn** và **Yêu cầu hiện tại**. Hàng đợi, checklist, số liệu và danh mục tài liệu giả lập chỉ dành cho demo. Tài liệu đối chiếu giao diện/API: [`doi-chieu-ui-ops-agent-va-api.md`](doi-chieu-ui-ops-agent-va-api.md).
 
@@ -17,7 +21,7 @@ Studio API là cổng duy nhất giữa trình duyệt, Agent và nghiệp vụ.
 
 - `POST /api/v1/agent/messages`: tạo yêu cầu hoặc gửi tiếp nội dung vào hồ sơ hiện tại bằng `caseId`.
 - `GET /api/v1/agent/cases/{caseId}`: tải lại hồ sơ của nhân viên đang đăng nhập.
-- Các endpoint `confirm`, `reject`, `approve`, `cancel` trong nhóm `/api/v1/agent/...`: xử lý quyết định nhân viên; Studio API kiểm tra quyền và trạng thái.
+- Các endpoint `confirm`, `reject`, `approve`, `cancel` trong nhóm `/api/v1/agent/...`: nhận quyết định nhân viên và chuyển tiếp tới AI runtime sau khi Studio API kiểm tra điều kiện truy cập chung. Hợp đồng duyệt gắn với đúng hành động và kiểm tra trạng thái nghiệp vụ cuối chưa hoàn chỉnh; các route này không chứng minh tool ghi đã an toàn.
 - `POST /api/v1/knowledge/answer`: hỏi hướng dẫn, trả câu trả lời, mức đủ căn cứ và nguồn trích dẫn.
 
 Mọi route `/api/v1/agent/*` chỉ dành cho tài khoản đang hoạt động, hồ sơ nhân viên đang làm việc và có ít nhất một vai trò ADMIN/STAFF đang hoạt động ở chi nhánh còn hiệu lực (hoặc vai trò toàn hệ thống). Khách hàng không được truy cập hồ sơ Ops Agent. Sau khi qua điều kiện tài khoản, API còn yêu cầu quyền tri thức nội bộ: nhân viên cần `knowledge.read.branch` tại chi nhánh được phân công; quản trị viên toàn hệ thống dùng `knowledge.read.all`. Giao diện hiển thị đường vào Ops Agent cho cả ADMIN và STAFF khi có quyền tri thức phù hợp; quyền luôn được API kiểm tra lại khi gọi, không chỉ dựa vào việc thấy menu.
@@ -54,7 +58,7 @@ Kết quả tool có nguồn `studio-api`, thời điểm quan sát, mã request
 
 Trường `idempotencyKey` hiện bắt buộc trong payload, nhưng Studio API mới dùng để chống trùng cho `create_payment_checkout` và `request_refund`. Các thao tác ghi lịch, đơn thuê và điều chuyển chưa lưu/đối soát khóa này. Không retry tự động bất kỳ thao tác ghi nào khi timeout; với thao tác chưa có tra cứu theo khóa, cần người vận hành xác minh trạng thái trước khi thử lại.
 
-### Nhóm tool đang được Studio API cho phép
+### Nhóm tool đã đăng ký trong allowlist
 
 **Tra cứu (10 tool):**
 
@@ -64,7 +68,7 @@ Trường `idempotencyKey` hiện bắt buộc trong payload, nhưng Studio API 
 - Điều chuyển: `get_stock_transfer`.
 - Thanh toán và hoàn tiền: `get_payment_summary`, `get_payment`, `get_payment_by_idempotency_key`, `get_refund_by_idempotency_key`.
 
-**Thao tác ghi (11 tool):**
+**Thao tác ghi (11 tool, hiện bị chặn ở service layer):**
 
 - Lịch và tình trạng bộ đồ: `create_unit_block`, `update_unit_block`, `cancel_unit_block`.
 - Đơn thuê: `extend_rental_order`, `reallocate_rental_item`, `cancel_rental_order`.
@@ -110,16 +114,16 @@ Trường `idempotencyKey` hiện bắt buộc trong payload, nhưng Studio API 
 
 ## 4. Tiêu chí nghiệm thu cho đội AI
 
-Hoàn thành phần hiện tại khi các kiểm tra sau chạy được trên môi trường tích hợp, không cần fixture:
+Danh sách nghiệm thu được chia theo khả năng đọc hiện tại và phần ghi chỉ áp dụng sau khi hoàn thành hợp đồng an toàn. Mọi kiểm tra phải chạy trên môi trường tích hợp, không dùng fixture:
 
 1. Nhân viên hỏi về chính sách đang hiệu lực; Agent trả lời có trích dẫn đúng nguồn và không tự đóng đinh giá trị cấu hình 12+12.
 2. Câu hỏi không có tài liệu phù hợp trả `insufficient_context`; UI cho thấy chưa đủ căn cứ và không nhận câu trả lời suy đoán như hướng dẫn chính thức.
 3. Nhân viên tra cứu đơn, khả dụng theo ngày, lịch bộ đồ, điều chuyển và quyết toán; Agent dùng đúng tool đọc, diễn đạt dữ liệu hiện thời và chỉ đưa bằng chứng API trả về.
-4. Nhân viên yêu cầu gia hạn, đổi bộ, chặn lịch, hủy đơn, tạo/duyệt điều chuyển, tạo thanh toán hoặc yêu cầu hoàn tiền; Agent hỏi phần còn thiếu, tóm tắt tác động, chờ xác nhận/duyệt đúng trạng thái rồi mới báo kết quả.
+4. **Nghiệm thu tương lai sau khi mở từng nhóm ghi:** nhân viên yêu cầu gia hạn, đổi bộ, chặn lịch, hủy đơn, tạo/duyệt điều chuyển, tạo thanh toán hoặc yêu cầu hoàn tiền; Agent hỏi phần còn thiếu, hiển thị preview tác động, chờ xác nhận/duyệt được ràng buộc với hành động rồi mới báo kết quả đã được Studio API xác minh. Hiện tại các yêu cầu này phải trả trạng thái chưa thể thực thi, không mô phỏng thành công.
 5. Khách hàng và nhân viên đã nghỉ/khóa bị từ chối route Ops Agent; nhân viên hợp lệ chỉ được tra cứu tri thức theo quyền chi nhánh. Sai chi nhánh, tool bị tắt, xung đột nghiệp vụ, dữ liệu đổi phiên bản hoặc đối tượng không tồn tại đều nhận kết quả đúng loại; không có side effect ngoài dự kiến.
 6. Gửi tiếp vào hồ sơ hiện tại, tải lại trang và tiếp tục được cùng hồ sơ; không lộ UUID cho nhân viên.
 7. Thử gọi tool ngoài allowlist, thiếu `idempotencyKey`, thiếu `expectedVersion` bắt buộc hoặc callback sai service key bị từ chối. Kiểm tra `business_conflict` không bị phân loại thành `version_conflict`.
-8. Timeout khi thao tác ghi không gây retry tự động. Đối soát bằng idempotency chỉ với thanh toán/hoàn tiền; thao tác ghi còn lại phải được xác minh thủ công tới khi API hỗ trợ tra cứu.
+8. **Nghiệm thu tương lai cho tool ghi:** timeout không gây retry tự động. Đối soát bằng idempotency chỉ với thanh toán/hoàn tiền theo hợp đồng hiện có; thao tác ghi còn lại phải được xác minh thủ công tới khi API hỗ trợ tra cứu và chống trùng bền vững.
 
 ## 5. Phần chưa thuộc phạm vi triển khai hiện tại
 
