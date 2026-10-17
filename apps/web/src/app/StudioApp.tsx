@@ -91,7 +91,7 @@ const adminNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
 ];
 const staffNavGroups: { id: string; label: string; screens: Screen[] }[] = [
   { id: 'overview', label: 'Tổng quan', screens: ['dashboard'] },
-  { id: 'operations', label: 'Vận hành', screens: ['orders', 'counter', 'active', 'opsAgent'] },
+  { id: 'operations', label: 'Vận hành', screens: ['orders', 'counter', 'active'] },
   { id: 'inventory', label: 'Kho', screens: ['inventory', 'transfers'] },
   { id: 'customers', label: 'Khách hàng', screens: ['crm'] },
   { id: 'reports', label: 'Báo cáo', screens: ['staffReports'] },
@@ -767,6 +767,23 @@ export default function StudioApp() {
               </label>
             )}
             <nav aria-label={actorGroup === 'ADMIN' ? 'Chức năng quản trị' : 'Chức năng vận hành'}>
+              {actorGroup === 'STAFF' &&
+                nav
+                  .filter((item) => item.screen === 'opsAgent')
+                  .map((item) => (
+                    <a
+                      key={item.screen}
+                      href={pathFor(item.screen)}
+                      className={`staff-nav-agent-link ${route.screen === item.screen ? 'active' : ''}`}
+                      aria-current={route.screen === item.screen ? 'page' : undefined}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        go(item.screen);
+                      }}
+                    >
+                      {item.label}
+                    </a>
+                  ))}
               {navGroups.map((group) => {
                 const groupItems = group.screens.flatMap((screen) => {
                   const item = nav.find((entry) => entry.screen === screen);

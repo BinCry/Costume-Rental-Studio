@@ -4242,7 +4242,8 @@ small {
 .staff-nav-heading[aria-expanded='true'] .staff-nav-chevron {
   transform: rotate(0deg);
 }
-.app-staff .section-nav .staff-nav-group a {
+.app-staff .section-nav .staff-nav-group a,
+.app-staff .section-nav .staff-nav-agent-link {
   display: flex;
   align-items: center;
   width: 100%;
@@ -4253,10 +4254,12 @@ small {
   font-size: 14px;
   font-weight: 600;
 }
-.app-staff .section-nav .staff-nav-group a:hover {
+.app-staff .section-nav .staff-nav-group a:hover,
+.app-staff .section-nav .staff-nav-agent-link:hover {
   background: var(--surface-hover);
 }
-.app-staff .section-nav .staff-nav-group a.active {
+.app-staff .section-nav .staff-nav-group a.active,
+.app-staff .section-nav .staff-nav-agent-link.active {
   background: var(--brand-tint);
   color: var(--brand-primary);
 }
