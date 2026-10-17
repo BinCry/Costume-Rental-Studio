@@ -207,6 +207,9 @@ small {
   margin-left: 28px;
   height: 100%;
 }
+.site-header-signed-out .top-nav:not(.open) {
+  display: none;
+}
 .top-nav a {
   height: 44px;
   display: flex;
