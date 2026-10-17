@@ -595,7 +595,6 @@ export function AccountPage({
   onRoleChange,
   apiIdentity,
   realApiMode = false,
-  onSignOut,
 }: {
   scenario: DemoScenario;
   go: Navigate;
@@ -606,7 +605,6 @@ export function AccountPage({
     roles: { name: string; branchId: string | null; actorGroup?: string }[];
   };
   realApiMode?: boolean;
-  onSignOut?: () => void;
 }) {
   const [state, setState] = useState<
     'entry' | 'profile' | 'PENDING' | 'LOCKED' | 'INACTIVE' | 'unauthorized' | 'ready'
@@ -707,16 +705,7 @@ export function AccountPage({
           description="Phiên đăng nhập và quyền truy cập được xác minh bởi máy chủ."
         />
         <div className="feature-two-column">
-          <Panel
-            title={apiIdentity ? 'Thông tin tài khoản' : 'Đăng nhập'}
-            action={
-              apiIdentity && onSignOut ? (
-                <Button variant="quiet" onClick={onSignOut}>
-                  Đăng xuất
-                </Button>
-              ) : undefined
-            }
-          >
+          <Panel title={apiIdentity ? 'Thông tin tài khoản' : 'Đăng nhập'}>
             {apiIdentity ? (
               <>
                 <KeyFacts

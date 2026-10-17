@@ -29,7 +29,19 @@ import {
   ReportsPage,
   RolesPage,
 } from '../pages/AdminFeatures';
-import { pathFor, readRoute, type Navigate, type Screen } from './routes';
+import {
+  actorGroupFromRoleCode,
+  actorGroupFromRoles,
+  canActorAccessScreen,
+  canActorUsePath,
+  defaultPathForActor,
+  pathFor,
+  portalAreaForPath,
+  readRoute,
+  type ActorGroup,
+  type Navigate,
+  type Screen,
+} from './routes';
 
 const scenarios: { value: DemoScenario; label: string }[] = [
   { value: 'normal', label: 'Bình thường' },
@@ -55,34 +67,40 @@ const customerNav: { screen: Screen; label: string }[] = [
   { screen: 'account', label: 'Tài khoản' },
 ];
 const staffNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
-  { screen: 'dashboard', label: 'Bảng việc', roles: ['ADMIN', 'SALES_STAFF', 'INVENTORY_STAFF'] },
+  { screen: 'dashboard', label: 'Bảng việc', roles: ['SALES_STAFF', 'INVENTORY_STAFF'] },
   {
     screen: 'opsAgent',
     label: 'Trợ lý vận hành',
-    roles: ['ADMIN', 'SALES_STAFF', 'INVENTORY_STAFF'],
+    roles: ['SALES_STAFF', 'INVENTORY_STAFF'],
   },
-  { screen: 'orders', label: 'Đơn thuê', roles: ['ADMIN', 'SALES_STAFF', 'INVENTORY_STAFF'] },
-  { screen: 'counter', label: 'Tạo tại quầy', roles: ['ADMIN', 'SALES_STAFF'] },
-  { screen: 'active', label: 'Đang thuê', roles: ['ADMIN', 'SALES_STAFF', 'INVENTORY_STAFF'] },
-  { screen: 'inventory', label: 'Kho', roles: ['ADMIN', 'SALES_STAFF', 'INVENTORY_STAFF'] },
-  { screen: 'transfers', label: 'Điều chuyển', roles: ['ADMIN', 'INVENTORY_STAFF'] },
-  { screen: 'crm', label: 'Khách hàng', roles: ['ADMIN', 'SALES_STAFF'] },
+  { screen: 'orders', label: 'Đơn thuê', roles: ['SALES_STAFF', 'INVENTORY_STAFF'] },
+  { screen: 'counter', label: 'Tạo tại quầy', roles: ['SALES_STAFF'] },
+  { screen: 'active', label: 'Đang thuê', roles: ['SALES_STAFF', 'INVENTORY_STAFF'] },
+  { screen: 'inventory', label: 'Kho', roles: ['SALES_STAFF', 'INVENTORY_STAFF'] },
+  { screen: 'transfers', label: 'Điều chuyển', roles: ['INVENTORY_STAFF'] },
+  { screen: 'crm', label: 'Khách hàng', roles: ['SALES_STAFF'] },
+  { screen: 'staffReports', label: 'Báo cáo', roles: ['SALES_STAFF'] },
+];
+const adminNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
+  { screen: 'reports', label: 'Tổng quan', roles: ['ADMIN'] },
   { screen: 'adminCatalog', label: 'Danh mục', roles: ['ADMIN'] },
   { screen: 'employees', label: 'Nhân viên', roles: ['ADMIN'] },
   { screen: 'roles', label: 'Vai trò', roles: ['ADMIN'] },
   { screen: 'branches', label: 'Chi nhánh', roles: ['ADMIN'] },
   { screen: 'policies', label: 'Chính sách', roles: ['ADMIN'] },
-  { screen: 'reports', label: 'Báo cáo', roles: ['ADMIN', 'SALES_STAFF'] },
 ];
 const staffNavGroups: { id: string; label: string; screens: Screen[] }[] = [
   { id: 'overview', label: 'Tổng quan', screens: ['dashboard'] },
   { id: 'operations', label: 'Vận hành', screens: ['orders', 'counter', 'active', 'opsAgent'] },
   { id: 'inventory', label: 'Kho', screens: ['inventory', 'transfers'] },
   { id: 'customers', label: 'Khách hàng', screens: ['crm'] },
+  { id: 'reports', label: 'Báo cáo', screens: ['staffReports'] },
+];
+const adminNavGroups: { id: string; label: string; screens: Screen[] }[] = [
+  { id: 'overview', label: 'Tổng quan', screens: ['reports'] },
   { id: 'catalog', label: 'Danh mục', screens: ['adminCatalog'] },
   { id: 'organization', label: 'Tổ chức', screens: ['employees', 'roles', 'branches'] },
   { id: 'policies', label: 'Chính sách', screens: ['policies'] },
-  { id: 'reports', label: 'Báo cáo', screens: ['reports'] },
 ];
 const isStaff = (screen: Screen) =>
   ![
@@ -97,6 +115,20 @@ const isStaff = (screen: Screen) =>
     'forgotPassword',
     'notFound',
   ].includes(screen);
+function resolveAuthAudience(params: URLSearchParams): ActorGroup {
+  const portal = params.get('portal')?.toUpperCase();
+  if (portal === 'ADMIN' || portal === 'STAFF') return portal;
+  const next = params.get('next');
+  if (next) {
+    try {
+      const area = portalAreaForPath(new URL(next, window.location.origin).pathname);
+      if (area === 'ADMIN' || area === 'STAFF') return area;
+    } catch {
+      // An invalid return path must not change the login audience.
+    }
+  }
+  return 'CUSTOMER';
+}
 const requiredPermissions: Partial<Record<Screen, string[]>> = {
   dashboard: ['rentals.read.branch', 'rentals.read.all'],
   orders: ['rentals.read.branch', 'rentals.read.all'],
@@ -115,6 +147,8 @@ const requiredPermissions: Partial<Record<Screen, string[]>> = {
   roles: ['rbac.read.all', 'rbac.manage.all'],
   branches: ['branches.read.all', 'branches.manage.all'],
   policies: ['policies.read.all', 'policies.manage.all'],
+  reports: ['reports.read.all', 'reports.read.branch'],
+  staffReports: ['reports.read.all', 'reports.read.branch'],
   opsAgent: ['rentals.read.branch', 'rentals.read.all'],
 };
 
@@ -131,8 +165,11 @@ export default function StudioApp() {
   const [branch, setBranch] = useState('Chi nhánh Quận 1');
   const [customerCode, setCustomerCode] = useState('KH-001');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [expandedStaffGroup, setExpandedStaffGroup] = useState<string | null>(
-    () => staffNavGroups.find((group) => group.screens.includes(route.screen))?.id ?? null,
+    () =>
+      [...staffNavGroups, ...adminNavGroups].find((group) => group.screens.includes(route.screen))
+        ?.id ?? null,
   );
   const [demoControlsOpen, setDemoControlsOpen] = useState(false);
   const [, setAccessRevision] = useState(0);
@@ -147,7 +184,9 @@ export default function StudioApp() {
   }, [route]);
   const syncRoute = useCallback((nextRoute: ReturnType<typeof readRoute>) => {
     setRoute(nextRoute);
-    const activeGroup = staffNavGroups.find((group) => group.screens.includes(nextRoute.screen));
+    const activeGroup = [...staffNavGroups, ...adminNavGroups].find((group) =>
+      group.screens.includes(nextRoute.screen),
+    );
     if (activeGroup) setExpandedStaffGroup(activeGroup.id);
   }, []);
   useEffect(() => {
@@ -220,10 +259,8 @@ export default function StudioApp() {
     setApiIdentity(identity);
     setApiSessionReady(true);
     window.dispatchEvent(new Event('api-session-changed'));
-    const staffIdentity = identity.roles.some(
-      (entry) => entry.actorGroup === 'ADMIN' || entry.actorGroup === 'STAFF',
-    );
-    let destination = pathFor(staffIdentity ? 'dashboard' : 'account');
+    const actorGroup = actorGroupFromRoles(identity.roles);
+    let destination = defaultPathForActor(actorGroup);
     if (next) {
       try {
         const requested = new URL(next, window.location.origin);
@@ -237,7 +274,8 @@ export default function StudioApp() {
           requested.origin === window.location.origin &&
           requested.pathname.startsWith('/') &&
           !requested.pathname.startsWith('//') &&
-          !isAuthPath
+          !isAuthPath &&
+          canActorUsePath(actorGroup, requested.pathname)
         ) {
           destination = requested.pathname + requested.search + requested.hash;
         }
@@ -251,6 +289,8 @@ export default function StudioApp() {
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
   const signOut = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
     try {
       await logout();
     } catch {
@@ -260,15 +300,32 @@ export default function StudioApp() {
       setApiSessionReady(true);
       window.dispatchEvent(new Event('api-session-changed'));
       go('catalog');
+      setSigningOut(false);
     }
   };
   const activeRole: DemoRole =
-    (apiIdentity?.roles.find(
-      (entry) => entry.actorGroup === 'ADMIN' || entry.actorGroup === 'STAFF',
-    )?.roleCode as DemoRole | undefined) ??
-    (apiIdentity?.roles.find((entry) => entry.actorGroup === 'CUSTOMER')?.roleCode as
-      DemoRole | undefined) ??
-    role;
+    (apiIdentity?.roles.find((entry) => entry.actorGroup === actorGroupFromRoles(apiIdentity.roles))
+      ?.roleCode as DemoRole | undefined) ?? role;
+  const actorGroup: ActorGroup = apiIdentity
+    ? actorGroupFromRoles(apiIdentity.roles)
+    : actorGroupFromRoleCode(activeRole);
+  const staff = isStaff(route.screen);
+  const actorHomeScreen: Screen =
+    actorGroup === 'ADMIN'
+      ? 'reports'
+      : actorGroup === 'STAFF'
+        ? 'dashboard'
+        : actorGroup === 'CUSTOMER'
+          ? 'catalog'
+          : 'account';
+  const brandHomeScreen = apiIdentity ? actorHomeScreen : staff ? actorHomeScreen : 'catalog';
+  useEffect(() => {
+    if (!apiIdentity || !apiSessionReady || canActorAccessScreen(actorGroup, route.screen)) return;
+    const destination = defaultPathForActor(actorGroup);
+    if (window.location.pathname !== destination || window.location.search) {
+      window.location.replace(destination);
+    }
+  }, [actorGroup, apiIdentity, apiSessionReady, route.screen]);
   const staffApiRoles =
     apiIdentity?.roles.filter(
       (entry) => entry.actorGroup === 'ADMIN' || entry.actorGroup === 'STAFF',
@@ -297,7 +354,6 @@ export default function StudioApp() {
         .flatMap((entry) => entry.permissions.map((permission) => permission.code)) ?? [],
     ),
   );
-  const staff = isStaff(route.screen);
   const assigned = apiIdentity
     ? staffApiRoles.length > 0 && !!activeBranch && apiBranchOptions.includes(activeBranch)
     : activeRole === 'ADMIN' ||
@@ -386,7 +442,7 @@ export default function StudioApp() {
       ].some((permission) => effectivePermissions.includes(permission));
       return canReadOrder && canWorkReturn;
     }
-    if (screen === 'reports')
+    if (screen === 'reports' || screen === 'staffReports')
       return (
         effectivePermissions.includes('reports.read.all') ||
         effectivePermissions.includes('reports.read.branch')
@@ -396,7 +452,7 @@ export default function StudioApp() {
       return permissions?.some((permission) => effectivePermissions.includes(permission)) ?? false;
     }
     if (screen === 'policies') return activeRole === 'ADMIN';
-    const item = staffNav.find((value) => value.screen === screen);
+    const item = [...staffNav, ...adminNav].find((value) => value.screen === screen);
     if (!item?.roles.includes(activeRole)) return false;
     const permissions = requiredPermissions[screen];
     return (
@@ -404,7 +460,24 @@ export default function StudioApp() {
     );
   };
   const authScreen = ['login', 'register', 'forgotPassword'].includes(route.screen);
-  const nav = authScreen ? [] : staff ? staffNav.filter((x) => canOpen(x.screen)) : customerNav;
+  const nav =
+    authScreen || (apiIdentity && !canActorAccessScreen(actorGroup, route.screen))
+      ? []
+      : staff
+        ? (actorGroup === 'ADMIN' ? adminNav : actorGroup === 'STAFF' ? staffNav : []).filter(
+            (item) => canOpen(item.screen),
+          )
+        : customerNav;
+  const navGroups = actorGroup === 'ADMIN' ? adminNavGroups : staffNavGroups;
+  const shellActorGroup = apiIdentity || staff ? actorGroup : 'CUSTOMER';
+  const actorLabel =
+    shellActorGroup === 'ADMIN'
+      ? 'Quản trị'
+      : shellActorGroup === 'STAFF'
+        ? 'Nhân viên'
+        : shellActorGroup === 'CUSTOMER'
+          ? 'Khách hàng'
+          : 'Chưa được phân quyền';
   const productionApiMode = apiEnabled && !import.meta.env.DEV;
   const requiresCustomerSession =
     route.screen === 'booking' || route.screen === 'myRentals' || route.screen === 'myRentalDetail';
@@ -412,14 +485,27 @@ export default function StudioApp() {
   const sessionPending =
     requiresSession && (!apiSessionReady || (!!apiIdentity && !apiBranchesReady));
   const sessionMissing = requiresSession && apiSessionReady && !apiIdentity;
-  const protectedArea = (staff && !canOpen(route.screen)) || sessionPending || sessionMissing;
+  const wrongPortal = Boolean(apiIdentity && !canActorAccessScreen(actorGroup, route.screen));
+  const protectedArea =
+    (staff && !canOpen(route.screen)) || sessionPending || sessionMissing || wrongPortal;
   const productionConfigurationMissing = !apiEnabled && !import.meta.env.DEV;
   const showFixtureControls = import.meta.env.DEV && !apiIdentity;
   const p = route.params;
-  const authHeaderTarget = route.screen === 'login' ? 'register' : 'login';
-  const authHeaderParams = p.get('next') ? { next: p.get('next')! } : undefined;
+  const authAudienceGroup = resolveAuthAudience(p);
+  const portalClass =
+    shellActorGroup === 'ADMIN'
+      ? 'app-admin'
+      : shellActorGroup === 'STAFF'
+        ? 'app-employee'
+        : 'app-customer-portal';
+  const authHeaderTarget =
+    route.screen === 'register' || route.screen === 'forgotPassword' ? 'login' : 'register';
+  const authHeaderParams = {
+    ...(p.get('next') ? { next: p.get('next')! } : {}),
+    ...(p.get('portal') ? { portal: p.get('portal')! } : {}),
+  };
   return (
-    <div className={`app ${staff ? 'app-staff' : 'app-customer'}`}>
+    <div className={`app ${staff ? 'app-staff' : 'app-customer'} ${portalClass}`}>
       <a className="skip-link" href="#main-content">
         Bỏ qua điều hướng
       </a>
@@ -431,18 +517,20 @@ export default function StudioApp() {
             : apiEnabled
               ? 'Bản demo local · Đang dùng fixture khi chưa đăng nhập API'
               : 'Bản demo giao diện · Dữ liệu fixture, thao tác không lưu lên máy chủ'
-          : 'Danh mục công khai · Đăng nhập để đặt thuê hoặc vào khu vận hành'}
+          : apiIdentity
+            ? `Không gian ${actorLabel.toLowerCase()} · Phiên đăng nhập được xác minh`
+            : 'Danh mục công khai · Đăng nhập để đặt thuê hoặc vào đúng khu vực tài khoản'}
       </div>
       <header className={`site-header ${authScreen ? 'site-header-auth' : ''}`}>
         <div className="header-inner">
           <a
-            href="/"
+            href={pathFor(brandHomeScreen)}
             className="brand"
             onClick={(e) => {
               e.preventDefault();
-              go('catalog');
+              go(brandHomeScreen);
             }}
-            aria-label="Studio Trang Phục, về trang khám phá"
+            aria-label={`Studio Trang Phục, về ${actorLabel.toLowerCase()}`}
           >
             <span className="brand-mark">S</span>
             <span>
@@ -499,36 +587,30 @@ export default function StudioApp() {
                   </a>
                 </>
               )}
-              {!authScreen && apiIdentity && staffApiRoles.length > 0 && !staff && (
-                <a
-                  className="mobile-staff-entry"
-                  href={pathFor('dashboard')}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    go('dashboard');
-                  }}
-                >
-                  Khu vận hành <Icon name="arrow" size={16} />
-                </a>
-              )}
             </nav>
           )}
           <div className="header-actions">
             {authScreen ? (
-              <a
-                className="auth-header-link"
-                href={pathFor(authHeaderTarget, authHeaderParams)}
-                onClick={(event) => {
-                  event.preventDefault();
-                  go(authHeaderTarget, authHeaderParams);
-                }}
-              >
-                {route.screen === 'register'
-                  ? 'Đã có tài khoản? Đăng nhập'
-                  : route.screen === 'login'
-                    ? 'Tạo tài khoản'
-                    : 'Quay lại đăng nhập'}
-              </a>
+              route.screen === 'login' && authAudienceGroup !== 'CUSTOMER' ? (
+                <span className="auth-portal-label">
+                  {authAudienceGroup === 'ADMIN' ? 'Cổng quản trị' : 'Cổng nhân viên'}
+                </span>
+              ) : (
+                <a
+                  className="auth-header-link"
+                  href={pathFor(authHeaderTarget, authHeaderParams)}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    go(authHeaderTarget, authHeaderParams);
+                  }}
+                >
+                  {route.screen === 'register'
+                    ? 'Đã có tài khoản? Đăng nhập'
+                    : route.screen === 'login'
+                      ? 'Tạo tài khoản'
+                      : 'Quay lại đăng nhập'}
+                </a>
+              )
             ) : apiIdentity ? (
               <>
                 {staff && activeRole !== 'CUSTOMER' && (
@@ -553,28 +635,36 @@ export default function StudioApp() {
                     </select>
                   </label>
                 )}
-                {staffApiRoles.length > 0 && !staff && (
+                {actorGroup === 'CUSTOMER' ? (
                   <a
-                    className="area-switch"
-                    href="/van-hanh/tong-quan"
+                    className="header-account"
+                    href={pathFor('account')}
                     onClick={(event) => {
                       event.preventDefault();
-                      go('dashboard');
+                      go('account');
                     }}
                   >
-                    Khu vận hành <Icon name="arrow" size={16} />
+                    {apiIdentity.displayName || 'Tài khoản'}
                   </a>
+                ) : (
+                  <div
+                    className="header-identity"
+                    aria-label={`${actorLabel}: ${apiIdentity.displayName}`}
+                  >
+                    <span className="header-identity-role">{actorLabel}</span>
+                    <span className="header-identity-name">
+                      {apiIdentity.displayName || 'Tài khoản'}
+                    </span>
+                  </div>
                 )}
-                <a
-                  className="header-account"
-                  href="/tai-khoan"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    go('account');
-                  }}
+                <button
+                  type="button"
+                  className="button button-secondary header-logout"
+                  onClick={() => void signOut()}
+                  disabled={signingOut}
                 >
-                  {apiIdentity.displayName || 'Tài khoản'}
-                </a>
+                  {signingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}
+                </button>
               </>
             ) : (
               <div className="auth-header-actions">
@@ -676,8 +766,8 @@ export default function StudioApp() {
                 </select>
               </label>
             )}
-            <nav aria-label="Chức năng khu vận hành">
-              {staffNavGroups.map((group) => {
+            <nav aria-label={actorGroup === 'ADMIN' ? 'Chức năng quản trị' : 'Chức năng vận hành'}>
+              {navGroups.map((group) => {
                 const groupItems = group.screens.flatMap((screen) => {
                   const item = nav.find((entry) => entry.screen === screen);
                   return item ? [item] : [];
@@ -855,6 +945,13 @@ export default function StudioApp() {
                   </button>
                 </div>
               </div>
+            ) : wrongPortal ? (
+              <div className="feedback feedback-info" role="status">
+                <div>
+                  <strong>Đang mở không gian {actorLabel.toLowerCase()}</strong>
+                  <p>Tài khoản sẽ được chuyển đến khu vực riêng theo vai trò đã được cấp.</p>
+                </div>
+              </div>
             ) : apiIdentity && apiBranchesFailed ? (
               <div className="feedback feedback-danger" role="alert">
                 <div>
@@ -942,7 +1039,6 @@ export default function StudioApp() {
                 go={go}
                 apiIdentity={apiIdentity}
                 realApiMode={apiEnabled}
-                onSignOut={() => void signOut()}
                 onRoleChange={(nextRole) => {
                   if (!apiIdentity) setRole(nextRole);
                 }}
@@ -1115,7 +1211,7 @@ export default function StudioApp() {
                 canManage={!apiIdentity || effectivePermissions.includes('policies.manage.all')}
               />
             )}
-            {route.screen === 'reports' && (
+            {(route.screen === 'reports' || route.screen === 'staffReports') && (
               <ReportsPage
                 scenario={scenario}
                 branch={activeBranch}

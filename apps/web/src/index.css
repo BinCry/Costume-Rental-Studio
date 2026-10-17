@@ -229,27 +229,48 @@ small {
 .top-nav .mobile-extra-nav {
   display: none;
 }
-.mobile-auth-entry,
-.mobile-staff-entry {
+.mobile-auth-entry {
   display: none;
 }
 .header-actions {
   margin-left: auto;
   display: flex;
   align-items: center;
+  gap: 12px;
 }
-.area-switch {
+.header-identity {
+  min-width: 0;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.25;
+}
+.header-identity-role {
+  color: var(--brand-primary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.header-identity-name {
+  max-width: 180px;
+  overflow: hidden;
+  color: var(--text-primary);
   font-size: 14px;
   font-weight: 600;
-  color: var(--brand-primary);
-  min-height: 44px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.area-switch:hover {
-  text-decoration: underline;
+.header-logout {
+  min-height: 40px;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+.auth-portal-label {
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 .auth-header-actions {
   display: flex;
@@ -3421,9 +3442,6 @@ small {
   .top-nav a svg {
     display: none;
   }
-  .area-switch {
-    font-size: 12px;
-  }
   .page {
     width: min(100% - 32px, 1440px);
   }
@@ -3503,8 +3521,7 @@ small {
   .top-nav .mobile-extra-nav {
     display: flex;
   }
-  .top-nav .mobile-auth-entry,
-  .top-nav .mobile-staff-entry {
+  .top-nav .mobile-auth-entry {
     display: flex;
     justify-content: space-between;
     margin-top: 6px;
@@ -3517,9 +3534,6 @@ small {
     border-top: 0;
   }
   .site-header:not(.site-header-auth) .auth-header-actions {
-    display: none;
-  }
-  .area-switch {
     display: none;
   }
   .header-account {
@@ -3540,6 +3554,21 @@ small {
   .brand-mark {
     width: 31px;
     height: 31px;
+  }
+  .header-actions {
+    gap: 8px;
+  }
+  .header-identity-name {
+    max-width: 96px;
+    font-size: 12px;
+  }
+  .header-identity-role {
+    font-size: 9px;
+  }
+  .header-logout {
+    min-height: 36px;
+    padding: 0 9px;
+    font-size: 12px;
   }
   .mobile-menu {
     display: inline-grid !important;
@@ -3571,8 +3600,7 @@ small {
   .top-nav .mobile-extra-nav {
     display: flex;
   }
-  .top-nav .mobile-auth-entry,
-  .top-nav .mobile-staff-entry {
+  .top-nav .mobile-auth-entry {
     display: flex;
     justify-content: space-between;
     margin-top: 6px;
@@ -3590,9 +3618,6 @@ small {
   }
   .top-nav a svg {
     display: block;
-  }
-  .area-switch {
-    display: none;
   }
   .auth-page {
     width: min(100% - 32px, 620px);
@@ -4357,6 +4382,21 @@ small {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .app-staff .header-identity-name {
+    display: none;
+  }
+  .app-staff .header-identity-role {
+    max-width: 66px;
+    font-size: 9px;
+    text-align: right;
+  }
+  .app-staff .header-actions {
+    gap: 8px;
+  }
+  .app-staff .header-logout {
+    padding: 0 8px;
+    font-size: 11px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

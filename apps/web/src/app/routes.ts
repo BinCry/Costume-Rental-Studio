@@ -23,8 +23,11 @@ export type Screen =
   | 'branches'
   | 'policies'
   | 'reports'
+  | 'staffReports'
   | 'opsAgent'
   | 'notFound';
+export type ActorGroup = 'ADMIN' | 'STAFF' | 'CUSTOMER' | 'UNASSIGNED';
+export type PortalArea = 'ADMIN' | 'STAFF' | 'CUSTOMER' | 'AUTH' | 'PUBLIC';
 export type Navigate = (screen: Screen, params?: Record<string, string>) => void;
 export interface Route {
   screen: Screen;
@@ -55,9 +58,70 @@ export const paths: Record<Screen, string> = {
   branches: '/quan-tri/chi-nhanh',
   policies: '/quan-tri/chinh-sach',
   reports: '/quan-tri/bao-cao',
+  staffReports: '/van-hanh/bao-cao',
   opsAgent: '/van-hanh/ops-agent',
   notFound: '/khong-tim-thay-trang',
 };
+
+export function actorGroupFromRoles(roles: readonly { actorGroup?: string | null }[]): ActorGroup {
+  if (roles.some((role) => role.actorGroup === 'ADMIN')) return 'ADMIN';
+  if (roles.some((role) => role.actorGroup === 'STAFF')) return 'STAFF';
+  if (roles.some((role) => role.actorGroup === 'CUSTOMER')) return 'CUSTOMER';
+  return 'UNASSIGNED';
+}
+
+export function actorGroupFromRoleCode(roleCode: string): ActorGroup {
+  if (roleCode === 'ADMIN') return 'ADMIN';
+  if (roleCode === 'CUSTOMER') return 'CUSTOMER';
+  return 'STAFF';
+}
+
+export function defaultPathForActor(actorGroup: ActorGroup) {
+  if (actorGroup === 'ADMIN') return paths.reports;
+  if (actorGroup === 'STAFF') return paths.dashboard;
+  if (actorGroup === 'CUSTOMER') return paths.myRentals;
+  return paths.account;
+}
+
+export function portalAreaForScreen(screen: Screen): PortalArea {
+  if (['login', 'register', 'forgotPassword'].includes(screen)) return 'AUTH';
+  if (['catalog', 'detail', 'booking', 'myRentals', 'myRentalDetail', 'account'].includes(screen))
+    return 'CUSTOMER';
+  if (['adminCatalog', 'employees', 'roles', 'branches', 'policies', 'reports'].includes(screen))
+    return 'ADMIN';
+  if (screen === 'notFound') return 'PUBLIC';
+  return 'STAFF';
+}
+
+export function portalAreaForPath(pathname: string): PortalArea | undefined {
+  const path = pathname.replace(/\/$/, '') || '/';
+  if (
+    path === '/' ||
+    path.startsWith('/trang-phuc/') ||
+    path.startsWith('/don-cua-toi/') ||
+    ['/dat-thue', '/don-cua-toi', '/tai-khoan'].includes(path)
+  )
+    return 'CUSTOMER';
+  if (path.startsWith('/quan-tri/')) return 'ADMIN';
+  if (path.startsWith('/van-hanh/')) return 'STAFF';
+  if (['/dang-nhap', '/dang-ky', '/quen-mat-khau', '/auth/google/callback'].includes(path))
+    return 'AUTH';
+  return undefined;
+}
+
+export function canActorUsePath(actorGroup: ActorGroup, pathname: string) {
+  const area = portalAreaForPath(pathname);
+  if (actorGroup === 'UNASSIGNED') return area === 'CUSTOMER' && pathname === paths.account;
+  return area === actorGroup;
+}
+
+export function canActorAccessScreen(actorGroup: ActorGroup, screen: Screen) {
+  const area = portalAreaForScreen(screen);
+  if (screen === 'notFound') return actorGroup === 'CUSTOMER';
+  if (actorGroup === 'UNASSIGNED') return screen === 'account';
+  return area === actorGroup;
+}
+
 export function pathFor(screen: Screen, params?: Record<string, string>) {
   let path = paths[screen];
   const search = { ...params };

@@ -11,7 +11,7 @@ import {
   verifyPasswordResetOtp,
 } from '../api/client';
 import { Button, Field } from '../components/ui';
-import { pathFor, type Navigate } from '../app/routes';
+import { pathFor, portalAreaForPath, type Navigate } from '../app/routes';
 
 type AuthMode = 'login' | 'register' | 'forgotPassword';
 const googleNextKey = 'costume-rental.auth-next';
@@ -185,7 +185,16 @@ export function AuthPage({
   const [resetChallenge, setResetChallenge] = useState('');
   const [resetOtp, setResetOtp] = useState('');
   const [resetToken, setResetToken] = useState('');
-  const authNextParams = params.get('next') ? { next: params.get('next')! } : undefined;
+  const authNextParams = {
+    ...(params.get('next') ? { next: params.get('next')! } : {}),
+    ...(params.get('portal') ? { portal: params.get('portal')! } : {}),
+  };
+  const requestedNextPath = params.get('next')
+    ? new URL(params.get('next')!, window.location.origin).pathname
+    : '';
+  const requestedArea = params.get('portal')?.toUpperCase() ?? portalAreaForPath(requestedNextPath);
+  const restrictedPortal = requestedArea === 'ADMIN' || requestedArea === 'STAFF';
+  const portalLabel = requestedArea === 'ADMIN' ? 'QUẢN TRỊ STUDIO' : 'NHÂN VIÊN STUDIO';
   const goAuth = (screen: 'login' | 'register' | 'forgotPassword') => go(screen, authNextParams);
   const authHref = (screen: 'login' | 'register' | 'forgotPassword') =>
     pathFor(screen, authNextParams);
@@ -462,7 +471,9 @@ export function AuthPage({
 
   const pageTitle =
     mode === 'login'
-      ? 'Đăng nhập'
+      ? restrictedPortal
+        ? `Đăng nhập ${requestedArea === 'ADMIN' ? 'quản trị' : 'nhân viên'}`
+        : 'Đăng nhập'
       : mode === 'register'
         ? 'Tạo tài khoản khách'
         : 'Khôi phục mật khẩu';
@@ -486,11 +497,13 @@ export function AuthPage({
 
         <div className="auth-content">
           <div className="auth-heading">
-            <p className="eyebrow">TÀI KHOẢN STUDIO</p>
+            <p className="eyebrow">{restrictedPortal ? portalLabel : 'TÀI KHOẢN STUDIO'}</p>
             <h1 id="auth-title">{pageTitle}</h1>
             <p>
               {mode === 'login'
-                ? 'Theo dõi đơn thuê và tiếp tục hành trình chọn trang phục của bạn.'
+                ? restrictedPortal
+                  ? 'Dùng tài khoản được quản lý studio cấp để truy cập đúng khu vực theo vai trò.'
+                  : 'Theo dõi đơn thuê và tiếp tục hành trình chọn trang phục của bạn.'
                 : registerMode
                   ? 'Tạo tài khoản để quản lý thông tin và các đơn thuê của bạn.'
                   : 'Xác minh email để đặt lại mật khẩu tài khoản.'}
@@ -581,22 +594,34 @@ export function AuthPage({
                   </a>
                 </>
               )}
-              <p className="auth-switch-copy">
-                Chưa có tài khoản?{' '}
-                <a
-                  href={authHref('register')}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    goAuth('register');
-                  }}
-                >
-                  Tạo tài khoản
-                </a>
-              </p>
+              {!restrictedPortal && (
+                <p className="auth-switch-copy">
+                  Chưa có tài khoản?{' '}
+                  <a
+                    href={authHref('register')}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      goAuth('register');
+                    }}
+                  >
+                    Tạo tài khoản khách
+                  </a>
+                </p>
+              )}
             </>
           )}
 
-          {registerMode && registrationStep === 'details' && (
+          {registerMode && restrictedPortal && (
+            <div className="feedback feedback-info" role="status">
+              <div>
+                <strong>Tài khoản nhân sự do studio quản lý</strong>
+                <p>Khách hàng không thể tự đăng ký quyền nhân viên hoặc quản trị.</p>
+                <Button onClick={() => goAuth('login')}>Đến trang đăng nhập</Button>
+              </div>
+            </div>
+          )}
+
+          {registerMode && !restrictedPortal && registrationStep === 'details' && (
             <>
               <form className="auth-form" onSubmit={(event) => void sendRegistrationCode(event)}>
                 <Field
@@ -686,7 +711,7 @@ export function AuthPage({
             </>
           )}
 
-          {registerMode && registrationStep === 'verify' && (
+          {registerMode && !restrictedPortal && registrationStep === 'verify' && (
             <form className="auth-form" onSubmit={(event) => void finishRegistration(event)}>
               <div className="auth-verified-email">
                 <span>Mã xác nhận đã gửi đến</span>
@@ -873,7 +898,7 @@ export function AuthPage({
               </a>
             </p>
           )}
-          {registerMode && (
+          {registerMode && !restrictedPortal && (
             <p className="auth-switch-copy">
               Đã có tài khoản?{' '}
               <a
