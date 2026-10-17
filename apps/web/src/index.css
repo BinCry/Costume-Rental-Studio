@@ -3228,16 +3228,6 @@ small {
     grid-template-columns: 1fr;
   }
 }
-@media (max-width: 899px) {
-  .availability-bar {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-    padding: 10px;
-  }
-  .availability-title {
-    grid-column: 1/-1;
-  }
-}
 @media (max-width: 767px) {
   .role-layout.has-unsaved-role {
     padding-bottom: 164px;
@@ -3427,6 +3417,16 @@ small {
   }
   .catalog-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 899px) {
+  .availability-bar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    padding: 10px;
+  }
+  .availability-title {
+    grid-column: 1/-1;
   }
 }
 @media (max-width: 1023px) {
