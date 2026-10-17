@@ -535,7 +535,7 @@ export default function StudioApp() {
             ? `Không gian ${actorLabel.toLowerCase()} · Phiên đăng nhập được xác minh`
             : 'Danh mục công khai · Đăng nhập để đặt thuê hoặc vào đúng khu vực tài khoản'}
       </div>
-      <header className={`site-header ${authScreen ? 'site-header-auth' : ''}`}>
+      <header className={`site-header ${authScreen ? 'site-header-auth' : ''} ${!apiIdentity ? 'site-header-signed-out' : ''}`}>
         <div className="header-inner">
           <a
             href={pathFor(brandHomeScreen)}
