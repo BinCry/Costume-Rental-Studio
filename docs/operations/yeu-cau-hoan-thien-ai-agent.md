@@ -20,7 +20,15 @@ Studio API là cổng duy nhất giữa trình duyệt, Agent và nghiệp vụ.
 - Các endpoint `confirm`, `reject`, `approve`, `cancel` trong nhóm `/api/v1/agent/...`: xử lý quyết định nhân viên; Studio API kiểm tra quyền và trạng thái.
 - `POST /api/v1/knowledge/answer`: hỏi hướng dẫn, trả câu trả lời, mức đủ căn cứ và nguồn trích dẫn.
 
-Mọi route `/api/v1/agent/*` chỉ dành cho nhân viên còn hiệu lực có vai trò ADMIN/STAFF đang hoạt động. Khách hàng không được truy cập hồ sơ Ops Agent. Tài khoản nhân viên ở chi nhánh cần quyền `knowledge.read.branch`; quản trị viên toàn hệ thống dùng `knowledge.read.all`. Route tri thức riêng vẫn dùng audience khách/guest cho câu hỏi khách và chỉ trả tri thức nội bộ khi actor có quyền tương ứng.
+Mọi route `/api/v1/agent/*` chỉ dành cho tài khoản đang hoạt động, hồ sơ nhân viên đang làm việc và có ít nhất một vai trò ADMIN/STAFF đang hoạt động ở chi nhánh còn hiệu lực (hoặc vai trò toàn hệ thống). Khách hàng không được truy cập hồ sơ Ops Agent. Sau khi qua điều kiện tài khoản, API còn yêu cầu quyền tri thức nội bộ: nhân viên cần `knowledge.read.branch` tại chi nhánh được phân công; quản trị viên toàn hệ thống dùng `knowledge.read.all`. Giao diện hiển thị đường vào Ops Agent cho cả ADMIN và STAFF khi có quyền tri thức phù hợp; quyền luôn được API kiểm tra lại khi gọi, không chỉ dựa vào việc thấy menu.
+
+### Luồng tài khoản vào Ops Agent
+
+1. **Khách hàng:** đăng nhập hoặc tạo tài khoản như khách hàng, được chuyển tới khu khách hàng. Không thấy Ops Agent trong menu; truy cập trực tiếp cũng bị chặn ở giao diện và API.
+2. **Nhân viên:** quản trị viên tạo hồ sơ bằng email Google chính chủ của nhân viên, để trạng thái làm việc là đang hoạt động, rồi gán vai trò và chi nhánh có quyền `knowledge.read.branch`. Tài khoản đăng nhập chờ kích hoạt sẽ được liên kết và kích hoạt khi nhân viên đăng nhập Google bằng đúng email đã khai báo. Chỉ khi tài khoản, trạng thái làm việc, vai trò và quyền đều còn hiệu lực thì menu mới cho vào Ops Agent. Nếu nhân viên dùng email khác, hồ sơ sẽ không được liên kết với tài khoản đó; quản trị viên cần sửa email hồ sơ hoặc phân công/quyền cho đúng tài khoản.
+3. **Quản trị viên:** đăng nhập vào khu quản trị như hiện tại. Tài khoản đang hoạt động với quyền `knowledge.read.all` sẽ thấy đường vào Ops Agent trong menu quản trị. Vai trò ADMIN không tự thay thế quyền tri thức và API vẫn kiểm tra lại quyền.
+4. **Đổi chi nhánh:** lựa chọn chi nhánh làm việc trong chân menu là bối cảnh thao tác của giao diện. Nó không tự cấp thêm quyền; Studio API đối chiếu quyền và phạm vi phân công trên từng yêu cầu.
+5. **Bản demo:** khi chạy bằng fixture, màn hình chỉ mô phỏng trải nghiệm và không gửi yêu cầu tới dịch vụ Agent hay ghi dữ liệu thật. Trên production, truy cập phụ thuộc vào tài khoản, vai trò, phân công và quyền nêu trên.
 
 Agent phải trả đúng `AgentCaseResult` mà Studio API kiểm tra trong [`agent.schema.ts`](../../apps/api/src/modules/agent/agent.schema.ts): `caseId`, `state`, `message`, `evidence`, `completed` và các trường trạng thái tùy chọn. Ý nghĩa cần giữ:
 

@@ -82,6 +82,7 @@ const staffNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
   { screen: 'staffReports', label: 'Báo cáo', roles: ['SALES_STAFF'] },
 ];
 const adminNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
+  { screen: 'opsAgent', label: 'Trợ lý vận hành', roles: ['ADMIN'] },
   { screen: 'reports', label: 'Tổng quan', roles: ['ADMIN'] },
   { screen: 'adminCatalog', label: 'Danh mục', roles: ['ADMIN'] },
   { screen: 'employees', label: 'Nhân viên', roles: ['ADMIN'] },
@@ -149,7 +150,7 @@ const requiredPermissions: Partial<Record<Screen, string[]>> = {
   policies: ['policies.read.all', 'policies.manage.all'],
   reports: ['reports.read.all', 'reports.read.branch'],
   staffReports: ['reports.read.all', 'reports.read.branch'],
-  opsAgent: ['rentals.read.branch', 'rentals.read.all'],
+  opsAgent: ['knowledge.read.branch', 'knowledge.read.all'],
 };
 
 export default function StudioApp() {
@@ -246,8 +247,18 @@ export default function StudioApp() {
   }, [route.screen, role, branch, apiIdentity, apiBranchIds]);
   useEffect(() => {
     if (!menuOpen || !isStaff(route.screen)) return;
-    sectionNavRef.current?.querySelector<HTMLButtonElement>('.staff-nav-close')?.focus();
+    sectionNavRef.current
+      ?.querySelector<HTMLElement>('.staff-nav-agent-link, .staff-nav-heading')
+      ?.focus();
   }, [menuOpen, route.screen]);
+  useEffect(() => {
+    if (!menuOpen || window.matchMedia('(min-width: 1200px)').matches) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [menuOpen]);
   const go: Navigate = (screen, params) => {
     window.history.pushState(null, '', pathFor(screen, params));
     syncRoute(readRoute());
@@ -454,6 +465,7 @@ export default function StudioApp() {
     if (screen === 'policies') return activeRole === 'ADMIN';
     const item = [...staffNav, ...adminNav].find((value) => value.screen === screen);
     if (!item?.roles.includes(activeRole)) return false;
+    if (screen === 'opsAgent') return true;
     const permissions = requiredPermissions[screen];
     return (
       !permissions || permissions.some((permission) => effectivePermissions.includes(permission))
@@ -702,59 +714,8 @@ export default function StudioApp() {
               }
             }}
           >
-            <button
-              type="button"
-              className="staff-nav-close"
-              onClick={() => {
-                setMenuOpen(false);
-                menuButtonRef.current?.focus();
-              }}
-            >
-              Đóng menu
-            </button>
-            {apiIdentity && activeRole !== 'CUSTOMER' && (
-              <section className="staff-menu-account" aria-label="Tài khoản và chi nhánh">
-                <label className="sidebar-branch">
-                  <span>Chi nhánh làm việc</span>
-                  <select
-                    id="sidebar-branch-select"
-                    aria-label="Chi nhánh làm việc"
-                    value={activeBranch}
-                    onChange={(event) => setBranch(event.target.value)}
-                    disabled={!apiBranchesReady || apiBranchOptions.length === 0}
-                  >
-                    {apiBranchOptions.length === 0 ? (
-                      <option value="">Không có chi nhánh được gán</option>
-                    ) : (
-                      apiBranchOptions.map((name) => (
-                        <option value={name} key={name}>
-                          {name}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </label>
-                <div className="staff-menu-account-row">
-                  <div
-                    className="staff-menu-identity"
-                    aria-label={`${actorLabel}: ${apiIdentity.displayName}`}
-                  >
-                    <span className="header-identity-role">{actorLabel}</span>
-                    <strong>{apiIdentity.displayName || 'Tài khoản'}</strong>
-                  </div>
-                  <button
-                    type="button"
-                    className="button button-secondary staff-menu-logout"
-                    onClick={() => void signOut()}
-                    disabled={signingOut}
-                  >
-                    {signingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}
-                  </button>
-                </div>
-              </section>
-            )}
             <nav aria-label={actorGroup === 'ADMIN' ? 'Chức năng quản trị' : 'Chức năng vận hành'}>
-              {actorGroup === 'STAFF' &&
+              {(actorGroup === 'STAFF' || actorGroup === 'ADMIN') &&
                 nav
                   .filter((item) => item.screen === 'opsAgent')
                   .map((item) => (
@@ -818,7 +779,60 @@ export default function StudioApp() {
                 );
               })}
             </nav>
+            {apiIdentity && activeRole !== 'CUSTOMER' && (
+              <section className="staff-menu-account" aria-label="Tài khoản và chi nhánh">
+                <label className="sidebar-branch">
+                  <span>Chi nhánh làm việc</span>
+                  <select
+                    id="sidebar-branch-select"
+                    aria-label="Chi nhánh làm việc"
+                    value={activeBranch}
+                    onChange={(event) => setBranch(event.target.value)}
+                    disabled={!apiBranchesReady || apiBranchOptions.length === 0}
+                  >
+                    {apiBranchOptions.length === 0 ? (
+                      <option value="">Không có chi nhánh được gán</option>
+                    ) : (
+                      apiBranchOptions.map((name) => (
+                        <option value={name} key={name}>
+                          {name}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+                <div className="staff-menu-account-row">
+                  <div
+                    className="staff-menu-identity"
+                    aria-label={`${actorLabel}: ${apiIdentity.displayName}`}
+                  >
+                    <span className="header-identity-role">{actorLabel}</span>
+                    <strong>{apiIdentity.displayName || 'Tài khoản'}</strong>
+                  </div>
+                  <button
+                    type="button"
+                    className="button button-secondary staff-menu-logout"
+                    onClick={() => void signOut()}
+                    disabled={signingOut}
+                  >
+                    {signingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}
+                  </button>
+                </div>
+              </section>
+            )}
           </aside>
+          {menuOpen && (
+            <button
+              type="button"
+              className="staff-nav-backdrop"
+              aria-label="Đóng menu điều hướng"
+              tabIndex={-1}
+              onClick={() => {
+                setMenuOpen(false);
+                menuButtonRef.current?.focus();
+              }}
+            />
+          )}
         </>
       )}
       <main

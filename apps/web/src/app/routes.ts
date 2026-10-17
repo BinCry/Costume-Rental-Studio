@@ -110,12 +110,15 @@ export function portalAreaForPath(pathname: string): PortalArea | undefined {
 }
 
 export function canActorUsePath(actorGroup: ActorGroup, pathname: string) {
-  const area = portalAreaForPath(pathname);
+  const path = pathname.replace(/\/+$/, '') || '/';
+  if (path === paths.opsAgent) return actorGroup === 'ADMIN' || actorGroup === 'STAFF';
+  const area = portalAreaForPath(path);
   if (actorGroup === 'UNASSIGNED') return area === 'CUSTOMER' && pathname === paths.account;
   return area === actorGroup;
 }
 
 export function canActorAccessScreen(actorGroup: ActorGroup, screen: Screen) {
+  if (screen === 'opsAgent') return actorGroup === 'ADMIN' || actorGroup === 'STAFF';
   const area = portalAreaForScreen(screen);
   if (screen === 'notFound') return actorGroup === 'CUSTOMER';
   if (actorGroup === 'UNASSIGNED') return screen === 'account';

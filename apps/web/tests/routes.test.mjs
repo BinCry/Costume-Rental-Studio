@@ -83,4 +83,15 @@ describe('role-specific portal routing', () => {
     expect(canActorAccessScreen('ADMIN', 'reports')).toBe(true);
     expect(portalAreaForPath('/don-cua-toi/RT-2026-001')).toBe('CUSTOMER');
   });
+
+  it('allows active staff and admins to enter Ops Agent while keeping customers out', () => {
+    expect(pathFor('opsAgent')).toBe('/van-hanh/ops-agent');
+    expect(canActorUsePath('STAFF', '/van-hanh/ops-agent')).toBe(true);
+    expect(canActorUsePath('ADMIN', '/van-hanh/ops-agent')).toBe(true);
+    expect(canActorUsePath('ADMIN', '/van-hanh/ops-agent/')).toBe(true);
+    expect(canActorUsePath('CUSTOMER', '/van-hanh/ops-agent')).toBe(false);
+    expect(canActorAccessScreen('STAFF', 'opsAgent')).toBe(true);
+    expect(canActorAccessScreen('ADMIN', 'opsAgent')).toBe(true);
+    expect(canActorAccessScreen('CUSTOMER', 'opsAgent')).toBe(false);
+  });
 });
