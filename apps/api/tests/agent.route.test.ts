@@ -44,6 +44,10 @@ interface AgentRouteResponse {
   data: typeof result;
 }
 
+interface AgentRouteErrorResponse {
+  error: { code: string };
+}
+
 async function accessToken() {
   return new SignJWT({})
     .setProtectedHeader({ alg: 'HS256' })
@@ -62,20 +66,20 @@ beforeEach(() => {
   mocks.approveAction.mockResolvedValue(result);
   mocks.findUser.mockResolvedValue({
     id: userId,
-    email: 'customer@example.com',
+    email: 'staff@example.com',
     phone: null,
-    displayName: 'Customer',
+    displayName: 'Nhân viên',
     status: 'ACTIVE',
     avatarUrl: null,
-    employee: null,
+    employee: { employmentStatus: 'ACTIVE' },
     roleAssignments: [
       {
-        branchId: null,
-        branch: null,
+        branchId: '10000000-0000-4000-8000-000000000006',
+        branch: { status: 'ACTIVE' },
         role: {
-          roleCode: 'CUSTOMER',
-          name: 'Customer',
-          actorGroup: 'CUSTOMER',
+          roleCode: 'SALES_STAFF',
+          name: 'Nhân viên bán hàng',
+          actorGroup: 'STAFF',
           isActive: true,
           rolePermissions: [],
         },
@@ -109,6 +113,41 @@ describe('Agent public API', () => {
       expect.objectContaining({ id: userId }),
       expect.any(String),
     );
+  });
+
+  it('denies customers access to the staff Ops Agent API', async () => {
+    mocks.findUser.mockResolvedValueOnce({
+      id: userId,
+      email: 'customer@example.com',
+      phone: null,
+      displayName: 'Khách hàng',
+      status: 'ACTIVE',
+      avatarUrl: null,
+      employee: null,
+      roleAssignments: [
+        {
+          branchId: null,
+          branch: null,
+          role: {
+            roleCode: 'CUSTOMER',
+            name: 'Khách hàng',
+            actorGroup: 'CUSTOMER',
+            isActive: true,
+            rolePermissions: [],
+          },
+        },
+      ],
+    });
+    const token = await accessToken();
+
+    const response = await request(createApp())
+      .post('/api/v1/agent/messages')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ message: 'Tra cứu đơn của tôi' })
+      .expect(403);
+
+    expect((response.body as AgentRouteErrorResponse).error.code).toBe('STAFF_ACCESS_REQUIRED');
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
   it('rejects invalid case identifiers before proxying to the AI service', async () => {

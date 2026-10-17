@@ -17,15 +17,25 @@ const confirmationId = '10000000-0000-4000-8000-000000000003';
 const approvalId = '10000000-0000-4000-8000-000000000004';
 const actor = {
   id: '10000000-0000-4000-8000-000000000001',
-  employee: null,
+  status: 'ACTIVE',
+  employee: { employmentStatus: 'ACTIVE' },
   roleAssignments: [
     {
-      branchId: null,
-      branch: null,
+      branchId: '10000000-0000-4000-8000-000000000005',
+      branch: { status: 'ACTIVE' },
       role: {
-        actorGroup: 'CUSTOMER',
+        actorGroup: 'STAFF',
         isActive: true,
-        rolePermissions: [],
+          rolePermissions: [
+            {
+              permission: {
+                code: 'knowledge.read.branch',
+                module: 'knowledge',
+                action: 'read',
+                scope: 'BRANCH',
+              },
+            },
+          ],
       },
     },
   ],
@@ -67,6 +77,29 @@ describe('agent service response contracts', () => {
     await expect(sendAgentMessage({ message: 'Help me rent a costume.' }, actor)).resolves.toEqual(
       result,
     );
+  });
+
+  it('does not create an Ops Agent case for a customer actor', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const customer = {
+      ...actor,
+      status: 'ACTIVE',
+      employee: null,
+      roleAssignments: [
+        {
+          branchId: null,
+          branch: null,
+          role: { actorGroup: 'CUSTOMER', isActive: true, rolePermissions: [] },
+        },
+      ],
+    } as unknown as AuthenticatedActor;
+
+    await expect(sendAgentMessage({ message: 'Help me rent a costume.' }, customer)).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'STAFF_ACCESS_REQUIRED',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('parses the direct case envelope returned by case and action endpoints', async () => {

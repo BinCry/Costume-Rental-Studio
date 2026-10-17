@@ -20,6 +20,8 @@ Studio API là cổng duy nhất giữa trình duyệt, Agent và nghiệp vụ.
 - Các endpoint `confirm`, `reject`, `approve`, `cancel` trong nhóm `/api/v1/agent/...`: xử lý quyết định nhân viên; Studio API kiểm tra quyền và trạng thái.
 - `POST /api/v1/knowledge/answer`: hỏi hướng dẫn, trả câu trả lời, mức đủ căn cứ và nguồn trích dẫn.
 
+Mọi route `/api/v1/agent/*` chỉ dành cho nhân viên còn hiệu lực có vai trò ADMIN/STAFF đang hoạt động. Khách hàng không được truy cập hồ sơ Ops Agent. Tài khoản nhân viên ở chi nhánh cần quyền `knowledge.read.branch`; quản trị viên toàn hệ thống dùng `knowledge.read.all`. Route tri thức riêng vẫn dùng audience khách/guest cho câu hỏi khách và chỉ trả tri thức nội bộ khi actor có quyền tương ứng.
+
 Agent phải trả đúng `AgentCaseResult` mà Studio API kiểm tra trong [`agent.schema.ts`](../../apps/api/src/modules/agent/agent.schema.ts): `caseId`, `state`, `message`, `evidence`, `completed` và các trường trạng thái tùy chọn. Ý nghĩa cần giữ:
 
 - `pendingInput`: Agent cần nhân viên bổ sung thông tin. Khi nhân viên trả lời, tiếp tục cùng hồ sơ; không âm thầm tạo hồ sơ mới.
@@ -32,9 +34,11 @@ Agent phải trả đúng `AgentCaseResult` mà Studio API kiểm tra trong [`ag
 
 Agent gọi callback nội bộ `POST /api/v1/internal/agent-tools/execute`, không gọi trực tiếp API nghiệp vụ hay database. Hợp đồng `agent-tools/v1` được khai báo trong [`agent-tools.schema.ts`](../../apps/api/src/modules/agent-tools/agent-tools.schema.ts), danh sách cho phép trong [`agent-tools.registry.ts`](../../apps/api/src/modules/agent-tools/agent-tools.registry.ts), cách kiểm tra quyền và gọi service trong [`agent-tools.service.ts`](../../apps/api/src/modules/agent-tools/agent-tools.service.ts).
 
-Mỗi lần gọi phải gửi đúng service key qua `X-AI-Service-Key`, danh tính nhân viên qua `X-Actor-Id`, mã tương quan qua `X-Request-Id`, phiên bản hợp đồng `X-Agent-Tools-Contract: agent-tools/v1` và payload có `caseId`, `toolCallId`, `toolName`, `arguments`, `idempotencyKey`. Với thao tác cập nhật có kiểm tra phiên bản, gửi `expectedVersion`; với thao tác cần duyệt, truyền `approvalId` theo hợp đồng. Không tự tạo URL, HTTP method, câu SQL hoặc tên tool ngoài allowlist.
+Mỗi lần gọi phải gửi đúng service key qua `X-AI-Service-Key`, danh tính nhân viên qua `X-Actor-Id`, mã tương quan qua `X-Request-Id`, phiên bản hợp đồng `X-Agent-Tools-Contract: agent-tools/v1` và payload có `caseId`, `toolCallId`, `toolName`, `arguments`, `idempotencyKey`. Với thao tác cập nhật có kiểm tra phiên bản, gửi `expectedVersion`; với thao tác cần duyệt, `approvalId` hiện có trong schema nhưng Studio API chưa ràng buộc mã này với hồ sơ, lời gọi, tên tool, đối số và phiên bản bản ghi. Không tự tạo URL, HTTP method, câu SQL hoặc tên tool ngoài allowlist.
 
-Kết quả tool có nguồn `studio-api`, thời điểm quan sát, mã request và thông tin quyền. Giữ nguyên kết quả lỗi nghiệp vụ như `not_found`, `forbidden`, `validation_error` và `version_conflict`; không diễn giải lỗi thành thành công. Không retry mù thao tác ghi khi timeout. Dùng khóa idempotency và tool đọc đối soát phù hợp trước khi đề nghị nhân viên thử lại.
+Kết quả tool có nguồn `studio-api`, thời điểm quan sát, mã request và thông tin quyền. Giữ nguyên kết quả lỗi nghiệp vụ `not_found`, `forbidden`, `validation_error`, `version_conflict` và `business_conflict`; không diễn giải lỗi thành thành công. Chỉ `ORDER_VERSION_CONFLICT`, `TRANSFER_VERSION_CONFLICT` và `UNIT_BLOCK_VERSION_CONFLICT` là `version_conflict`; 409 do quy tắc nghiệp vụ/đồ đang bận là `business_conflict`.
+
+Trường `idempotencyKey` hiện bắt buộc trong payload, nhưng Studio API mới dùng để chống trùng cho `create_payment_checkout` và `request_refund`. Các thao tác ghi lịch, đơn thuê và điều chuyển chưa lưu/đối soát khóa này. Không retry tự động bất kỳ thao tác ghi nào khi timeout; với thao tác chưa có tra cứu theo khóa, cần người vận hành xác minh trạng thái trước khi thử lại.
 
 ### Nhóm tool đang được Studio API cho phép
 
@@ -80,7 +84,10 @@ Kết quả tool có nguồn `studio-api`, thời điểm quan sát, mã request
 - Hỏi lại khi thiếu thông tin bắt buộc; chỉ tạo thao tác ghi khi dữ liệu đầu vào đã rõ và nhân viên đã xác nhận đúng nội dung.
 - Tuân theo quyền, phạm vi chi nhánh và feature flag do Studio API kiểm tra. Không tự suy quyền từ chức danh hoặc lời nhắn của người dùng.
 - Với thao tác cập nhật có `expectedVersion`, lấy phiên bản mới nhất trước khi ghi. Nếu backend trả `version_conflict`, tải lại và yêu cầu nhân viên xác nhận lại nội dung đã thay đổi.
-- Với thanh toán/hoàn tiền, dùng `idempotencyKey`; nếu response mất hoặc timeout, tra cứu bằng `get_payment_by_idempotency_key` hoặc `get_refund_by_idempotency_key` trước khi thử lại.
+- Chỉ với thanh toán/hoàn tiền, `idempotencyKey` được API hiện tại dùng để chống tạo trùng; nếu response mất hoặc timeout, tra cứu bằng `get_payment_by_idempotency_key` hoặc `get_refund_by_idempotency_key` trước khi thử lại.
+- Danh sách `find_rental_orders` gửi sang mô hình chỉ gồm dữ liệu vận hành cần thiết; không dùng email/số điện thoại, ghi chú khách, tham chiếu thanh toán, URL bằng chứng hoặc mã người dùng.
+- Nếu API trả `business_conflict`, nêu đúng quy tắc hoặc tài nguyên đang bận; không yêu cầu nhân viên tải lại để xử lý như lỗi phiên bản. Với `version_conflict`, đọc lại phiên bản hiện tại trước khi đề nghị xác nhận lại.
+- Không bật các cờ ghi cho tới khi xác nhận/duyệt được ràng buộc bền vững với đúng hồ sơ, tool, đối số, phạm vi chi nhánh và phiên bản bản ghi; riêng `approvalId` hiện chưa có liên kết này ở Studio API.
 - Tool trả dữ liệu đã giới hạn cho mô hình; không tìm cách lấy email, số điện thoại, ghi chú riêng, URL bằng chứng hoặc bí mật không thuộc payload được phép. Không ghi service key, token hay nội dung nhạy cảm vào log/prompt.
 
 ## 4. Tiêu chí nghiệm thu cho đội AI
@@ -91,10 +98,10 @@ Hoàn thành phần hiện tại khi các kiểm tra sau chạy được trên m
 2. Câu hỏi không có tài liệu phù hợp trả `insufficient_context`; UI cho thấy chưa đủ căn cứ và không nhận câu trả lời suy đoán như hướng dẫn chính thức.
 3. Nhân viên tra cứu đơn, khả dụng theo ngày, lịch bộ đồ, điều chuyển và quyết toán; Agent dùng đúng tool đọc, diễn đạt dữ liệu hiện thời và chỉ đưa bằng chứng API trả về.
 4. Nhân viên yêu cầu gia hạn, đổi bộ, chặn lịch, hủy đơn, tạo/duyệt điều chuyển, tạo thanh toán hoặc yêu cầu hoàn tiền; Agent hỏi phần còn thiếu, tóm tắt tác động, chờ xác nhận/duyệt đúng trạng thái rồi mới báo kết quả.
-5. Người không đủ quyền, sai chi nhánh, tool bị tắt, dữ liệu đổi phiên bản hoặc đối tượng không tồn tại đều nhận kết quả lỗi đúng loại; không có side effect ngoài dự kiến.
+5. Khách hàng và nhân viên đã nghỉ/khóa bị từ chối route Ops Agent; nhân viên hợp lệ chỉ được tra cứu tri thức theo quyền chi nhánh. Sai chi nhánh, tool bị tắt, xung đột nghiệp vụ, dữ liệu đổi phiên bản hoặc đối tượng không tồn tại đều nhận kết quả đúng loại; không có side effect ngoài dự kiến.
 6. Gửi tiếp vào hồ sơ hiện tại, tải lại trang và tiếp tục được cùng hồ sơ; không lộ UUID cho nhân viên.
-7. Thử gọi tool ngoài allowlist, thiếu `idempotencyKey`, thiếu `expectedVersion` bắt buộc hoặc callback sai service key bị từ chối.
-8. Timeout khi thao tác ghi không gây retry tự động; đối soát theo khóa idempotency trước khi đưa ra hướng dẫn thử lại.
+7. Thử gọi tool ngoài allowlist, thiếu `idempotencyKey`, thiếu `expectedVersion` bắt buộc hoặc callback sai service key bị từ chối. Kiểm tra `business_conflict` không bị phân loại thành `version_conflict`.
+8. Timeout khi thao tác ghi không gây retry tự động. Đối soát bằng idempotency chỉ với thanh toán/hoàn tiền; thao tác ghi còn lại phải được xác minh thủ công tới khi API hỗ trợ tra cứu.
 
 ## 5. Phần chưa thuộc phạm vi triển khai hiện tại
 
@@ -106,6 +113,8 @@ Các mục sau cần API/quyết định sản phẩm trước khi làm UI hoặ
 - Quản lý tài liệu tri thức: danh sách, tải lên, phiên bản, duyệt, lập chỉ mục, vô hiệu hóa và lịch sử xử lý.
 - Tìm tài liệu thuần không sinh câu trả lời.
 - Tra cứu kết quả tạo hồ sơ mới theo request ID khi mất response; hiện UI không retry tạo mới ngầm.
+- Cơ chế idempotency bền vững hoặc tra cứu kết quả cho lần tạo hồ sơ Agent đầu tiên sau khi mất response.
+- Ràng buộc duyệt một lần từ `approvalId` tới `caseId`, `toolCallId`, tool, đối số, phạm vi và phiên bản; cho tới khi có, giữ mọi cờ thao tác ghi ở `false`.
 - API health/capability để hiển thị sức khỏe runtime chính xác.
 
 Không bổ sung các năng lực này bằng dữ liệu demo hoặc lời hứa trong hội thoại. Khi có API, cập nhật hợp đồng, quyền, trạng thái lỗi và tiêu chí nghiệm thu trước; sau đó mới nối màn hình phù hợp.

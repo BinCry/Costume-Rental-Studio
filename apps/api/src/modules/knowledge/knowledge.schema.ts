@@ -19,6 +19,14 @@ export const knowledgeAnswerSchema = z.object({
   answer: z.string(),
   sources: z.array(knowledgeAnswerSourceSchema),
   provisional: z.boolean(),
+}).superRefine((answer, context) => {
+  if (answer.outcome === 'answered' && answer.sources.length === 0) {
+    context.addIssue({
+      code: 'custom',
+      path: ['sources'],
+      message: 'Answered knowledge responses require at least one source',
+    });
+  }
 });
 
 export const aiKnowledgeResponseSchema = z.object({

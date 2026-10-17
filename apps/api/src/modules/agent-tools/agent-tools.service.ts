@@ -65,7 +65,6 @@ function safeOrderView(order: Awaited<ReturnType<typeof rentalService.getOrder>>
   return {
     id: order.id,
     orderCode: order.orderCode,
-    customerUserId: order.customerUserId,
     pickupBranchId: order.pickupBranchId,
     status: order.status,
     plannedStartAt: order.plannedStartAt,
@@ -129,7 +128,11 @@ export async function executeAgentTool(
         sortBy: 'updatedAt',
         sortOrder: 'desc',
       });
-      return observedResult(orders, requestId, definition.requiredPermission);
+      return observedResult(
+        { ...orders, items: orders.items.map(safeOrderView) },
+        requestId,
+        definition.requiredPermission,
+      );
     }
     case 'get_unit_schedule': {
       const blocks = await schedulingService.listUnitBlocks(actor, {

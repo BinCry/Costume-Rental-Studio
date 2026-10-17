@@ -152,6 +152,48 @@ describe('POST /api/v1/knowledge/answer', () => {
     );
   });
 
+  it('allows active branch staff with branch knowledge permission to use internal sources', async () => {
+    mocks.findUser.mockResolvedValueOnce({
+      id: userId,
+      status: 'ACTIVE',
+      employee: { employmentStatus: 'ACTIVE' },
+      roleAssignments: [
+        {
+          branchId: '20000000-0000-4000-8000-000000000001',
+          branch: { status: 'ACTIVE' },
+          role: {
+            actorGroup: 'STAFF',
+            isActive: true,
+            rolePermissions: [
+              {
+                permission: {
+                  code: 'knowledge.read.branch',
+                  module: 'knowledge',
+                  action: 'read',
+                  scope: 'BRANCH',
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    const token = await accessToken();
+    await request(createApp())
+      .post('/api/v1/knowledge/answer')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ query: 'Internal process?' })
+      .expect(200);
+
+    expect(mocks.answerKnowledge).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        actor: { userId, audiences: ['staff_internal', 'shared'] },
+      }),
+    );
+  });
+
   it('rejects an authenticated actor without knowledge access', async () => {
     mocks.findUser.mockResolvedValueOnce({
       id: userId,

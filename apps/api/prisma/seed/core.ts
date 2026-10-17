@@ -62,6 +62,7 @@ const permissionDefinitions = [
   ['policies.read.all', 'policies', 'read', PermissionScope.ALL],
   ['policies.manage.all', 'policies', 'manage', PermissionScope.ALL],
   ['knowledge.read.all', 'knowledge', 'read', PermissionScope.ALL],
+  ['knowledge.read.branch', 'knowledge', 'read', PermissionScope.BRANCH],
 ] as const;
 
 export interface CoreSeedContext {
@@ -223,6 +224,7 @@ export async function seedCore(db: SeedDatabase): Promise<CoreSeedContext> {
       'crm.read.branch',
       'crm.manage.branch',
       'reports.read.branch',
+      'knowledge.read.branch',
     ],
     INVENTORY_STAFF: [
       'catalog.read.all',
@@ -231,6 +233,7 @@ export async function seedCore(db: SeedDatabase): Promise<CoreSeedContext> {
       'transfers.read.branch',
       'transfers.manage.branch',
       'rentals.read.branch',
+      'knowledge.read.branch',
     ],
     CUSTOMER: ['catalog.read.all', 'rentals.read.own', 'rentals.manage.own'],
   };

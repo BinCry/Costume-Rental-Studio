@@ -24,19 +24,30 @@ function normalizedFailure(error: unknown, requestId: string) {
     'RENTAL_ORDER_NOT_FOUND',
     'PAYMENT_NOT_FOUND',
     'COSTUME_UNIT_NOT_FOUND',
+    'UNIT_NOT_FOUND',
+    'VARIANT_NOT_FOUND',
+    'ORDER_ITEM_NOT_FOUND',
+    'POLICY_NOT_FOUND',
     'UNIT_BLOCK_NOT_FOUND',
     'TRANSFER_NOT_FOUND',
     'REFUND_NOT_FOUND',
+  ]);
+  const versionConflictCodes = new Set([
+    'ORDER_VERSION_CONFLICT',
+    'TRANSFER_VERSION_CONFLICT',
+    'UNIT_BLOCK_VERSION_CONFLICT',
   ]);
   const status = notFoundCodes.has(error.code)
     ? 'not_found'
     : error.statusCode === 403
       ? 'forbidden'
-      : error.statusCode === 409
+      : error.statusCode === 409 && versionConflictCodes.has(error.code)
         ? 'version_conflict'
-        : error.statusCode === 400
-          ? 'validation_error'
-          : undefined;
+        : error.statusCode === 409
+          ? 'business_conflict'
+          : error.statusCode === 400
+            ? 'validation_error'
+            : undefined;
   if (!status) return undefined;
   return {
     status,

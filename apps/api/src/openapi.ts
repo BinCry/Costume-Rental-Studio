@@ -497,7 +497,7 @@ export const openApiDocument = {
       post: {
         tags: ['Agent'],
         security: [{ bearerAuth: [] }],
-        summary: 'Create an agent case or send the first message for a new case',
+        summary: 'Create or continue an Ops Agent case for an active employee',
         requestBody: {
           required: true,
           content: {
@@ -527,7 +527,7 @@ export const openApiDocument = {
       get: {
         tags: ['Agent'],
         security: [{ bearerAuth: [] }],
-        summary: 'Read an agent case owned by the authenticated actor',
+        summary: 'Read an Ops Agent case owned by the authenticated employee',
         parameters: [
           {
             name: 'caseId',
@@ -540,6 +540,7 @@ export const openApiDocument = {
           '200': { description: 'Agent case result' },
           '400': { $ref: '#/components/responses/BadRequest' },
           '401': { $ref: '#/components/responses/Unauthorized' },
+          '403': { $ref: '#/components/responses/Forbidden' },
           '404': { $ref: '#/components/responses/NotFound' },
           '503': { description: 'Agent dependency unavailable' },
         },

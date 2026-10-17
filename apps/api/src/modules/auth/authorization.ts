@@ -60,6 +60,20 @@ export function requireActor(actor: AuthenticatedActor | undefined): Authenticat
   return actor;
 }
 
+export function requireActiveEmployee(actor: AuthenticatedActor | undefined): AuthenticatedActor {
+  const current = requireActor(actor);
+  const hasActiveStaffRole = current.roleAssignments.some(
+    ({ branchId, branch, role }) =>
+      role.isActive &&
+      (role.actorGroup === 'ADMIN' || role.actorGroup === 'STAFF') &&
+      (branchId === null || branch?.status === 'ACTIVE'),
+  );
+  if (current.employee?.employmentStatus !== 'ACTIVE' || !hasActiveStaffRole) {
+    throw new AppError(403, 'STAFF_ACCESS_REQUIRED', 'Active employee access is required');
+  }
+  return current;
+}
+
 export function hasPermission(
   actor: AuthenticatedActor,
   input: { module: string; action: string; scope?: 'OWN' | 'BRANCH' | 'ALL'; branchId?: string },

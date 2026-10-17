@@ -951,7 +951,13 @@ export default function StudioApp() {
               <DashboardPage scenario={scenario} go={go} initialBranch={activeBranch} />
             )}
             {route.screen === 'opsAgent' && (
-              <OpsAgentPage scenario={scenario} branch={activeBranch} go={go} />
+              <OpsAgentPage
+                key={apiIdentity?.id ?? 'anonymous-ops-agent'}
+                scenario={scenario}
+                branch={activeBranch}
+                actorId={apiIdentity?.id}
+                go={go}
+              />
             )}
             {route.screen === 'orders' && (
               <OrdersPage

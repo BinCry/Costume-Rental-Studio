@@ -18,7 +18,9 @@ Yêu cầu triển khai cụ thể cho đội AI Agent, gồm hợp đồng tool
 | `POST /api/v1/agent/cases/{caseId}/cancel` | Hồ sơ Agent | Hủy hồ sơ Agent còn hoạt động; giao diện nêu rõ thao tác đã hoàn tất trước đó không bị hoàn tác. |
 | `POST /api/v1/knowledge/answer` | Tra cứu tri thức | Gửi câu hỏi, hiển thị câu trả lời, tình trạng đủ căn cứ và trích dẫn do API trả về. |
 
-API Agent yêu cầu phiên Studio đăng nhập. Cấp quyền và phạm vi dữ liệu do backend kiểm tra theo actor; giao diện không tự suy quyền để quyết định kết quả. Nếu một thao tác trả lỗi hoặc hết thời gian chờ, UI yêu cầu tải lại trạng thái hồ sơ trước khi thử tiếp.
+Các route `/agent/*` chỉ nhận tài khoản nhân viên đang làm việc, có vai trò ADMIN/STAFF đang hoạt động và quyền tra cứu tri thức nội bộ phù hợp với phạm vi chi nhánh. Khách hàng bị từ chối ngay tại Studio API. `/knowledge/answer` vẫn giữ luồng khách/guest riêng; nhân viên cần `knowledge.read.branch` ở chi nhánh được phân công hoặc `knowledge.read.all` cho quyền toàn hệ thống. Giao diện không tự suy quyền để quyết định kết quả.
+
+Khi lỗi mạng hoặc máy chủ khiến kết quả gửi chưa rõ, UI giữ câu hỏi, khóa gửi lại và lưu dấu chờ đối soát theo tài khoản trong phiên trình duyệt. Nếu đã có mã hồ sơ, nhân viên có thể tải lại hồ sơ. Nếu chưa nhận mã, cần người phụ trách đối soát trước; chỉ sau khi xác nhận bên ngoài mới được mở khóa gửi yêu cầu khác. API tra cứu/idempotency cho lần tạo hồ sơ đầu vẫn là phần đội AI cần bổ sung.
 
 ## Quy ước trải nghiệm khi chạy production
 
@@ -46,7 +48,7 @@ Các mục dưới đây chưa thuộc phạm vi màn hình production hiện t�
 | Nhật ký hoạt động và audit | API sự kiện có actor, hành động, nguồn, thời gian, kết quả, quyền và phân trang | Nhật ký không xuất hiện trong điều hướng production cho tới khi có API và quyền truy cập tương ứng. |
 | Liệt kê và quản lý nguồn tri thức | API danh sách tài liệu, metadata/version, tải lên, ingestion/index, trạng thái duyệt và lịch sử | Production chỉ có tra cứu hướng dẫn bằng `knowledge/answer`; không hiển thị danh mục fixture hoặc chức năng quản lý giả. |
 | Tìm tài liệu không cần sinh câu trả lời | Endpoint tìm kiếm trả đoạn trích và score/citation | Chưa có màn tìm kiếm thuần; hiện có thể hỏi hướng dẫn và xem các nguồn mà API trả về. |
-| Khôi phục một lần tạo hồ sơ mới khi mất response | Idempotency key hoặc API tra cứu theo request ID | Không retry ngầm. Nếu lỗi tạo mới có kết quả chưa rõ, nhân viên cần đối chiếu trước khi gửi yêu cầu mới. |
+| Khôi phục một lần tạo hồ sơ mới khi mất response | Idempotency key hoặc API tra cứu theo request ID, có bảo đảm lưu bền và truy vấn theo actor | UI khóa gửi lại và giữ dấu chờ theo tài khoản trong tab. Nếu chưa có mã hồ sơ, nhân viên phải đối soát với người phụ trách rồi mới chủ động mở khóa. |
 | Trạng thái runtime trên UI | Endpoint health/capability được API Studio proxy cho actor | Giao diện không khẳng định runtime đang khỏe chỉ vì build ở chế độ API; từng thao tác hiển thị trạng thái thực tế. |
 
 Các endpoint `agent-tools` là giao tiếp nội bộ giữa Agent runtime và Studio API. Trình duyệt không được gọi chúng trực tiếp. UI chỉ đưa ra yêu cầu qua route Agent công khai và hiển thị bằng chứng/kết quả backend trả về.

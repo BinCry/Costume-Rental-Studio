@@ -1,7 +1,7 @@
 import { AppError } from '../../common/errors/app-error.js';
 import { env } from '../../config/env.js';
 import {
-  knowledgeActorContext,
+  opsAgentKnowledgeActorContext,
   type KnowledgeActorContext,
 } from '../knowledge/knowledge.service.js';
 import type { AuthenticatedActor } from '../auth/authorization.js';
@@ -113,7 +113,7 @@ export async function sendAgentMessage(
   return callAgent(
     '/api/v1/agent/messages',
     { method: 'POST', body: JSON.stringify(input) },
-    knowledgeActorContext(actor),
+    opsAgentKnowledgeActorContext(actor),
     requestId,
     'message',
   );
@@ -127,7 +127,7 @@ export async function getAgentCase(
   return callAgent(
     `/api/v1/agent/cases/${encodeURIComponent(caseId)}`,
     { method: 'GET' },
-    knowledgeActorContext(actor),
+    opsAgentKnowledgeActorContext(actor),
     requestId,
   );
 }
@@ -141,7 +141,7 @@ async function caseAction(
   return callAgent(
     path,
     { method: 'POST', body: input ? JSON.stringify(input) : undefined },
-    knowledgeActorContext(actor),
+    opsAgentKnowledgeActorContext(actor),
     requestId,
   );
 }

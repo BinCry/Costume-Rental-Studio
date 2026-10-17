@@ -1,6 +1,10 @@
 import { AppError } from '../../common/errors/app-error.js';
 import { env } from '../../config/env.js';
-import { hasPermission, type AuthenticatedActor } from '../auth/authorization.js';
+import {
+  hasPermission,
+  requireActiveEmployee,
+  type AuthenticatedActor,
+} from '../auth/authorization.js';
 import {
   aiKnowledgeResponseSchema,
   type KnowledgeAnswer,
@@ -28,11 +32,18 @@ export function knowledgeActorContext(
     ({ branchId, branch, role }) =>
       role.isActive && (branchId === null || branch?.status === 'ACTIVE'),
   );
-  const canReadInternal = hasPermission(actor, {
-    module: 'knowledge',
-    action: 'read',
-    scope: 'ALL',
-  });
+  const canReadInternal =
+    hasPermission(actor, { module: 'knowledge', action: 'read', scope: 'ALL' }) ||
+    activeAssignments.some(
+      ({ branchId }) =>
+        branchId !== null &&
+        hasPermission(actor, {
+          module: 'knowledge',
+          action: 'read',
+          scope: 'BRANCH',
+          branchId,
+        }),
+    );
   if (canReadInternal) {
     return { userId: actor.id, audiences: ['staff_internal', 'shared'] };
   }
@@ -41,6 +52,15 @@ export function knowledgeActorContext(
   if (isCustomer) return { userId: actor.id, audiences: ['customer', 'shared'] };
 
   throw new AppError(403, 'FORBIDDEN', 'Knowledge access is not permitted for this account');
+}
+
+export function opsAgentKnowledgeActorContext(actor: AuthenticatedActor): KnowledgeActorContext {
+  const employee = requireActiveEmployee(actor);
+  const context = knowledgeActorContext(employee);
+  if (!context.audiences.includes('staff_internal')) {
+    throw new AppError(403, 'FORBIDDEN', 'Knowledge access is not permitted for this account');
+  }
+  return context;
 }
 
 const MAX_AI_RESPONSE_BYTES = 1_000_000;

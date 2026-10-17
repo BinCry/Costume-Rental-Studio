@@ -126,6 +126,28 @@ describe('POST /api/v1/internal/agent-tools/execute', () => {
     expect((response.body as SuccessResponse).data.status).toBe('forbidden');
   });
 
+  it.each([
+    { code: 'ORDER_VERSION_CONFLICT', expectedStatus: 'version_conflict' },
+    { code: 'UNIT_BLOCK_VERSION_CONFLICT', expectedStatus: 'version_conflict' },
+    { code: 'UNIT_SCHEDULE_CONFLICT', expectedStatus: 'business_conflict' },
+    { code: 'UNIT_UNAVAILABLE', expectedStatus: 'business_conflict' },
+    { code: 'VARIANT_NOT_FOUND', expectedStatus: 'not_found' },
+  ])('normalizes $code as $expectedStatus', async ({ code, expectedStatus }) => {
+    mocks.execute.mockRejectedValue(new AppError(
+      code.endsWith('NOT_FOUND') ? 404 : 409,
+      code,
+      'Business rule rejected the operation',
+    ));
+
+    const response = await request(createApp())
+      .post('/api/v1/internal/agent-tools/execute')
+      .set(internalHeaders)
+      .send(execution)
+      .expect(200);
+
+    expect((response.body as SuccessResponse).data.status).toBe(expectedStatus);
+  });
+
   it('authorizes approval scope through the trusted Studio actor', async () => {
     const branchId = '10000000-0000-4000-8000-000000000006';
     const response = await request(createApp())

@@ -121,4 +121,23 @@ describe('knowledge service proxy', () => {
       answerKnowledge({ query: 'Valid question', topK: 5 }, { actor: guestActor }),
     ).rejects.toMatchObject({ statusCode: 504, code: 'AI_SERVICE_TIMEOUT' });
   });
+
+  it('rejects an answered response without source citations', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            ...answerBody,
+            data: { result: { ...answerBody.data.result, sources: [] } },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+
+    await expect(
+      answerKnowledge({ query: 'When should I return it?', topK: 5 }, { actor: guestActor }),
+    ).rejects.toMatchObject({ statusCode: 503, code: 'AI_SERVICE_INVALID_RESPONSE' });
+  });
 });

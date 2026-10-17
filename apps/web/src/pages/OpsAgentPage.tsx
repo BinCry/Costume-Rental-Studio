@@ -16,6 +16,7 @@ import { fixtureAdapter, fixtureClock } from '../fixtures/adapter';
 import type { DemoScenario, QueueTask } from '../fixtures/types';
 import { opsAgentFixtureAdapter, opsAgentSources, opsAgentWorkflows } from '../fixtures/opsAgent';
 import {
+  ApiClientError,
   answerOpsKnowledge,
   approveOpsAgentAction,
   cancelOpsAgentCase,
@@ -315,12 +316,23 @@ export function OpsAgentPage({
   scenario,
   branch,
   go,
+  actorId,
 }: {
   scenario: DemoScenario;
   branch: string;
   go: Navigate;
+  actorId?: string;
 }) {
   const useAgentApi = import.meta.env.VITE_OPS_AGENT_MODE === 'api';
+  const scopedCaseSessionKey = actorId ? `${agentCaseSessionKey}:${actorId}` : undefined;
+  const uncertainInitialSendSessionKey = scopedCaseSessionKey
+    ? `${scopedCaseSessionKey}:uncertain-initial-send`
+    : undefined;
+  const hasUncertainInitialSend =
+    useAgentApi &&
+    Boolean(uncertainInitialSendSessionKey) &&
+    typeof window !== 'undefined' &&
+    window.sessionStorage.getItem(uncertainInitialSendSessionKey!) === '1';
   const availableTabs = useAgentApi ? apiTabs : tabs;
   const [tab, setTab] = useState<AgentTab>('overview');
   const [queueFilter, setQueueFilter] = useState<QueueFilter>('all');
@@ -338,8 +350,8 @@ export function OpsAgentPage({
   const [knowledgeError, setKnowledgeError] = useState('');
   const [chatDraft, setChatDraft] = useState('');
   const [agentCaseId, setAgentCaseId] = useState<string | undefined>(() => {
-    if (!useAgentApi || typeof window === 'undefined') return undefined;
-    return window.sessionStorage.getItem(agentCaseSessionKey) ?? undefined;
+    if (!useAgentApi || !scopedCaseSessionKey || typeof window === 'undefined') return undefined;
+    return window.sessionStorage.getItem(scopedCaseSessionKey) ?? undefined;
   });
   const [agentResult, setAgentResult] = useState<OpsAgentCaseResult>();
   const [caseLoading, setCaseLoading] = useState(() => Boolean(agentCaseId));
@@ -347,9 +359,13 @@ export function OpsAgentPage({
   const [caseError, setCaseError] = useState('');
   const [caseDialogAction, setCaseDialogAction] = useState<AgentCaseAction>();
   const [sendingMessage, setSendingMessage] = useState(false);
-  const [sendOutcomeUnknown, setSendOutcomeUnknown] = useState(false);
+  const [sendOutcomeUnknown, setSendOutcomeUnknown] = useState(hasUncertainInitialSend);
   const [pendingQuestion, setPendingQuestion] = useState('');
-  const [sendError, setSendError] = useState('');
+  const [sendError, setSendError] = useState(
+    hasUncertainInitialSend
+      ? 'Kết quả tạo yêu cầu trước đó chưa được xác nhận. Hãy đối soát trước khi gửi yêu cầu khác.'
+      : '',
+  );
   const [selectedTask, setSelectedTask] = useState<QueueTask>();
   const [selectedSourceId, setSelectedSourceId] = useState<string>();
   const [conflictCleared, setConflictCleared] = useState(false);
@@ -386,10 +402,10 @@ export function OpsAgentPage({
   }, [scenario, branch]);
 
   useEffect(() => {
-    if (!useAgentApi) return;
-    if (agentCaseId) window.sessionStorage.setItem(agentCaseSessionKey, agentCaseId);
-    else window.sessionStorage.removeItem(agentCaseSessionKey);
-  }, [agentCaseId, useAgentApi]);
+    if (!useAgentApi || !scopedCaseSessionKey) return;
+    if (agentCaseId) window.sessionStorage.setItem(scopedCaseSessionKey, agentCaseId);
+    else window.sessionStorage.removeItem(scopedCaseSessionKey);
+  }, [agentCaseId, scopedCaseSessionKey, useAgentApi]);
 
   useEffect(() => {
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
@@ -471,6 +487,8 @@ export function OpsAgentPage({
     setCaseError('');
     try {
       setAgentResult(await getOpsAgentCase(agentCaseId));
+      setSendOutcomeUnknown(false);
+      setSendError('');
     } catch (loadError) {
       setCaseError(loadError instanceof Error ? loadError.message : 'Không tải được hồ sơ Agent.');
     } finally {
@@ -562,6 +580,7 @@ export function OpsAgentPage({
 
   const loadKnowledgeAnswer = async (query = knowledgeQuery.trim()) => {
     if (query.length < 2 || knowledgeLoading) return;
+    setKnowledgeAnswer(undefined);
     setKnowledgeLoading(true);
     setKnowledgeError('');
     try {
@@ -620,7 +639,7 @@ export function OpsAgentPage({
   const sendMessage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const question = chatDraft.trim();
-    if (!question || sendingMessage) return;
+    if (!question || sendingMessage || (useAgentApi && sendOutcomeUnknown)) return;
     setSendError('');
     setPendingQuestion(question);
     setSendingMessage(true);
@@ -637,6 +656,8 @@ export function OpsAgentPage({
         setAgentCaseId(reply.caseId);
         setAgentResult(reply);
         setSendOutcomeUnknown(false);
+        if (uncertainInitialSendSessionKey)
+          window.sessionStorage.removeItem(uncertainInitialSendSessionKey);
         const pendingSummary = reply.pendingApproval?.summary ?? reply.pendingConfirmation?.summary;
         assistantMessage = {
           id: 0,
@@ -662,9 +683,12 @@ export function OpsAgentPage({
       setChatDraft('');
     } catch (error) {
       const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
-      setSendOutcomeUnknown(
-        ['AI_SERVICE_TIMEOUT', 'AI_SERVICE_UNAVAILABLE', 'NETWORK_ERROR'].includes(code),
-      );
+      const outcomeUnknown =
+        (error instanceof ApiClientError && (error.status === 0 || error.status >= 500)) ||
+        ['AI_SERVICE_TIMEOUT', 'AI_SERVICE_UNAVAILABLE', 'NETWORK_ERROR'].includes(code);
+      setSendOutcomeUnknown(outcomeUnknown);
+      if (outcomeUnknown && !agentCaseId && uncertainInitialSendSessionKey)
+        window.sessionStorage.setItem(uncertainInitialSendSessionKey, '1');
       setSendError(
         error instanceof Error ? error.message : 'Không gửi được câu hỏi tới Ops Agent.',
       );
@@ -675,7 +699,7 @@ export function OpsAgentPage({
   };
 
   const newConversation = () => {
-    if (useAgentApi && agentCaseId && !agentResult?.completed) return;
+    if (useAgentApi && (sendOutcomeUnknown || (agentCaseId && !agentResult?.completed))) return;
     messageSequence.current = 1;
     setSelectedTask(undefined);
     setChatDraft('');
@@ -684,12 +708,14 @@ export function OpsAgentPage({
     setCaseError('');
     setSendError('');
     setSendOutcomeUnknown(false);
+    if (uncertainInitialSendSessionKey)
+      window.sessionStorage.removeItem(uncertainInitialSendSessionKey);
     setMessages([
       {
         id: 0,
         role: 'assistant',
         text: useAgentApi
-          ? 'Cuộc trò chuyện mới sẽ được gửi tới API Agent khi bạn đặt câu hỏi. Không đưa thông tin nhạy cảm của khách vào môi trường thử nghiệm.'
+          ? 'Cuộc trò chuyện mới sẽ được gửi tới trợ lý vận hành. Dùng mã đơn khi có thể; không gửi mật khẩu, mã OTP hoặc thông tin thanh toán đầy đủ.'
           : 'Cuộc trò chuyện mới chỉ tồn tại trong trình duyệt này. Hãy chọn câu hỏi gợi ý; không gửi dữ liệu khách thật.',
         sourceIds: useAgentApi ? [] : ['product-scope'],
       },
@@ -1651,10 +1677,15 @@ export function OpsAgentPage({
                 <Button
                   variant="secondary"
                   onClick={newConversation}
-                  disabled={useAgentApi && !!agentCaseId && !agentResult?.completed}
+                  disabled={
+                    useAgentApi &&
+                    (sendOutcomeUnknown || (!!agentCaseId && !agentResult?.completed))
+                  }
                   title={
-                    useAgentApi && agentCaseId && !agentResult?.completed
-                      ? 'Hãy xử lý hoặc hủy hồ sơ Agent hiện tại trước.'
+                    useAgentApi && sendOutcomeUnknown
+                      ? 'Hãy đối soát kết quả gửi chưa rõ trước khi tạo yêu cầu khác.'
+                      : useAgentApi && agentCaseId && !agentResult?.completed
+                        ? 'Hãy xử lý hoặc hủy hồ sơ Agent hiện tại trước.'
                       : undefined
                   }
                 >
@@ -1800,6 +1831,7 @@ export function OpsAgentPage({
                         : 'Hỏi về checklist hoặc nguồn tài liệu...'
                     }
                     value={chatDraft}
+                    disabled={useAgentApi && sendOutcomeUnknown}
                     maxLength={2000}
                     onChange={(event) => setChatDraft(event.target.value)}
                     onKeyDown={(event) => {
@@ -1816,6 +1848,7 @@ export function OpsAgentPage({
                   disabled={
                     !chatDraft.trim() ||
                     sendingMessage ||
+                    (useAgentApi && sendOutcomeUnknown) ||
                     (useAgentApi &&
                       !!agentResult &&
                       (agentResult.completed ||
@@ -1843,12 +1876,31 @@ export function OpsAgentPage({
                       >
                         Kiểm tra yêu cầu
                       </Button>
+                    ) : sendOutcomeUnknown ? (
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          const confirmed = window.confirm(
+                            'Chỉ tiếp tục nếu bạn đã đối soát với người phụ trách rằng yêu cầu trước chưa được tạo. Bạn muốn tạo yêu cầu mới?',
+                          );
+                          if (!confirmed) return;
+                          if (uncertainInitialSendSessionKey)
+                            window.sessionStorage.removeItem(uncertainInitialSendSessionKey);
+                          setSendOutcomeUnknown(false);
+                          setSendError('');
+                          setChatDraft('');
+                        }}
+                      >
+                        Đã đối soát, tiếp tục
+                      </Button>
                     ) : undefined
                   }
                 >
                   {sendError}{' '}
                   {sendOutcomeUnknown
-                    ? 'Câu hỏi vẫn được giữ. Hãy kiểm tra yêu cầu hiện tại trước khi gửi lại để tránh tạo thao tác trùng.'
+                    ? agentCaseId
+                      ? 'Câu hỏi vẫn được giữ. Hãy kiểm tra yêu cầu hiện tại trước khi gửi lại để tránh tạo thao tác trùng.'
+                      : 'Câu hỏi vẫn được giữ nhưng mã yêu cầu chưa được trả về. Đừng gửi lại cho đến khi người phụ trách đối soát kết quả tạo hồ sơ.'
                     : ''}
                 </Feedback>
               )}
