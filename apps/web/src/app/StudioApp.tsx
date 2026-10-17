@@ -627,30 +627,8 @@ export default function StudioApp() {
                 </a>
               )
             ) : apiIdentity ? (
-              <>
-                {staff && activeRole !== 'CUSTOMER' && (
-                  <label className="header-branch">
-                    <span>Chi nhánh</span>
-                    <select
-                      id="header-branch-select"
-                      aria-label="Chi nhánh làm việc"
-                      value={activeBranch}
-                      onChange={(event) => setBranch(event.target.value)}
-                      disabled={!apiBranchesReady || apiBranchOptions.length === 0}
-                    >
-                      {apiBranchOptions.length === 0 ? (
-                        <option value="">Không có chi nhánh được gán</option>
-                      ) : (
-                        apiBranchOptions.map((name) => (
-                          <option value={name} key={name}>
-                            {name}
-                          </option>
-                        ))
-                      )}
-                    </select>
-                  </label>
-                )}
-                {actorGroup === 'CUSTOMER' ? (
+              actorGroup === 'CUSTOMER' ? (
+                <>
                   <a
                     className="header-account"
                     href={pathFor('account')}
@@ -661,26 +639,16 @@ export default function StudioApp() {
                   >
                     {apiIdentity.displayName || 'Tài khoản'}
                   </a>
-                ) : (
-                  <div
-                    className="header-identity"
-                    aria-label={`${actorLabel}: ${apiIdentity.displayName}`}
+                  <button
+                    type="button"
+                    className="button button-secondary header-logout"
+                    onClick={() => void signOut()}
+                    disabled={signingOut}
                   >
-                    <span className="header-identity-role">{actorLabel}</span>
-                    <span className="header-identity-name">
-                      {apiIdentity.displayName || 'Tài khoản'}
-                    </span>
-                  </div>
-                )}
-                <button
-                  type="button"
-                  className="button button-secondary header-logout"
-                  onClick={() => void signOut()}
-                  disabled={signingOut}
-                >
-                  {signingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}
-                </button>
-              </>
+                    {signingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}
+                  </button>
+                </>
+              ) : null
             ) : (
               <div className="auth-header-actions">
                 <a
@@ -745,26 +713,45 @@ export default function StudioApp() {
               Đóng menu
             </button>
             {apiIdentity && activeRole !== 'CUSTOMER' && (
-              <label className="sidebar-branch">
-                <span>Chi nhánh làm việc</span>
-                <select
-                  id="sidebar-branch-select"
-                  aria-label="Chi nhánh làm việc"
-                  value={activeBranch}
-                  onChange={(event) => setBranch(event.target.value)}
-                  disabled={!apiBranchesReady || apiBranchOptions.length === 0}
-                >
-                  {apiBranchOptions.length === 0 ? (
-                    <option value="">Không có chi nhánh được gán</option>
-                  ) : (
-                    apiBranchOptions.map((name) => (
-                      <option value={name} key={name}>
-                        {name}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </label>
+              <section className="staff-menu-account" aria-label="Tài khoản và chi nhánh">
+                <label className="sidebar-branch">
+                  <span>Chi nhánh làm việc</span>
+                  <select
+                    id="sidebar-branch-select"
+                    aria-label="Chi nhánh làm việc"
+                    value={activeBranch}
+                    onChange={(event) => setBranch(event.target.value)}
+                    disabled={!apiBranchesReady || apiBranchOptions.length === 0}
+                  >
+                    {apiBranchOptions.length === 0 ? (
+                      <option value="">Không có chi nhánh được gán</option>
+                    ) : (
+                      apiBranchOptions.map((name) => (
+                        <option value={name} key={name}>
+                          {name}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+                <div className="staff-menu-account-row">
+                  <div
+                    className="staff-menu-identity"
+                    aria-label={`${actorLabel}: ${apiIdentity.displayName}`}
+                  >
+                    <span className="header-identity-role">{actorLabel}</span>
+                    <strong>{apiIdentity.displayName || 'Tài khoản'}</strong>
+                  </div>
+                  <button
+                    type="button"
+                    className="button button-secondary staff-menu-logout"
+                    onClick={() => void signOut()}
+                    disabled={signingOut}
+                  >
+                    {signingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}
+                  </button>
+                </div>
+              </section>
             )}
             <nav aria-label={actorGroup === 'ADMIN' ? 'Chức năng quản trị' : 'Chức năng vận hành'}>
               {actorGroup === 'STAFF' &&

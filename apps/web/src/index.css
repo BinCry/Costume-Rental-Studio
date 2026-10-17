@@ -6278,6 +6278,80 @@ small {
 }
 .app-staff.nav-open > .section-nav {
   display: block;
+  position: sticky;
+  top: 16px;
+  align-self: start;
+  height: calc(100dvh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.app-staff.nav-open .staff-nav-close {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  min-height: 40px;
+  margin: 0 0 14px;
+  padding: 6px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.app-staff.nav-open .staff-nav-close:hover,
+.app-staff.nav-open .staff-nav-close:focus-visible {
+  color: var(--brand-primary);
+}
+.app-staff.nav-open .staff-nav-close:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+.staff-menu-account {
+  display: grid;
+  gap: 14px;
+  margin: 0 0 18px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.app-staff .staff-menu-account .sidebar-branch {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  margin: 0;
+}
+.app-staff .staff-menu-account .sidebar-branch select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.staff-menu-account-row {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.staff-menu-identity {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.staff-menu-identity .header-identity-role {
+  font-size: 10px;
+}
+.staff-menu-identity strong {
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.35;
+}
+.staff-menu-logout {
+  width: 100%;
+  min-height: 42px;
+  justify-content: center;
 }
 .app-staff > .main-content {
   grid-column: 1;
@@ -6499,6 +6573,21 @@ small {
     box-shadow: none;
     transform: none;
     visibility: visible;
+  }
+  .app-staff.nav-open > .section-nav {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+  .app-staff.nav-open .staff-nav-close {
+    justify-content: center;
+    min-height: 44px;
+    margin: 0 0 18px auto;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text-primary);
   }
   .app-staff:not(.nav-open) > .section-nav {
     display: none;
