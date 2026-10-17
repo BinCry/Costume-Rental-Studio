@@ -11,7 +11,7 @@ import {
   SkeletonGrid,
   StatusLabel,
 } from '../components/ui';
-import { defaultRentalDate, money } from '../components/support';
+import { money } from '../components/support';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { branches, fixtureAdapter, fixturePeriod } from '../fixtures/adapter';
 import type { CatalogItem, DemoScenario } from '../fixtures/types';
@@ -516,17 +516,6 @@ export function CatalogPage({
           onChange={(event) => setReturnAt(event.target.value)}
           error={dateRangeIssue || undefined}
         />
-        <button
-          type="button"
-          className="sample-date"
-          onClick={() => {
-            setBranchSelection(branchOptions[0] ?? (apiMode ? '' : branches[0]));
-            setPickup(apiMode ? defaultRentalDate(1) : fixturePeriod.pickup);
-            setReturnAt(apiMode ? defaultRentalDate(3) : fixturePeriod.returnAt);
-          }}
-        >
-          {apiMode ? 'Dùng kỳ thuê gợi ý' : 'Dùng kỳ thuê mẫu'}
-        </button>
       </section>
       <section id="bo-suu-tap" className="catalog-section">
         <div className="section-heading">

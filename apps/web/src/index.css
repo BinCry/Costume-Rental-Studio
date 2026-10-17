@@ -907,7 +907,7 @@ small {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   display: grid;
-  grid-template-columns: minmax(185px, 0.95fr) repeat(3, minmax(160px, 1fr)) auto;
+  grid-template-columns: minmax(185px, 0.95fr) repeat(2, minmax(160px, 1fr));
   gap: 12px;
   align-items: center;
 }
@@ -927,24 +927,6 @@ small {
   font-size: 11px;
   line-height: 16px;
   font-weight: 400;
-}
-.sample-date {
-  background: none;
-  border: none;
-  color: var(--brand-primary);
-  font-size: 12px;
-  line-height: 18px;
-  font-weight: 600;
-  min-height: 44px;
-  width: max-content;
-  max-width: none;
-  padding: 0 4px;
-  text-align: center;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.sample-date:hover {
-  text-decoration: underline;
 }
 .catalog-section {
   padding-top: 56px;
@@ -3414,12 +3396,6 @@ small {
   .availability-title {
     grid-column: 1/3;
   }
-  .sample-date {
-    grid-column: 3;
-    grid-row: 1;
-    justify-self: end;
-    max-width: none;
-  }
   .catalog-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3774,11 +3750,6 @@ small {
   }
   .availability-bar .field:nth-of-type(1) {
     grid-column: 1/-1;
-  }
-  .sample-date {
-    grid-column: 1/-1;
-    grid-row: auto;
-    justify-self: start;
   }
   .catalog-section {
     padding-top: 40px;
