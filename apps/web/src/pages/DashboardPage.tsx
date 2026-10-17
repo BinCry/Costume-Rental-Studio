@@ -7,7 +7,13 @@ import { branches, fixtureAdapter, fixtureClock } from '../fixtures/adapter';
 import type { DemoScenario, QueueTask } from '../fixtures/types';
 import { apiEnabled, hasAccessToken, listDashboardTasks } from '../api/client';
 
-const groups: QueueTask['group'][] = ['Quá hạn', 'Trong 2 giờ tới', 'Hôm nay', 'Ngày khác', 'Chờ xác nhận lâu'];
+const groups: QueueTask['group'][] = [
+  'Quá hạn',
+  'Trong 2 giờ tới',
+  'Hôm nay',
+  'Ngày khác',
+  'Chờ xác nhận lâu',
+];
 const summary: { label: string; kind: QueueTask['kind']; short: string }[] = [
   { label: 'Chờ xác nhận', kind: 'pending', short: 'Cần duyệt' },
   { label: 'Giao trong ngày', kind: 'handover', short: 'Sắp giao' },
@@ -18,7 +24,10 @@ const summary: { label: string; kind: QueueTask['kind']; short: string }[] = [
 
 const localDateKey = (value: Date) => {
   const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
   }).formatToParts(value);
   return `${parts.find((part) => part.type === 'year')?.value}-${parts.find((part) => part.type === 'month')?.value}-${parts.find((part) => part.type === 'day')?.value}`;
 };
@@ -27,7 +36,11 @@ export function DashboardPage({
   scenario,
   go,
   initialBranch,
-}: { scenario: DemoScenario; go: Navigate; initialBranch: string }) {
+}: {
+  scenario: DemoScenario;
+  go: Navigate;
+  initialBranch: string;
+}) {
   const realApiMode = apiEnabled && hasAccessToken();
   const [fixtureBranch, setFixtureBranch] = useState(initialBranch || branches[0]);
   const branch = realApiMode ? initialBranch : fixtureBranch;
@@ -35,14 +48,19 @@ export function DashboardPage({
   const [priority, setPriority] = useState('all');
   const [taskStatus, setTaskStatus] = useState('all');
   const [workDateOverride, setWorkDateOverride] = useState<string>();
-  const workDate = workDateOverride ?? (realApiMode ? localDateKey(new Date()) : '2026-10-03');
+  const defaultWorkDate = realApiMode ? localDateKey(new Date()) : '2026-10-03';
+  const workDate = workDateOverride ?? defaultWorkDate;
+  const extraFilterCount = [
+    priority !== 'all',
+    taskStatus !== 'all',
+    workDate !== defaultWorkDate,
+  ].filter(Boolean).length;
   const [search, setSearch] = useState('');
   const [stale, setStale] = useState<string[]>([]);
   const [notice, setNotice] = useState('');
   const loadQueue = useCallback(
-    (currentScenario: DemoScenario) => realApiMode
-      ? listDashboardTasks(branch)
-      : fixtureAdapter.listQueue(currentScenario),
+    (currentScenario: DemoScenario) =>
+      realApiMode ? listDashboardTasks(branch) : fixtureAdapter.listQueue(currentScenario),
     [branch, realApiMode],
   );
   const { loading, data, error, retry } = useFixtureResource(
@@ -50,12 +68,18 @@ export function DashboardPage({
     loadQueue,
     `${branch}:${realApiMode ? 'api' : 'fixture'}`,
   );
-  const displayedGroups = realApiMode ? groups.filter((entry) => entry !== 'Chờ xác nhận lâu') : groups;
-  const displayedSummary = realApiMode ? summary.filter((entry) => entry.kind !== 'payment') : summary;
+  const displayedGroups = realApiMode
+    ? groups.filter((entry) => entry !== 'Chờ xác nhận lâu')
+    : groups;
+  const displayedSummary = realApiMode
+    ? summary.filter((entry) => entry.kind !== 'payment')
+    : summary;
   const effectiveKind = realApiMode && kind === 'payment' ? 'all' : kind;
   const effectivePriority = realApiMode && priority === 'Chờ xác nhận lâu' ? 'all' : priority;
   const scoped = (data ?? []).filter((task) => task.branch === branch && !stale.includes(task.id));
-  const visibleForDate = scoped.filter((task) => !workDate || task.workDate === workDate || task.kind === 'overdue');
+  const visibleForDate = scoped.filter(
+    (task) => !workDate || task.workDate === workDate || task.kind === 'overdue',
+  );
   const visible = scoped.filter(
     (task) =>
       (effectiveKind === 'all' || task.kind === effectiveKind) &&
@@ -91,7 +115,8 @@ export function DashboardPage({
         </div>
         <div className="date-pill">
           <Icon name="calendar" size={18} />
-          {realApiMode ? 'Giờ hiện tại · ' : 'Giờ fixture · '}{dateText}
+          {realApiMode ? 'Giờ hiện tại · ' : 'Giờ fixture · '}
+          {dateText}
         </div>
       </div>
       <div className="staff-toolbar">
@@ -104,7 +129,9 @@ export function DashboardPage({
               setKind('all');
             }}
           >
-            {branches.map((entry) => <option key={entry}>{entry}</option>)}
+            {branches.map((entry) => (
+              <option key={entry}>{entry}</option>
+            ))}
           </SelectField>
         )}
         <Field
@@ -126,36 +153,47 @@ export function DashboardPage({
           ))}
         </SelectField>
       </div>
-      <div className="queue-extra-filters">
-        <SelectField
-          label="Mức ưu tiên"
-          value={effectivePriority}
-          onChange={(event) => setPriority(event.target.value)}
-        >
-          <option value="all">Tất cả mức</option>
-          {displayedGroups.map((entry) => (
-            <option key={entry}>{entry}</option>
-          ))}
-        </SelectField>
-        <SelectField
-          label="Trạng thái việc"
-          value={taskStatus}
-          onChange={(event) => setTaskStatus(event.target.value)}
-        >
-          <option value="all">Tất cả trạng thái</option>
-          <option>Cần xử lý</option>
-          <option>Đang xử lý</option>
-        </SelectField>
-        <Field
-          label="Ngày cần xử lý"
-          type="date"
-          value={workDate}
-          onChange={(event) => setWorkDateOverride(event.target.value)}
-        />
-      </div>
+      <details className="queue-filter-disclosure">
+        <summary>
+          <span>Bộ lọc nâng cao</span>
+          <span className="queue-filter-count">
+            {extraFilterCount
+              ? `${extraFilterCount} đang áp dụng`
+              : 'Mức ưu tiên · trạng thái · ngày'}
+          </span>
+        </summary>
+        <div className="queue-extra-filters">
+          <SelectField
+            label="Mức ưu tiên"
+            value={effectivePriority}
+            onChange={(event) => setPriority(event.target.value)}
+          >
+            <option value="all">Tất cả mức</option>
+            {displayedGroups.map((entry) => (
+              <option key={entry}>{entry}</option>
+            ))}
+          </SelectField>
+          <SelectField
+            label="Trạng thái việc"
+            value={taskStatus}
+            onChange={(event) => setTaskStatus(event.target.value)}
+          >
+            <option value="all">Tất cả trạng thái</option>
+            <option>Cần xử lý</option>
+            <option>Đang xử lý</option>
+          </SelectField>
+          <Field
+            label="Ngày cần xử lý"
+            type="date"
+            value={workDate}
+            onChange={(event) => setWorkDateOverride(event.target.value)}
+          />
+        </div>
+      </details>
       {realApiMode && (
         <p className="section-help" role="status">
-          Hàng đợi API hiện trả về việc duyệt, giao và trả. Chưa có dữ liệu riêng cho giao dịch cần xử lý hoặc mức “chờ xác nhận lâu”.
+          Hàng đợi API hiện trả về việc duyệt, giao và trả. Chưa có dữ liệu riêng cho giao dịch cần
+          xử lý hoặc mức “chờ xác nhận lâu”.
         </p>
       )}
       <section className="queue-summary" aria-label="Tóm tắt hàng đợi">

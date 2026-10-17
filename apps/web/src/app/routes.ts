@@ -23,7 +23,8 @@ export type Screen =
   | 'branches'
   | 'policies'
   | 'reports'
-  | 'opsAgent';
+  | 'opsAgent'
+  | 'notFound';
 export type Navigate = (screen: Screen, params?: Record<string, string>) => void;
 export interface Route {
   screen: Screen;
@@ -55,6 +56,7 @@ export const paths: Record<Screen, string> = {
   policies: '/quan-tri/chinh-sach',
   reports: '/quan-tri/bao-cao',
   opsAgent: '/van-hanh/ops-agent',
+  notFound: '/khong-tim-thay-trang',
 };
 export function pathFor(screen: Screen, params?: Record<string, string>) {
   let path = paths[screen];
@@ -72,8 +74,13 @@ export function pathFor(screen: Screen, params?: Record<string, string>) {
   return path + (query ? `?${query}` : '');
 }
 export function readRoute(): Route {
-  const path = decodeURIComponent(window.location.pathname).replace(/\/$/, '') || '/';
   const params = new URLSearchParams(window.location.search);
+  let path: string;
+  try {
+    path = decodeURIComponent(window.location.pathname).replace(/\/$/, '') || '/';
+  } catch {
+    return { screen: 'notFound', params };
+  }
   if (path === '/auth/google/callback') return { screen: 'login', params };
   if (path.startsWith('/don-cua-toi/')) {
     params.set('order', path.split('/')[2] ?? '');
@@ -92,5 +99,5 @@ export function readRoute(): Route {
     };
   }
   const match = (Object.entries(paths) as [Screen, string][]).find(([, value]) => value === path);
-  return { screen: match?.[0] ?? 'catalog', params };
+  return { screen: match?.[0] ?? 'notFound', params };
 }

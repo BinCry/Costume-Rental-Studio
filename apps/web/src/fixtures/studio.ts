@@ -53,6 +53,7 @@ export interface Variant {
   price: number;
   deposit: number;
   replacement?: number;
+  images?: { url: string; alt?: string }[];
 }
 export interface CostumeDetail {
   id: string;
@@ -66,6 +67,7 @@ export interface CostumeDetail {
   imagePosition: 'left' | 'center' | 'right' | 'missing';
   imageUrl?: string;
   imageAlt?: string;
+  images?: { url: string; alt?: string }[];
   variants: Variant[];
 }
 export interface UnitBlock {
@@ -1112,7 +1114,10 @@ export const studioAdapter = {
       } catch (error) {
         throw error instanceof FixtureIssue
           ? error
-          : new FixtureIssue('NETWORK', error instanceof Error ? error.message : 'Không tải được danh mục trang phục.');
+          : new FixtureIssue(
+              'NETWORK',
+              error instanceof Error ? error.message : 'Không tải được danh mục trang phục.',
+            );
       }
     }
     return list(details, scenario);
@@ -1137,7 +1142,12 @@ export const studioAdapter = {
       try {
         return await listApiActiveRentals();
       } catch (error) {
-        throw error instanceof FixtureIssue ? error : new FixtureIssue('NETWORK', error instanceof Error ? error.message : 'Không tải được bộ đang thuê.');
+        throw error instanceof FixtureIssue
+          ? error
+          : new FixtureIssue(
+              'NETWORK',
+              error instanceof Error ? error.message : 'Không tải được bộ đang thuê.',
+            );
       }
     }
     return list(activeUnits(), scenario);
@@ -1149,7 +1159,10 @@ export const studioAdapter = {
       } catch (error) {
         throw error instanceof FixtureIssue
           ? error
-          : new FixtureIssue('NETWORK', error instanceof Error ? error.message : 'Không tải được hồ sơ khách.');
+          : new FixtureIssue(
+              'NETWORK',
+              error instanceof Error ? error.message : 'Không tải được hồ sơ khách.',
+            );
       }
     }
     return list(customers, scenario);
@@ -1176,7 +1189,10 @@ export const studioAdapter = {
       } catch (error) {
         throw error instanceof FixtureIssue
           ? error
-          : new FixtureIssue('NETWORK', error instanceof Error ? error.message : 'Không tải được chi nhánh.');
+          : new FixtureIssue(
+              'NETWORK',
+              error instanceof Error ? error.message : 'Không tải được chi nhánh.',
+            );
       }
     }
     return list(branches, scenario);
@@ -1219,7 +1235,10 @@ export const studioAdapter = {
       } catch (error) {
         throw error instanceof FixtureIssue
           ? error
-          : new FixtureIssue('NETWORK', error instanceof Error ? error.message : 'Không tải được phiếu điều chuyển.');
+          : new FixtureIssue(
+              'NETWORK',
+              error instanceof Error ? error.message : 'Không tải được phiếu điều chuyển.',
+            );
       }
     }
     return list(transfers, scenario);
@@ -1231,7 +1250,10 @@ export const studioAdapter = {
       } catch (error) {
         throw error instanceof FixtureIssue
           ? error
-          : new FixtureIssue('NETWORK', error instanceof Error ? error.message : 'Không tải được case CRM.');
+          : new FixtureIssue(
+              'NETWORK',
+              error instanceof Error ? error.message : 'Không tải được case CRM.',
+            );
       }
     }
     return list(cases, scenario);
@@ -1243,7 +1265,10 @@ export const studioAdapter = {
       } catch (error) {
         throw error instanceof FixtureIssue
           ? error
-          : new FixtureIssue('NETWORK', error instanceof Error ? error.message : 'Không tải được chính sách thuê.');
+          : new FixtureIssue(
+              'NETWORK',
+              error instanceof Error ? error.message : 'Không tải được chính sách thuê.',
+            );
       }
     }
     return list(policies, scenario);
@@ -1255,7 +1280,10 @@ export const studioAdapter = {
       } catch (error) {
         throw error instanceof FixtureIssue
           ? error
-          : new FixtureIssue('NETWORK', error instanceof Error ? error.message : 'Không tải được báo cáo.');
+          : new FixtureIssue(
+              'NETWORK',
+              error instanceof Error ? error.message : 'Không tải được báo cáo.',
+            );
       }
     }
     return list(reports, scenario);
@@ -1269,9 +1297,16 @@ export const studioAdapter = {
       try {
         const matches = await listApiInventoryUnits(branch, code.trim().toUpperCase());
         const unit = matches[0];
-        if (!unit) throw new FixtureIssue('BARCODE_MISSING', 'Không tìm thấy barcode. Kiểm tra và quét/nhập lại.');
+        if (!unit)
+          throw new FixtureIssue(
+            'BARCODE_MISSING',
+            'Không tìm thấy barcode. Kiểm tra và quét/nhập lại.',
+          );
         if (unit.status === 'CLEANING' || unit.status === 'REPAIR')
-          throw new FixtureIssue('UNIT_BLOCKED', 'Bộ đang bị chặn để vệ sinh/sửa chữa, chưa thể sử dụng.');
+          throw new FixtureIssue(
+            'UNIT_BLOCKED',
+            'Bộ đang bị chặn để vệ sinh/sửa chữa, chưa thể sử dụng.',
+          );
         return unit;
       } catch (error) {
         throw error instanceof FixtureIssue
@@ -1312,8 +1347,7 @@ export const studioAdapter = {
       ? (async () => {
           const matches = await listApiInventoryUnits(undefined, code.trim().toUpperCase());
           const unit = matches[0];
-          if (!unit?.apiId)
-            throw new FixtureIssue('NOT_FOUND', 'Không tìm thấy bộ trên máy chủ.');
+          if (!unit?.apiId) throw new FixtureIssue('NOT_FOUND', 'Không tìm thấy bộ trên máy chủ.');
           await createApiUnitBlock(unit.apiId, block);
           return unit;
         })()
@@ -1323,7 +1357,11 @@ export const studioAdapter = {
           unit.blocks.unshift(block);
           unit.available = false;
           unit.status =
-            block.type === 'CLEANING' ? 'CLEANING' : block.type === 'REPAIR' ? 'REPAIR' : unit.status;
+            block.type === 'CLEANING'
+              ? 'CLEANING'
+              : block.type === 'REPAIR'
+                ? 'REPAIR'
+                : unit.status;
           unit.history.unshift(`03/10 · Tạo block ${block.type}: ${block.reason}`);
           return unit;
         }),
@@ -1551,7 +1589,8 @@ export const studioAdapter = {
   async cancelCustomerOrder(id: string, reason: string, scenario: DemoScenario) {
     if (apiEnabled && hasAccessToken()) {
       const current = (await listApiCustomerOrders()).find((order) => order.id === id);
-      if (!current?.version) throw new FixtureIssue('ORDER_CONTEXT_MISSING', 'Chưa tải đủ phiên bản đơn.');
+      if (!current?.version)
+        throw new FixtureIssue('ORDER_CONTEXT_MISSING', 'Chưa tải đủ phiên bản đơn.');
       return cancelApiCustomerOrder(id, current.version, reason);
     }
     return mutate(scenario, () => {

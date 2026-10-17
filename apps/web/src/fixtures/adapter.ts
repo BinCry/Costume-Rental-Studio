@@ -21,7 +21,21 @@ import {
   listRentalAvailability as listApiRentalAvailability,
 } from '../api/client';
 
-export const fixturePeriod = { pickup: '2026-10-10T09:00', returnAt: '2026-10-12T09:00' };
+function localDateTimeValue(date: Date) {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+const fixturePickup = new Date();
+fixturePickup.setDate(fixturePickup.getDate() + 1);
+fixturePickup.setHours(9, 0, 0, 0);
+const fixtureReturn = new Date(fixturePickup);
+fixtureReturn.setDate(fixtureReturn.getDate() + 2);
+
+export const fixturePeriod = {
+  pickup: localDateTimeValue(fixturePickup),
+  returnAt: localDateTimeValue(fixtureReturn),
+};
 export const fixtureClock = new Date('2026-10-03T15:30:00+07:00');
 
 export const branches = ['Chi nhánh Quận 1', 'Chi nhánh Thủ Đức'];
@@ -450,13 +464,14 @@ export const fixtureAdapter = {
         'NO_FIXTURE_QUOTE',
         'Chưa có báo giá fixture cho biến thể và số bộ này. Lựa chọn vẫn được giữ.',
       );
+    const expiresAt = new Date(new Date(draft.pickup).getTime() - 30 * 60 * 1000);
     return {
       id: `Q-DEMO-${draft.costumeId}-${draft.quantity}`,
-      expiresAt: '10/10/2026 · 08:30 (fixture)',
-      daysLabel: '2 ngày · snapshot fixture',
+      expiresAt: `${expiresAt.toLocaleDateString('vi-VN')} · ${expiresAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}`,
+      daysLabel: '2 ngày · theo kỳ mẫu',
       quantity: draft.quantity,
       discount: 0,
-      policy: 'Chu kỳ 24 giờ · snapshot fixture',
+      policy: 'Chu kỳ 24 giờ · dữ liệu mẫu',
       ...quoteFixtures[draft.costumeId][draft.quantity],
     };
   },
@@ -499,7 +514,11 @@ export const fixtureAdapter = {
         throw asFixtureIssue(error);
       }
     }
-    throw new ApiClientError(0, 'API_NOT_CONFIGURED', 'Tra cứu khả dụng theo lịch chỉ có trong chế độ API.');
+    throw new ApiClientError(
+      0,
+      'API_NOT_CONFIGURED',
+      'Tra cứu khả dụng theo lịch chỉ có trong chế độ API.',
+    );
   },
   async confirmOrder(
     orderId: string,

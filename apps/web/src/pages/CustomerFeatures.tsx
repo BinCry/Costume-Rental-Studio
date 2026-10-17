@@ -33,45 +33,58 @@ import {
   checkPublicAvailability,
   getOwnCustomerProfile,
   getPublicModelVariants,
+  listCustomerOrders,
   hasAccessToken,
   updateOwnCustomerProfile,
 } from '../api/client';
 import { useBranchOptions } from '../components/useBranchOptions';
 
-const loadCostumeDetails = (id: string) => async (scenario: DemoScenario): Promise<CostumeDetail[]> => {
-  if (!apiEnabled || (!hasAccessToken() && import.meta.env.DEV))
-    return studioAdapter.details(scenario);
-  // The public endpoint exposes only published model and variant data.
-  const variants = await getPublicModelVariants(id);
-  const first = variants[0];
-  if (!first) return [];
-  const image = first.model?.media?.find((media) => media.mediaUrl) ??
-    first.media?.find((media) => media.mediaUrl);
-  return [
-    {
-      id,
-      name: first.model?.name ?? first.variantCode,
-      category: first.model?.category?.name ?? 'Trang phục',
-      description: first.model?.shortDescription ?? first.model?.description ?? '',
-      material: first.model?.material ?? 'Thông tin chất liệu sẽ được xác nhận tại studio.',
-      accessories: [],
-      imagePosition: image?.mediaUrl ? 'center' : 'missing',
-      imageUrl: image?.mediaUrl ?? undefined,
-      imageAlt: image?.altText ?? undefined,
-      variants: variants.map((variant) => ({
-        apiId: variant.id,
-        code: variant.variantCode,
-        modelId: variant.modelId,
-        size: variant.sizeCode,
-        color: variant.colorCode,
-        edition: variant.editionLabel ?? undefined,
-        fit: variant.fitNotes ?? 'Dáng và số đo được xác nhận khi nhận đồ.',
-        price: Number(variant.dailyRentalPriceVnd),
-        deposit: Number(variant.depositAmountVnd),
-      })),
-    },
-  ];
-};
+const loadCostumeDetails =
+  (id: string) =>
+  async (scenario: DemoScenario): Promise<CostumeDetail[]> => {
+    if (!apiEnabled || (!hasAccessToken() && import.meta.env.DEV))
+      return studioAdapter.details(scenario);
+    // The public endpoint exposes only published model and variant data.
+    const variants = await getPublicModelVariants(id);
+    const first = variants[0];
+    if (!first) return [];
+    const modelImages = (first.model?.media ?? []).flatMap((media) =>
+      media.mediaUrl ? [{ url: media.mediaUrl, alt: media.altText ?? undefined }] : [],
+    );
+    return [
+      {
+        id,
+        name: first.model?.name ?? first.variantCode,
+        category: first.model?.category?.name ?? 'Trang phục',
+        description: first.model?.shortDescription ?? first.model?.description ?? '',
+        material: first.model?.material ?? 'Thông tin chất liệu sẽ được xác nhận tại studio.',
+        accessories: [],
+        imagePosition: modelImages.length ? 'center' : 'missing',
+        imageUrl: modelImages[0]?.url,
+        imageAlt: modelImages[0]?.alt,
+        images: modelImages,
+        variants: variants.map((variant) => ({
+          apiId: variant.id,
+          code: variant.variantCode,
+          modelId: variant.modelId,
+          size: variant.sizeCode,
+          color: variant.colorCode,
+          edition: variant.editionLabel ?? undefined,
+          fit: variant.fitNotes ?? '',
+          images: (variant.media ?? []).flatMap((media) =>
+            media.mediaUrl ? [{ url: media.mediaUrl, alt: media.altText ?? undefined }] : [],
+          ),
+          price: Number(variant.dailyRentalPriceVnd),
+          deposit: Number(variant.depositAmountVnd),
+        })),
+      },
+    ];
+  };
+
+const loadCustomerOrders = (scenario: DemoScenario) =>
+  apiEnabled && (hasAccessToken() || !import.meta.env.DEV)
+    ? listCustomerOrders()
+    : studioAdapter.customerOrders(scenario);
 
 export function CostumeDetailPage({
   id,
@@ -90,7 +103,12 @@ export function CostumeDetailPage({
   const requestedReturn = initialContext.get('returnAt');
   const requestedBranch = initialContext.get('branch');
   const usePublicApi = apiEnabled && (hasAccessToken() || !import.meta.env.DEV);
-  const { options: branchOptions, ready: branchOptionsReady, error: branchOptionsError, retry: retryBranches } = useBranchOptions();
+  const {
+    options: branchOptions,
+    ready: branchOptionsReady,
+    error: branchOptionsError,
+    retry: retryBranches,
+  } = useBranchOptions();
   const defaultPickup = usePublicApi ? defaultRentalDate(1) : fixturePeriod.pickup;
   const defaultReturn = usePublicApi ? defaultRentalDate(3) : fixturePeriod.returnAt;
   const [variantCode, setVariantCode] = useState(initialContext.get('variantCode') ?? '');
@@ -99,17 +117,13 @@ export function CostumeDetailPage({
   );
   const branch = branchOptions.includes(branchSelection)
     ? branchSelection
-    : branchOptions[0] ?? (usePublicApi ? '' : branchSelection);
-  const [pickup, setPickup] = useState(
-    requestedPickup?.trim() ? requestedPickup : defaultPickup,
-  );
-  const [due, setDue] = useState(
-    requestedReturn?.trim() ? requestedReturn : defaultReturn,
-  );
+    : (branchOptions[0] ?? (usePublicApi ? '' : branchSelection));
+  const [pickup, setPickup] = useState(requestedPickup?.trim() ? requestedPickup : defaultPickup);
+  const [due, setDue] = useState(requestedReturn?.trim() ? requestedReturn : defaultReturn);
   const [photo, setPhoto] = useState(0);
-  const selectedVariant = data?.find((value) => value.id === id)?.variants.find(
-    (value) => value.code === variantCode,
-  ) ?? data?.find((value) => value.id === id)?.variants[0];
+  const selectedVariant =
+    data?.find((value) => value.id === id)?.variants.find((value) => value.code === variantCode) ??
+    data?.find((value) => value.id === id)?.variants[0];
   const apiVariantId = selectedVariant?.apiId;
   const [availabilityResult, setAvailabilityResult] = useState<{
     key: string;
@@ -122,17 +136,31 @@ export function CostumeDetailPage({
     if (!hasAvailabilityInputs || !apiVariantId) return;
     let active = true;
     void checkPublicAvailability(apiVariantId, branch, pickup, due)
-      .then((result) => active && setAvailabilityResult({
-        key: availabilityKey,
-        status: result.available ? 'available' : 'unavailable',
-      }))
+      .then(
+        (result) =>
+          active &&
+          setAvailabilityResult({
+            key: availabilityKey,
+            status: result.available ? 'available' : 'unavailable',
+          }),
+      )
       .catch(() => active && setAvailabilityResult({ key: availabilityKey, status: 'error' }));
     return () => {
       active = false;
     };
-  }, [availabilityKey, apiVariantId, availabilityRetry, branch, due, hasAvailabilityInputs, pickup]);
+  }, [
+    availabilityKey,
+    apiVariantId,
+    availabilityRetry,
+    branch,
+    due,
+    hasAvailabilityInputs,
+    pickup,
+  ]);
   const availability = hasAvailabilityInputs
-    ? availabilityResult?.key === availabilityKey ? availabilityResult.status : 'loading'
+    ? availabilityResult?.key === availabilityKey
+      ? availabilityResult.status
+      : 'loading'
     : 'idle';
   const catalogContext = Object.fromEntries(
     [...initialContext.entries()].filter(([key]) => key !== 'id'),
@@ -155,8 +183,11 @@ export function CostumeDetailPage({
               </EmptyState>
             </div>
           );
-        const variant = item.variants.find((value) => value.code === variantCode) ?? item.variants[0];
+        const variant =
+          item.variants.find((value) => value.code === variantCode) ?? item.variants[0];
         if (!variant) return <EmptyState title="Mẫu này chưa có biến thể để đặt thuê" />;
+        const gallery = variant.images?.length ? variant.images : (item.images ?? []);
+        const activeImage = gallery[photo];
         const fixtureKnown =
           branch === 'Chi nhánh Quận 1' &&
           pickup === fixturePeriod.pickup &&
@@ -177,28 +208,33 @@ export function CostumeDetailPage({
             </button>
             <div className="costume-detail-grid">
               <div>
-                <div className={`detail-photo costume-${item.imagePosition} detail-photo-${photo}`}>
+                <div className={`detail-photo costume-${item.imagePosition}`}>
                   <ImageWithFallback
-                    src={item.imageUrl}
-                    alt={item.imageAlt ?? item.name}
+                    src={activeImage?.url ?? item.imageUrl}
+                    alt={activeImage?.alt ?? item.imageAlt ?? item.name}
                     loading="eager"
                   />
                 </div>
-                {!item.imageUrl && (
-                  <div className="photo-thumbs" aria-label="Chọn góc ảnh minh họa">
-                    {[0, 1, 2].map((n) => (
+                {gallery.length > 1 && (
+                  <div className="photo-thumbs" role="group" aria-label="Ảnh của biến thể đã chọn">
+                    {gallery.map((image, n) => (
                       <button
-                        key={n}
+                        type="button"
+                        key={`${image.url}-${n}`}
                         onClick={() => setPhoto(n)}
                         aria-pressed={photo === n}
-                        aria-label={`Xem ảnh ${n + 1}`}
-                        className={`costume-${item.imagePosition} ${photo === n ? 'selected' : ''}`}
-                      />
+                        aria-label={image.alt?.trim() ? image.alt : `Xem ảnh ${n + 1}`}
+                        className={photo === n ? 'selected' : ''}
+                      >
+                        <img src={image.url} alt="" loading="lazy" />
+                      </button>
                     ))}
                   </div>
                 )}
                 <p className="muted small-note">
-                  {item.imageUrl ? 'Ảnh do studio cung cấp.' : 'Ảnh trang phục trong bản minh họa.'}
+                  {gallery.length > 0 || (item.imageUrl?.length ?? 0) > 0
+                    ? 'Ảnh do studio cung cấp.'
+                    : 'Ảnh trang phục trong bản minh họa.'}
                 </p>
               </div>
               <div>
@@ -208,7 +244,10 @@ export function CostumeDetailPage({
                 <div className="detail-rule">
                   <h2>Chất liệu và phom dáng</h2>
                   <p>
-                    {item.material}. {variant.fit}
+                    {item.material}.{' '}
+                    {variant.fit.trim()
+                      ? variant.fit
+                      : 'Studio chưa cập nhật số đo cho size này. Hãy liên hệ để được tư vấn trước khi gửi yêu cầu.'}
                   </p>
                 </div>
                 <div className="detail-rule">
@@ -225,7 +264,10 @@ export function CostumeDetailPage({
                       <button
                         key={value.code}
                         className={variant.code === value.code ? 'active' : ''}
-                        onClick={() => setVariantCode(value.code)}
+                        onClick={() => {
+                          setVariantCode(value.code);
+                          setPhoto(0);
+                        }}
                         aria-pressed={variant.code === value.code}
                       >
                         {value.size} · {value.color}
@@ -238,7 +280,12 @@ export function CostumeDetailPage({
                       { label: 'Giá thuê / ngày', value: money(variant.price) },
                       { label: 'Tiền cọc', value: money(variant.deposit) },
                       ...(variant.replacement
-                        ? [{ label: 'Giá thay thế theo biến thể', value: money(variant.replacement) }]
+                        ? [
+                            {
+                              label: 'Giá thay thế theo biến thể',
+                              value: money(variant.replacement),
+                            },
+                          ]
                         : []),
                     ]}
                   />
@@ -257,14 +304,23 @@ export function CostumeDetailPage({
                   {branchOptionsError && (
                     <Feedback tone="danger" title="Chưa tải được danh sách chi nhánh">
                       Hãy thử lại trước khi kiểm tra lịch thuê.{' '}
-                      <button type="button" className="text-button" onClick={retryBranches}>Thử lại</button>
+                      <button type="button" className="text-button" onClick={retryBranches}>
+                        Thử lại
+                      </button>
                     </Feedback>
                   )}
                   <Feedback
                     tone={known ? (available ? 'success' : 'warning') : 'info'}
-                    action={availability === 'error' ? (
-                      <Button variant="secondary" onClick={() => setAvailabilityRetry((value) => value + 1)}>Thử lại</Button>
-                    ) : undefined}
+                    action={
+                      availability === 'error' ? (
+                        <Button
+                          variant="secondary"
+                          onClick={() => setAvailabilityRetry((value) => value + 1)}
+                        >
+                          Thử lại
+                        </Button>
+                      ) : undefined
+                    }
                     title={
                       availability === 'loading'
                         ? 'Đang kiểm tra khả dụng'
@@ -321,10 +377,7 @@ export function MyRentalsPage({
   go: Navigate;
   customerCode: string;
 }) {
-  const { loading, error, data, retry } = useFixtureResource(
-    scenario,
-    studioAdapter.customerOrders,
-  );
+  const { loading, error, data, retry } = useFixtureResource(scenario, loadCustomerOrders);
   const [filter, setFilter] = useState('Tất cả');
   const [dialog, setDialog] = useState(false);
   const [reason, setReason] = useState('');
@@ -520,9 +573,7 @@ export function MyRentalsPage({
                 onClose={() => setDialog(false)}
                 onConfirm={() => void confirm()}
               >
-                <p>
-                  Hủy {selected.id} sẽ được lưu trong lịch sử đơn. Lý do là bắt buộc.
-                </p>
+                <p>Hủy {selected.id} sẽ được lưu trong lịch sử đơn. Lý do là bắt buộc.</p>
                 <Field
                   label="Lý do hủy"
                   value={reason}
@@ -574,7 +625,8 @@ export function AccountPage({
   const [profileNotice, setProfileNotice] = useState('');
   const [profileAvailable, setProfileAvailable] = useState(false);
   const isApiCustomer = Boolean(
-    realApiMode && apiIdentity?.roles.some((assignedRole) => assignedRole.actorGroup === 'CUSTOMER'),
+    realApiMode &&
+    apiIdentity?.roles.some((assignedRole) => assignedRole.actorGroup === 'CUSTOMER'),
   );
   const profileRef = useRef<HTMLDivElement>(null);
   const successRef = useRef<HTMLDivElement>(null);
@@ -657,9 +709,13 @@ export function AccountPage({
         <div className="feature-two-column">
           <Panel
             title={apiIdentity ? 'Thông tin tài khoản' : 'Đăng nhập'}
-            action={apiIdentity && onSignOut ? (
-              <Button variant="quiet" onClick={onSignOut}>Đăng xuất</Button>
-            ) : undefined}
+            action={
+              apiIdentity && onSignOut ? (
+                <Button variant="quiet" onClick={onSignOut}>
+                  Đăng xuất
+                </Button>
+              ) : undefined
+            }
           >
             {apiIdentity ? (
               <>
@@ -667,11 +723,16 @@ export function AccountPage({
                   rows={[
                     { label: 'Họ tên', value: apiIdentity.displayName },
                     { label: 'Email', value: apiIdentity.email },
-                    { label: 'Vai trò', value: apiIdentity.roles.map((role) => role.name).join(', ') || 'Chưa được gán' },
+                    {
+                      label: 'Vai trò',
+                      value:
+                        apiIdentity.roles.map((role) => role.name).join(', ') || 'Chưa được gán',
+                    },
                   ]}
                 />
                 <Feedback tone="info" title="Phiên được quản lý bởi máy chủ">
-                  Quyền của tài khoản được kiểm tra theo vai trò và chi nhánh khi thực hiện từng thao tác.
+                  Quyền của tài khoản được kiểm tra theo vai trò và chi nhánh khi thực hiện từng
+                  thao tác.
                 </Feedback>
                 {isApiCustomer && (
                   <div className="account-profile-editor">
@@ -695,7 +756,10 @@ export function AccountPage({
                       </Feedback>
                     )}
                     {profileAvailable && (
-                      <form className="stack-form" onSubmit={(event) => void saveAccountProfile(event)}>
+                      <form
+                        className="stack-form"
+                        onSubmit={(event) => void saveAccountProfile(event)}
+                      >
                         <Field
                           label="Họ và tên"
                           autoComplete="name"
@@ -728,16 +792,22 @@ export function AccountPage({
               <div className="account-entry">
                 <span className="brand-mark">S</span>
                 <h2>Đăng nhập vào tài khoản</h2>
-                <p>Đăng nhập để theo dõi đơn thuê, cập nhật thông tin và tiếp tục đặt trang phục.</p>
+                <p>
+                  Đăng nhập để theo dõi đơn thuê, cập nhật thông tin và tiếp tục đặt trang phục.
+                </p>
                 <div className="account-entry-actions">
                   <Button onClick={() => go('login')}>Đăng nhập</Button>
-                  <Button variant="secondary" onClick={() => go('register')}>Tạo tài khoản</Button>
+                  <Button variant="secondary" onClick={() => go('register')}>
+                    Tạo tài khoản
+                  </Button>
                 </div>
               </div>
             )}
           </Panel>
           <Panel title="Quyền riêng tư">
-            <p className="muted">Đơn thuê, hồ sơ và quyền vận hành chỉ hiển thị sau khi máy chủ xác minh tài khoản.</p>
+            <p className="muted">
+              Đơn thuê, hồ sơ và quyền vận hành chỉ hiển thị sau khi máy chủ xác minh tài khoản.
+            </p>
           </Panel>
         </div>
       </div>
@@ -756,7 +826,7 @@ export function AccountPage({
       <PageHeading
         eyebrow="TÀI KHOẢN"
         title="Đăng nhập & hồ sơ"
-        description="Bản xem thử giao diện tài khoản trong môi trường fixture."
+        description="Bản xem thử; thông tin và thay đổi tại đây chưa được lưu trên hệ thống."
       />
       <div className="feature-two-column">
         <Panel title="Truy cập Studio">
@@ -764,7 +834,8 @@ export function AccountPage({
             <span className="brand-mark">S</span>
             <h2>Rất vui được gặp bạn</h2>
             <p>
-              Đăng nhập để theo dõi đơn thuê và hồ sơ. Đây là trạng thái mô phỏng, không tạo phiên đăng nhập thật.
+              Đăng nhập để theo dõi đơn thuê và hồ sơ. Đây là trạng thái mô phỏng, không tạo phiên
+              đăng nhập thật.
             </p>
             <Button variant="secondary" onClick={() => setState('profile')}>
               Xem trạng thái hồ sơ mẫu
@@ -805,8 +876,8 @@ export function AccountPage({
           {state === 'ready' && (
             <div ref={successRef} tabIndex={-1}>
               <Feedback tone="success" title="Hồ sơ mẫu đã hoàn thiện">
-                Tài khoản thực tế chỉ được kích hoạt sau khi backend xác minh Google và quyền hiệu
-                lực.
+                Tài khoản nhân viên chỉ hoạt động sau khi studio xác minh và cấp quyền theo chi
+                nhánh.
               </Feedback>
             </div>
           )}
@@ -829,7 +900,7 @@ export function AccountPage({
             </Feedback>
           )}
         </Panel>
-        <Panel title="Xem thử trạng thái quyền">
+        <Panel title="Xem thử quyền truy cập">
           <SelectField
             label="Vai trò hiệu lực mẫu"
             value={role}
@@ -863,15 +934,13 @@ export function AccountPage({
               );
             }}
           >
-            Mở khu vực theo quyền
+            Mở khu vực xem thử
           </Button>
           <p className="muted small-note">
-            Nút điều hướng demo phản ánh vai trò chọn. API `me` sau này phải trả quyền hiệu lực tại
-            chi nhánh, UI không cấp quyền thật.
+            Lựa chọn này chỉ dùng để xem thử giao diện. Quyền thật do studio cấp theo chi nhánh.
           </p>
         </Panel>
       </div>
     </div>
   );
 }
-

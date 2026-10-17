@@ -52,8 +52,7 @@ const authErrorMessage = (error: unknown) => {
     GOOGLE_AUTH_FAILED: 'Google chưa xác nhận được tài khoản. Hãy thử lại hoặc dùng email.',
     INVALID_GOOGLE_OAUTH_FLOW:
       'Phiên đăng nhập Google đã hết hạn. Hãy bắt đầu lại từ trang đăng nhập.',
-    INVALID_GOOGLE_OAUTH_CALLBACK:
-      'Google chưa hoàn tất đăng nhập. Hãy thử lại hoặc dùng email.',
+    INVALID_GOOGLE_OAUTH_CALLBACK: 'Google chưa hoàn tất đăng nhập. Hãy thử lại hoặc dùng email.',
     ACCOUNT_UNAVAILABLE:
       'Tài khoản này chưa thể liên kết với Google. Hãy đăng nhập bằng phương thức đã dùng trước đó.',
     AUTH_RATE_LIMITED: 'Bạn đã thử quá nhiều lần. Vui lòng đợi một lúc rồi thử lại.',
@@ -260,7 +259,9 @@ export function AuthPage({
       return;
     }
     if (!validPhone(phone)) {
-      setIssue('Số điện thoại chưa đúng. Dùng số Việt Nam 10 chữ số hoặc số quốc tế có mã quốc gia.');
+      setIssue(
+        'Số điện thoại chưa đúng. Dùng số Việt Nam 10 chữ số hoặc số quốc tế có mã quốc gia.',
+      );
       return;
     }
     if (password.length < 12 || password.length > 128) {
@@ -354,7 +355,9 @@ export function AuthPage({
     event.preventDefault();
     setIssue('');
     if (!validPhone(phone)) {
-      setIssue('Số điện thoại chưa đúng. Dùng số Việt Nam 10 chữ số hoặc số quốc tế có mã quốc gia.');
+      setIssue(
+        'Số điện thoại chưa đúng. Dùng số Việt Nam 10 chữ số hoặc số quốc tế có mã quốc gia.',
+      );
       return;
     }
     if (password.length < 12 || password.length > 128) {
@@ -471,7 +474,7 @@ export function AuthPage({
     <section className="auth-page" aria-labelledby="auth-title">
       <div className="auth-shell">
         <aside className="auth-visual" aria-label="Bộ sưu tập trang phục của studio">
-          <img src="/images/lookbook-minh-hoa.png" alt="" />
+          <img src="/images/lookbook-minh-hoa.webp" alt="" />
           <div className="auth-visual-shade" />
           <div className="auth-visual-copy">
             <span className="auth-kicker">STUDIO TRANG PHỤC</span>
@@ -653,10 +656,12 @@ export function AuthPage({
                   disabled={disabled || busy}
                 />
                 <p className="auth-help-copy">
-                  Nhập thông tin trước. Studio sẽ gửi mã 6 số để xác minh email và hoàn tất tài khoản.
+                  Nhập thông tin trước. Studio sẽ gửi mã 6 số để xác minh email và hoàn tất tài
+                  khoản.
                 </p>
                 <Button type="submit" loading={busy} disabled={disabled} className="auth-submit">
-                  {registrationChallenge && registrationChallengeEmail === email.trim().toLowerCase()
+                  {registrationChallenge &&
+                  registrationChallengeEmail === email.trim().toLowerCase()
                     ? 'Tiếp tục xác minh'
                     : 'Gửi mã xác nhận'}
                 </Button>

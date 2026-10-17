@@ -15,52 +15,16 @@ import { defaultRentalDate, money } from '../components/support';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { branches, fixtureAdapter, fixturePeriod } from '../fixtures/adapter';
 import type { CatalogItem, DemoScenario } from '../fixtures/types';
-import { apiEnabled, checkPublicAvailability, hasAccessToken } from '../api/client';
+import { apiEnabled, hasAccessToken } from '../api/client';
 import { useBranchOptions } from '../components/useBranchOptions';
+import { checkCatalogAvailability, type CatalogAvailability } from './catalogAvailability';
 
 const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
 
-type CatalogAvailability = 'loading' | 'available' | 'unavailable' | 'error';
 interface AvailabilitySnapshot {
   key: string;
   values: Record<string, CatalogAvailability>;
-}
-
-async function checkCatalogAvailability(
-  items: CatalogItem[],
-  branch: string,
-  pickup: string,
-  returnAt: string,
-  size: string,
-  color: string,
-): Promise<Record<string, CatalogAvailability>> {
-  const variants = items.flatMap((item) =>
-    (item.apiVariants ?? [])
-      .filter((variant) => (size === 'Tất cả' || variant.size === size) && (color === 'Tất cả' || variant.color === color))
-      .map((variant) => ({ modelId: item.id, variantId: variant.id })),
-  );
-  const checks: { modelId: string; available: boolean | null }[] = [];
-  let cursor = 0;
-  await Promise.all(Array.from({ length: Math.min(5, variants.length) }, async () => {
-    while (cursor < variants.length) {
-      const index = cursor++;
-      const variant = variants[index];
-      try {
-        const result = await checkPublicAvailability(variant.variantId, branch, pickup, returnAt);
-        checks[index] = { modelId: variant.modelId, available: result.available };
-      } catch {
-        checks[index] = { modelId: variant.modelId, available: null };
-      }
-    }
-  }));
-  return Object.fromEntries(items.map((item) => {
-    const values = checks.filter((entry) => entry?.modelId === item.id).map((entry) => entry.available);
-    if (!values.length) return [item.id, 'unavailable'];
-    if (values.every((value) => value === null)) return [item.id, 'error'];
-    if (values.some((value) => value === true)) return [item.id, 'available'];
-    if (values.every((value) => value === false)) return [item.id, 'unavailable'];
-    return [item.id, 'error'];
-  }));
+  availableVariants: Record<string, string[]>;
 }
 
 const heroLooks = [
@@ -203,7 +167,7 @@ function HeroCarousel() {
               <div className="hero-slide-visual">
                 <div className="hero-slide-photo">
                   <img
-                    src="/images/lookbook-minh-hoa.png"
+                    src="/images/lookbook-minh-hoa.webp"
                     alt={`Ảnh minh họa trang phục ${look.label}`}
                     draggable="false"
                   />
@@ -214,9 +178,18 @@ function HeroCarousel() {
         })}
       </div>
       <div className="hero-carousel-controls">
-        <div className="hero-carousel-indicator" aria-hidden="true">
+        <div className="hero-carousel-indicator" role="group" aria-label="Chọn ảnh minh họa">
           {heroLooks.map((look, index) => (
-            <span className={look.code === activeLook.code ? 'is-active' : ''} key={index} />
+            <button
+              type="button"
+              className={look.code === activeLook.code ? 'is-active' : ''}
+              key={look.code}
+              aria-label={`Hiển thị ảnh minh họa ${look.label}`}
+              aria-current={look.code === activeLook.code ? 'true' : undefined}
+              onClick={() => setPosition(index + 2)}
+            >
+              <span />
+            </button>
           ))}
         </div>
         {!reducedMotion && (
@@ -248,6 +221,7 @@ function CostumeCard({
   conflict,
   availabilityOverride,
   availabilityState,
+  availableVariants,
   onRetry,
   onView,
 }: {
@@ -257,6 +231,7 @@ function CostumeCard({
   conflict: boolean;
   availabilityOverride?: boolean;
   availabilityState?: CatalogAvailability;
+  availableVariants?: string[];
   onRetry?: () => void;
   onView: (trigger: HTMLButtonElement) => void;
 }) {
@@ -267,8 +242,8 @@ function CostumeCard({
       : availabilityState === 'error'
         ? 'Chưa kiểm tra được lịch'
         : availabilityState === 'available'
-          ? 'Có biến thể còn khả dụng'
-          : 'Không còn biến thể phù hợp'
+          ? 'Có size/màu phù hợp theo kỳ đã chọn'
+          : 'Không có size/màu phù hợp theo kỳ này'
     : periodSelected && fixtureAvailabilityKnown
       ? available && !conflict
         ? 'Còn theo kỳ chọn'
@@ -312,10 +287,25 @@ function CostumeCard({
           <div className="inline-status">
             <StatusLabel
               text={availability}
-              tone={availability.startsWith('Có') || availability.startsWith('Còn') ? 'success' : availability.startsWith('Đang') ? 'info' : availability.startsWith('Chưa') ? 'danger' : 'warning'}
+              tone={
+                availability.startsWith('Có') || availability.startsWith('Còn')
+                  ? 'success'
+                  : availability.startsWith('Đang')
+                    ? 'info'
+                    : availability.startsWith('Chưa')
+                      ? 'danger'
+                      : 'warning'
+              }
             />
+            {availabilityState === 'available' && availableVariants?.length ? (
+              <p className="availability-variants">
+                Có thể thuê theo kỳ này: {availableVariants.join(', ')}
+              </p>
+            ) : null}
             {availabilityState === 'error' && onRetry && (
-              <button type="button" className="text-button" onClick={onRetry}>Thử lại</button>
+              <button type="button" className="text-button" onClick={onRetry}>
+                Thử lại
+              </button>
             )}
           </div>
         )}
@@ -345,13 +335,18 @@ export function CatalogPage({
 }) {
   const requestedBranch = initialContext.get('branch');
   const apiMode = apiEnabled && (hasAccessToken() || !import.meta.env.DEV);
-  const { options: branchOptions, ready: branchOptionsReady, error: branchOptionsError, retry: retryBranches } = useBranchOptions();
+  const {
+    options: branchOptions,
+    ready: branchOptionsReady,
+    error: branchOptionsError,
+    retry: retryBranches,
+  } = useBranchOptions();
   const [branchSelection, setBranchSelection] = useState(() =>
-    requestedBranch?.trim() ? requestedBranch : (apiMode ? '' : branches[0]),
+    requestedBranch?.trim() ? requestedBranch : apiMode ? '' : branches[0],
   );
   const branch = branchOptions.includes(branchSelection)
     ? branchSelection
-    : branchOptions[0] ?? (apiMode ? '' : branchSelection);
+    : (branchOptions[0] ?? (apiMode ? '' : branchSelection));
   const [pickup, setPickup] = useState(initialContext.get('pickup') ?? '');
   const [returnAt, setReturnAt] = useState(initialContext.get('returnAt') ?? '');
   const [category, setCategory] = useState(initialContext.get('category') ?? 'Tất cả');
@@ -379,29 +374,53 @@ export function CatalogPage({
     window.history.replaceState(null, '', `/${params.toString() ? `?${params}` : ''}`);
   }, [branch, pickup, returnAt, category, size, color, search]);
   const periodSelected = !!pickup && !!returnAt;
-  const dateRangeIssue = periodSelected && (!Number.isFinite(Date.parse(pickup)) || !Number.isFinite(Date.parse(returnAt)) || Date.parse(returnAt) <= Date.parse(pickup))
-    ? 'Thời điểm trả phải sau thời điểm nhận.'
-    : '';
-  const availabilityRequestEnabled = apiMode && !!branch && periodSelected && !dateRangeIssue && Boolean(data?.length);
+  const dateRangeIssue =
+    periodSelected &&
+    (!Number.isFinite(Date.parse(pickup)) ||
+      !Number.isFinite(Date.parse(returnAt)) ||
+      Date.parse(returnAt) <= Date.parse(pickup))
+      ? 'Thời điểm trả phải sau thời điểm nhận.'
+      : '';
+  const availabilityRequestEnabled =
+    apiMode && !!branch && periodSelected && !dateRangeIssue && Boolean(data?.length);
   const availabilityKey = JSON.stringify([branch, pickup, returnAt, size, color]);
-  const currentApiAvailability = apiAvailability?.key === availabilityKey
-    ? apiAvailability.values
-    : availabilityRequestEnabled && data?.length
-      ? Object.fromEntries(data.map((item) => [item.id, 'loading' as const]))
-      : {};
+  const currentApiAvailability =
+    apiAvailability?.key === availabilityKey
+      ? apiAvailability.values
+      : availabilityRequestEnabled && data?.length
+        ? Object.fromEntries(data.map((item) => [item.id, 'loading' as const]))
+        : {};
+  const currentAvailableVariants =
+    apiAvailability?.key === availabilityKey ? apiAvailability.availableVariants : {};
   useEffect(() => {
     if (!availabilityRequestEnabled || !data?.length) return;
     let cancelled = false;
     void checkCatalogAvailability(data, branch, pickup, returnAt, size, color).then((values) => {
-      if (!cancelled) setApiAvailability({ key: availabilityKey, values });
+      if (!cancelled) setApiAvailability({ key: availabilityKey, ...values });
     });
     return () => {
       cancelled = true;
     };
-  }, [apiMode, availabilityKey, availabilityRequestEnabled, availabilityRetry, branch, color, data, pickup, returnAt, size]);
-  const fixtureAvailabilityKnown = !apiMode &&
-    pickup === fixturePeriod.pickup && returnAt === fixturePeriod.returnAt && branch === branches[0];
-  const categoryOptions = [...new Set((data ?? []).map((item) => item.category).filter(Boolean))].sort();
+  }, [
+    apiMode,
+    availabilityKey,
+    availabilityRequestEnabled,
+    availabilityRetry,
+    branch,
+    color,
+    data,
+    pickup,
+    returnAt,
+    size,
+  ]);
+  const fixtureAvailabilityKnown =
+    !apiMode &&
+    pickup === fixturePeriod.pickup &&
+    returnAt === fixturePeriod.returnAt &&
+    branch === branches[0];
+  const categoryOptions = [
+    ...new Set((data ?? []).map((item) => item.category).filter(Boolean)),
+  ].sort();
   const sizeOptions = [...new Set((data ?? []).flatMap((item) => item.sizes))].sort();
   const colorOptions = [...new Set((data ?? []).flatMap((item) => item.colors))].sort();
   const filtered = (data ?? []).filter(
@@ -457,7 +476,9 @@ export function CatalogPage({
       {branchOptionsError && (
         <Feedback tone="danger" title="Chưa tải được danh sách chi nhánh">
           Danh mục vẫn hiển thị, nhưng chưa thể kiểm tra lịch thuê.{' '}
-          <Button variant="secondary" onClick={retryBranches}>Thử lại</Button>
+          <Button variant="secondary" onClick={retryBranches}>
+            Thử lại
+          </Button>
         </Feedback>
       )}
       <section className="availability-bar" aria-label="Chi nhánh và thời gian thuê">
@@ -474,7 +495,9 @@ export function CatalogPage({
           onChange={(event) => setBranchSelection(event.target.value)}
         >
           {branchOptions.length === 0 && (
-            <option value="">{branchOptionsReady ? 'Chưa có chi nhánh khả dụng' : 'Đang tải chi nhánh…'}</option>
+            <option value="">
+              {branchOptionsReady ? 'Chưa có chi nhánh khả dụng' : 'Đang tải chi nhánh…'}
+            </option>
           )}
           {branchOptions.map((entry) => (
             <option key={entry}>{entry}</option>
@@ -509,14 +532,18 @@ export function CatalogPage({
         <div className="section-heading">
           <div>
             <p className="eyebrow">CHỌN ĐÚNG PHONG CÁCH</p>
-            <h2>Bộ sưu tập cho mọi dịp</h2>
+            <h2>Bộ sưu tập trang phục</h2>
             <p>Mỗi bộ được theo dõi riêng khi studio xác nhận đơn.</p>
           </div>
           <div className="catalog-count">
             {loading ? 'Đang tải...' : `${filtered.length} mẫu trang phục`}
           </div>
         </div>
-        {dateRangeIssue && <Feedback tone="warning" title="Khoảng thuê chưa hợp lệ">{dateRangeIssue} Tồn kho chưa được kiểm tra.</Feedback>}
+        {dateRangeIssue && (
+          <Feedback tone="warning" title="Khoảng thuê chưa hợp lệ">
+            {dateRangeIssue} Tồn kho chưa được kiểm tra.
+          </Feedback>
+        )}
         <div className="catalog-layout">
           <aside
             id="catalog-filters"
@@ -600,18 +627,14 @@ export function CatalogPage({
                   aria-label={`Chi tiết ${selectedItem.name}`}
                   tabIndex={-1}
                 >
-                  <div
-                    className={`catalog-preview-image costume-${selectedItem.imagePosition}`}
-                  >
+                  <div className={`catalog-preview-image costume-${selectedItem.imagePosition}`}>
                     {selectedItem.imageUrl ? (
                       <ImageWithFallback
                         src={selectedItem.imageUrl}
                         alt={selectedItem.imageAlt ?? selectedItem.name}
                       />
                     ) : (
-                      <ImageWithFallback
-                        alt={selectedItem.imageAlt ?? selectedItem.name}
-                      />
+                      <ImageWithFallback alt={selectedItem.imageAlt ?? selectedItem.name} />
                     )}
                   </div>
                   <div className="catalog-preview-copy">
@@ -711,8 +734,17 @@ export function CatalogPage({
                       periodSelected={periodSelected}
                       fixtureAvailabilityKnown={fixtureAvailabilityKnown}
                       conflict={scenario === 'conflict'}
-                      availabilityOverride={currentApiAvailability[item.id] === 'available' ? true : currentApiAvailability[item.id] === 'unavailable' ? false : undefined}
-                      availabilityState={apiMode && periodSelected ? currentApiAvailability[item.id] : undefined}
+                      availabilityOverride={
+                        currentApiAvailability[item.id] === 'available'
+                          ? true
+                          : currentApiAvailability[item.id] === 'unavailable'
+                            ? false
+                            : undefined
+                      }
+                      availabilityState={
+                        apiMode && periodSelected ? currentApiAvailability[item.id] : undefined
+                      }
+                      availableVariants={currentAvailableVariants[item.id]}
                       onRetry={() => setAvailabilityRetry((value) => value + 1)}
                       onView={(trigger) => openPreview(item, trigger)}
                     />
@@ -723,7 +755,35 @@ export function CatalogPage({
           </div>
         </div>
       </section>
+      <section className="rental-guide" aria-labelledby="rental-guide-title">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">CÁCH THUÊ</p>
+            <h2 id="rental-guide-title">Rõ ràng từ lúc gửi yêu cầu</h2>
+            <p>Studio xác nhận lịch và từng bộ trước khi bạn đến nhận.</p>
+          </div>
+        </div>
+        <ol className="rental-guide-steps">
+          <li>
+            <span>01</span>
+            <h3>Chọn mẫu và lịch</h3>
+            <p>Chọn size, chi nhánh nhận/trả và thời gian bạn cần thuê.</p>
+          </li>
+          <li>
+            <span>02</span>
+            <h3>Studio xác nhận</h3>
+            <p>Yêu cầu chưa giữ trang phục. Nhân viên kiểm tra lịch và xác nhận từng bộ.</p>
+          </li>
+          <li>
+            <span>03</span>
+            <h3>Nhận, thuê và hoàn cọc</h3>
+            <p>
+              Thanh toán tiền thuê và cọc khi nhận; trả tại cùng chi nhánh. Cọc được quyết toán sau
+              khi kiểm tra đồ.
+            </p>
+          </li>
+        </ol>
+      </section>
     </div>
   );
 }
-

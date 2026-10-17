@@ -19,14 +19,18 @@ import type { BookingDraft, DemoScenario, QuoteSnapshot } from '../fixtures/type
 import { apiEnabled, getOwnCustomerProfile, hasAccessToken } from '../api/client';
 import { useBranchOptions } from '../components/useBranchOptions';
 
-const steps = ['Trang phục', 'Lựa chọn', 'Nhận và trả', 'Báo giá', 'Người thuê', 'Xác nhận'];
+const steps = ['Trang phục & lịch', 'Báo giá & liên hệ', 'Xem lại & gửi'];
+const bookingDraftStorageKey = 'costume-rental.booking-draft.v1';
 const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
 function lateReturnPolicyText(quote: QuoteSnapshot | undefined, apiMode: boolean) {
-  const dueRule = 'Hạn trả là thời điểm ghi trên đơn; đệm lịch nội bộ không kéo dài thời gian thuê.';
+  const dueRule =
+    'Hạn trả là thời điểm ghi trên đơn; đệm lịch nội bộ không kéo dài thời gian thuê.';
   if (quote?.lateFeePercentPerDay === undefined) {
     return apiMode
-      ? 'Báo giá chưa trả về mức phí trả trễ. Hãy xác nhận với studio trước khi gửi yêu cầu. ' + dueRule
-      : 'Bản minh họa không mô phỏng phí trả trễ; studio cần xác nhận chính sách trước khi áp dụng. ' + dueRule;
+      ? 'Báo giá chưa trả về mức phí trả trễ. Hãy xác nhận với studio trước khi gửi yêu cầu. ' +
+          dueRule
+      : 'Bản minh họa không mô phỏng phí trả trễ; studio cần xác nhận chính sách trước khi áp dụng. ' +
+          dueRule;
   }
   const rate = Math.max(0, quote.lateFeePercentPerDay);
   if (rate === 0) return 'Chính sách trong báo giá hiện không cấu hình phí trả trễ. ' + dueRule;
@@ -44,6 +48,40 @@ const baseDraft: BookingDraft = {
   phone: '',
   note: '',
 };
+
+function resumedDraft(context?: URLSearchParams): BookingDraft | undefined {
+  if (context?.get('resume') !== '1' || typeof window === 'undefined') return undefined;
+  try {
+    const stored: unknown = JSON.parse(
+      window.sessionStorage.getItem(bookingDraftStorageKey) ?? 'null',
+    );
+    if (!stored || typeof stored !== 'object') return undefined;
+    const envelope = stored as { savedAt?: unknown; draft?: unknown };
+    if (
+      typeof envelope.savedAt !== 'number' ||
+      Date.now() - envelope.savedAt > 15 * 60 * 1000 ||
+      !envelope.draft ||
+      typeof envelope.draft !== 'object'
+    )
+      return undefined;
+    const value = envelope.draft as Partial<BookingDraft>;
+    if (
+      typeof value.costumeId !== 'string' ||
+      typeof value.variant !== 'string' ||
+      typeof value.branch !== 'string' ||
+      typeof value.pickup !== 'string' ||
+      typeof value.returnAt !== 'string' ||
+      ![1, 2].includes(value.quantity ?? 0) ||
+      typeof value.name !== 'string' ||
+      typeof value.phone !== 'string' ||
+      typeof value.note !== 'string'
+    )
+      return undefined;
+    return { ...baseDraft, ...value, quantity: value.quantity as 1 | 2 };
+  } catch {
+    return undefined;
+  }
+}
 const initialDraft = (costumeId?: string, context?: URLSearchParams): BookingDraft => {
   const selected = fixtureCatalog.find((entry) => entry.id === costumeId);
   const variants = selected?.sizes.map((size) => `${size} / ${selected.colors[0]}`) ?? [];
@@ -52,16 +90,28 @@ const initialDraft = (costumeId?: string, context?: URLSearchParams): BookingDra
   const requestedPickup = context?.get('pickup');
   const requestedReturn = context?.get('returnAt');
   const apiMode = apiEnabled && (hasAccessToken() || !import.meta.env.DEV);
-  return {
-    ...baseDraft,
-    costumeId: costumeId ?? baseDraft.costumeId,
-    variant: variants.includes(requestedVariant)
-      ? requestedVariant
-      : (apiMode && costumeId && requestedVariant ? requestedVariant : variants[0] ?? baseDraft.variant),
-    branch: requestedBranch?.trim() ? requestedBranch : (apiMode ? '' : baseDraft.branch),
-    pickup: requestedPickup?.trim() ? requestedPickup : apiMode ? defaultRentalDate(1) : baseDraft.pickup,
-    returnAt: requestedReturn?.trim() ? requestedReturn : apiMode ? defaultRentalDate(3) : baseDraft.returnAt,
-  };
+  return (
+    resumedDraft(context) ?? {
+      ...baseDraft,
+      costumeId: costumeId ?? baseDraft.costumeId,
+      variant: variants.includes(requestedVariant)
+        ? requestedVariant
+        : apiMode && costumeId && requestedVariant
+          ? requestedVariant
+          : (variants[0] ?? baseDraft.variant),
+      branch: requestedBranch?.trim() ? requestedBranch : apiMode ? '' : baseDraft.branch,
+      pickup: requestedPickup?.trim()
+        ? requestedPickup
+        : apiMode
+          ? defaultRentalDate(1)
+          : baseDraft.pickup,
+      returnAt: requestedReturn?.trim()
+        ? requestedReturn
+        : apiMode
+          ? defaultRentalDate(3)
+          : baseDraft.returnAt,
+    }
+  );
 };
 
 export function BookingPage({
@@ -78,14 +128,16 @@ export function BookingPage({
   onCustomerCreated?: (code: string) => void;
 }) {
   const apiMode = apiEnabled && (hasAccessToken() || !import.meta.env.DEV);
-  const { options: branchOptions, ready: branchOptionsReady, error: branchOptionsError, retry: retryBranches } = useBranchOptions();
-  const [step, setStep] = useState(() => {
-    const requestedVariant = initialContext.get('variant');
-    if (requestedVariant) return 2;
-    const selected = fixtureCatalog.find((entry) => entry.id === costumeId);
-    return selected ? 1 : 0;
-  });
-  const [draftState, setDraft] = useState<BookingDraft>(() => initialDraft(costumeId, initialContext));
+  const {
+    options: branchOptions,
+    ready: branchOptionsReady,
+    error: branchOptionsError,
+    retry: retryBranches,
+  } = useBranchOptions();
+  const [step, setStep] = useState(0);
+  const [draftState, setDraft] = useState<BookingDraft>(() =>
+    initialDraft(costumeId, initialContext),
+  );
   const [quote, setQuote] = useState<QuoteSnapshot>();
   const [issue, setIssue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -97,6 +149,15 @@ export function BookingPage({
   const successHeadingRef = useRef<HTMLHeadingElement>(null);
   const issueRef = useRef<HTMLDivElement>(null);
   const previousStepRef = useRef(step);
+  const resumeRequested = initialContext.get('resume') === '1';
+  useEffect(() => {
+    if (!resumeRequested) return;
+    try {
+      window.sessionStorage.removeItem(bookingDraftStorageKey);
+    } catch {
+      // The booking form remains editable if session storage is unavailable.
+    }
+  }, [resumeRequested]);
   useEffect(() => {
     if (previousStepRef.current === step) return;
     previousStepRef.current = step;
@@ -121,7 +182,7 @@ export function BookingPage({
         setDraft((current) => ({
           ...current,
           name: current.name.trim() ? current.name : profile.displayName,
-          phone: current.phone.trim() ? current.phone : profile.phone ?? '',
+          phone: current.phone.trim() ? current.phone : (profile.phone ?? ''),
         }));
       })
       .catch(() => {
@@ -131,7 +192,8 @@ export function BookingPage({
       active = false;
     };
   }, [apiMode]);
-  const item = (data ?? []).find((entry) => entry.id === draftState.costumeId) ??
+  const item =
+    (data ?? []).find((entry) => entry.id === draftState.costumeId) ??
     fixtureCatalog.find((entry) => entry.id === draftState.costumeId);
   const choices = item?.apiVariants?.length
     ? item.apiVariants.map((variant) => ({
@@ -139,17 +201,22 @@ export function BookingPage({
         label: `${variant.size} / ${variant.color}${variant.edition ? ` · ${variant.edition}` : ''}`,
       }))
     : item
-      ? item.sizes.map((size) => ({ value: `${size} / ${item.colors[0]}`, label: `${size} / ${item.colors[0]}` }))
+      ? item.sizes.map((size) => ({
+          value: `${size} / ${item.colors[0]}`,
+          label: `${size} / ${item.colors[0]}`,
+        }))
       : [];
-  const selectedVariantLabel = choices.find((choice) => choice.value === draftState.variant)?.label ?? draftState.variant;
+  const selectedVariantLabel =
+    choices.find((choice) => choice.value === draftState.variant)?.label ?? draftState.variant;
   const draft = {
     ...draftState,
-    variant: item && !choices.some((choice) => choice.value === draftState.variant)
-      ? choices[0]?.value ?? draftState.variant
-      : draftState.variant,
+    variant:
+      item && !choices.some((choice) => choice.value === draftState.variant)
+        ? (choices[0]?.value ?? draftState.variant)
+        : draftState.variant,
     branch: branchOptions.includes(draftState.branch)
       ? draftState.branch
-      : branchOptions[0] ?? (apiMode ? '' : draftState.branch),
+      : (branchOptions[0] ?? (apiMode ? '' : draftState.branch)),
   };
   const update = <K extends keyof BookingDraft>(key: K, value: BookingDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -161,20 +228,22 @@ export function BookingPage({
     setIssue('');
   };
   const canContinue = () => {
-    if (step === 0 && !item) return 'Hãy chọn một mẫu trang phục.';
-    if (
-      step === 1 &&
-      (!choices.some((choice) => choice.value === draft.variant) || draft.quantity < 1 || draft.quantity > 2)
-    )
-      return 'Chọn size/màu và số bộ hợp lệ (1–2 bộ).';
-    if (
-      step === 2 &&
-      (!draft.branch || !draft.pickup || !draft.returnAt || draft.returnAt <= draft.pickup)
-    )
-      return 'Chọn cùng chi nhánh và kỳ nhận/trả hợp lệ.';
-    if (step === 3 && !quote) return 'Cần tải báo giá còn hiệu lực để tiếp tục.';
-    if (step === 4 && (!draft.name.trim() || !/^0[0-9 ]{8,12}$/.test(draft.phone.trim())))
-      return 'Nhập tên và số điện thoại liên hệ hợp lệ.';
+    if (step === 0 || step === 2) {
+      if (!item) return 'Hãy chọn một mẫu trang phục.';
+      if (
+        !choices.some((choice) => choice.value === draft.variant) ||
+        draft.quantity < 1 ||
+        draft.quantity > 2
+      )
+        return 'Chọn size/màu và số bộ hợp lệ (1–2 bộ).';
+      if (!draft.branch || !draft.pickup || !draft.returnAt || draft.returnAt <= draft.pickup)
+        return 'Chọn cùng chi nhánh và kỳ nhận/trả hợp lệ.';
+    }
+    if (step === 1 || step === 2) {
+      if (!quote) return 'Cần tải báo giá còn hiệu lực để tiếp tục.';
+      if (!draft.name.trim() || !/^0[0-9 ]{8,12}$/.test(draft.phone.trim()))
+        return 'Nhập tên và số điện thoại liên hệ hợp lệ.';
+    }
     return '';
   };
   const next = () => {
@@ -184,8 +253,8 @@ export function BookingPage({
       return;
     }
     setIssue('');
-    if (step === 2) {
-      setStep(3);
+    if (step === 0) {
+      setStep(1);
       void loadQuote();
       return;
     }
@@ -219,6 +288,11 @@ export function BookingPage({
     setIssue('');
     try {
       const id = await fixtureAdapter.submitBooking(draft, quote, scenario);
+      try {
+        window.sessionStorage.removeItem(bookingDraftStorageKey);
+      } catch {
+        // Ignore unavailable session storage after the request has completed.
+      }
       if (apiMode) onCustomerCreated?.('');
       else onCustomerCreated?.(studioAdapter.recordBooking(id, draft, quote));
       setSubmittedId(id);
@@ -236,9 +310,9 @@ export function BookingPage({
           <span className="success-symbol">
             <Icon name="check" size={32} />
           </span>
-          <p className="eyebrow">YÊU CẦU ĐÃ GỬI · {apiMode ? 'API' : 'FIXTURE'}</p>
+          <p className="eyebrow">YÊU CẦU ĐÃ GỬI</p>
           <h1 tabIndex={-1} ref={successHeadingRef}>
-            {apiMode ? 'Yêu cầu đã được tạo' : 'Yêu cầu demo đã được tạo'}
+            {apiMode ? 'Yêu cầu đã được tạo' : 'Yêu cầu xem thử đã được tạo'}
           </h1>
           <p className="success-code">
             Mã yêu cầu <strong>{submittedId}</strong>
@@ -247,13 +321,13 @@ export function BookingPage({
             tone={apiMode ? 'info' : 'warning'}
             title={
               apiMode
-                ? 'Yêu cầu đã được gửi lên máy chủ; studio sẽ duyệt và gán bộ.'
-                : 'Yêu cầu chưa giữ trang phục cho đến khi studio xác nhận.'
+                ? 'Studio sẽ duyệt yêu cầu và xác nhận từng bộ.'
+                : 'Đây là bản xem thử; studio chưa nhận yêu cầu này.'
             }
           >
             {apiMode
-              ? 'Giá và khả dụng cuối cùng được máy chủ kiểm tra khi tạo đơn.'
-              : 'Yêu cầu đã lưu trong bộ nhớ fixture để bạn xem ở “Đơn của tôi”. Studio thật chưa nhận yêu cầu; cần API để lưu và xử lý trên máy chủ.'}
+              ? 'Tình trạng trang phục sẽ được studio xác nhận trước khi giữ lịch.'
+              : 'Thông tin chỉ được lưu tạm trong trình duyệt này, không tạo đơn thật.'}
           </Feedback>
           <Button onClick={() => go('myRentalDetail', { order: submittedId })}>
             Theo dõi yêu cầu <Icon name="arrow" size={18} />
@@ -265,11 +339,11 @@ export function BookingPage({
     <div className="page booking-page">
       <div className="booking-heading">
         <div>
-          <p className="eyebrow">UI-03 · ĐẶT THUÊ</p>
+          <p className="eyebrow">ĐẶT THUÊ</p>
           <h1>Gửi yêu cầu thuê</h1>
           <p>Chọn bộ, thời gian và xem báo giá trước khi gửi.</p>
         </div>
-        <div className="booking-step-count">Bước {step + 1} / 6</div>
+        <div className="booking-step-count">Chặng {step + 1} / 3</div>
       </div>
       <div className="step-progress" aria-label="Tiến độ đặt thuê">
         {steps.map((label, index) => (
@@ -292,11 +366,27 @@ export function BookingPage({
         ))}
       </div>
       <div className="booking-layout">
+        <details className="booking-mobile-summary">
+          <summary>
+            <span>Tóm tắt yêu cầu · {item?.name ?? 'Chưa chọn mẫu'}</span>
+            <strong>{quote ? money(quote.amountDueAtPickup) : 'Chưa có báo giá'}</strong>
+          </summary>
+          <BookingSummaryContent
+            itemName={item?.name}
+            variantLabel={selectedVariantLabel}
+            quantity={draft.quantity}
+            branch={draft.branch}
+            pickup={draft.pickup}
+            returnAt={draft.returnAt}
+            quote={quote}
+            apiMode={apiMode}
+          />
+        </details>
         <section className="booking-panel" ref={panelRef}>
           <div className="panel-intro">
             <span className="step-number">0{step + 1}</span>
             <div>
-              <p className="eyebrow">BƯỚC {step + 1} / 6</p>
+              <p className="eyebrow">CHẶNG {step + 1} / 3</p>
               <h2 ref={stepHeadingRef} tabIndex={-1} className="booking-step-heading">
                 {steps[step]}
               </h2>
@@ -317,10 +407,10 @@ export function BookingPage({
           )}
           {scenario === 'empty' && !loading && (
             <EmptyState
-              title="Chưa có trang phục trong fixture này"
+              title="Chưa có trang phục để hiển thị"
               action={
                 <Button variant="secondary" onClick={() => go('catalog')}>
-                  Về catalog
+                  Về bộ sưu tập
                 </Button>
               }
             />
@@ -329,46 +419,52 @@ export function BookingPage({
           {!loading && !error && scenario !== 'empty' && (
             <>
               {step === 0 && (
-                <div className="booking-costumes">
-                  {data?.map((entry) => (
-                    <button
-                      key={entry.id}
-                      className={`booking-costume ${draft.costumeId === entry.id ? 'selected' : ''}`}
-                      onClick={() => {
-                        update('costumeId', entry.id);
-                        setDraft((current) => ({
-                          ...current,
-                          costumeId: entry.id,
-                          variant: entry.apiVariants?.[0]?.code ?? `${entry.sizes[0]} / ${entry.colors[0]}`,
-                        }));
-                      }}
-                    >
-                      <span
-                        className={`booking-costume-image costume-${entry.imagePosition}`}
-                        role="img"
-                        aria-label={entry.imageAlt ?? `Ảnh ${entry.name}`}
+                <div className="booking-stage-group">
+                  <h3 className="booking-subheading">Chọn trang phục</h3>
+                  <div className="booking-costumes">
+                    {data?.map((entry) => (
+                      <button
+                        key={entry.id}
+                        className={`booking-costume ${draft.costumeId === entry.id ? 'selected' : ''}`}
+                        onClick={() => {
+                          update('costumeId', entry.id);
+                          setDraft((current) => ({
+                            ...current,
+                            costumeId: entry.id,
+                            variant:
+                              entry.apiVariants?.[0]?.code ??
+                              `${entry.sizes[0]} / ${entry.colors[0]}`,
+                          }));
+                        }}
                       >
-                        <ImageWithFallback
-                          src={entry.imageUrl}
-                          alt=""
-                          compact
-                          missingText="Chưa có ảnh"
-                          failedText="Ảnh chưa tải được"
-                        />
-                      </span>
-                      <span>
-                        <strong>{entry.name}</strong>
-                        <small>
-                          {entry.category} · Từ {money(entry.priceFrom)}/ngày
-                        </small>
-                      </span>
-                      {draft.costumeId === entry.id && <Icon name="check" size={20} />}
-                    </button>
-                  ))}
+                        <span
+                          className={`booking-costume-image costume-${entry.imagePosition}`}
+                          role="img"
+                          aria-label={entry.imageAlt ?? `Ảnh ${entry.name}`}
+                        >
+                          <ImageWithFallback
+                            src={entry.imageUrl}
+                            alt=""
+                            compact
+                            missingText="Chưa có ảnh"
+                            failedText="Ảnh chưa tải được"
+                          />
+                        </span>
+                        <span>
+                          <strong>{entry.name}</strong>
+                          <small>
+                            {entry.category} · Từ {money(entry.priceFrom)}/ngày
+                          </small>
+                        </span>
+                        {draft.costumeId === entry.id && <Icon name="check" size={20} />}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
-              {step === 1 && (
+              {step === 0 && (
                 <div className="form-stack">
+                  <h3 className="booking-subheading">Chọn size và số bộ</h3>
                   <SelectField
                     label="Biến thể · size / màu"
                     value={draft.variant}
@@ -376,7 +472,9 @@ export function BookingPage({
                   >
                     <option value="">Chọn biến thể</option>
                     {choices.map((choice) => (
-                      <option key={choice.value} value={choice.value}>{choice.label}</option>
+                      <option key={choice.value} value={choice.value}>
+                        {choice.label}
+                      </option>
                     ))}
                   </SelectField>
                   <SelectField
@@ -393,8 +491,9 @@ export function BookingPage({
                   </Feedback>
                 </div>
               )}
-              {step === 2 && (
+              {step === 0 && (
                 <div className="form-stack">
+                  <h3 className="booking-subheading">Chi nhánh và lịch thuê</h3>
                   <SelectField
                     label="Chi nhánh nhận và trả"
                     value={draft.branch}
@@ -402,7 +501,9 @@ export function BookingPage({
                     onChange={(event) => update('branch', event.target.value)}
                   >
                     {branchOptions.length === 0 && (
-                      <option value="">{branchOptionsReady ? 'Chưa có chi nhánh khả dụng' : 'Đang tải chi nhánh…'}</option>
+                      <option value="">
+                        {branchOptionsReady ? 'Chưa có chi nhánh khả dụng' : 'Đang tải chi nhánh…'}
+                      </option>
                     )}
                     {branchOptions.map((entry) => (
                       <option key={entry}>{entry}</option>
@@ -411,7 +512,9 @@ export function BookingPage({
                   {branchOptionsError && (
                     <Feedback tone="danger" title="Chưa tải được danh sách chi nhánh">
                       Hãy thử lại trước khi tiếp tục đặt thuê.{' '}
-                      <button type="button" className="text-button" onClick={retryBranches}>Thử lại</button>
+                      <button type="button" className="text-button" onClick={retryBranches}>
+                        Thử lại
+                      </button>
                     </Feedback>
                   )}
                   <div className="two-fields">
@@ -435,17 +538,17 @@ export function BookingPage({
                     />
                   </div>
                   <p className="inline-note">
-                    <Icon name="pin" size={17} /> Nhận và trả cùng chi nhánh. Cách tính ngày sẽ theo
-                    policy của báo giá, không tính trên trình duyệt.
+                    <Icon name="pin" size={17} /> Nhận và trả cùng chi nhánh. Số ngày tính thuê theo
+                    chính sách trong báo giá.
                   </p>
                 </div>
               )}
-              {step === 3 && (
+              {step === 1 && (
                 <div className="form-stack">
-                  <Feedback tone="info" title={apiMode ? 'Báo giá từ máy chủ' : 'Báo giá minh họa'}>
+                  <Feedback tone="info" title={apiMode ? 'Báo giá từ hệ thống' : 'Báo giá xem thử'}>
                     {apiMode
-                      ? 'Số ngày, giá thuê, tiền cọc và thời hạn được tính theo chính sách hiện hành trên máy chủ.'
-                      : 'Bản demo chỉ có snapshot cho kỳ thuê mẫu; giá thật sẽ được máy chủ xác nhận.'}
+                      ? 'Số ngày, giá thuê, tiền cọc và thời hạn được tính theo chính sách hiện hành.'
+                      : 'Bản xem thử dùng dữ liệu mẫu; giá áp dụng thực tế cần được studio xác nhận.'}
                   </Feedback>
                   <Button
                     variant="secondary"
@@ -455,14 +558,10 @@ export function BookingPage({
                     loading={busy}
                   >
                     <Icon name="refresh" size={18} />{' '}
-                    {quote ? 'Tải lại báo giá' : apiMode ? 'Tải báo giá' : 'Tải báo giá minh họa'}
+                    {quote ? 'Cập nhật báo giá' : apiMode ? 'Tải báo giá' : 'Tải báo giá xem thử'}
                   </Button>
                   {quote && (
                     <div className="quote-card">
-                      <div>
-                        <span>Mã báo giá</span>
-                        <strong>{quote.id}</strong>
-                      </div>
                       <div>
                         <span>Thời gian tính thuê</span>
                         <strong>{quote.daysLabel}</strong>
@@ -490,26 +589,57 @@ export function BookingPage({
                         <strong>{money(quote.amountDueAtPickup)}</strong>
                       </div>
                       <small>
-                        Hiệu lực đến: {quote.expiresAt} · {quote.policy}
+                        Báo giá có hiệu lực đến: {quote.expiresAt} · {quote.policy}
                       </small>
                       <p className="inline-note">{lateReturnPolicyText(quote, apiMode)}</p>
                     </div>
                   )}
                 </div>
               )}
-              {step === 4 && (
+              {step === 1 && (
                 <div className="form-stack">
                   <div className="google-placeholder">
                     <a
                       className="button button-secondary"
-                      href="/dang-nhap?next=%2Fdat-thue"
-                      onClick={(event) => { event.preventDefault(); go('login', { next: '/dat-thue' }); }}
+                      href="/dang-nhap?next=%2Fdat-thue%3Fresume%3D1"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        try {
+                          window.sessionStorage.setItem(
+                            bookingDraftStorageKey,
+                            JSON.stringify({ savedAt: Date.now(), draft: draftState }),
+                          );
+                          go('login', { next: '/dat-thue?resume=1' });
+                        } catch {
+                          setIssue(
+                            'Chưa thể lưu lựa chọn để tiếp tục sau khi đăng nhập. Hãy thử lại hoặc giữ nguyên trang này.',
+                          );
+                        }
+                      }}
                     >
                       Đăng nhập
                     </a>
                     <span>
-                      Đăng nhập để theo dõi đơn thuê. Trong bản demo, bạn vẫn có thể tiếp tục bằng thông tin liên hệ.{' '}
-                      <a href="/dang-ky" onClick={(event) => { event.preventDefault(); go('register', { next: '/dat-thue' }); }}>
+                      {apiMode
+                        ? 'Đăng nhập để tiếp tục gửi yêu cầu và theo dõi đơn thuê.'
+                        : 'Bạn có thể tiếp tục bản xem thử bằng thông tin liên hệ.'}{' '}
+                      <a
+                        href="/dang-ky?next=%2Fdat-thue%3Fresume%3D1"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          try {
+                            window.sessionStorage.setItem(
+                              bookingDraftStorageKey,
+                              JSON.stringify({ savedAt: Date.now(), draft: draftState }),
+                            );
+                            go('register', { next: '/dat-thue?resume=1' });
+                          } catch {
+                            setIssue(
+                              'Chưa thể lưu lựa chọn để tiếp tục sau khi đăng ký. Hãy thử lại hoặc giữ nguyên trang này.',
+                            );
+                          }
+                        }}
+                      >
                         Tạo tài khoản
                       </a>
                     </span>
@@ -546,7 +676,7 @@ export function BookingPage({
                   />
                 </div>
               )}
-              {step === 5 && (
+              {step === 2 && (
                 <div className="confirm-summary">
                   <div>
                     <span>Trang phục</span>
@@ -582,8 +712,8 @@ export function BookingPage({
                   </div>
                   <p className="inline-note">{lateReturnPolicyText(quote, apiMode)}</p>
                   <p className="inline-note">
-                    Điều kiện hủy và chính sách áp dụng cần được xác nhận từ backend trước khi triển
-                    khai thật. Bản demo không tự đặt ra phí hủy.
+                    Thông tin về phí hủy chưa có trong báo giá. Hãy liên hệ studio để xác nhận trước
+                    khi gửi yêu cầu.
                   </p>
                   <Feedback
                     tone="warning"
@@ -613,7 +743,7 @@ export function BookingPage({
             >
               {step === 0 ? 'Về catalog' : 'Quay lại'}
             </Button>
-            {step < 5 ? (
+            {step < 2 ? (
               <Button onClick={next} disabled={loading || !!error || scenario === 'empty'}>
                 Đi tiếp <Icon name="arrow" size={18} />
               </Button>
@@ -631,40 +761,79 @@ export function BookingPage({
           </div>
         </section>
         <aside className="booking-sidebar">
-          <div className="sidebar-note">
-            <span className="eyebrow">TÓM TẮT YÊU CẦU</span>
-            <h3>{item?.name ?? 'Chưa chọn mẫu'}</h3>
-            <p>
-              {selectedVariantLabel || 'Chưa chọn biến thể'} · {draft.quantity} bộ
-            </p>
-            <div className="sidebar-divider" />
-            <p>
-              <Icon name="pin" size={16} /> {draft.branch}
-            </p>
-            <p>
-              <Icon name="calendar" size={16} />{' '}
-              {draft.pickup ? draft.pickup.replace('T', ' ') : 'Chưa chọn ngày nhận'}
-            </p>
-            {quote ? (
-              <>
-                <div className="sidebar-divider" />
-                <div className="sidebar-money">
-                  <span>Tiền thuê</span>
-                  <strong>{money(quote.rental)}</strong>
-                </div>
-                <div className="sidebar-money">
-                  <span>Tiền cọc</span>
-                  <strong>{money(quote.deposit)}</strong>
-                </div>
-                <small>Thu khi nhận đồ · Theo báo giá {apiMode ? 'máy chủ' : 'minh họa'}</small>
-              </>
-            ) : (
-              <small>Chưa có báo giá cho lựa chọn hiện tại.</small>
-            )}
-          </div>
+          <BookingSummaryContent
+            itemName={item?.name}
+            variantLabel={selectedVariantLabel}
+            quantity={draft.quantity}
+            branch={draft.branch}
+            pickup={draft.pickup}
+            returnAt={draft.returnAt}
+            quote={quote}
+            apiMode={apiMode}
+          />
         </aside>
       </div>
     </div>
   );
 }
 
+function BookingSummaryContent({
+  itemName,
+  variantLabel,
+  quantity,
+  branch,
+  pickup,
+  returnAt,
+  quote,
+  apiMode,
+}: {
+  itemName?: string;
+  variantLabel: string;
+  quantity: number;
+  branch: string;
+  pickup: string;
+  returnAt: string;
+  quote?: QuoteSnapshot;
+  apiMode: boolean;
+}) {
+  return (
+    <div className="sidebar-note">
+      <span className="eyebrow">TÓM TẮT YÊU CẦU</span>
+      <h3>{itemName ?? 'Chưa chọn mẫu'}</h3>
+      <p>
+        {variantLabel || 'Chưa chọn biến thể'} · {quantity} bộ
+      </p>
+      <div className="sidebar-divider" />
+      <p>
+        <Icon name="pin" size={16} /> {branch || 'Chưa chọn chi nhánh'}
+      </p>
+      <p>
+        <Icon name="calendar" size={16} /> Nhận: {pickup ? pickup.replace('T', ' ') : 'Chưa chọn'}
+      </p>
+      <p>
+        <Icon name="calendar" size={16} /> Trả:{' '}
+        {returnAt ? returnAt.replace('T', ' ') : 'Chưa chọn'}
+      </p>
+      {quote ? (
+        <>
+          <div className="sidebar-divider" />
+          <div className="sidebar-money">
+            <span>Tiền thuê</span>
+            <strong>{money(quote.rental)}</strong>
+          </div>
+          <div className="sidebar-money">
+            <span>Tiền cọc</span>
+            <strong>{money(quote.deposit)}</strong>
+          </div>
+          <div className="sidebar-money">
+            <span>Dự kiến thu khi nhận</span>
+            <strong>{money(quote.amountDueAtPickup)}</strong>
+          </div>
+          <small>Chưa thu tiền · Báo giá {apiMode ? 'từ hệ thống' : 'xem thử'}</small>
+        </>
+      ) : (
+        <small>Chưa có báo giá cho lựa chọn hiện tại.</small>
+      )}
+    </div>
+  );
+}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Icon } from '../components/ui';
+import { Button, Icon } from '../components/ui';
 import {
   apiEnabled,
   currentUser,
@@ -95,6 +95,7 @@ const isStaff = (screen: Screen) =>
     'login',
     'register',
     'forgotPassword',
+    'notFound',
   ].includes(screen);
 const requiredPermissions: Partial<Record<Screen, string[]>> = {
   dashboard: ['rentals.read.branch', 'rentals.read.all'],
@@ -892,6 +893,18 @@ export default function StudioApp() {
           </div>
         ) : (
           <>
+            {route.screen === 'notFound' && (
+              <div className="page not-found-page">
+                <section className="not-found-card" aria-labelledby="not-found-title">
+                  <p className="eyebrow">KHÔNG TÌM THẤY TRANG</p>
+                  <h1 id="not-found-title">Liên kết này không tồn tại</h1>
+                  <p>Kiểm tra lại địa chỉ hoặc quay về bộ sưu tập để tiếp tục tìm trang phục.</p>
+                  <Button onClick={() => go('catalog')}>
+                    Về bộ sưu tập <Icon name="arrow" size={18} />
+                  </Button>
+                </section>
+              </div>
+            )}
             {route.screen === 'catalog' && (
               <CatalogPage scenario={scenario} go={go} initialContext={p} />
             )}

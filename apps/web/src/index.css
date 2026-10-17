@@ -1060,7 +1060,7 @@ small {
   position: relative;
   overflow: hidden;
   background-color: #f4eef0;
-  background-image: url('/images/lookbook-minh-hoa.png');
+  background-image: url('/images/lookbook-minh-hoa.webp');
   background-repeat: no-repeat;
   background-size: 300% auto;
   background-position-y: 15%;
@@ -1167,6 +1167,12 @@ small {
 }
 .costume-body > .status {
   margin-top: 12px;
+}
+.availability-variants {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
 }
 .card-button {
   width: 100%;
@@ -1348,7 +1354,7 @@ small {
   width: 72px;
   height: 80px;
   border-radius: var(--radius-sm);
-  background-image: url('/images/lookbook-minh-hoa.png');
+  background-image: url('/images/lookbook-minh-hoa.webp');
   background-size: 300% auto;
   background-position-y: 10%;
   background-color: #f5f0f1;
@@ -2294,7 +2300,7 @@ small {
   overflow: hidden;
   min-height: 220px;
   border-radius: var(--radius-sm);
-  background-image: url('/images/lookbook-minh-hoa.png');
+  background-image: url('/images/lookbook-minh-hoa.webp');
   background-size: 300% auto;
   background-position-y: 12%;
   background-color: #f5f0f1;
@@ -2865,9 +2871,8 @@ small {
   align-items: start;
   margin-top: 16px;
 }
-.detail-photo,
-.photo-thumbs button {
-  background-image: url('/images/lookbook-minh-hoa.png');
+.detail-photo {
+  background-image: url('/images/lookbook-minh-hoa.webp');
   background-size: 300% auto;
   background-position-y: 14%;
   background-color: #f5f0f1;
@@ -2878,27 +2883,17 @@ small {
   position: relative;
   overflow: hidden;
 }
-.detail-photo.costume-left,
-.photo-thumbs .costume-left {
+.detail-photo.costume-left {
   background-position-x: left;
 }
-.detail-photo.costume-center,
-.photo-thumbs .costume-center {
+.detail-photo.costume-center {
   background-position-x: center;
 }
-.detail-photo.costume-right,
-.photo-thumbs .costume-right {
+.detail-photo.costume-right {
   background-position-x: right;
 }
-.detail-photo.costume-missing,
-.photo-thumbs .costume-missing {
+.detail-photo.costume-missing {
   background-image: none;
-}
-.detail-photo-1 {
-  background-position-y: 35%;
-}
-.detail-photo-2 {
-  background-position-y: 65%;
 }
 .photo-thumbs {
   display: flex;
@@ -2906,10 +2901,20 @@ small {
   margin-top: 12px;
 }
 .photo-thumbs button {
+  display: block;
   width: 76px;
   height: 91px;
   border: 2px solid transparent;
   border-radius: var(--radius-sm);
+  overflow: hidden;
+  padding: 0;
+  background: #f5f0f1;
+}
+.photo-thumbs img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .photo-thumbs button.selected {
   border-color: var(--brand-primary);
@@ -5981,3 +5986,249 @@ small {
   }
 }
 
+/* UX audit: keep summaries, secondary filters, and text readable at narrow widths. */
+.booking-mobile-summary {
+  display: none;
+}
+.queue-filter-disclosure {
+  margin: -6px 0 24px;
+  overflow: clip;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: #fff;
+}
+.queue-filter-disclosure > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  padding: 10px 16px;
+  color: var(--text-primary);
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.queue-filter-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.queue-filter-disclosure > summary::after {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-right: 3px;
+  border-right: 2px solid var(--text-secondary);
+  border-bottom: 2px solid var(--text-secondary);
+  color: var(--text-secondary);
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 160ms ease;
+}
+.queue-filter-disclosure[open] > summary::after {
+  transform: rotate(225deg) translate(-2px, -2px);
+}
+.queue-filter-disclosure[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+.queue-filter-count {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+.queue-filter-disclosure .queue-extra-filters {
+  margin: 0;
+  padding: 16px;
+}
+.hero-carousel-indicator button {
+  position: static;
+  right: auto;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: rgb(255 255 255 / 72%);
+  opacity: 1;
+}
+.hero-carousel-indicator button span {
+  width: 18px;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: #686166;
+  opacity: 0.72;
+  transition:
+    width 240ms ease,
+    background-color 240ms ease;
+}
+.hero-carousel-indicator button.is-active span {
+  width: 28px;
+  background: var(--brand-primary);
+  opacity: 1;
+}
+.hero-carousel-indicator button:focus-visible {
+  outline: 3px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+.booking-subheading {
+  margin: 0 0 2px;
+  font-size: 16px;
+  line-height: 24px;
+}
+.booking-stage-group {
+  margin-bottom: 24px;
+}
+.rental-guide {
+  margin: 52px auto 24px;
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.rental-guide-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.rental-guide-steps li {
+  min-height: 160px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: #fff;
+}
+.rental-guide-steps li > span {
+  color: var(--brand-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+.rental-guide-steps h3 {
+  margin: 14px 0 8px;
+}
+.rental-guide-steps p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.not-found-page {
+  display: grid;
+  min-height: 48vh;
+  place-items: center;
+}
+.not-found-card {
+  width: min(100%, 560px);
+  padding: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: #fff;
+}
+.not-found-card h1 {
+  margin: 0 0 12px;
+}
+.not-found-card > p:not(.eyebrow) {
+  margin: 0 0 24px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+@media (max-width: 767px) {
+  .booking-mobile-summary {
+    position: sticky;
+    top: 8px;
+    z-index: 15;
+    display: block;
+    margin-bottom: 12px;
+  }
+  .booking-mobile-summary[open] {
+    position: static;
+  }
+  .booking-mobile-summary > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 52px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: #fff;
+    color: var(--text-primary);
+    cursor: pointer;
+    list-style: none;
+  }
+  .booking-mobile-summary > summary::-webkit-details-marker {
+    display: none;
+  }
+  .booking-mobile-summary > summary > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .booking-mobile-summary > summary > strong {
+    flex: none;
+    color: var(--brand-primary);
+  }
+  .booking-mobile-summary[open] > summary {
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+  .booking-mobile-summary .sidebar-note {
+    padding: 16px;
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+  }
+  .booking-panel :is(input, select, textarea, button) {
+    scroll-margin-top: 76px;
+  }
+  .costume-price {
+    font-size: 12px;
+  }
+  .costume-price strong {
+    font-size: 15px;
+  }
+  .costume-price small {
+    font-size: 12px;
+  }
+  .card-button {
+    font-size: 12px;
+  }
+  .rental-guide {
+    margin-top: 36px;
+    padding: 20px;
+  }
+  .rental-guide-steps {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .rental-guide-steps li {
+    min-height: auto;
+    padding: 16px;
+  }
+  .rental-guide-steps h3 {
+    margin: 8px 0 6px;
+  }
+  .not-found-card {
+    padding: 24px;
+  }
+}
+@media (max-width: 359px) {
+  .catalog-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+  .costume-top h3 {
+    font-size: 16px;
+  }
+  .costume-media {
+    aspect-ratio: 4 / 3;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-carousel-indicator button span {
+    transition: none;
+  }
+}
