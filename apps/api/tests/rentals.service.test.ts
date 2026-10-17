@@ -96,6 +96,91 @@ function transactionFor(order: ReturnType<typeof activeOrder>) {
 beforeEach(() => vi.resetAllMocks());
 
 describe('rental timing and late-fee policy', () => {
+  const availabilityBranchId = '10000000-0000-4000-8000-000000000016';
+
+  function availabilityActor(input: {
+    permissionAction: 'read' | 'manage';
+    permissionScope: 'BRANCH' | 'ALL';
+    assignmentBranchId: string | null;
+  }) {
+    return {
+      id: '10000000-0000-4000-8000-000000000017',
+      status: 'ACTIVE',
+      employee: { employmentStatus: 'ACTIVE' },
+      roleAssignments: [
+        {
+          branchId: input.assignmentBranchId,
+          branch: input.assignmentBranchId ? { status: 'ACTIVE' } : null,
+          role: {
+            isActive: true,
+            roleCode: input.assignmentBranchId ? 'SALES_STAFF' : 'ADMIN',
+            rolePermissions: [
+              {
+                permission: {
+                  module: 'rentals',
+                  action: input.permissionAction,
+                  scope: input.permissionScope,
+                },
+              },
+            ],
+          },
+        },
+      ],
+    } as never;
+  }
+
+  it.each([
+    {
+      name: 'read permission for the branch',
+      permissionAction: 'read' as const,
+      permissionScope: 'BRANCH' as const,
+      assignmentBranchId: availabilityBranchId,
+    },
+    {
+      name: 'manage permission for the branch',
+      permissionAction: 'manage' as const,
+      permissionScope: 'BRANCH' as const,
+      assignmentBranchId: availabilityBranchId,
+    },
+    {
+      name: 'global manage permission',
+      permissionAction: 'manage' as const,
+      permissionScope: 'ALL' as const,
+      assignmentBranchId: null,
+    },
+  ])('allows availability lookup with $name', async (permission) => {
+    mocks.transaction.mockRejectedValueOnce(new Error('availability query reached'));
+
+    await expect(
+      service.checkAvailability(availabilityActor(permission), {
+        variantId: '10000000-0000-4000-8000-000000000018',
+        pickupBranchId: availabilityBranchId,
+        plannedStartAt: new Date('2026-10-20T08:00:00.000Z'),
+        plannedDueAt: new Date('2026-10-21T08:00:00.000Z'),
+      }),
+    ).rejects.toThrow('availability query reached');
+    expect(mocks.transaction).toHaveBeenCalledOnce();
+  });
+
+  it('rejects availability lookup outside a branch-scoped assignment', async () => {
+    await expect(
+      service.checkAvailability(
+        availabilityActor({
+          permissionAction: 'manage',
+          permissionScope: 'BRANCH',
+          assignmentBranchId: availabilityBranchId,
+        }),
+        {
+          variantId: '10000000-0000-4000-8000-000000000018',
+          pickupBranchId: '10000000-0000-4000-8000-000000000019',
+          plannedStartAt: new Date('2026-10-20T08:00:00.000Z'),
+          plannedDueAt: new Date('2026-10-21T08:00:00.000Z'),
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
   it('adds the late-return reserve to garment preparation time', () => {
     const due = new Date('2026-10-14T08:00:00.000Z');
     expect(service.bookingReservationUntil(due, 1_440, 720)).toEqual(

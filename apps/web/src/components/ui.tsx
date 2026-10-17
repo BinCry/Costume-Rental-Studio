@@ -333,6 +333,14 @@ export function ConfirmDialog({
   danger?: boolean;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
   useEffect(() => {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     dialogRef.current?.focus();
@@ -359,7 +367,7 @@ export function ConfirmDialog({
         className="dialog"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="dialog-title"
+        aria-labelledby={titleId}
         onKeyDown={(event) => {
           if (event.key !== 'Tab') return;
           const focusable = Array.from(
@@ -385,7 +393,7 @@ export function ConfirmDialog({
         }}
       >
         <div className="dialog-top">
-          <h2 id="dialog-title">{title}</h2>
+          <h2 id={titleId}>{title}</h2>
           <button
             type="button"
             className="icon-button"

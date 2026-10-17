@@ -116,6 +116,7 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
     try {
       await uploadCatalogMedia('model', model.id, mediaFile, model.name);
       setMediaFile(undefined);
+      setModel(undefined);
       setNotice('Đã tải ảnh và gắn vào mẫu trên máy chủ.');
       retry();
     } catch (e) {
@@ -291,7 +292,12 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                         onChange={(e) => setMediaFile(e.target.files?.[0])}
                         hint="JPEG, PNG hoặc WebP; ảnh sẽ được lưu qua dịch vụ media của máy chủ."
                       />
-                      <Button variant="secondary" loading={busy} disabled={!mediaFile} onClick={() => void saveMedia()}>
+                      <Button
+                        variant="secondary"
+                        loading={busy}
+                        disabled={!mediaFile}
+                        onClick={() => void saveMedia()}
+                      >
                         Tải ảnh lên
                       </Button>
                     </div>

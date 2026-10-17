@@ -4521,6 +4521,8 @@ small {
 .ops-agent-tab:focus-visible {
   position: relative;
   z-index: 1;
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 .ops-agent-panel {
   outline: none;
@@ -5189,7 +5191,7 @@ small {
   color: var(--text-secondary);
 }
 .ops-chat-citations button {
-  min-height: 36px;
+  min-height: 44px;
   padding: 5px 8px;
   border: 0;
   border-radius: var(--radius-sm);
@@ -5229,7 +5231,7 @@ small {
   padding: 8px 0 12px;
 }
 .ops-chat-suggestions button {
-  min-height: 40px;
+  min-height: 44px;
   max-width: 100%;
   padding: 7px 10px;
   border: 1px solid var(--border);
@@ -5244,6 +5246,29 @@ small {
   background: var(--brand-tint);
   border-color: #f3c6d6;
   color: var(--brand-primary);
+}
+.ops-chat-suggestions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+.ops-chat-suggestions button:focus-visible,
+.ops-chat-citations button:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.ops-chat-new-request-note {
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--brand-primary);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--brand-tint);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.ops-agent-case-error-focus:focus {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
 }
 .ops-chat-form {
   display: grid;
@@ -6333,7 +6358,7 @@ small {
 }
 .staff-menu-logout {
   width: 100%;
-  min-height: 42px;
+  min-height: 44px;
   justify-content: center;
 }
 .app-staff > .main-content {

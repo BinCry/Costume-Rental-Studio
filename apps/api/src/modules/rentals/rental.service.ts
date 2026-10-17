@@ -632,6 +632,7 @@ export async function checkAvailability(
   requireActor(actor);
   if (
     !canBranch(actor, 'read', input.pickupBranchId) &&
+    !canBranch(actor, 'manage', input.pickupBranchId) &&
     !hasPermission(actor, { module: 'rentals', action: 'manage', scope: 'OWN' })
   )
     throw new AppError(403, 'FORBIDDEN', 'Permission denied for availability');

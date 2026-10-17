@@ -219,6 +219,8 @@ export interface CustomerOrder {
   due: string;
   costume: string;
   variant: string;
+  /** Full item summary for API orders; legacy fixtures use costume/variant. */
+  items?: { costume: string; variant: string }[];
   rental: number;
   deposit: number;
   extra: number;

@@ -1551,33 +1551,6 @@ export function OrderDetailShell({
                       )}
                     </div>
                   )}
-                  {((mode === 'handover' && matchedCodes.includes(item.unitCode ?? '')) ||
-                    (mode === 'return' && (matchedCodes.includes(item.unitCode ?? '') || !!missingItems[item.id]))) && (
-                    <label className="field file-field">
-                      <span>
-                        Ảnh bằng chứng {realApiMode ? '(bắt buộc)' : '(tuỳ chọn)'}
-                        {mode === 'return' && missingItems[item.id] ? ' · bằng chứng liên quan đến thất lạc' : ''}
-                      </span>
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        multiple
-                        onChange={(event) =>
-                          setEvidenceFiles((current) => ({
-                            ...current,
-                            [item.id]: Array.from(event.target.files ?? []).slice(0, 10),
-                          }))
-                        }
-                      />
-                      <small>
-                        {(evidenceFiles[item.id]?.length ?? 0) > 0
-                          ? `Đã chọn ${evidenceFiles[item.id]?.length ?? 0} ảnh`
-                          : mode === 'return' && missingItems[item.id]
-                            ? 'Chọn ảnh/chứng từ liên quan đến việc xác minh thất lạc'
-                            : 'Chọn ảnh tình trạng thực tế của bộ'}
-                      </small>
-                    </label>
-                  )}
                   {mode === 'return' &&
                     (matchedCodes.includes(item.unitCode ?? '') || !!missingItems[item.id]) &&
                     !missingItems[item.id] && (

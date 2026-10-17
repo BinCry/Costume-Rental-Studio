@@ -1,6 +1,6 @@
 # Yêu cầu bàn giao cho đội AI Agent
 
-**Ngày cập nhật:** 17/10/2026
+**Ngày cập nhật:** 18/10/2026
 
 **Phạm vi:** hoàn thiện dịch vụ Ops Agent để khớp giao diện production của Costume Rental Studio.
 **Đối tượng:** đội phát triển AI Agent/RAG/tool và đội Studio API phụ trách hợp đồng tích hợp.
@@ -32,6 +32,8 @@ Mọi route `/api/v1/agent/*` chỉ dành cho tài khoản đang hoạt động,
 
 Agent phải trả đúng `AgentCaseResult` mà Studio API kiểm tra trong [`agent.schema.ts`](../../apps/api/src/modules/agent/agent.schema.ts): `caseId`, `state`, `message`, `evidence`, `completed` và các trường trạng thái tùy chọn. Ý nghĩa cần giữ:
 
+Studio API chỉ chuyển tiếp projection dành cho nhân viên. `goal` chỉ giữ `summary`/`status`; `handoff` chỉ giữ `nextAction`/`sideEffects`. `stepsUsed`, `tokensUsed`, `terminationReason`, `runStatus`, kế hoạch/constraints nội bộ và danh sách tool đã chạy bị loại khỏi response trình duyệt. Không dựa vào các trường này để dựng UI hay quyết định nghiệp vụ.
+
 - `pendingInput`: Agent cần nhân viên bổ sung thông tin. Khi nhân viên trả lời, tiếp tục cùng hồ sơ; không âm thầm tạo hồ sơ mới.
 - `pendingConfirmation`: thao tác cần nhân viên xác nhận. Tóm tắt phải nói rõ đối tượng và thay đổi sắp thực hiện.
 - `pendingApproval`: thao tác cần quyền cao hơn. Chỉ cho tiếp tục sau quyết định qua luồng duyệt; không giả lập kết quả duyệt ở Agent.
@@ -43,6 +45,10 @@ Agent phải trả đúng `AgentCaseResult` mà Studio API kiểm tra trong [`ag
 Agent gọi callback nội bộ `POST /api/v1/internal/agent-tools/execute`, không gọi trực tiếp API nghiệp vụ hay database. Hợp đồng `agent-tools/v1` được khai báo trong [`agent-tools.schema.ts`](../../apps/api/src/modules/agent-tools/agent-tools.schema.ts), danh sách cho phép trong [`agent-tools.registry.ts`](../../apps/api/src/modules/agent-tools/agent-tools.registry.ts), cách kiểm tra quyền và gọi service trong [`agent-tools.service.ts`](../../apps/api/src/modules/agent-tools/agent-tools.service.ts).
 
 Mỗi lần gọi phải gửi đúng service key qua `X-AI-Service-Key`, danh tính nhân viên qua `X-Actor-Id`, mã tương quan qua `X-Request-Id`, phiên bản hợp đồng `X-Agent-Tools-Contract: agent-tools/v1` và payload có `caseId`, `toolCallId`, `toolName`, `arguments`, `idempotencyKey`. Với thao tác cập nhật có kiểm tra phiên bản, gửi `expectedVersion`; với thao tác cần duyệt, `approvalId` hiện có trong schema nhưng Studio API chưa ràng buộc mã này với hồ sơ, lời gọi, tên tool, đối số và phiên bản bản ghi. Không tự tạo URL, HTTP method, câu SQL hoặc tên tool ngoài allowlist.
+
+Route `POST /authorize-approval` hiện chỉ kiểm tra quyền chung của actor đối với các chi nhánh được gửi lên; kết quả `allowed` **không phải** một phê duyệt gắn với hành động cụ thể và không được dùng làm căn cứ chạy tool ghi. Tool ghi hiện bị Studio API chặn ở service layer, kể cả khi cấu hình feature flag bị bật.
+
+Studio API chỉ gửi một tập trường vận hành đã cho phép trong kết quả các công cụ lịch bộ đồ và điều chuyển. Kết quả giữ mã đơn vị/trang phục, chi nhánh, trạng thái, thời gian và phiên bản cần cho tác vụ; không gửi thông tin liên hệ/địa chỉ chi nhánh, khóa người dùng nhân viên, ảnh đại diện, lý do hoặc ghi chú dạng văn bản tự do, hay giá vốn/giá danh mục không liên quan. Kết quả thanh toán cũng không trả khóa idempotency; khi đối soát, Agent dùng khóa đã gửi trong yêu cầu ban đầu cùng công cụ tra cứu theo khóa. Đội AI không được giả định các trường Prisma bị loại khỏi projection sẽ có mặt trong payload.
 
 Kết quả tool có nguồn `studio-api`, thời điểm quan sát, mã request và thông tin quyền. Giữ nguyên kết quả lỗi nghiệp vụ `not_found`, `forbidden`, `validation_error`, `version_conflict` và `business_conflict`; không diễn giải lỗi thành thành công. Chỉ `ORDER_VERSION_CONFLICT`, `TRANSFER_VERSION_CONFLICT` và `UNIT_BLOCK_VERSION_CONFLICT` là `version_conflict`; 409 do quy tắc nghiệp vụ/đồ đang bận là `business_conflict`.
 
@@ -96,6 +102,10 @@ Trường `idempotencyKey` hiện bắt buộc trong payload, nhưng Studio API 
 - Danh sách `find_rental_orders` gửi sang mô hình chỉ gồm dữ liệu vận hành cần thiết; không dùng email/số điện thoại, ghi chú khách, tham chiếu thanh toán, URL bằng chứng hoặc mã người dùng.
 - Nếu API trả `business_conflict`, nêu đúng quy tắc hoặc tài nguyên đang bận; không yêu cầu nhân viên tải lại để xử lý như lỗi phiên bản. Với `version_conflict`, đọc lại phiên bản hiện tại trước khi đề nghị xác nhận lại.
 - Không bật các cờ ghi cho tới khi xác nhận/duyệt được ràng buộc bền vững với đúng hồ sơ, tool, đối số, phạm vi chi nhánh và phiên bản bản ghi; riêng `approvalId` hiện chưa có liên kết này ở Studio API.
+- Các cờ `AGENT_SCHEDULING_WRITE_ENABLED`, `AGENT_RENTAL_WRITE_ENABLED`, `AGENT_TRANSFER_WRITE_ENABLED` và `AGENT_FINANCIAL_WRITE_ENABLED` mặc định `false`. Studio API hiện chặn mọi tool ghi ở service layer với `AGENT_WRITE_TOOLS_NOT_READY`, kể cả khi biến môi trường bị bật nhầm. Không xóa guard để “thử” trên staging/production. Chỉ gỡ chặn sau khi các hợp đồng xác nhận, duyệt và đối soát được triển khai, kiểm thử liên dịch vụ, và chủ sản phẩm cho phép bật theo từng nhóm.
+- Hợp đồng preview/duyệt cần một bản xem trước bất biến gắn với đúng hồ sơ và tool call: mã/tên đối tượng đích, chi nhánh và phạm vi ảnh hưởng, khoản tiền nếu có, thao tác sẽ xảy ra, giá trị trước/sau, phiên bản dữ liệu, nội dung lý do, thời hạn và danh tính người xác nhận/duyệt. API phải từ chối nếu đối số, phạm vi, phiên bản hoặc người thực thi khác preview đã xác nhận; không chấp nhận approval chỉ vì actor có quyền chung.
+- Chốt phạm vi chi nhánh cho hội thoại Ops Agent: hiện `POST /agent/messages` không nhận chi nhánh đang chọn; các công cụ tra cứu hoạt động theo mọi chi nhánh mà actor có quyền. Chủ sản phẩm cần chọn rõ: mọi tra cứu mặc định theo quyền trên toàn bộ chi nhánh được phân công, hay case phải gắn với một chi nhánh được chọn và mọi tool bị giới hạn theo chi nhánh đó. Không suy ra chi nhánh chỉ từ lời nhắn hoặc `X-Actor-Id`; cho tới khi chốt, UI/API không được hứa rằng case hoặc kết quả đã được giới hạn theo chi nhánh làm việc.
+- Hợp đồng citation cần danh tính nguồn có thể truy xuất ổn định (ID tài liệu, phiên bản, đoạn/anchor), trạng thái duyệt và quyền truy cập tại thời điểm trả lời. Studio API hiện chỉ xác nhận các trường metadata/citation không rỗng; chưa thể phát hiện citation giả hoặc nguồn đã bị thu hồi.
 - Tool trả dữ liệu đã giới hạn cho mô hình; không tìm cách lấy email, số điện thoại, ghi chú riêng, URL bằng chứng hoặc bí mật không thuộc payload được phép. Không ghi service key, token hay nội dung nhạy cảm vào log/prompt.
 
 ## 4. Tiêu chí nghiệm thu cho đội AI
@@ -123,6 +133,10 @@ Các mục sau cần API/quyết định sản phẩm trước khi làm UI hoặ
 - Tra cứu kết quả tạo hồ sơ mới theo request ID khi mất response; hiện UI không retry tạo mới ngầm.
 - Cơ chế idempotency bền vững hoặc tra cứu kết quả cho lần tạo hồ sơ Agent đầu tiên sau khi mất response.
 - Ràng buộc duyệt một lần từ `approvalId` tới `caseId`, `toolCallId`, tool, đối số, phạm vi và phiên bản; cho tới khi có, giữ mọi cờ thao tác ghi ở `false`.
+- Bản preview thao tác có cấu trúc và bất biến, gồm đối tượng/chi nhánh, ảnh hưởng, số tiền, giá trị trước-sau, phiên bản, xác nhận của nhân viên và quyết định của người duyệt. Cần chốt quy tắc phân tách người tạo/xác nhận/duyệt cho từng nhóm thao tác.
+- Quyết định phạm vi chi nhánh của case: theo mọi chi nhánh actor được cấp quyền hay gắn cố định với chi nhánh đang chọn. Hiện API không nhận branch context ở message/case và tra cứu có thể thấy mọi chi nhánh được cấp quyền; mọi giới hạn theo chi nhánh hiện chỉ đến từ quyền nghiệp vụ của từng tool.
+- Idempotency bền vững hoặc API đối soát kết quả cho các tool ghi lịch, đơn thuê và điều chuyển; khóa đang có trong schema chưa được lưu/kiểm tra cho các thao tác này.
+- Citation có thể truy xuất và xác minh phiên bản/trạng thái duyệt/quyền nguồn; trường metadata không rỗng hiện chưa đủ để xác nhận nguồn có thật.
 - API health/capability để hiển thị sức khỏe runtime chính xác.
 
 Không bổ sung các năng lực này bằng dữ liệu demo hoặc lời hứa trong hội thoại. Khi có API, cập nhật hợp đồng, quyền, trạng thái lỗi và tiêu chí nghiệm thu trước; sau đó mới nối màn hình phù hợp.

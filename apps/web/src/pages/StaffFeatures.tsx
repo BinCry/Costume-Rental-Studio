@@ -109,6 +109,9 @@ export function CounterRentalPage({
     : item?.sizes[0]
       ? `${item.sizes[0]} / ${item.colors[0]}`
       : '';
+  const selectedApiVariantId = item?.apiVariants?.find(
+    (entry) => `${entry.size} / ${entry.color}` === selectedVariant,
+  )?.id;
   const clearQuote = useCallback(() => {
     quoteRequestRef.current += 1;
     setQuote(undefined);
@@ -151,7 +154,13 @@ export function CounterRentalPage({
           { customerCode: selectedCustomer.code, channel: 'IN_STORE' },
         ),
         realApiMode
-          ? fixtureAdapter.rentalAvailability(selectedCostume, selectedBranch, pickup, due)
+          ? selectedApiVariantId
+            ? fixtureAdapter.rentalAvailability(selectedApiVariantId, selectedBranch, pickup, due)
+            : Promise.reject(
+                new Error(
+                  'Không tìm thấy mã biến thể trên máy chủ. Tải lại danh mục rồi thử lại.',
+                ),
+              )
           : studioAdapter.units(scenario).then((allUnits) =>
               allUnits.filter(
                 (unit) =>
