@@ -122,22 +122,107 @@ describe('knowledge service proxy', () => {
     ).rejects.toMatchObject({ statusCode: 504, code: 'AI_SERVICE_TIMEOUT' });
   });
 
-  it('rejects an answered response without source citations', async () => {
+  it.each([
+    { label: 'no sources', sources: [] },
+    {
+      label: 'blank citation',
+      sources: [{ ...answerBody.data.result.sources[0], citation: '   ' }],
+    },
+    {
+      label: 'missing citation',
+      sources: [{ ...answerBody.data.result.sources[0], citation: undefined }],
+    },
+    {
+      label: 'incomplete source metadata',
+      sources: [{ ...answerBody.data.result.sources[0], documentId: '  ' }],
+    },
+    {
+      label: 'missing document ID',
+      sources: [{ ...answerBody.data.result.sources[0], documentId: undefined }],
+    },
+    {
+      label: 'missing heading',
+      sources: [{ ...answerBody.data.result.sources[0], heading: undefined }],
+    },
+    {
+      label: 'missing domain',
+      sources: [{ ...answerBody.data.result.sources[0], domain: undefined }],
+    },
+    {
+      label: 'missing status',
+      sources: [{ ...answerBody.data.result.sources[0], status: undefined }],
+    },
+    {
+      label: 'blank answer',
+      sources: answerBody.data.result.sources,
+      answer: '   ',
+    },
+  ])(
+    'downgrades an answered response with $label to insufficient context',
+    async ({ sources, answer }) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              ...answerBody,
+              data: {
+                result: {
+                  ...answerBody.data.result,
+                  sources,
+                  ...(answer === undefined ? {} : { answer }),
+                },
+              },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        ),
+      );
+
+      const result = await answerKnowledge(
+        { query: 'When should I return it?', topK: 5 },
+        { actor: guestActor },
+      );
+
+      expect(result.outcome).toBe('insufficient_context');
+      expect(result.answer).toContain('nguồn trích dẫn hợp lệ');
+      expect(result.sources).toEqual([]);
+      expect(result.provisional).toBe(true);
+    },
+  );
+
+  it('removes incomplete citations from an insufficient-context response', async () => {
+    const firstSource = answerBody.data.result.sources[0];
+    if (!firstSource) throw new Error('Expected the fixture to include a source.');
+
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
         new Response(
           JSON.stringify({
             ...answerBody,
-            data: { result: { ...answerBody.data.result, sources: [] } },
+            data: {
+              result: {
+                ...answerBody.data.result,
+                outcome: 'insufficient_context',
+                sources: [
+                  firstSource,
+                  { ...firstSource, citation: ' ' },
+                ],
+              },
+            },
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
         ),
       ),
     );
 
-    await expect(
-      answerKnowledge({ query: 'When should I return it?', topK: 5 }, { actor: guestActor }),
-    ).rejects.toMatchObject({ statusCode: 503, code: 'AI_SERVICE_INVALID_RESPONSE' });
+    const result = await answerKnowledge(
+      { query: 'When should I return it?', topK: 5 },
+      { actor: guestActor },
+    );
+    expect(result.outcome).toBe('insufficient_context');
+    expect(result.sources).toHaveLength(1);
+    expect(result.sources[0]?.citation).toBe(firstSource.citation);
   });
 });

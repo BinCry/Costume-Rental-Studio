@@ -88,7 +88,112 @@ function safePaymentView(payment: Awaited<ReturnType<typeof paymentService.getPa
     purpose: payment.purpose,
     amountVnd: payment.amountVnd,
     status: payment.status,
-    idempotencyKey: payment.idempotencyKey,
+  };
+}
+
+type UnitBlock = Awaited<ReturnType<typeof schedulingService.getUnitBlock>>;
+
+function safeUnitBlockView(block: UnitBlock) {
+  return {
+    id: block.id,
+    unitId: block.unitId,
+    blockType: block.blockType,
+    status: block.status,
+    blockedFrom: block.blockedFrom,
+    blockedUntil: block.blockedUntil,
+    costVnd: block.costVnd,
+    startedAt: block.startedAt,
+    finishedAt: block.finishedAt,
+    createdAt: block.createdAt,
+    updatedAt: block.updatedAt,
+    unit: {
+      id: block.unit.id,
+      unitCode: block.unit.unitCode,
+      conditionGrade: block.unit.conditionGrade,
+      operationalStatus: block.unit.operationalStatus,
+      variant: {
+        id: block.unit.variant.id,
+        variantCode: block.unit.variant.variantCode,
+        sizeCode: block.unit.variant.sizeCode,
+        colorCode: block.unit.variant.colorCode,
+        editionLabel: block.unit.variant.editionLabel,
+      },
+      currentBranch: {
+        id: block.unit.currentBranch.id,
+        branchCode: block.unit.currentBranch.branchCode,
+        name: block.unit.currentBranch.name,
+      },
+    },
+    assignee: block.assignee ? { employeeCode: block.assignee.employeeCode } : null,
+  };
+}
+
+type Transfer = Awaited<ReturnType<typeof transferService.getTransfer>>;
+
+function safeTransferView(transfer: Transfer) {
+  const employeeCode = (employee: Transfer['requester'] | null) =>
+    employee ? { employeeCode: employee.employeeCode } : null;
+
+  return {
+    id: transfer.id,
+    transferCode: transfer.transferCode,
+    fromBranchId: transfer.fromBranchId,
+    toBranchId: transfer.toBranchId,
+    status: transfer.status,
+    version: transfer.version,
+    approvedAt: transfer.approvedAt,
+    shippedAt: transfer.shippedAt,
+    receivedAt: transfer.receivedAt,
+    endedAt: transfer.endedAt,
+    createdAt: transfer.createdAt,
+    updatedAt: transfer.updatedAt,
+    fromBranch: {
+      id: transfer.fromBranch.id,
+      branchCode: transfer.fromBranch.branchCode,
+      name: transfer.fromBranch.name,
+    },
+    toBranch: {
+      id: transfer.toBranch.id,
+      branchCode: transfer.toBranch.branchCode,
+      name: transfer.toBranch.name,
+    },
+    requester: employeeCode(transfer.requester),
+    approver: employeeCode(transfer.approver),
+    shipper: employeeCode(transfer.shipper),
+    receiver: employeeCode(transfer.receiver),
+    ender: employeeCode(transfer.ender),
+    items: transfer.items.map((item) => ({
+      id: item.id,
+      unitId: item.unitId,
+      conditionOut: item.conditionOut,
+      conditionIn: item.conditionIn,
+      receivedOperationalStatus: item.receivedOperationalStatus,
+      unit: {
+        id: item.unit.id,
+        unitCode: item.unit.unitCode,
+        currentBranchId: item.unit.currentBranchId,
+        conditionGrade: item.unit.conditionGrade,
+        operationalStatus: item.unit.operationalStatus,
+        currentBranch: {
+          id: item.unit.currentBranch.id,
+          branchCode: item.unit.currentBranch.branchCode,
+          name: item.unit.currentBranch.name,
+        },
+        variant: {
+          id: item.unit.variant.id,
+          variantCode: item.unit.variant.variantCode,
+          sizeCode: item.unit.variant.sizeCode,
+          colorCode: item.unit.variant.colorCode,
+          editionLabel: item.unit.variant.editionLabel,
+          model: {
+            id: item.unit.variant.model.id,
+            modelCode: item.unit.variant.model.modelCode,
+            name: item.unit.variant.model.name,
+            category: { name: item.unit.variant.model.category.name },
+          },
+        },
+      },
+    })),
   };
 }
 
@@ -98,6 +203,16 @@ export async function executeAgentTool(
   requestId: string,
 ) {
   const definition = getAgentToolDefinition(input.toolName);
+  // Approval IDs are not yet bound to a case/tool/payload/version and only
+  // financial writes have durable idempotency. Never let an environment flag
+  // accidentally expose mutation tools before those contracts are implemented.
+  if (definition.mode === 'write') {
+    throw new AppError(
+      503,
+      'AGENT_WRITE_TOOLS_NOT_READY',
+      'Agent write tools are unavailable until approval and reconciliation safeguards are ready',
+    );
+  }
   if (!env[definition.featureFlag]) {
     throw new AppError(503, 'AGENT_TOOL_DISABLED', 'This agent tool is temporarily disabled');
   }
@@ -142,15 +257,19 @@ export async function executeAgentTool(
         page: 1,
         pageSize: 20,
       });
-      return observedResult(blocks, requestId, definition.requiredPermission);
+      return observedResult(
+        { ...blocks, items: blocks.items.map(safeUnitBlockView) },
+        requestId,
+        definition.requiredPermission,
+      );
     }
     case 'get_stock_transfer': {
       const transfer = await transferService.getTransfer(actor, input.arguments.transferId);
-      return observedResult(transfer, requestId, definition.requiredPermission);
+      return observedResult(safeTransferView(transfer), requestId, definition.requiredPermission);
     }
     case 'get_unit_block': {
       const block = await schedulingService.getUnitBlock(actor, input.arguments.blockId);
-      return observedResult(block, requestId, definition.requiredPermission);
+      return observedResult(safeUnitBlockView(block), requestId, definition.requiredPermission);
     }
     case 'get_payment_by_idempotency_key': {
       const payment = await paymentService.getPaymentByIdempotencyKey(
@@ -175,7 +294,6 @@ export async function executeAgentTool(
           amountVnd: refund.amountVnd,
           reason: refund.reason,
           status: refund.status,
-          idempotencyKey: refund.idempotencyKey,
         },
         requestId,
         definition.requiredPermission,
@@ -183,12 +301,12 @@ export async function executeAgentTool(
     }
     case 'create_unit_block': {
       const block = await schedulingService.createUnitBlock(actor, input.arguments);
-      return observedResult(block, requestId, definition.requiredPermission);
+      return observedResult(safeUnitBlockView(block), requestId, definition.requiredPermission);
     }
     case 'update_unit_block': {
       const { blockId, ...update } = input.arguments;
       const block = await schedulingService.updateUnitBlock(actor, blockId, update);
-      return observedResult(block, requestId, definition.requiredPermission);
+      return observedResult(safeUnitBlockView(block), requestId, definition.requiredPermission);
     }
     case 'cancel_unit_block': {
       const block = await schedulingService.cancelUnitBlock(
@@ -196,7 +314,7 @@ export async function executeAgentTool(
         input.arguments.blockId,
         input.arguments.reason,
       );
-      return observedResult(block, requestId, definition.requiredPermission);
+      return observedResult(safeUnitBlockView(block), requestId, definition.requiredPermission);
     }
     case 'extend_rental_order': {
       if (!input.expectedVersion)
@@ -246,7 +364,12 @@ export async function executeAgentTool(
     }
     case 'create_stock_transfer': {
       const transfer = await transferService.createTransfer(actor, input.arguments);
-      return observedResult(transfer, requestId, definition.requiredPermission, transfer.version);
+      return observedResult(
+        safeTransferView(transfer),
+        requestId,
+        definition.requiredPermission,
+        transfer.version,
+      );
     }
     case 'approve_stock_transfer': {
       if (!input.expectedVersion)
@@ -254,7 +377,12 @@ export async function executeAgentTool(
       const transfer = await transferService.approveTransfer(actor, input.arguments.transferId, {
         expectedVersion: input.expectedVersion,
       });
-      return observedResult(transfer, requestId, definition.requiredPermission, transfer.version);
+      return observedResult(
+        safeTransferView(transfer),
+        requestId,
+        definition.requiredPermission,
+        transfer.version,
+      );
     }
     case 'reject_stock_transfer': {
       if (!input.expectedVersion)
@@ -265,7 +393,12 @@ export async function executeAgentTool(
         'REJECTED',
         { expectedVersion: input.expectedVersion, reason: input.arguments.reason },
       );
-      return observedResult(transfer, requestId, definition.requiredPermission, transfer.version);
+      return observedResult(
+        safeTransferView(transfer),
+        requestId,
+        definition.requiredPermission,
+        transfer.version,
+      );
     }
     case 'create_payment_checkout': {
       const payment = await paymentService.createCheckout(actor, input.arguments.orderId, {

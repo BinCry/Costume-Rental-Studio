@@ -18,27 +18,20 @@ const agentEvidenceSchema = z.object({
   observedAt: z.string().nullable().optional(),
 });
 
+// This is the browser-facing projection. Zod strips upstream-only planner
+// metrics, tool traces, and nested debug metadata from objects at every level.
 export const agentCaseResultSchema = z.object({
   caseId: z.uuid(),
   state: z.string().min(1),
   message: z.string(),
   evidence: z.array(agentEvidenceSchema),
-  runStatus: z.string().min(1).nullable().optional(),
   goal: z
     .object({
       summary: z.string(),
       status: z.string(),
-      goalType: z.string().nullable().optional(),
-      skillName: z.string().nullable().optional(),
-      constraints: z.record(z.string(), z.unknown()).optional(),
-      plan: z.array(z.record(z.string(), z.unknown())).optional(),
-      successCriteria: z.array(z.string()).optional(),
     })
     .nullable()
     .optional(),
-  stepsUsed: z.number().int().nonnegative().optional(),
-  tokensUsed: z.number().int().nonnegative().optional(),
-  terminationReason: z.string().min(1).nullable().optional(),
   pendingInput: z.string().min(1).nullable().optional(),
   pendingConfirmation: z
     .object({ confirmationId: z.uuid(), summary: z.string(), expiresAt: z.string() })
@@ -55,12 +48,6 @@ export const agentCaseResultSchema = z.object({
     .optional(),
   handoff: z
     .object({
-      reason: z.string(),
-      goal: z.string().nullable().optional(),
-      attemptedTools: z.array(z.string()),
-      successfulTools: z.array(z.string()),
-      failedTools: z.array(z.string()),
-      evidenceCount: z.number().int().nonnegative(),
       nextAction: z.string(),
       sideEffects: z.string(),
     })

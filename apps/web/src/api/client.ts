@@ -151,6 +151,10 @@ interface ApiUnit {
   unitCode: string;
   conditionGrade?: string;
 }
+interface AvailableOrderUnit extends ApiUnit {
+  variantId: string;
+  variantLabel: string;
+}
 interface ApiActiveRental {
   id: string;
   unit?: {
@@ -549,8 +553,12 @@ const branchRefs = new Map<string, string>();
 const variants = new Map<string, ApiVariant>();
 const modelRefs = new Map<string, { id: string; categoryId: string; modelCode: string }>();
 const variantRefs = new Map<string, { id: string; modelId: string }>();
-const orderRefs = new Map<string, { id: string; itemIds: string[]; version?: number }>();
+const orderRefs = new Map<
+  string,
+  { id: string; itemIds: string[]; itemVariantIds: string[]; version?: number }
+>();
 const unitRefs = new Map<string, Map<string, string>>();
+const unitVariantRefs = new Map<string, Map<string, string>>();
 const quoteRefs = new Map<
   string,
   {
@@ -1092,7 +1100,12 @@ function mapOrder(order: ApiOrder): Order {
         label: 'Tiền thuê',
         amount: rental,
         status: paymentStatus('RENTAL', rental),
-        tone: paidFor('RENTAL') > 0 ? 'success' : 'neutral',
+        tone:
+          paymentStatus('RENTAL', rental) === 'Đã thu đủ'
+            ? 'success'
+            : paymentStatus('RENTAL', rental) === 'Chưa thu'
+              ? 'neutral'
+              : 'warning',
       },
       {
         label: 'Tiền cọc',
@@ -1120,37 +1133,69 @@ function mapOrder(order: ApiOrder): Order {
     eligibleUnits: [],
   };
 }
-function enrichOrder(order: ApiOrder, availableUnits: ApiUnit[]) {
+function enrichOrder(order: ApiOrder, availableUnits: AvailableOrderUnit[]) {
   const mapped = mapOrder(order);
   mapped.eligibleUnits = availableUnits.map((unit) => ({
     code: unit.unitCode,
-    variant: mapped.items[0]?.variant ?? 'Biến thể',
+    variant: unit.variantLabel,
+    apiVariantId: unit.variantId,
     status: 'READY',
     availableAtFixturePeriod: true,
   }));
   orderRefs.set(mapped.id, {
     id: order.id,
     itemIds: (order.items ?? []).map((item) => item.id),
+    itemVariantIds: (order.items ?? []).map((item) => item.variantId ?? ''),
     version: order.version,
   });
   unitRefs.set(mapped.id, new Map(availableUnits.map((unit) => [unit.unitCode, unit.id])));
+  unitVariantRefs.set(
+    mapped.id,
+    new Map(availableUnits.map((unit) => [unit.unitCode, unit.variantId])),
+  );
   return mapped;
 }
 async function availableForOrder(order: ApiOrder) {
-  const first = order.items?.find((item) => item.variantId);
   const branchId = order.pickupBranch?.id;
-  if (!first?.variantId || !branchId) return [];
-  const result = await request<{ available: boolean; units: ApiUnit[] }>(
-    '/api/v1/rentals/availability?variantId=' +
-      encodeURIComponent(first.variantId) +
-      '&pickupBranchId=' +
-      encodeURIComponent(branchId) +
-      '&plannedStartAt=' +
-      encodeURIComponent(order.plannedStartAt) +
-      '&plannedDueAt=' +
-      encodeURIComponent(order.plannedDueAt),
+  const items = order.items ?? [];
+  if (!items.length) return [];
+  if (!branchId)
+    throw new ApiClientError(
+      422,
+      'ORDER_BRANCH_MISSING',
+      'Đơn chưa xác định được chi nhánh nhận; cần tải lại dữ liệu đơn trước khi phân công.',
+    );
+  if (items.some((item) => !item.variantId))
+    throw new ApiClientError(
+      422,
+      'ORDER_VARIANT_MISSING',
+      'Đơn có bộ chưa xác định biến thể; cần tải lại dữ liệu đơn trước khi phân công.',
+    );
+  const variantsInOrder = new Map<string, string>();
+  for (const item of items) {
+    const variantId = item.variantId!;
+    const label = [item.variant?.model?.name, item.variant?.sizeCode, item.variant?.colorCode]
+      .filter(Boolean)
+      .join(' · ');
+    variantsInOrder.set(variantId, label || 'Biến thể');
+  }
+  const start = new Date(order.plannedStartAt).toISOString();
+  const due = new Date(order.plannedDueAt).toISOString();
+  const available = await Promise.all(
+    [...variantsInOrder].map(async ([variantId, variantLabel]) => {
+      const query = new URLSearchParams({
+        variantId,
+        pickupBranchId: branchId,
+        plannedStartAt: start,
+        plannedDueAt: due,
+      });
+      const result = await request<{ available: boolean; units: ApiUnit[] }>(
+        '/api/v1/rentals/availability?' + query.toString(),
+      );
+      return result.units.map((unit) => ({ ...unit, variantId, variantLabel }));
+    }),
   );
-  return result.units;
+  return available.flat();
 }
 export async function listOrders(options: { loadPendingAvailability?: boolean } = {}) {
   const orders = await requestAllPages<ApiOrder>(
@@ -1159,13 +1204,16 @@ export async function listOrders(options: { loadPendingAvailability?: boolean } 
   );
   const loadPendingAvailability = options.loadPendingAvailability ?? true;
   return mapWithConcurrency(orders, 5, async (order) => {
-    let availableUnits: ApiUnit[] = [];
+    let availableUnits: AvailableOrderUnit[] = [];
     let availabilityError: string | undefined;
     if (loadPendingAvailability && order.status === 'PENDING_CONFIRMATION') {
       try {
         availableUnits = await availableForOrder(order);
-      } catch {
-        availabilityError = 'Không tải được bộ khả dụng. Hãy thử tải lại trước khi xác nhận đơn.';
+      } catch (error) {
+        availabilityError =
+          error instanceof Error
+            ? error.message
+            : 'Không tải được bộ khả dụng. Hãy thử tải lại trước khi xác nhận đơn.';
       }
     }
     const mapped = enrichOrder(order, availableUnits);
@@ -1187,6 +1235,7 @@ function customerOrderFromOrder(order: Order, customerCode: string): CustomerOrd
     due: order.returnAt,
     costume: order.items[0]?.costume ?? 'Trang phục',
     variant: order.items[0]?.variant ?? '',
+    items: order.items.map((item) => ({ costume: item.costume, variant: item.variant })),
     rental: rental?.amount ?? 0,
     deposit: deposit?.amount ?? 0,
     extra: extra?.amount ?? 0,
@@ -1350,19 +1399,37 @@ export async function createOrder(
   orderRefs.set(orderCode, {
     id: created.id,
     itemIds: (created.items ?? []).map((item) => item.id),
+    itemVariantIds: (created.items ?? []).map((item) => item.variantId ?? variantId),
     version: created.version,
   });
-  if (assignedUnit) unitRefs.set(orderCode, new Map([[assignedUnit.code, assignedUnit.id]]));
+  if (assignedUnit) {
+    unitRefs.set(orderCode, new Map([[assignedUnit.code, assignedUnit.id]]));
+    unitVariantRefs.set(orderCode, new Map([[assignedUnit.code, variantId]]));
+  }
   return orderCode;
 }
 export async function confirmOrder(orderCode: string, version: number, unitCodes: string[]) {
   const reference = orderRefs.get(orderCode);
+  if (!reference)
+    throw new ApiClientError(422, 'UNIT_CONTEXT_MISSING', 'Chưa tải đủ mã bộ để xác nhận đơn');
   const units = unitRefs.get(orderCode);
-  const allocations = unitCodes.map((code, index) => ({
-    orderItemId: reference?.itemIds[index],
-    unitId: units?.get(code),
+  const unitVariants = unitVariantRefs.get(orderCode);
+  const remainingItems = reference.itemIds.map((id, index) => ({
+    id,
+    variantId: reference.itemVariantIds[index],
   }));
-  if (!reference || allocations.some((item) => !item.orderItemId || !item.unitId))
+  const allocations = unitCodes.map((code) => {
+    const variantId = unitVariants?.get(code);
+    const itemIndex = remainingItems?.findIndex((item) => item.variantId === variantId) ?? -1;
+    if (!remainingItems || itemIndex < 0) return { orderItemId: undefined, unitId: units?.get(code) };
+    const [item] = remainingItems.splice(itemIndex, 1);
+    return { orderItemId: item.id, unitId: units?.get(code) };
+  });
+  if (
+    allocations.length !== reference.itemIds.length ||
+    allocations.some((item) => !item.orderItemId || !item.unitId) ||
+    (remainingItems?.length ?? 0) > 0
+  )
     throw new ApiClientError(422, 'UNIT_CONTEXT_MISSING', 'Chưa tải đủ mã bộ để xác nhận đơn');
   return request<ApiOrder>(
     '/api/v1/rentals/orders/' + encodeURIComponent(reference.id) + '/confirm',
@@ -1456,6 +1523,25 @@ export async function cancelOrder(orderCode: string, version: number, reason: st
     {
       method: 'POST',
       body: JSON.stringify({ expectedVersion: version, reason }),
+    },
+  );
+}
+export async function extendOrder(
+  orderCode: string,
+  expectedVersion: number,
+  newDueAt: string,
+  reason: string,
+) {
+  const reference = orderReference(orderCode);
+  return request<ApiOrder>(
+    '/api/v1/rentals/orders/' + encodeURIComponent(reference.id) + '/extend',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        expectedVersion: reference.version ?? expectedVersion,
+        newDueAt: new Date(newDueAt).toISOString(),
+        reason,
+      }),
     },
   );
 }
@@ -2524,6 +2610,7 @@ export async function getReturnSettlementOrder(orderCode: string) {
   orderRefs.set(orderCode, {
     id: order.id,
     itemIds: order.items.map((item) => item.id),
+    itemVariantIds: [],
     version: order.version,
   });
   return order;

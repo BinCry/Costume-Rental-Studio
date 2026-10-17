@@ -453,14 +453,27 @@ export function MyRentalsPage({
                       <StatusLabel {...orderStatus[selected.status]} />
                       <StatusLabel
                         text={`Tiền thuê: ${selected.rentalStatus}`}
-                        tone={selected.rentalStatus === 'Đã thu' ? 'success' : 'warning'}
+                        tone={
+                          selected.rentalStatus === 'Đã thu đủ'
+                            ? 'success'
+                            : selected.rentalStatus === 'Chưa thu'
+                              ? 'neutral'
+                              : 'warning'
+                        }
                       />
                       <StatusLabel text={`Cọc: ${selected.depositStatus}`} tone="info" />
                       <StatusLabel text={`Trả: ${selected.returnStatus}`} tone="neutral" />
                     </div>
                     <KeyFacts
                       rows={[
-                        { label: 'Trang phục', value: `${selected.costume} · ${selected.variant}` },
+                        {
+                          label: 'Trang phục',
+                          value:
+                            selected.items
+                              ?.map((item) => `${item.costume} · ${item.variant}`)
+                              .join(' / ') ??
+                            `${selected.costume} · ${selected.variant}`,
+                        },
                         { label: 'Chi nhánh nhận và trả', value: selected.branch },
                         { label: 'Nhận', value: selected.pickup },
                         { label: 'Hạn trả', value: selected.due },
@@ -531,9 +544,18 @@ export function MyRentalsPage({
                         onClick={() => go('myRentalDetail', { order: order.id })}
                       >
                         <span>
-                          <strong>{order.costume}</strong>
+                          <strong>
+                            {order.items?.length
+                              ? order.items.map((item) => item.costume).join(', ')
+                              : order.costume}
+                          </strong>
                           <small>
-                            {order.id} · {order.variant}
+                            {order.id} ·{' '}
+                            {order.items?.length
+                              ? order.items
+                                  .map((item) => `${item.costume} ${item.variant}`)
+                                  .join(' / ')
+                              : order.variant}
                           </small>
                           <small>
                             {order.branch} · {order.pickup}

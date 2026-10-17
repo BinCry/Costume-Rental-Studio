@@ -166,6 +166,9 @@ export default function StudioApp() {
   const [branch, setBranch] = useState('Chi nhánh Quận 1');
   const [customerCode, setCustomerCode] = useState('KH-001');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mobileStaffNav, setMobileStaffNav] = useState(() =>
+    window.matchMedia('(max-width: 1199px)').matches,
+  );
   const [signingOut, setSigningOut] = useState(false);
   const [expandedStaffGroup, setExpandedStaffGroup] = useState<string | null>(
     () =>
@@ -176,6 +179,7 @@ export default function StudioApp() {
   const [, setAccessRevision] = useState(0);
   const mainRef = useRef<HTMLElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const restoreMenuFocusRef = useRef(false);
   const sectionNavRef = useRef<HTMLElement>(null);
   const previousRouteRef = useRef(route);
   useEffect(() => {
@@ -183,6 +187,10 @@ export default function StudioApp() {
     previousRouteRef.current = route;
     mainRef.current?.focus({ preventScroll: true });
   }, [route]);
+  const closeStaffMenu = useCallback((restoreFocus: boolean) => {
+    restoreMenuFocusRef.current = restoreFocus;
+    setMenuOpen(false);
+  }, []);
   const syncRoute = useCallback((nextRoute: ReturnType<typeof readRoute>) => {
     setRoute(nextRoute);
     const activeGroup = [...staffNavGroups, ...adminNavGroups].find((group) =>
@@ -193,11 +201,11 @@ export default function StudioApp() {
   useEffect(() => {
     const onPop = () => {
       syncRoute(readRoute());
-      setMenuOpen(false);
+      closeStaffMenu(false);
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
-  }, [syncRoute]);
+  }, [syncRoute, closeStaffMenu]);
   useEffect(() => {
     const refresh = () => setAccessRevision((value) => value + 1);
     window.addEventListener('fixture-access-updated', refresh);
@@ -241,6 +249,12 @@ export default function StudioApp() {
     };
   }, [branchRetryRevision]);
   useEffect(() => {
+    const media = window.matchMedia('(max-width: 1199px)');
+    const update = () => setMobileStaffNav(media.matches);
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+  useEffect(() => {
     sectionNavRef.current
       ?.querySelector<HTMLElement>('a.active')
       ?.scrollIntoView({ block: 'nearest' });
@@ -251,18 +265,10 @@ export default function StudioApp() {
       ?.querySelector<HTMLElement>('.staff-nav-agent-link, .staff-nav-heading')
       ?.focus();
   }, [menuOpen, route.screen]);
-  useEffect(() => {
-    if (!menuOpen || window.matchMedia('(min-width: 1200px)').matches) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [menuOpen]);
   const go: Navigate = (screen, params) => {
     window.history.pushState(null, '', pathFor(screen, params));
     syncRoute(readRoute());
-    setMenuOpen(false);
+    closeStaffMenu(false);
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
   const finishAuthentication = async (next?: string) => {
@@ -321,6 +327,57 @@ export default function StudioApp() {
     ? actorGroupFromRoles(apiIdentity.roles)
     : actorGroupFromRoleCode(activeRole);
   const staff = isStaff(route.screen);
+  const mobileDrawerOpen = staff && menuOpen && mobileStaffNav;
+  const previousMobileDrawerOpenRef = useRef(false);
+  useEffect(() => {
+    if (mobileDrawerOpen) {
+      previousMobileDrawerOpenRef.current = true;
+      return;
+    }
+    if (!previousMobileDrawerOpenRef.current) return;
+    previousMobileDrawerOpenRef.current = false;
+    if (!restoreMenuFocusRef.current) return;
+    restoreMenuFocusRef.current = false;
+    const opener = menuButtonRef.current;
+    if (opener && !opener.closest('[inert]')) opener.focus({ preventScroll: true });
+  }, [mobileDrawerOpen]);
+  useEffect(() => {
+    if (!mobileDrawerOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileDrawerOpen]);
+  useEffect(() => {
+    if (!mobileDrawerOpen) return;
+    const navigation = sectionNavRef.current;
+    if (!navigation) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeStaffMenu(true);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = Array.from(
+        navigation.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled])',
+        ),
+      ).filter((element) => element.getClientRects().length > 0);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [mobileDrawerOpen, closeStaffMenu]);
   const actorHomeScreen: Screen =
     actorGroup === 'ADMIN'
       ? 'reports'
@@ -535,7 +592,10 @@ export default function StudioApp() {
             ? `Không gian ${actorLabel.toLowerCase()} · Phiên đăng nhập được xác minh`
             : 'Danh mục công khai · Đăng nhập để đặt thuê hoặc vào đúng khu vực tài khoản'}
       </div>
-      <header className={`site-header ${authScreen ? 'site-header-auth' : ''} ${!apiIdentity ? 'site-header-signed-out' : ''}`}>
+      <header
+        className={`site-header ${authScreen ? 'site-header-auth' : ''} ${!apiIdentity ? 'site-header-signed-out' : ''}`}
+        inert={mobileDrawerOpen}
+      >
         <div className="header-inner">
           <a
             href={pathFor(brandHomeScreen)}
@@ -560,7 +620,13 @@ export default function StudioApp() {
               aria-label={menuOpen ? 'Đóng menu chức năng' : 'Mở menu chức năng'}
               aria-expanded={menuOpen}
               aria-controls="staff-navigation"
-              onClick={() => setMenuOpen((open) => !open)}
+              onClick={() => {
+                if (menuOpen) closeStaffMenu(true);
+                else {
+                  restoreMenuFocusRef.current = false;
+                  setMenuOpen(true);
+                }
+              }}
             >
               <Icon name="menu" />
             </button>
@@ -706,11 +772,13 @@ export default function StudioApp() {
             ref={sectionNavRef}
             id="staff-navigation"
             className={`section-nav ${menuOpen ? 'open' : ''}`}
+            role={mobileDrawerOpen ? 'dialog' : undefined}
+            aria-modal={mobileDrawerOpen ? true : undefined}
             aria-label="Điều hướng khu vận hành"
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
-                setMenuOpen(false);
-                menuButtonRef.current?.focus();
+                event.stopPropagation();
+                closeStaffMenu(true);
               }
             }}
           >
@@ -788,9 +856,13 @@ export default function StudioApp() {
                     aria-label="Chi nhánh làm việc"
                     value={activeBranch}
                     onChange={(event) => setBranch(event.target.value)}
-                    disabled={!apiBranchesReady || apiBranchOptions.length === 0}
+                    disabled={!apiBranchesReady || apiBranchesFailed || apiBranchOptions.length === 0}
                   >
-                    {apiBranchOptions.length === 0 ? (
+                    {!apiBranchesReady ? (
+                      <option value="">Đang tải danh sách chi nhánh…</option>
+                    ) : apiBranchesFailed ? (
+                      <option value="">Không tải được danh sách chi nhánh</option>
+                    ) : apiBranchOptions.length === 0 ? (
                       <option value="">Không có chi nhánh được gán</option>
                     ) : (
                       apiBranchOptions.map((name) => (
@@ -800,6 +872,15 @@ export default function StudioApp() {
                       ))
                     )}
                   </select>
+                  {apiBranchesFailed && (
+                    <button
+                      type="button"
+                      className="text-button"
+                      onClick={() => setBranchRetryRevision((value) => value + 1)}
+                    >
+                      Thử tải lại chi nhánh
+                    </button>
+                  )}
                 </label>
                 <div className="staff-menu-account-row">
                   <div
@@ -828,8 +909,7 @@ export default function StudioApp() {
               aria-label="Đóng menu điều hướng"
               tabIndex={-1}
               onClick={() => {
-                setMenuOpen(false);
-                menuButtonRef.current?.focus();
+                closeStaffMenu(true);
               }}
             />
           )}
@@ -840,6 +920,7 @@ export default function StudioApp() {
         className="main-content"
         ref={mainRef}
         tabIndex={-1}
+        inert={mobileDrawerOpen}
         key={`${route.screen}:${activeBranch}:${p.get('order') ?? ''}`}
       >
         {showFixtureControls && (
@@ -1068,7 +1149,7 @@ export default function StudioApp() {
             )}
             {route.screen === 'opsAgent' && (
               <OpsAgentPage
-                key={apiIdentity?.id ?? 'anonymous-ops-agent'}
+                key={`${apiIdentity?.id ?? 'anonymous-ops-agent'}:${encodeURIComponent(activeBranch)}`}
                 scenario={scenario}
                 branch={activeBranch}
                 actorId={apiIdentity?.id}
@@ -1144,7 +1225,12 @@ export default function StudioApp() {
                 scenario={scenario}
                 go={go}
                 branch={activeBranch}
-                canConfirm={effectivePermissions.includes('rentals.manage.branch')}
+                canConfirm={[
+                  'rentals.confirm.branch',
+                  'rentals.confirm.all',
+                  'rentals.manage.branch',
+                  'rentals.manage.all',
+                ].some((permission) => effectivePermissions.includes(permission))}
                 canCreateCustomer={
                   effectivePermissions.includes('customers.create.branch') ||
                   effectivePermissions.includes('customers.create.all')

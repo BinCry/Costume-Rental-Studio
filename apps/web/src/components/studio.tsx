@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { apiEnabled, hasAccessToken } from '../api/client';
 import { Button, EmptyState, Feedback, Field, SelectField, StatusLabel } from './ui';
 import { money } from './support';
 import type { DemoScenario, Tone } from '../fixtures/types';
@@ -96,6 +97,7 @@ export function StateGate<T>({
   emptyTitle?: string;
   allowEmpty?: boolean;
 }) {
+  const apiMode = apiEnabled && (hasAccessToken() || !import.meta.env.DEV);
   if (loading)
     return (
       <div className="page">
@@ -124,7 +126,9 @@ export function StateGate<T>({
     return (
       <div className="page">
         <EmptyState title={emptyTitle}>
-          Thử điều chỉnh bộ lọc hoặc chọn tình huống bình thường trong công cụ demo.
+          {apiMode
+            ? 'Không có dữ liệu phù hợp. Thử điều chỉnh bộ lọc hoặc tải lại danh sách.'
+            : 'Thử điều chỉnh bộ lọc hoặc chọn tình huống khác trong công cụ kiểm tra.'}
         </EmptyState>
       </div>
     );

@@ -48,6 +48,8 @@ export interface CatalogItem {
 export interface UnitOption {
   code: string;
   variant: string;
+  /** API variant key used to match an available unit to the correct order line. */
+  apiVariantId?: string;
   status: 'READY' | 'CLEANING' | 'REPAIR';
   availableAtFixturePeriod: boolean;
   note?: string;

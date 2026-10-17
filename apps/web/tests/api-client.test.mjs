@@ -384,6 +384,123 @@ describe('web API client session and error handling', () => {
     });
   });
 
+  it('loads availability for every order variant and allocates units to matching lines', async () => {
+    const order = {
+      id: 'order-mixed',
+      orderCode: 'RT-MIXED-01',
+      status: 'PENDING_CONFIRMATION',
+      version: 3,
+      plannedStartAt: '2026-10-20T03:00:00.000Z',
+      plannedDueAt: '2026-10-21T03:00:00.000Z',
+      pickupBranch: { id: 'branch-1', name: 'Chi nhánh Quận 1' },
+      items: [
+        {
+          id: 'order-item-s',
+          variantId: 'variant-s',
+          variant: { sizeCode: 'S', colorCode: 'Đỏ', model: { name: 'Đầm thử' } },
+        },
+        {
+          id: 'order-item-m',
+          variantId: 'variant-m',
+          variant: { sizeCode: 'M', colorCode: 'Xanh', model: { name: 'Áo dài' } },
+        },
+      ],
+      payments: [
+        { purpose: 'RENTAL', amountVnd: '100000', status: 'SUCCEEDED' },
+        { purpose: 'RENTAL', amountVnd: '50000', status: 'PENDING' },
+      ],
+    };
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        success({
+          items: [order],
+          pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+        }),
+      )
+      .mockResolvedValueOnce(success({ available: true, units: [{ id: 'unit-s', unitCode: 'BC-S' }] }))
+      .mockResolvedValueOnce(success({ available: true, units: [{ id: 'unit-m', unitCode: 'BC-M' }] }))
+      .mockResolvedValueOnce(success({ ...order, status: 'CONFIRMED', version: 4 }));
+    const { confirmOrder, listOrders } = await import('../src/api/client.ts');
+
+    const [mapped] = await listOrders();
+    expect(mapped.items.map((item) => item.apiVariantId)).toEqual(['variant-s', 'variant-m']);
+    expect(mapped.eligibleUnits).toEqual([
+      {
+        code: 'BC-S',
+        variant: 'Đầm thử · S · Đỏ',
+        apiVariantId: 'variant-s',
+        status: 'READY',
+        availableAtFixturePeriod: true,
+      },
+      {
+        code: 'BC-M',
+        variant: 'Áo dài · M · Xanh',
+        apiVariantId: 'variant-m',
+        status: 'READY',
+        availableAtFixturePeriod: true,
+      },
+    ]);
+    expect(mapped.money.find((line) => line.label === 'Tiền thuê')).toMatchObject({
+      status: 'Có giao dịch đang xác minh',
+      tone: 'warning',
+    });
+
+    const availabilityRequests = globalThis.fetch.mock.calls.slice(1, 3);
+    expect(availabilityRequests.map(([url]) => new URL(url).searchParams.get('variantId'))).toEqual([
+      'variant-s',
+      'variant-m',
+    ]);
+    await confirmOrder('RT-MIXED-01', 3, ['BC-M', 'BC-S']);
+    expect(JSON.parse(globalThis.fetch.mock.calls[3][1].body)).toEqual({
+      expectedVersion: 3,
+      allocations: [
+        { orderItemId: 'order-item-m', unitId: 'unit-m' },
+        { orderItemId: 'order-item-s', unitId: 'unit-s' },
+      ],
+    });
+  });
+
+  it('extends an active rental through the existing API contract with the current version', async () => {
+    values.set(accessTokenKey, 'studio-access-token');
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        success({
+          items: [
+            {
+              id: 'rental-order-id',
+              orderCode: 'RT-EXTEND-01',
+              status: 'ACTIVE',
+              version: 7,
+              plannedStartAt: '2026-10-20T03:00:00.000Z',
+              plannedDueAt: '2026-10-21T03:00:00.000Z',
+              pickupBranch: { id: 'branch-1', name: 'Chi nhánh Quận 1' },
+              items: [],
+            },
+          ],
+          pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+        }),
+      )
+      .mockResolvedValueOnce(success({ id: 'rental-order-id', version: 8 }));
+    const { extendOrder, listOrders } = await import('../src/api/client.ts');
+
+    await listOrders({ loadPendingAvailability: false });
+    await extendOrder(
+      'RT-EXTEND-01',
+      7,
+      '2026-10-23T03:30:00.000Z',
+      'Khách cần thêm thời gian sử dụng',
+    );
+
+    const [url, init] = globalThis.fetch.mock.calls[1];
+    expect(new URL(url).pathname).toBe('/api/v1/rentals/orders/rental-order-id/extend');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({
+      expectedVersion: 7,
+      newDueAt: '2026-10-23T03:30:00.000Z',
+      reason: 'Khách cần thêm thời gian sử dụng',
+    });
+  });
+
   it('keeps cash payment retries idempotent while allowing a later collection attempt', async () => {
     const order = {
       id: 'order-1',

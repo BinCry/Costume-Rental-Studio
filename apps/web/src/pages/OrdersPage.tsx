@@ -22,6 +22,7 @@ import type { Unit } from '../fixtures/studio';
 import {
   apiEnabled,
   cancelOrder as cancelApiOrder,
+  extendOrder as extendApiOrder,
   hasAccessToken,
   prepareAndReadyOrder,
   listRentalAvailability,
@@ -31,6 +32,14 @@ import {
 } from '../api/client';
 
 const loadOrders = (scenario: DemoScenario) => fixtureAdapter.listOrders(scenario);
+const toDateTimeLocal = (value?: string) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+    .toISOString()
+    .slice(0, 16);
+};
 const groupDefs: { label: string; statuses: OrderStatus[] }[] = [
   { label: 'Chờ xác nhận', statuses: ['PENDING_CONFIRMATION'] },
   { label: 'Sắp giao', statuses: ['CONFIRMED', 'PREPARING', 'READY_FOR_PICKUP'] },
@@ -79,7 +88,7 @@ export function OrdersPage({
   const [replacementBusy, setReplacementBusy] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-  const [dialog, setDialog] = useState<'confirm' | 'reject' | 'cancel' | null>(null);
+  const [dialog, setDialog] = useState<'confirm' | 'reject' | 'cancel' | 'extend' | null>(null);
   const [reason, setReason] = useState('');
   const [localConfirmed, setLocalConfirmed] = useState(false);
   const [localCancelled, setLocalCancelled] = useState(false);
@@ -133,10 +142,11 @@ export function OrdersPage({
           status: 'CANCELLED',
           history: [...rawOrder.history, 'Phiên demo · Khách vừa hủy khi nhân viên đang duyệt'],
         }
-      : rawOrder &&
-          localConfirmed &&
-          rawOrder.status === 'PENDING_CONFIRMATION' &&
-          rawOrder.id === 'RT-1024'
+      : !realApiMode &&
+        rawOrder &&
+        localConfirmed &&
+        rawOrder.status === 'PENDING_CONFIRMATION' &&
+        rawOrder.id === 'RT-1024'
         ? {
             ...rawOrder,
             status: 'CONFIRMED',
@@ -153,9 +163,11 @@ export function OrdersPage({
   const variantChoices =
     relatedCostume?.sizes.map((size) => `${size} / ${relatedCostume.colors[0]}`) ?? [];
   const currentDue = order?.returnAt.match(/(\d{2})\/(\d{2})\/(\d{4})\s*·\s*(\d{2}):(\d{2})/);
-  const dueValue = currentDue
-    ? `${currentDue[3]}-${currentDue[2]}-${currentDue[1]}T${currentDue[4]}:${currentDue[5]}`
-    : '';
+  const dueValue = order?.apiPlannedDueAt
+    ? toDateTimeLocal(order.apiPlannedDueAt)
+    : currentDue
+      ? `${currentDue[3]}-${currentDue[2]}-${currentDue[1]}T${currentDue[4]}:${currentDue[5]}`
+      : '';
   const extensionValid = !!proposedDue && !!dueValue && proposedDue > dueValue;
   const variantValid = !!proposedVariant && proposedVariant !== firstItem?.variant;
   const assignedCodes =
@@ -181,10 +193,71 @@ export function OrdersPage({
     setAccessoryCodes([]);
     window.history.pushState(null, '', `/van-hanh/don-thue/${encodeURIComponent(id)}`);
   };
-  const toggleUnit = (code: string) =>
-    setSelectedUnits((current) =>
-      current.includes(code) ? current.filter((entry) => entry !== code) : [...current, code],
-    );
+  const toggleUnit = (code: string) => {
+    if (selectedUnits.includes(code)) {
+      setSelectedUnits((current) => current.filter((entry) => entry !== code));
+      return;
+    }
+    if (realApiMode && order) {
+      const unit = order.eligibleUnits.find((candidate) => candidate.code === code);
+      const required = order.items.filter(
+        (item) => item.apiVariantId === unit?.apiVariantId,
+      ).length;
+      const alreadySelected = selectedUnits.filter(
+        (selectedCode) =>
+          order.eligibleUnits.find((candidate) => candidate.code === selectedCode)?.apiVariantId ===
+          unit?.apiVariantId,
+      ).length;
+      if (!unit?.apiVariantId || required === 0 || alreadySelected >= required) {
+        setNotice('Chọn đúng số bộ theo từng biến thể của đơn.');
+        return;
+      }
+    }
+    setSelectedUnits((current) => [...current, code]);
+  };
+  const requiredVariantCounts = new Map<string, number>();
+  order?.items.forEach((item) => {
+    if (item.apiVariantId)
+      requiredVariantCounts.set(
+        item.apiVariantId,
+        (requiredVariantCounts.get(item.apiVariantId) ?? 0) + 1,
+      );
+  });
+  const selectedVariantCounts = new Map<string, number>();
+  selectedUnits.forEach((code) => {
+    const variantId = order?.eligibleUnits.find((unit) => unit.code === code)?.apiVariantId;
+    if (variantId)
+      selectedVariantCounts.set(variantId, (selectedVariantCounts.get(variantId) ?? 0) + 1);
+  });
+  const canSelectForRequiredVariant = (unit: Order['eligibleUnits'][number]) =>
+    !realApiMode ||
+    (!!unit.apiVariantId &&
+      (selectedVariantCounts.get(unit.apiVariantId) ?? 0) <
+        (requiredVariantCounts.get(unit.apiVariantId) ?? 0));
+  const selectionMatchesOrder =
+    !!order &&
+    selectedUnits.length === order.items.length &&
+    (!realApiMode ||
+      (order.items.every((item) => !!item.apiVariantId) &&
+        [...requiredVariantCounts].every(
+          ([variantId, count]) => selectedVariantCounts.get(variantId) === count,
+        )));
+  const apiVariantSummary = order
+    ? Array.from(
+        order.items
+          .reduce((summary, item) => {
+            const key = item.apiVariantId ?? `missing:${item.id}`;
+            const current = summary.get(key);
+            summary.set(key, {
+              label: `${item.costume} · ${item.variant || 'Chưa xác định biến thể'}`,
+              count: (current?.count ?? 0) + 1,
+            });
+            return summary;
+          }, new Map<string, { label: string; count: number }>())
+          .values(),
+        (entry) => `${entry.label} × ${entry.count}`,
+      ).join(' · ')
+    : '';
   const confirm = async () => {
     if (!order) return;
     setBusy(true);
@@ -213,7 +286,7 @@ export function OrdersPage({
       setBusy(false);
     }
   };
-  const previewDecision = async () => {
+  const decideOrder = async () => {
     if (!reason.trim()) {
       setNotice('Cần nhập lý do trước khi từ chối hoặc hủy.');
       setDialog(null);
@@ -222,7 +295,7 @@ export function OrdersPage({
     if (!order || (dialog !== 'reject' && dialog !== 'cancel')) return;
     setBusy(true);
     try {
-      if (apiEnabled && hasAccessToken()) {
+      if (realApiMode) {
         if (dialog === 'reject') await rejectApiOrder(order.id, order.version, reason.trim());
         else await cancelApiOrder(order.id, order.version, reason.trim());
       } else {
@@ -234,7 +307,7 @@ export function OrdersPage({
         );
       }
       setNotice(
-        apiEnabled && hasAccessToken()
+        realApiMode
           ? `Đã ${dialog === 'reject' ? 'từ chối' : 'hủy'} đơn trên máy chủ.`
           : `Đã ${dialog === 'reject' ? 'từ chối' : 'hủy'} đơn trong fixture; lý do hiển thị cho khách.`,
       );
@@ -242,6 +315,30 @@ export function OrdersPage({
       retry();
     } catch (caught) {
       setNotice(caught instanceof Error ? caught.message : 'Không cập nhật được đơn.');
+      setDialog(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const extendRental = async () => {
+    if (!order || !realApiMode || !extensionValid || !changeNote.trim()) {
+      setNotice('Chọn hạn mới hợp lệ và nhập lý do gia hạn trước khi xác nhận.');
+      setDialog(null);
+      return;
+    }
+    setBusy(true);
+    setNotice('');
+    try {
+      await extendApiOrder(order.id, order.version, proposedDue, changeNote.trim());
+      setDialog(null);
+      setProposedDue('');
+      setChangeNote('');
+      setNotice(
+        'Đã gia hạn đơn trên máy chủ. Hạn trả và phí phát sinh đã được cập nhật theo chính sách.',
+      );
+      retry();
+    } catch (caught) {
+      setNotice(caught instanceof Error ? caught.message : 'Không thể gia hạn đơn.');
       setDialog(null);
     } finally {
       setBusy(false);
@@ -639,7 +736,9 @@ export function OrdersPage({
                   lines={order.money}
                   footer={
                     <p className="money-note">
-                      Số tiền theo snapshot fixture; thao tác thu/hoàn được xử lý ở luồng giao/trả.
+                      {realApiMode
+                        ? 'Số liệu theo đơn trên máy chủ; thao tác thu/hoàn thực hiện ở luồng giao/trả.'
+                        : 'Số tiền theo dữ liệu demo; thao tác thu/hoàn không ghi lên máy chủ.'}
                     </p>
                   }
                 />
@@ -654,9 +753,15 @@ export function OrdersPage({
                       <div>
                         <h3>Chọn bộ khả dụng</h3>
                         <p>
-                          Chọn đúng {order.items.length} mã khác nhau. Chỉ bộ READY và không vướng
-                          lịch trong fixture mới chọn được.
+                          {realApiMode
+                            ? 'Chọn đúng số bộ theo từng biến thể. Chỉ các bộ READY còn trống theo lịch máy chủ mới được gán.'
+                            : `Chọn đúng ${order.items.length} mã khác nhau. Chỉ bộ READY và không vướng lịch trong dữ liệu demo mới chọn được.`}
                         </p>
+                        {realApiMode && (
+                          <p className="small-note">
+                            Cần: {apiVariantSummary}
+                          </p>
+                        )}
                       </div>
                       <span className="selection-count">
                         {selectedUnits.length}/{order.items.length}
@@ -701,6 +806,7 @@ export function OrdersPage({
                                 unit.status !== 'READY' ||
                                 !unit.availableAtFixturePeriod ||
                                 unavailableUnits.includes(unit.code) ||
+                                (!selectedUnits.includes(unit.code) && !canSelectForRequiredVariant(unit)) ||
                                 (selectedUnits.length >= order.items.length &&
                                   !selectedUnits.includes(unit.code))
                               }
@@ -763,7 +869,7 @@ export function OrdersPage({
                           <Button
                             onClick={() => setDialog('confirm')}
                             disabled={
-                              selectedUnits.length !== order.items.length ||
+                              !selectionMatchesOrder ||
                               scenario === 'permission' ||
                               !!order.availabilityError
                             }
@@ -886,10 +992,12 @@ export function OrdersPage({
                       label="Hạn trả khách muốn đổi sang"
                       type="datetime-local"
                       value={proposedDue}
+                      min={dueValue || undefined}
                       onChange={(event) => setProposedDue(event.target.value)}
                     />
                     <TextAreaField
-                      label="Ghi chú trao đổi với khách"
+                      label="Lý do khách yêu cầu gia hạn"
+                      required
                       rows={2}
                       value={changeNote}
                       onChange={(event) => setChangeNote(event.target.value)}
@@ -901,10 +1009,19 @@ export function OrdersPage({
                     )}
                     {extensionValid && (
                       <Feedback tone="info" title="Cần kiểm tra trước khi gia hạn">
-                        Yêu cầu đến {proposedDue.replace('T', ' · ')} đang là bản nháp trên màn
-                        hình. Backend cần kiểm tra lịch của từng barcode, tính báo giá mới và thu
-                        phần phát sinh nếu có; chưa cập nhật hạn trả.
+                        {realApiMode
+                          ? `Máy chủ sẽ kiểm tra chính sách và lịch của từng bộ trước khi cập nhật hạn trả ${proposedDue.replace('T', ' · ')} cùng phí phát sinh.`
+                          : `Yêu cầu đến ${proposedDue.replace('T', ' · ')} đang là bản nháp trong phiên demo; hạn trả chưa thay đổi.`}
                       </Feedback>
+                    )}
+                    {realApiMode && (
+                      <Button
+                        disabled={!extensionValid || !changeNote.trim() || busy}
+                        loading={busy}
+                        onClick={() => setDialog('extend')}
+                      >
+                        Xem lại và gia hạn
+                      </Button>
                     )}
                   </div>
                 )}
@@ -916,23 +1033,37 @@ export function OrdersPage({
                         Biến thể đang giữ: <strong>{firstItem?.variant}</strong>. Mã bộ hiện tại chỉ
                         được thay sau khi kiểm tra lịch và báo giá lại.
                       </p>
-                      <SelectField
-                        label="Biến thể khách muốn đổi sang"
-                        value={proposedVariant}
-                        onChange={(event) => setProposedVariant(event.target.value)}
-                      >
-                        <option value="">Chọn biến thể cần kiểm tra</option>
-                        {variantChoices
-                          .filter((value) => value !== firstItem?.variant)
-                          .map((value) => (
-                            <option key={value}>{value}</option>
-                          ))}
-                      </SelectField>
-                      {variantValid && (
-                        <Feedback tone="info" title="Chưa đổi bộ hoặc giá của đơn">
-                          Cần kiểm tra bộ đúng size tại {order.branch}, xung đột lịch và chênh lệch
-                          giá/cọc trước khi xác nhận. Đây là lựa chọn xem trước, chưa được lưu.
+                      {realApiMode ? (
+                        <Feedback
+                          tone="neutral"
+                          title="Chưa thể đổi biến thể an toàn trên màn hình này"
+                        >
+                          Cần xác nhận bộ READY thay thế và phần chênh lệch giá, cọc trước khi lưu.
+                          Màn hình hiện chưa hiển thị đủ hai thông tin đó; đơn và bộ đang giữ không
+                          thay đổi.
                         </Feedback>
+                      ) : (
+                        <>
+                          <SelectField
+                            label="Biến thể khách muốn đổi sang"
+                            value={proposedVariant}
+                            onChange={(event) => setProposedVariant(event.target.value)}
+                          >
+                            <option value="">Chọn biến thể cần kiểm tra</option>
+                            {variantChoices
+                              .filter((value) => value !== firstItem?.variant)
+                              .map((value) => (
+                                <option key={value}>{value}</option>
+                              ))}
+                          </SelectField>
+                          {variantValid && (
+                            <Feedback tone="info" title="Chưa đổi bộ hoặc giá của đơn">
+                              Cần kiểm tra bộ đúng size tại {order.branch}, xung đột lịch và chênh
+                              lệch giá/cọc trước khi xác nhận. Đây là lựa chọn xem trước, chưa được
+                              lưu.
+                            </Feedback>
+                          )}
+                        </>
                       )}
                     </div>
                   )}
@@ -975,16 +1106,24 @@ export function OrdersPage({
       {(dialog === 'reject' || dialog === 'cancel') && (
         <ConfirmDialog
           title={dialog === 'reject' ? 'Từ chối yêu cầu' : 'Hủy đơn'}
-          confirmText="Lưu lý do vào bản xem trước"
+          confirmText={
+            realApiMode
+              ? dialog === 'reject'
+                ? 'Từ chối đơn trên hệ thống'
+                : 'Hủy đơn trên hệ thống'
+              : 'Lưu xem trước trong phiên demo'
+          }
           onConfirm={() => {
-            void previewDecision();
+            void decideOrder();
           }}
           onClose={() => setDialog(null)}
           danger
         >
           <p>
-            Thao tác ảnh hưởng đến trạng thái đơn, bộ đã gán và tiền nếu có. Bản demo chỉ cho xem
-            trước, chưa có API xử lý.
+            {realApiMode
+              ? 'Đây là thao tác thật trên đơn thuê. Trạng thái sẽ đổi và bộ đã gán (nếu có) được giải phóng. ' +
+                'Hành động này không tự hoàn tiền; hãy đối chiếu khoản đã thu theo luồng tài chính nếu cần.'
+              : 'Thao tác chỉ thay đổi dữ liệu trong phiên demo trên màn hình này, chưa lưu lên máy chủ.'}
           </p>
           <TextAreaField
             label="Lý do bắt buộc"
@@ -992,6 +1131,28 @@ export function OrdersPage({
             onChange={(event) => setReason(event.target.value)}
             rows={3}
           />
+        </ConfirmDialog>
+      )}
+      {dialog === 'extend' && order && realApiMode && (
+        <ConfirmDialog
+          title={`Gia hạn đơn ${order.id}`}
+          confirmText="Xác nhận gia hạn"
+          onConfirm={() => void extendRental()}
+          onClose={() => setDialog(null)}
+          loading={busy}
+        >
+          <p>
+            Cập nhật hạn trả đến <strong>{proposedDue.replace('T', ' · ')}</strong> cho{' '}
+            {order.items.length} bộ.
+          </p>
+          <p>
+            Máy chủ kiểm tra chính sách, giới hạn thời gian và lịch của các bộ đang thuê. Nếu hợp lệ,
+            hạn trả và phí phát sinh sẽ được cập nhật vào đơn; phần phí phát sinh cần thu theo luồng
+            thanh toán hiện có.
+          </p>
+          <p>
+            <strong>Lý do:</strong> {changeNote.trim()}
+          </p>
         </ConfirmDialog>
       )}
     </div>

@@ -95,10 +95,27 @@ export function DataTable<T extends { id: string }>({
           <thead>
             <tr>
               {columns.map((entry) => (
-                <th key={entry.key} scope="col">
+                <th
+                  key={entry.key}
+                  scope="col"
+                  aria-sort={
+                    sort?.key === entry.key
+                      ? sort.direction === 1
+                        ? 'ascending'
+                        : 'descending'
+                      : undefined
+                  }
+                >
                   {entry.sortValue ? (
                     <button
                       type="button"
+                      aria-label={`${entry.title}, ${
+                        sort?.key === entry.key
+                          ? sort.direction === 1
+                            ? 'đang sắp xếp tăng dần'
+                            : 'đang sắp xếp giảm dần'
+                          : 'chưa sắp xếp'
+                      }`}
                       onClick={() => {
                         setSort((current) => ({
                           key: entry.key,

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, FormEvent, ReactNode } from 'react';
 import type { Navigate } from '../app/routes';
 import {
@@ -100,44 +100,103 @@ const agentActionCopy: Record<
   },
 };
 
-function agentStateLabel(state: string) {
-  const labels: Record<string, string> = {
-    SUCCEEDED: 'Hoàn tất',
-    COMPLETED: 'Hoàn tất',
-    FAILED: 'Thất bại',
-    CANCELLED: 'Đã hủy',
-    WAITING_CONFIRMATION: 'Chờ xác nhận',
-    PENDING_CONFIRMATION: 'Chờ xác nhận',
-    AWAITING_CONFIRMATION: 'Chờ xác nhận',
-    WAITING_APPROVAL: 'Chờ duyệt',
-    PENDING_APPROVAL: 'Chờ duyệt',
-    AWAITING_APPROVAL: 'Chờ duyệt',
-    NEEDS_INPUT: 'Chờ bổ sung thông tin',
-    WAITING_FOR_INPUT: 'Chờ bổ sung thông tin',
-    NEEDS_MORE_INFO: 'Chờ bổ sung thông tin',
-    RUNNING: 'Đang xử lý',
-    IN_PROGRESS: 'Đang xử lý',
-    TIMED_OUT: 'Quá thời gian',
-  };
-  return labels[state.toUpperCase()] ?? state.toLocaleLowerCase('vi').replaceAll('_', ' ');
+const agentStateLabels: Record<string, string> = {
+  SUCCEEDED: 'Hoàn tất',
+  COMPLETED: 'Hoàn tất',
+  FAILED: 'Thất bại',
+  CANCELLED: 'Đã hủy',
+  WAITING_CONFIRMATION: 'Chờ xác nhận',
+  PENDING_CONFIRMATION: 'Chờ xác nhận',
+  AWAITING_CONFIRMATION: 'Chờ xác nhận',
+  WAITING_APPROVAL: 'Chờ duyệt',
+  PENDING_APPROVAL: 'Chờ duyệt',
+  AWAITING_APPROVAL: 'Chờ duyệt',
+  NEEDS_INPUT: 'Chờ bổ sung thông tin',
+  WAITING_FOR_INPUT: 'Chờ bổ sung thông tin',
+  NEEDS_MORE_INFO: 'Chờ bổ sung thông tin',
+  RUNNING: 'Đang xử lý',
+  IN_PROGRESS: 'Đang xử lý',
+  TIMED_OUT: 'Quá thời gian',
+};
+const terminalAgentStates = ['SUCCEEDED', 'COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT'];
+const decisionAgentStates = [
+  'WAITING_CONFIRMATION',
+  'PENDING_CONFIRMATION',
+  'AWAITING_CONFIRMATION',
+  'WAITING_APPROVAL',
+  'PENDING_APPROVAL',
+  'AWAITING_APPROVAL',
+];
+const inputAgentStates = ['NEEDS_INPUT', 'WAITING_FOR_INPUT', 'NEEDS_MORE_INFO'];
+
+function isKnownOpsAgentState(state: string) {
+  return Object.prototype.hasOwnProperty.call(agentStateLabels, state.toUpperCase());
 }
 
-function agentStateTone(state: string): 'success' | 'warning' | 'danger' | 'info' | 'neutral' {
+type OpsAgentStateSnapshot = Pick<
+  OpsAgentCaseResult,
+  'state' | 'completed' | 'pendingInput' | 'pendingConfirmation' | 'pendingApproval'
+>;
+
+// Exported pure helpers are kept with the page so regression tests can exercise
+// the same state gates the staff flow uses.
+// eslint-disable-next-line react-refresh/only-export-components
+export function requiresOpsAgentStateReview(result?: OpsAgentStateSnapshot) {
+  if (!result) return false;
+  const state = result.state.toUpperCase();
+  if (!isKnownOpsAgentState(state)) return true;
+
+  const terminal = terminalAgentStates.includes(state);
+  const expectsConfirmation =
+    ['WAITING_CONFIRMATION', 'PENDING_CONFIRMATION', 'AWAITING_CONFIRMATION'].includes(state);
+  const expectsApproval = ['WAITING_APPROVAL', 'PENDING_APPROVAL', 'AWAITING_APPROVAL'].includes(state);
+  const expectsInput = inputAgentStates.includes(state);
+  const hasInput = Boolean(result.pendingInput?.trim());
+  const hasConfirmation = Boolean(result.pendingConfirmation);
+  const hasApproval = Boolean(result.pendingApproval);
+
+  // A response with contradictory status and pending work cannot safely be
+  // treated as terminal or as permission to send another write.
+  if (result.completed && !terminal) return true;
+  if (terminal && (hasInput || hasConfirmation || hasApproval)) return true;
+  if (hasConfirmation && (!expectsConfirmation || hasApproval || hasInput)) return true;
+  if (hasApproval && (!expectsApproval || hasConfirmation || hasInput)) return true;
+  if (expectsConfirmation && !hasConfirmation) return true;
+  if (expectsApproval && !hasApproval) return true;
+  if (expectsInput !== hasInput) return true;
+  return false;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function isOpsAgentCaseTerminal(result?: OpsAgentStateSnapshot) {
+  if (!result || requiresOpsAgentStateReview(result)) return false;
+  return terminalAgentStates.includes(result.state.toUpperCase());
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function canContinueOpsAgentCase(result?: OpsAgentCaseResult) {
+  return Boolean(
+    result &&
+      !requiresOpsAgentStateReview(result) &&
+      !isOpsAgentCaseTerminal(result) &&
+      inputAgentStates.includes(result.state.toUpperCase()) &&
+      Boolean(result.pendingInput?.trim()),
+  );
+}
+
+function agentStateLabel(state: string, needsReview = false) {
+  if (needsReview) return 'Cần kiểm tra trạng thái';
+  return agentStateLabels[state.toUpperCase()] ?? 'Cần kiểm tra trạng thái';
+}
+
+function agentStateTone(
+  state: string,
+  needsReview = false,
+): 'success' | 'warning' | 'danger' | 'info' | 'neutral' {
   const normalized = state.toUpperCase();
+  if (needsReview || !isKnownOpsAgentState(normalized)) return 'warning';
   if (['SUCCEEDED', 'COMPLETED'].includes(normalized)) return 'success';
-  if (
-    [
-      'WAITING_CONFIRMATION',
-      'PENDING_CONFIRMATION',
-      'AWAITING_CONFIRMATION',
-      'WAITING_APPROVAL',
-      'PENDING_APPROVAL',
-      'AWAITING_APPROVAL',
-      'NEEDS_INPUT',
-      'WAITING_FOR_INPUT',
-      'NEEDS_MORE_INFO',
-    ].includes(normalized)
-  )
+  if ([...decisionAgentStates, 'NEEDS_INPUT', 'WAITING_FOR_INPUT', 'NEEDS_MORE_INFO'].includes(normalized))
     return 'warning';
   if (['FAILED', 'CANCELLED', 'TIMED_OUT'].includes(normalized)) return 'danger';
   if (['RUNNING', 'IN_PROGRESS'].includes(normalized)) return 'info';
@@ -151,11 +210,68 @@ function formatAgentTime(value: string) {
     : new Intl.DateTimeFormat('vi-VN', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
 
-function evidenceLabel(evidence: OpsAgentEvidence) {
+// eslint-disable-next-line react-refresh/only-export-components
+export function opsAgentEvidenceLabel(evidence: OpsAgentEvidence) {
+  const citation = evidence.citation?.trim();
   return (
-    evidence.citation?.trim() ??
+    (citation?.length ? citation : undefined) ??
     (evidence.sourceType === 'knowledge' ? 'Tài liệu được truy xuất' : 'Dữ liệu nghiệp vụ đã đọc')
   );
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function opsAgentErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof ApiClientError) {
+    const messages: Record<string, string> = {
+      AGENT_CASE_CONFLICT:
+        'Yêu cầu đã thay đổi hoặc không còn ở trạng thái này. Hãy cập nhật trạng thái trước khi tiếp tục.',
+      AI_SERVICE_NOT_CONFIGURED: 'Dịch vụ trợ lý chưa được cấu hình. Hãy liên hệ người phụ trách.',
+      AI_SERVICE_UNAVAILABLE: 'Chưa kết nối được dịch vụ trợ lý. Bạn có thể thử lại sau.',
+      AI_SERVICE_TIMEOUT: 'Dịch vụ trợ lý phản hồi quá thời gian. Hãy kiểm tra trạng thái trước khi gửi lại.',
+      AI_RATE_LIMITED: 'Dịch vụ đang nhận nhiều yêu cầu. Hãy đợi một lúc rồi thử lại.',
+      AGENT_CASE_NOT_FOUND: 'Không tìm thấy yêu cầu này. Hãy kiểm tra phiên hoặc liên hệ người phụ trách.',
+      INVALID_ACCESS_TOKEN: 'Phiên đăng nhập không còn hợp lệ. Hãy đăng nhập lại rồi mở lại khu vực này.',
+      FORBIDDEN: 'Tài khoản hiện tại chưa có quyền truy cập hoặc thực hiện thao tác này.',
+    };
+    const knownMessage = messages[error.code];
+    if (knownMessage) return knownMessage;
+    if (error.status === 0)
+      return 'Mất kết nối tới dịch vụ trợ lý. Hãy cập nhật trạng thái trước khi gửi lại.';
+    if (error.status === 409)
+      return 'Yêu cầu đã thay đổi. Hãy cập nhật trạng thái mới nhất trước khi tiếp tục.';
+    if (error.status === 408 || error.status === 504)
+      return 'Yêu cầu phản hồi quá thời gian. Hãy cập nhật trạng thái trước khi thử lại.';
+    if (error.status === 429)
+      return 'Dịch vụ đang nhận nhiều yêu cầu. Hãy đợi một lúc rồi thử lại.';
+    if (error.status === 401 || error.status === 403)
+      return 'Phiên đăng nhập hoặc quyền truy cập không còn hợp lệ. Hãy đăng nhập lại hoặc liên hệ quản trị viên.';
+    if (error.status >= 500)
+      return 'Dịch vụ trợ lý đang gặp sự cố. Hãy cập nhật trạng thái trước khi gửi lại.';
+  }
+  return error instanceof Error ? error.message : fallback;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function opsAgentSendRecovery(error: unknown, hasCaseId: boolean) {
+  const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
+  const status = error instanceof ApiClientError ? error.status : undefined;
+  const outcomeUnknown =
+    (status !== undefined && (status === 0 || status === 408 || status === 504 || status >= 500)) ||
+    ['AI_SERVICE_TIMEOUT', 'AI_SERVICE_UNAVAILABLE', 'NETWORK_ERROR'].includes(code);
+  return {
+    outcomeUnknown,
+    requiresCaseRefresh: hasCaseId && (outcomeUnknown || status === 409),
+    conflict: status === 409,
+  };
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function opsKnowledgeAnswerText(result: OpsKnowledgeAnswer) {
+  const answer = result.answer.trim();
+  if (answer) return answer;
+  return result.outcome === 'insufficient_context'
+    ? 'Chưa có nội dung đủ căn cứ để trả lời câu hỏi này.'
+    : 'Kho tri thức chưa trả về nội dung câu trả lời. Hãy thử lại hoặc xác nhận với người phụ trách.';
 }
 
 function agentPermissionLabel(permission: string) {
@@ -180,6 +296,13 @@ function knowledgeSourceStatusLabel(status: string) {
   return labels[normalized] ?? status.toLocaleLowerCase('vi').replaceAll('_', ' ');
 }
 
+function knowledgeSourceStatusTone(status: string): 'success' | 'warning' | 'neutral' {
+  const normalized = status.toUpperCase();
+  if (['APPROVED', 'VERIFIED', 'ACTIVE'].includes(normalized)) return 'success';
+  if (['UNVERIFIED', 'PROVISIONAL', 'DRAFT'].includes(normalized)) return 'warning';
+  return 'neutral';
+}
+
 function knowledgeRequestError(error: unknown) {
   const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
   const messages: Record<string, string> = {
@@ -190,6 +313,7 @@ function knowledgeRequestError(error: unknown) {
     AI_SERVICE_TIMEOUT:
       'Kho tri thức phản hồi quá thời gian. Truy vấn này không thay đổi dữ liệu nghiệp vụ; bạn có thể thử lại.',
     AI_RATE_LIMITED: 'Kho tri thức đang nhận quá nhiều yêu cầu. Hãy đợi rồi thử lại.',
+    FORBIDDEN: 'Tài khoản hiện tại chưa có quyền tra cứu kho tri thức.',
   };
   return (
     messages[code] ?? (error instanceof Error ? error.message : 'Không truy vấn được kho tri thức.')
@@ -216,6 +340,32 @@ const formatFixtureTime = () =>
   }).format(fixtureClock);
 
 const agentCaseSessionKey = 'costume-rental.ops-agent.case-id';
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function opsAgentCaseStorageKey(actorId: string | undefined, branch: string) {
+  return actorId
+    ? `${agentCaseSessionKey}:${actorId}:${encodeURIComponent(branch)}`
+    : undefined;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function nextOpsAgentTabIndex(key: string, index: number, count: number) {
+  if (count < 1 || index < 0 || index >= count) return undefined;
+  if (key === 'ArrowRight') return (index + 1) % count;
+  if (key === 'ArrowLeft') return (index - 1 + count) % count;
+  if (key === 'Home') return 0;
+  if (key === 'End') return count - 1;
+  return undefined;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function opsAgentActionFocusTarget(
+  outcome: 'success' | 'failure',
+  resultHeading: { focus: () => void } | null,
+  errorPanel: { focus: () => void } | null,
+) {
+  return outcome === 'success' ? resultHeading : errorPanel;
+}
 
 const kindLabel: Record<QueueTask['kind'], string> = {
   pending: 'Chờ duyệt',
@@ -324,7 +474,7 @@ export function OpsAgentPage({
   actorId?: string;
 }) {
   const useAgentApi = import.meta.env.VITE_OPS_AGENT_MODE === 'api';
-  const scopedCaseSessionKey = actorId ? `${agentCaseSessionKey}:${actorId}` : undefined;
+  const scopedCaseSessionKey = opsAgentCaseStorageKey(actorId, branch);
   const uncertainInitialSendSessionKey = scopedCaseSessionKey
     ? `${scopedCaseSessionKey}:uncertain-initial-send`
     : undefined;
@@ -342,6 +492,7 @@ export function OpsAgentPage({
   const [knowledgeType, setKnowledgeType] = useState('all');
   const [knowledgeStatus, setKnowledgeStatus] = useState('all');
   const [knowledgeQuery, setKnowledgeQuery] = useState('');
+  const [activeCaseScopeKey, setActiveCaseScopeKey] = useState(scopedCaseSessionKey);
   const [knowledgeAnswer, setKnowledgeAnswer] = useState<{
     query: string;
     result: OpsKnowledgeAnswer;
@@ -356,10 +507,13 @@ export function OpsAgentPage({
   const [agentResult, setAgentResult] = useState<OpsAgentCaseResult>();
   const [caseLoading, setCaseLoading] = useState(() => Boolean(agentCaseId));
   const [caseActionLoading, setCaseActionLoading] = useState(false);
+  const [caseNeedsReconciliation, setCaseNeedsReconciliation] = useState(false);
   const [caseError, setCaseError] = useState('');
   const [caseDialogAction, setCaseDialogAction] = useState<AgentCaseAction>();
+  const [showUnknownSendDialog, setShowUnknownSendDialog] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [sendOutcomeUnknown, setSendOutcomeUnknown] = useState(hasUncertainInitialSend);
+  const [sendConflict, setSendConflict] = useState(false);
   const [pendingQuestion, setPendingQuestion] = useState('');
   const [sendError, setSendError] = useState(
     hasUncertainInitialSend
@@ -370,6 +524,17 @@ export function OpsAgentPage({
   const [selectedSourceId, setSelectedSourceId] = useState<string>();
   const [conflictCleared, setConflictCleared] = useState(false);
   const caseLoadInFlight = useRef(false);
+  const caseActionInFlight = useRef(false);
+  const messageSendInFlight = useRef(false);
+  const agentCaseScopeRef = useRef(scopedCaseSessionKey);
+  const caseScopeGeneration = useRef(0);
+  const chatInputContainerRef = useRef<HTMLDivElement>(null);
+  const focusCaseAfterAction = useRef(false);
+  const focusCaseErrorAfterAction = useRef(false);
+  const caseErrorPanelRef = useRef<HTMLDivElement>(null);
+  const focusSendErrorAfterFailure = useRef(false);
+  const sendErrorPanelRef = useRef<HTMLDivElement>(null);
+  const caseResultHeadingRef = useRef<HTMLHeadingElement>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 0,
@@ -386,8 +551,9 @@ export function OpsAgentPage({
   const messageEndRef = useRef<HTMLDivElement>(null);
   const messageSequence = useRef(1);
   const loadQueue = useCallback(
-    (currentScenario: DemoScenario) => fixtureAdapter.listQueue(currentScenario),
-    [],
+    (currentScenario: DemoScenario) =>
+      useAgentApi ? Promise.resolve([] as QueueTask[]) : fixtureAdapter.listQueue(currentScenario),
+    [useAgentApi],
   );
   const { loading, data, error, retry } = useFixtureResource(
     scenario,
@@ -401,16 +567,82 @@ export function OpsAgentPage({
     setConflictCleared(false);
   }, [scenario, branch]);
 
-  useEffect(() => {
-    if (!useAgentApi || !scopedCaseSessionKey) return;
-    if (agentCaseId) window.sessionStorage.setItem(scopedCaseSessionKey, agentCaseId);
-    else window.sessionStorage.removeItem(scopedCaseSessionKey);
-  }, [agentCaseId, scopedCaseSessionKey, useAgentApi]);
+  useLayoutEffect(() => {
+    if (
+      agentCaseScopeRef.current === scopedCaseSessionKey &&
+      activeCaseScopeKey === scopedCaseSessionKey
+    )
+      return;
+    agentCaseScopeRef.current = scopedCaseSessionKey;
+    setActiveCaseScopeKey(scopedCaseSessionKey);
+    caseScopeGeneration.current += 1;
+    const nextCaseId =
+      useAgentApi && scopedCaseSessionKey
+        ? window.sessionStorage.getItem(scopedCaseSessionKey) ?? undefined
+        : undefined;
+    const nextUncertainSend =
+      useAgentApi &&
+      Boolean(uncertainInitialSendSessionKey) &&
+      window.sessionStorage.getItem(uncertainInitialSendSessionKey!) === '1';
+    caseLoadInFlight.current = false;
+    caseActionInFlight.current = false;
+    messageSendInFlight.current = false;
+    focusCaseAfterAction.current = false;
+    focusCaseErrorAfterAction.current = false;
+    focusSendErrorAfterFailure.current = false;
+    setAgentCaseId(nextCaseId);
+    setAgentResult(undefined);
+    setCaseLoading(Boolean(nextCaseId));
+    setCaseActionLoading(false);
+    setCaseNeedsReconciliation(false);
+    setCaseError('');
+    setCaseDialogAction(undefined);
+    setSendingMessage(false);
+    setPendingQuestion('');
+    setChatDraft('');
+    setSendOutcomeUnknown(nextUncertainSend);
+    setSendConflict(false);
+    setSendError(
+      nextUncertainSend
+        ? 'Kết quả tạo yêu cầu trước đó chưa được xác nhận. Hãy đối soát trước khi gửi yêu cầu khác.'
+        : '',
+    );
+    messageSequence.current = 1;
+    setMessages([
+      {
+        id: 0,
+        role: 'assistant',
+        text: useAgentApi
+          ? 'Tôi có thể hỗ trợ tra cứu hướng dẫn và phân tích tình huống vận hành. Hãy mô tả việc bạn cần xử lý.'
+          : 'Mình có thể gợi ý checklist từ nội dung demo. Câu trả lời không thay đổi đơn, xác nhận thanh toán hay ghi vào nhật ký.',
+        sourceIds: useAgentApi ? [] : ['product-scope', 'safety-direction'],
+      },
+    ]);
+  }, [activeCaseScopeKey, scopedCaseSessionKey, uncertainInitialSendSessionKey, useAgentApi]);
 
   useEffect(() => {
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
     messageEndRef.current?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'end' });
   }, [messages]);
+
+  useEffect(() => {
+    if (!focusCaseAfterAction.current || caseDialogAction || caseActionLoading) return;
+    focusCaseAfterAction.current = false;
+    opsAgentActionFocusTarget('success', caseResultHeadingRef.current, caseErrorPanelRef.current)?.focus();
+  }, [agentResult, caseActionLoading, caseDialogAction]);
+
+  useEffect(() => {
+    if (!focusCaseErrorAfterAction.current || !caseError || caseDialogAction || caseActionLoading)
+      return;
+    focusCaseErrorAfterAction.current = false;
+    opsAgentActionFocusTarget('failure', caseResultHeadingRef.current, caseErrorPanelRef.current)?.focus();
+  }, [caseError, caseActionLoading, caseDialogAction]);
+
+  useEffect(() => {
+    if (!focusSendErrorAfterFailure.current || !sendError || sendingMessage) return;
+    focusSendErrorAfterFailure.current = false;
+    sendErrorPanelRef.current?.focus();
+  }, [sendError, sendingMessage]);
 
   const branchQueue = useMemo(
     () =>
@@ -455,6 +687,18 @@ export function OpsAgentPage({
   const verificationCount = opsAgentSources.filter(
     (source) => source.status === 'Cần xác minh',
   ).length;
+  const currentCaseNeedsResolution =
+    useAgentApi &&
+    (activeCaseScopeKey !== scopedCaseSessionKey ||
+      (Boolean(agentCaseId) &&
+        (caseLoading ||
+      caseNeedsReconciliation ||
+      !agentResult ||
+          !canContinueOpsAgentCase(agentResult))));
+  const currentCaseStateUnknown =
+    useAgentApi &&
+    Boolean(agentResult) &&
+    requiresOpsAgentStateReview(agentResult);
 
   const focusTab = (next: AgentTab) => {
     setTab(next);
@@ -465,68 +709,97 @@ export function OpsAgentPage({
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, current: AgentTab) => {
     const index = availableTabs.findIndex((item) => item.id === current);
     if (index < 0) return;
-    const nextIndex =
-      event.key === 'ArrowRight'
-        ? (index + 1) % availableTabs.length
-        : event.key === 'ArrowLeft'
-          ? (index - 1 + availableTabs.length) % availableTabs.length
-          : event.key === 'Home'
-            ? 0
-            : event.key === 'End'
-              ? availableTabs.length - 1
-              : undefined;
+    const nextIndex = nextOpsAgentTabIndex(event.key, index, availableTabs.length);
     if (nextIndex === undefined) return;
     event.preventDefault();
     focusTab(availableTabs[nextIndex].id);
   };
 
   const reloadAgentCase = useCallback(async () => {
-    if (!agentCaseId || caseLoadInFlight.current) return;
+    if (
+      !agentCaseId ||
+      agentCaseScopeRef.current !== scopedCaseSessionKey ||
+      caseLoadInFlight.current ||
+      caseActionInFlight.current
+    )
+      return;
+    const operationGeneration = caseScopeGeneration.current;
     caseLoadInFlight.current = true;
     setCaseLoading(true);
     setCaseError('');
     try {
-      setAgentResult(await getOpsAgentCase(agentCaseId));
+      const result = await getOpsAgentCase(agentCaseId);
+      if (operationGeneration !== caseScopeGeneration.current) return;
+      setAgentResult(result);
       setSendOutcomeUnknown(false);
+      setSendConflict(false);
       setSendError('');
+      setCaseNeedsReconciliation(false);
+      if (uncertainInitialSendSessionKey)
+        window.sessionStorage.removeItem(uncertainInitialSendSessionKey);
     } catch (loadError) {
-      setCaseError(loadError instanceof Error ? loadError.message : 'Không tải được hồ sơ Agent.');
+      if (operationGeneration === caseScopeGeneration.current)
+        setCaseError(opsAgentErrorMessage(loadError, 'Không tải được hồ sơ Agent.'));
     } finally {
-      caseLoadInFlight.current = false;
-      setCaseLoading(false);
+      if (operationGeneration === caseScopeGeneration.current) {
+        caseLoadInFlight.current = false;
+        setCaseLoading(false);
+      }
     }
-  }, [agentCaseId]);
+  }, [agentCaseId, scopedCaseSessionKey, uncertainInitialSendSessionKey]);
 
   useEffect(() => {
     if (!useAgentApi || !agentCaseId || agentResult) return;
+    const operationGeneration = caseScopeGeneration.current;
     let isCurrent = true;
     void getOpsAgentCase(agentCaseId)
       .then((result) => {
-        if (isCurrent) setAgentResult(result);
+        if (isCurrent && operationGeneration === caseScopeGeneration.current)
+          setAgentResult(result);
       })
       .catch((loadError: unknown) => {
-        if (isCurrent) {
+        if (isCurrent && operationGeneration === caseScopeGeneration.current) {
           setCaseError(
-            loadError instanceof Error ? loadError.message : 'Không tải được yêu cầu hiện tại.',
+            opsAgentErrorMessage(loadError, 'Không tải được yêu cầu hiện tại.'),
           );
         }
       })
       .finally(() => {
-        if (isCurrent) setCaseLoading(false);
+        if (isCurrent && operationGeneration === caseScopeGeneration.current)
+          setCaseLoading(false);
       });
     return () => {
       isCurrent = false;
     };
-  }, [agentCaseId, agentResult, useAgentApi]);
+  }, [agentCaseId, agentResult, scopedCaseSessionKey, useAgentApi]);
 
   const forgetAgentCaseReference = () => {
     setAgentCaseId(undefined);
     setAgentResult(undefined);
     setCaseError('');
+    setCaseNeedsReconciliation(false);
+    setSendOutcomeUnknown(true);
+    setSendError('Không thể tải yêu cầu cũ. Yêu cầu đó có thể vẫn tồn tại; hãy đối soát trước khi gửi yêu cầu khác.');
+    if (scopedCaseSessionKey) window.sessionStorage.removeItem(scopedCaseSessionKey);
+    if (uncertainInitialSendSessionKey)
+      window.sessionStorage.setItem(uncertainInitialSendSessionKey, '1');
   };
 
   const runAgentCaseAction = async (action: AgentCaseAction) => {
-    if (!agentCaseId || !agentResult || caseActionLoading) return;
+    if (
+      !agentCaseId ||
+      !agentResult ||
+      agentCaseScopeRef.current !== scopedCaseSessionKey ||
+      requiresOpsAgentStateReview(agentResult) ||
+      caseActionLoading ||
+      caseNeedsReconciliation ||
+      caseLoading ||
+      caseLoadInFlight.current ||
+      caseActionInFlight.current
+    )
+      return;
+    const operationGeneration = caseScopeGeneration.current;
+    caseActionInFlight.current = true;
     setCaseActionLoading(true);
     setCaseError('');
     try {
@@ -558,7 +831,10 @@ export function OpsAgentPage({
           result = await cancelOpsAgentCase(agentCaseId);
           break;
       }
+      if (operationGeneration !== caseScopeGeneration.current) return;
+      focusCaseAfterAction.current = true;
       setAgentResult(result);
+      setCaseNeedsReconciliation(false);
       setCaseDialogAction(undefined);
       const nextMessage: ChatMessage = {
         id: messageSequence.current++,
@@ -569,12 +845,16 @@ export function OpsAgentPage({
       };
       setMessages((current) => [...current, nextMessage]);
     } catch (actionError) {
+      if (operationGeneration !== caseScopeGeneration.current) return;
       setCaseDialogAction(undefined);
-      setCaseError(
-        actionError instanceof Error ? actionError.message : 'Không hoàn tất được thao tác Agent.',
-      );
+      setCaseNeedsReconciliation(true);
+      focusCaseErrorAfterAction.current = true;
+      setCaseError(opsAgentErrorMessage(actionError, 'Không hoàn tất được thao tác Agent.'));
     } finally {
-      setCaseActionLoading(false);
+      if (operationGeneration === caseScopeGeneration.current) {
+        caseActionInFlight.current = false;
+        setCaseActionLoading(false);
+      }
     }
   };
 
@@ -639,8 +919,18 @@ export function OpsAgentPage({
   const sendMessage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const question = chatDraft.trim();
-    if (!question || sendingMessage || (useAgentApi && sendOutcomeUnknown)) return;
+    if (
+      !question ||
+      sendingMessage ||
+      messageSendInFlight.current ||
+      (useAgentApi && agentCaseScopeRef.current !== scopedCaseSessionKey) ||
+      (useAgentApi && (sendOutcomeUnknown || currentCaseStateUnknown || currentCaseNeedsResolution))
+    )
+      return;
+    const requestScopeGeneration = caseScopeGeneration.current;
+    messageSendInFlight.current = true;
     setSendError('');
+    setSendConflict(false);
     setPendingQuestion(question);
     setSendingMessage(true);
     const userMessage: ChatMessage = {
@@ -653,7 +943,10 @@ export function OpsAgentPage({
       let assistantMessage: ChatMessage;
       if (useAgentApi) {
         const reply = await sendOpsAgentMessage(question, agentCaseId);
+        if (caseScopeGeneration.current !== requestScopeGeneration) return;
         setAgentCaseId(reply.caseId);
+        if (scopedCaseSessionKey)
+          window.sessionStorage.setItem(scopedCaseSessionKey, reply.caseId);
         setAgentResult(reply);
         setSendOutcomeUnknown(false);
         if (uncertainInitialSendSessionKey)
@@ -682,32 +975,46 @@ export function OpsAgentPage({
       setMessages((current) => [...current, userMessage, assistantMessage]);
       setChatDraft('');
     } catch (error) {
-      const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
-      const outcomeUnknown =
-        (error instanceof ApiClientError && (error.status === 0 || error.status >= 500)) ||
-        ['AI_SERVICE_TIMEOUT', 'AI_SERVICE_UNAVAILABLE', 'NETWORK_ERROR'].includes(code);
-      setSendOutcomeUnknown(outcomeUnknown);
-      if (outcomeUnknown && !agentCaseId && uncertainInitialSendSessionKey)
+      if (caseScopeGeneration.current !== requestScopeGeneration) return;
+      const recovery = opsAgentSendRecovery(error, Boolean(agentCaseId));
+      focusSendErrorAfterFailure.current = true;
+      setSendOutcomeUnknown(recovery.outcomeUnknown);
+      if (recovery.requiresCaseRefresh) setCaseNeedsReconciliation(true);
+      if (recovery.outcomeUnknown && !agentCaseId && uncertainInitialSendSessionKey)
         window.sessionStorage.setItem(uncertainInitialSendSessionKey, '1');
-      setSendError(
-        error instanceof Error ? error.message : 'Không gửi được câu hỏi tới Ops Agent.',
-      );
+      setSendConflict(recovery.conflict && Boolean(agentCaseId));
+      setSendError(opsAgentErrorMessage(error, 'Không gửi được câu hỏi tới Ops Agent.'));
     } finally {
-      setPendingQuestion('');
-      setSendingMessage(false);
+      if (caseScopeGeneration.current === requestScopeGeneration) {
+        setPendingQuestion('');
+        messageSendInFlight.current = false;
+        setSendingMessage(false);
+      }
     }
   };
 
   const newConversation = () => {
-    if (useAgentApi && (sendOutcomeUnknown || (agentCaseId && !agentResult?.completed))) return;
+    if (
+      sendingMessage ||
+      (useAgentApi &&
+        (sendOutcomeUnknown ||
+          caseLoading ||
+          caseNeedsReconciliation ||
+          currentCaseStateUnknown ||
+          (agentCaseId && !isOpsAgentCaseTerminal(agentResult))))
+    )
+      return;
     messageSequence.current = 1;
     setSelectedTask(undefined);
     setChatDraft('');
     setAgentCaseId(undefined);
     setAgentResult(undefined);
+    if (scopedCaseSessionKey) window.sessionStorage.removeItem(scopedCaseSessionKey);
     setCaseError('');
+    setCaseNeedsReconciliation(false);
     setSendError('');
     setSendOutcomeUnknown(false);
+    setSendConflict(false);
     if (uncertainInitialSendSessionKey)
       window.sessionStorage.removeItem(uncertainInitialSendSessionKey);
     setMessages([
@@ -877,6 +1184,11 @@ export function OpsAgentPage({
                 </button>
               </div>
 
+              <Feedback tone="neutral" title="Hàng đợi chưa được cung cấp qua API Agent">
+                Không có dữ liệu công việc trực tiếp ở khu vực này. Hãy xử lý đơn thuê tại màn hình
+                Studio; hệ thống không hiển thị hàng đợi mẫu trong chế độ API.
+              </Feedback>
+
               <section className="feature-panel ops-live-home-request">
                 <div className="feature-panel-head">
                   <div>
@@ -885,8 +1197,8 @@ export function OpsAgentPage({
                   </div>
                   {agentResult && (
                     <StatusLabel
-                      text={agentStateLabel(agentResult.state)}
-                      tone={agentStateTone(agentResult.state)}
+                      text={agentStateLabel(agentResult.state, currentCaseStateUnknown)}
+                      tone={agentStateTone(agentResult.state, currentCaseStateUnknown)}
                     />
                   )}
                 </div>
@@ -952,6 +1264,21 @@ export function OpsAgentPage({
                   </div>
                 )}
               </section>
+
+              {currentCaseStateUnknown && (
+                <Feedback
+                  tone="warning"
+                  title="Trạng thái yêu cầu cần kiểm tra"
+                  action={
+                    <Button variant="secondary" onClick={() => void reloadAgentCase()} loading={caseLoading}>
+                      Cập nhật trạng thái
+                    </Button>
+                  }
+                >
+                  Không tiếp tục yêu cầu này cho đến khi trạng thái và dữ liệu chờ được xác nhận.
+                  Nếu vẫn không khớp, hãy liên hệ người phụ trách. Yêu cầu chưa được xem là đã hoàn tất.
+                </Feedback>
+              )}
 
               <p className="ops-live-home-note">
                 Khi trợ lý đề xuất thao tác, hãy kiểm tra nội dung và nguồn trước khi xác nhận.
@@ -1351,6 +1678,7 @@ export function OpsAgentPage({
                     hint="Không nhập mật khẩu, mã OTP hoặc toàn bộ thông tin thanh toán."
                     placeholder="Ví dụ: Khi nhận đồ trả cần kiểm tra những gì?"
                     value={knowledgeQuery}
+                    disabled={knowledgeLoading}
                     maxLength={1000}
                     required
                     rows={3}
@@ -1422,7 +1750,9 @@ export function OpsAgentPage({
                         }
                       />
                     </div>
-                    <p className="ops-knowledge-answer-text">{knowledgeAnswer.result.answer}</p>
+                    <p className="ops-knowledge-answer-text">
+                      {opsKnowledgeAnswerText(knowledgeAnswer.result)}
+                    </p>
                     {knowledgeAnswer.result.outcome === 'insufficient_context' && (
                       <Feedback
                         tone="warning"
@@ -1462,7 +1792,9 @@ export function OpsAgentPage({
                             <li key={`${source.documentId}:${source.citation}:${index}`}>
                               <div>
                                 <strong>{source.heading || 'Tài liệu tham khảo'}</strong>
-                                <span>{source.citation}</span>
+                                <span>
+                                  {source.citation.trim() || 'Chưa có vị trí trích dẫn cụ thể.'}
+                                </span>
                               </div>
                               <div className="ops-knowledge-citation-meta">
                                 <StatusLabel
@@ -1471,7 +1803,10 @@ export function OpsAgentPage({
                                   }
                                   tone={source.businessAuthority ? 'info' : 'neutral'}
                                 />
-                                <span>{knowledgeSourceStatusLabel(source.status)}</span>
+                                <StatusLabel
+                                  text={knowledgeSourceStatusLabel(source.status)}
+                                  tone={knowledgeSourceStatusTone(source.status)}
+                                />
                               </div>
                             </li>
                           ))}
@@ -1678,15 +2013,26 @@ export function OpsAgentPage({
                   variant="secondary"
                   onClick={newConversation}
                   disabled={
-                    useAgentApi &&
-                    (sendOutcomeUnknown || (!!agentCaseId && !agentResult?.completed))
+                    sendingMessage ||
+                    (useAgentApi &&
+                      (sendOutcomeUnknown ||
+                        caseLoading ||
+                        caseNeedsReconciliation ||
+                        currentCaseStateUnknown ||
+                        (!!agentCaseId && !isOpsAgentCaseTerminal(agentResult))))
                   }
                   title={
-                    useAgentApi && sendOutcomeUnknown
-                      ? 'Hãy đối soát kết quả gửi chưa rõ trước khi tạo yêu cầu khác.'
-                      : useAgentApi && agentCaseId && !agentResult?.completed
-                        ? 'Hãy xử lý hoặc hủy hồ sơ Agent hiện tại trước.'
-                      : undefined
+                    sendingMessage
+                      ? 'Đang chờ kết quả của câu hỏi hiện tại.'
+                      : useAgentApi && sendOutcomeUnknown
+                        ? 'Hãy đối soát kết quả gửi chưa rõ trước khi tạo yêu cầu khác.'
+                        : currentCaseStateUnknown
+                          ? 'Cần cập nhật trạng thái hiện tại trước khi tạo yêu cầu mới.'
+                          : caseNeedsReconciliation || caseLoading
+                            ? 'Hãy cập nhật yêu cầu hiện tại trước khi tạo yêu cầu mới.'
+                          : useAgentApi && agentCaseId && !isOpsAgentCaseTerminal(agentResult)
+                            ? 'Hãy xử lý yêu cầu hiện tại trước khi tạo yêu cầu khác.'
+                            : undefined
                   }
                 >
                   {useAgentApi ? 'Yêu cầu mới' : 'Cuộc trò chuyện mới'}
@@ -1709,10 +2055,46 @@ export function OpsAgentPage({
                       if (!agentResult) void reloadAgentCase();
                     }}
                   >
-                    Yêu cầu hiện tại{agentResult ? ` · ${agentStateLabel(agentResult.state)}` : ''}
+                    Yêu cầu hiện tại
+                    {agentResult
+                      ? ` · ${agentStateLabel(agentResult.state, currentCaseStateUnknown)}`
+                      : ''}
                   </Button>
                 )}
               </div>
+              {useAgentApi && agentCaseId && caseLoading && !agentResult && (
+                <Feedback tone="info" title="Đang kiểm tra yêu cầu hiện tại">
+                  Câu hỏi mới đang tạm khóa để tránh gửi trùng. Nội dung bản nháp vẫn được giữ lại.
+                </Feedback>
+              )}
+              {useAgentApi && agentCaseId && caseError && !caseLoading && !agentResult && (
+                <Feedback
+                  tone="danger"
+                  title="Không tải được yêu cầu hiện tại"
+                  action={
+                    <Button
+                      variant="secondary"
+                      onClick={() => void reloadAgentCase()}
+                      loading={caseLoading}
+                    >
+                      Tải lại trạng thái
+                    </Button>
+                  }
+                >
+                  {caseError} Yêu cầu cũ có thể vẫn tồn tại, vì vậy câu hỏi mới đang tạm khóa.
+                </Feedback>
+              )}
+              {useAgentApi &&
+                agentCaseId &&
+                agentResult &&
+                !isOpsAgentCaseTerminal(agentResult) &&
+                !currentCaseStateUnknown &&
+                !sendOutcomeUnknown && (
+                  <p className="ops-chat-new-request-note" role="status">
+                    Bạn đang làm việc trong yêu cầu hiện tại. Để mở yêu cầu mới, hãy chờ yêu cầu này
+                    kết thúc.
+                  </p>
+                )}
               {useAgentApi &&
                 agentResult &&
                 (agentResult.pendingConfirmation ?? agentResult.pendingApproval) && (
@@ -1729,7 +2111,62 @@ export function OpsAgentPage({
                     sau khi yêu cầu này được xử lý.
                   </Feedback>
                 )}
-              <div className="ops-chat-thread" aria-label="Nội dung trò chuyện" aria-live="polite">
+              {useAgentApi && agentResult?.pendingInput && (
+                <Feedback
+                  tone="warning"
+                  title="Trợ lý đang chờ bạn bổ sung thông tin"
+                  action={
+                    <Button variant="secondary" onClick={() => setTab('case')}>
+                      Xem yêu cầu
+                    </Button>
+                  }
+                >
+                  Hãy mở yêu cầu để xem nội dung cần bổ sung trước khi trả lời.
+                </Feedback>
+              )}
+              {useAgentApi &&
+                agentCaseId &&
+                agentResult &&
+                currentCaseNeedsResolution &&
+                !currentCaseStateUnknown &&
+                !agentResult.pendingInput &&
+                !agentResult.pendingConfirmation &&
+                !agentResult.pendingApproval && (
+                  <Feedback
+                    tone="info"
+                    title="Yêu cầu hiện tại chưa sẵn sàng cho câu hỏi tiếp theo"
+                    action={
+                      <Button variant="secondary" onClick={() => setTab('case')}>
+                        Xem trạng thái
+                      </Button>
+                    }
+                  >
+                    Hãy chờ trợ lý xử lý hoặc cập nhật trạng thái. Tin nhắn mới sẽ không được gửi vào
+                    lúc này.
+                  </Feedback>
+                )}
+              {currentCaseStateUnknown && (
+                <Feedback
+                  tone="warning"
+                  title="Trạng thái yêu cầu cần kiểm tra"
+                  action={
+                    <Button variant="secondary" onClick={() => setTab('case')}>
+                      Kiểm tra yêu cầu
+                    </Button>
+                  }
+                >
+                  Hãy cập nhật trạng thái trước khi gửi tiếp. Trạng thái lạ hoặc dữ liệu chờ không khớp
+                  không được xem là đã hoàn tất.
+                </Feedback>
+              )}
+              <div
+                className="ops-chat-thread"
+                role="log"
+                aria-label="Nội dung trò chuyện"
+                aria-live="polite"
+                aria-relevant="additions"
+                aria-atomic="false"
+              >
                 {messages.map((message) => (
                   <article
                     className={
@@ -1779,7 +2216,7 @@ export function OpsAgentPage({
                                   ? 'Tài liệu tham khảo'
                                   : 'Thông tin từ Studio'}
                               </strong>
-                              <span>{evidenceLabel(item)}</span>
+                              <span>{opsAgentEvidenceLabel(item)}</span>
                               {item.observedAt && (
                                 <time dateTime={item.observedAt}>
                                   {new Date(item.observedAt).toLocaleString('vi-VN')}
@@ -1806,7 +2243,15 @@ export function OpsAgentPage({
               </div>
               <div className="ops-chat-suggestions" aria-label="Câu hỏi gợi ý">
                 {suggestedQuestions.map((question) => (
-                  <button type="button" key={question} onClick={() => setChatDraft(question)}>
+                  <button
+                    type="button"
+                    key={question}
+                    onClick={() => setChatDraft(question)}
+                    disabled={
+                      sendingMessage ||
+                      (useAgentApi && (sendOutcomeUnknown || currentCaseNeedsResolution))
+                    }
+                  >
                     {question}
                   </button>
                 ))}
@@ -1817,7 +2262,7 @@ export function OpsAgentPage({
                   void sendMessage(event);
                 }}
               >
-                <div className="ops-chat-input">
+                <div ref={chatInputContainerRef} className="ops-chat-input">
                   <TextAreaField
                     label="Câu hỏi"
                     hint={
@@ -1831,7 +2276,10 @@ export function OpsAgentPage({
                         : 'Hỏi về checklist hoặc nguồn tài liệu...'
                     }
                     value={chatDraft}
-                    disabled={useAgentApi && sendOutcomeUnknown}
+                    disabled={
+                      sendingMessage ||
+                      (useAgentApi && (sendOutcomeUnknown || currentCaseNeedsResolution))
+                    }
                     maxLength={2000}
                     onChange={(event) => setChatDraft(event.target.value)}
                     onKeyDown={(event) => {
@@ -1849,60 +2297,64 @@ export function OpsAgentPage({
                     !chatDraft.trim() ||
                     sendingMessage ||
                     (useAgentApi && sendOutcomeUnknown) ||
-                    (useAgentApi &&
-                      !!agentResult &&
-                      (agentResult.completed ||
-                        !!agentResult.pendingConfirmation ||
-                        !!agentResult.pendingApproval))
+                    (useAgentApi && currentCaseNeedsResolution)
                   }
                 >
                   {sendingMessage ? 'Đang gửi…' : 'Gửi câu hỏi'}
                 </Button>
               </form>
               {sendError && (
-                <Feedback
-                  tone="danger"
-                  title={
-                    sendOutcomeUnknown ? 'Chưa xác nhận được kết quả gửi' : 'Không gửi được câu hỏi'
-                  }
-                  action={
-                    sendOutcomeUnknown && agentCaseId ? (
-                      <Button
-                        variant="secondary"
-                        onClick={() => {
-                          setTab('case');
-                          void reloadAgentCase();
-                        }}
-                      >
-                        Kiểm tra yêu cầu
-                      </Button>
-                    ) : sendOutcomeUnknown ? (
-                      <Button
-                        variant="secondary"
-                        onClick={() => {
-                          const confirmed = window.confirm(
-                            'Chỉ tiếp tục nếu bạn đã đối soát với người phụ trách rằng yêu cầu trước chưa được tạo. Bạn muốn tạo yêu cầu mới?',
-                          );
-                          if (!confirmed) return;
-                          if (uncertainInitialSendSessionKey)
-                            window.sessionStorage.removeItem(uncertainInitialSendSessionKey);
-                          setSendOutcomeUnknown(false);
-                          setSendError('');
-                          setChatDraft('');
-                        }}
-                      >
-                        Đã đối soát, tiếp tục
-                      </Button>
-                    ) : undefined
-                  }
+                <div
+                  ref={sendErrorPanelRef}
+                  tabIndex={-1}
+                  className="ops-agent-case-error-focus"
                 >
-                  {sendError}{' '}
-                  {sendOutcomeUnknown
-                    ? agentCaseId
-                      ? 'Câu hỏi vẫn được giữ. Hãy kiểm tra yêu cầu hiện tại trước khi gửi lại để tránh tạo thao tác trùng.'
-                      : 'Câu hỏi vẫn được giữ nhưng mã yêu cầu chưa được trả về. Đừng gửi lại cho đến khi người phụ trách đối soát kết quả tạo hồ sơ.'
-                    : ''}
-                </Feedback>
+                  <Feedback
+                    tone="danger"
+                    title={
+                      sendOutcomeUnknown ? 'Chưa xác nhận được kết quả gửi' : 'Không gửi được câu hỏi'
+                    }
+                    action={
+                      sendOutcomeUnknown && agentCaseId ? (
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            setTab('case');
+                            void reloadAgentCase();
+                          }}
+                        >
+                          Kiểm tra yêu cầu
+                        </Button>
+                      ) : sendOutcomeUnknown ? (
+                        <Button
+                          variant="secondary"
+                          onClick={() => setShowUnknownSendDialog(true)}
+                        >
+                          Đã đối soát, mở lại ô nhập
+                        </Button>
+                      ) : sendConflict && agentCaseId ? (
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            setTab('case');
+                            void reloadAgentCase();
+                          }}
+                        >
+                          Cập nhật yêu cầu
+                        </Button>
+                      ) : undefined
+                    }
+                  >
+                    {sendError}{' '}
+                    {sendOutcomeUnknown
+                      ? agentCaseId
+                        ? 'Câu hỏi vẫn được giữ. Hãy kiểm tra yêu cầu hiện tại trước khi gửi lại để tránh tạo thao tác trùng.'
+                        : chatDraft.trim()
+                          ? 'Câu hỏi vẫn được giữ nhưng mã yêu cầu chưa được trả về. Đừng gửi lại cho đến khi người phụ trách đối soát kết quả tạo hồ sơ.'
+                          : 'Nội dung câu hỏi trước không được lưu sau khi tải lại. Hãy đối soát rồi nhập lại câu hỏi nếu cần.'
+                      : ''}
+                  </Feedback>
+                </div>
               )}
             </section>
             <aside className="feature-panel ops-chat-side">
@@ -1951,8 +2403,8 @@ export function OpsAgentPage({
               </div>
               {agentResult && (
                 <StatusLabel
-                  text={agentStateLabel(agentResult.state)}
-                  tone={agentStateTone(agentResult.state)}
+                  text={agentStateLabel(agentResult.state, currentCaseStateUnknown)}
+                  tone={agentStateTone(agentResult.state, currentCaseStateUnknown)}
                 />
               )}
             </div>
@@ -2020,35 +2472,62 @@ export function OpsAgentPage({
               </EmptyState>
             ) : (
               <>
-                {caseError && (
+                {currentCaseStateUnknown && (
                   <Feedback
-                    tone="danger"
-                    title="Không hoàn tất được thao tác"
+                    tone="warning"
+                    title="Trạng thái yêu cầu cần kiểm tra"
                     action={
                       <Button
                         variant="secondary"
-                        onClick={() => {
-                          void reloadAgentCase();
-                        }}
+                        onClick={() => void reloadAgentCase()}
                         loading={caseLoading}
+                        disabled={caseActionLoading}
                       >
                         Cập nhật trạng thái
                       </Button>
                     }
                   >
-                    {caseError} Tải lại trước khi thử thao tác lần nữa; kết quả của yêu cầu trước có
-                    thể chưa xác định.
+                    Không xác nhận, duyệt, hủy hoặc gửi tiếp khi trạng thái lạ hay dữ liệu đang chờ
+                    không khớp. Hãy cập nhật trạng thái; nếu vẫn còn, chuyển người phụ trách kiểm tra.
                   </Feedback>
+                )}
+                {caseError && (
+                  <div
+                    ref={caseErrorPanelRef}
+                    tabIndex={-1}
+                    className="ops-agent-case-error-focus"
+                  >
+                    <Feedback
+                      tone="danger"
+                      title="Không hoàn tất được thao tác"
+                      action={
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            void reloadAgentCase();
+                          }}
+                          loading={caseLoading}
+                        >
+                          Cập nhật trạng thái
+                        </Button>
+                      }
+                    >
+                      {caseError} Tải lại trước khi thử thao tác lần nữa; kết quả của yêu cầu trước
+                      có thể chưa xác định.
+                    </Feedback>
+                  </div>
                 )}
                 <section className="feature-panel ops-agent-case-card">
                   <div className="feature-panel-head">
                     <div>
                       <p className="eyebrow">YÊU CẦU HỖ TRỢ</p>
-                      <h3>{agentResult.goal?.summary ?? 'Yêu cầu hỗ trợ vận hành'}</h3>
+                      <h3 ref={caseResultHeadingRef} tabIndex={-1}>
+                        {agentResult.goal?.summary ?? 'Yêu cầu hỗ trợ vận hành'}
+                      </h3>
                     </div>
                     <StatusLabel
-                      text={agentStateLabel(agentResult.state)}
-                      tone={agentStateTone(agentResult.state)}
+                      text={agentStateLabel(agentResult.state, currentCaseStateUnknown)}
+                      tone={agentStateTone(agentResult.state, currentCaseStateUnknown)}
                     />
                   </div>
                   <div className="ops-agent-case-message">
@@ -2076,13 +2555,23 @@ export function OpsAgentPage({
                         <Button
                           variant="secondary"
                           onClick={() => setCaseDialogAction('reject-confirmation')}
-                          disabled={caseActionLoading}
+                          disabled={
+                            caseActionLoading ||
+                            caseLoading ||
+                            caseNeedsReconciliation ||
+                            currentCaseStateUnknown
+                          }
                         >
                           Từ chối
                         </Button>
                         <Button
                           onClick={() => setCaseDialogAction('confirm')}
-                          disabled={caseActionLoading}
+                          disabled={
+                            caseActionLoading ||
+                            caseLoading ||
+                            caseNeedsReconciliation ||
+                            currentCaseStateUnknown
+                          }
                         >
                           Xác nhận yêu cầu
                         </Button>
@@ -2107,13 +2596,23 @@ export function OpsAgentPage({
                         <Button
                           variant="secondary"
                           onClick={() => setCaseDialogAction('reject-approval')}
-                          disabled={caseActionLoading}
+                          disabled={
+                            caseActionLoading ||
+                            caseLoading ||
+                            caseNeedsReconciliation ||
+                            currentCaseStateUnknown
+                          }
                         >
                           Từ chối
                         </Button>
                         <Button
                           onClick={() => setCaseDialogAction('approve')}
-                          disabled={caseActionLoading}
+                          disabled={
+                            caseActionLoading ||
+                            caseLoading ||
+                            caseNeedsReconciliation ||
+                            currentCaseStateUnknown
+                          }
                         >
                           Duyệt thao tác
                         </Button>
@@ -2134,7 +2633,7 @@ export function OpsAgentPage({
                               }
                               tone={evidence.sourceType === 'knowledge' ? 'info' : 'success'}
                             />
-                            <span>{evidenceLabel(evidence)}</span>
+                            <span>{opsAgentEvidenceLabel(evidence)}</span>
                             {evidence.observedAt && (
                               <time dateTime={evidence.observedAt}>
                                 {formatAgentTime(evidence.observedAt)}
@@ -2156,11 +2655,16 @@ export function OpsAgentPage({
                       trước khi thực hiện.
                     </p>
                     <div>
-                      {!agentResult.completed && (
+                      {!isOpsAgentCaseTerminal(agentResult) && !currentCaseStateUnknown && (
                         <Button
                           variant="danger"
                           onClick={() => setCaseDialogAction('cancel')}
-                          disabled={caseActionLoading}
+                          disabled={
+                            caseActionLoading ||
+                            caseLoading ||
+                            caseNeedsReconciliation ||
+                            currentCaseStateUnknown
+                          }
                         >
                           Hủy yêu cầu
                         </Button>
@@ -2171,6 +2675,7 @@ export function OpsAgentPage({
                           void reloadAgentCase();
                         }}
                         loading={caseLoading}
+                        disabled={caseActionLoading}
                       >
                         Cập nhật trạng thái
                       </Button>
@@ -2182,6 +2687,29 @@ export function OpsAgentPage({
           </div>
         )}
       </TabPanel>
+      {showUnknownSendDialog && (
+        <ConfirmDialog
+          title="Đã đối soát lần gửi trước chưa?"
+          confirmText="Đã đối soát, mở lại ô nhập"
+          onConfirm={() => {
+            if (uncertainInitialSendSessionKey)
+              window.sessionStorage.removeItem(uncertainInitialSendSessionKey);
+            setSendOutcomeUnknown(false);
+            setSendConflict(false);
+            setSendError('');
+            setShowUnknownSendDialog(false);
+            window.requestAnimationFrame(() => {
+              chatInputContainerRef.current?.querySelector<HTMLTextAreaElement>('textarea')?.focus();
+            });
+          }}
+          onClose={() => setShowUnknownSendDialog(false)}
+        >
+          <p>
+            Chỉ tiếp tục sau khi đã kiểm tra với người phụ trách rằng yêu cầu trước chưa được tạo. Nội
+            dung đang nhập sẽ được giữ lại để bạn xem và quyết định gửi lại.
+          </p>
+        </ConfirmDialog>
+      )}
       {caseDialogAction && (
         <ConfirmDialog
           title={agentActionCopy[caseDialogAction].title}

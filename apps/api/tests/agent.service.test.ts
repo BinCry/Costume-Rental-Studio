@@ -46,16 +46,36 @@ const result = {
   state: 'INSUFFICIENT_DATA',
   message: 'Please provide more information.',
   evidence: [],
-  runStatus: 'COMPLETED',
-  goal: null,
-  stepsUsed: 1,
-  tokensUsed: 10,
-  terminationReason: 'INSUFFICIENT_DATA',
+  goal: { summary: 'Rental assistance', status: 'WAITING_FOR_INPUT' },
   pendingInput: null,
   pendingConfirmation: null,
   pendingApproval: null,
-  handoff: null,
+  handoff: { nextAction: 'Ask for the order code.', sideEffects: 'No changes were made.' },
   completed: true,
+};
+const upstreamResult = {
+  ...result,
+  runStatus: 'COMPLETED',
+  stepsUsed: 3,
+  tokensUsed: 120,
+  terminationReason: 'INTERNAL_TERMINATION_REASON',
+  goal: {
+    ...result.goal,
+    goalType: 'INTERNAL_GOAL_TYPE',
+    skillName: 'internal-skill',
+    constraints: { privateConstraint: 'not for the browser' },
+    plan: [{ toolName: 'internal-tool-name', arguments: { internal: true } }],
+    successCriteria: ['internal criterion'],
+  },
+  handoff: {
+    ...result.handoff,
+    reason: 'INTERNAL_HANDOFF_REASON',
+    goal: 'INTERNAL_HANDOFF_GOAL',
+    attemptedTools: ['private-tool-a'],
+    successfulTools: ['private-tool-b'],
+    failedTools: ['private-tool-c'],
+    evidenceCount: 99,
+  },
 };
 
 afterEach(() => vi.unstubAllGlobals());
@@ -68,7 +88,11 @@ describe('agent service response contracts', () => {
         .fn()
         .mockResolvedValue(
           new Response(
-            JSON.stringify({ success: true, data: { result }, message: 'Agent message completed' }),
+            JSON.stringify({
+              success: true,
+              data: { result: upstreamResult },
+              message: 'Agent message completed',
+            }),
             { status: 200, headers: { 'Content-Type': 'application/json' } },
           ),
         ),
@@ -107,7 +131,7 @@ describe('agent service response contracts', () => {
       'fetch',
       vi.fn().mockResolvedValue(
         new Response(
-          JSON.stringify({ success: true, data: result, message: 'Agent case retrieved' }),
+          JSON.stringify({ success: true, data: upstreamResult, message: 'Agent case retrieved' }),
           {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
@@ -155,7 +179,11 @@ describe('agent service response contracts', () => {
     async ({ invoke, path, body }) => {
       const fetchMock = vi.fn().mockResolvedValue(
         new Response(
-          JSON.stringify({ success: true, data: result, message: 'Agent action completed' }),
+          JSON.stringify({
+            success: true,
+            data: upstreamResult,
+            message: 'Agent action completed',
+          }),
           {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
