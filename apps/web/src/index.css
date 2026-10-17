@@ -6647,3 +6647,88 @@ small {
     transition: none;
   }
 }
+
+
+/* Drawer management: keep account actions visible and tighten mobile spacing. */
+@media (max-width: 1199px) {
+  .app-staff > .section-nav,
+  .app-staff.nav-open > .section-nav {
+    padding: max(12px, env(safe-area-inset-top)) 14px max(12px, env(safe-area-inset-bottom));
+  }
+
+  .app-staff .section-nav > nav {
+    gap: 4px;
+  }
+
+  .staff-nav-heading {
+    min-height: 40px;
+    padding: 0 10px;
+  }
+
+  .app-staff .section-nav .staff-nav-group a,
+  .app-staff .section-nav .staff-nav-agent-link {
+    min-height: 40px;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  .staff-menu-account {
+    gap: 9px;
+    padding: 10px;
+    background: var(--surface-muted);
+  }
+
+  .app-staff .staff-menu-account .sidebar-branch {
+    gap: 5px;
+  }
+
+  .app-staff .staff-menu-account .sidebar-branch select {
+    min-height: 40px;
+  }
+
+  .staff-menu-account-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .staff-menu-identity {
+    gap: 1px;
+  }
+
+  .staff-menu-identity .header-identity-role {
+    font-size: 9px;
+    line-height: 14px;
+  }
+
+  .staff-menu-identity strong {
+    font-size: 13px;
+    line-height: 18px;
+  }
+
+  .staff-menu-logout {
+    width: auto;
+    min-width: 96px;
+    min-height: 40px;
+    padding: 8px 10px;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 359px) {
+  .app-staff > .section-nav,
+  .app-staff.nav-open > .section-nav {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .staff-menu-account {
+    padding: 8px;
+  }
+
+  .staff-menu-logout {
+    min-width: 90px;
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+}
