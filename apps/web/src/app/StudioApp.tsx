@@ -165,9 +165,6 @@ export default function StudioApp() {
   const [branch, setBranch] = useState('Chi nhánh Quận 1');
   const [customerCode, setCustomerCode] = useState('KH-001');
   const [menuOpen, setMenuOpen] = useState(false);
-  const [navHovered, setNavHovered] = useState(false);
-  const [navFocused, setNavFocused] = useState(false);
-  const [navPinned, setNavPinned] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [expandedStaffGroup, setExpandedStaffGroup] = useState<string | null>(
     () =>
@@ -255,7 +252,6 @@ export default function StudioApp() {
     window.history.pushState(null, '', pathFor(screen, params));
     syncRoute(readRoute());
     setMenuOpen(false);
-    setNavPinned(false);
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
   const finishAuthentication = async (next?: string) => {
@@ -351,7 +347,6 @@ export default function StudioApp() {
         : (apiBranchOptions[0] ?? '')
       : branch;
   const activeBranchId = apiBranchIds[activeBranch];
-  const staffNavExpanded = menuOpen || navHovered || navFocused || navPinned;
   const serverPermissions = Array.from(
     new Set(
       apiIdentity?.roles
@@ -510,7 +505,9 @@ export default function StudioApp() {
     ...(p.get('portal') ? { portal: p.get('portal')! } : {}),
   };
   return (
-    <div className={`app ${staff ? 'app-staff' : 'app-customer'} ${portalClass}`}>
+    <div
+      className={`app ${staff ? 'app-staff' : 'app-customer'} ${staff && menuOpen ? 'nav-open' : ''} ${portalClass}`}
+    >
       <a className="skip-link" href="#main-content">
         Bỏ qua điều hướng
       </a>
@@ -543,6 +540,19 @@ export default function StudioApp() {
               <small>TRANG PHỤC</small>
             </span>
           </a>
+          {staff && (
+            <button
+              ref={menuButtonRef}
+              type="button"
+              className="icon-button staff-menu-toggle"
+              aria-label={menuOpen ? 'Đóng menu chức năng' : 'Mở menu chức năng'}
+              aria-expanded={menuOpen}
+              aria-controls="staff-navigation"
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              <Icon name="menu" />
+            </button>
+          )}
           {!staff && (
             <nav
               id="main-navigation"
@@ -695,16 +705,18 @@ export default function StudioApp() {
                 </a>
               </div>
             )}
-            <button
-              ref={menuButtonRef}
-              className="icon-button mobile-menu"
-              aria-label={menuOpen ? 'Đóng điều hướng' : 'Mở điều hướng'}
-              aria-expanded={menuOpen}
-              aria-controls={staff ? 'staff-navigation' : 'main-navigation'}
-              onClick={() => setMenuOpen(!menuOpen)}
-            >
-              <Icon name="menu" />
-            </button>
+            {!staff && (
+              <button
+                ref={menuButtonRef}
+                className="icon-button mobile-menu"
+                aria-label={menuOpen ? 'Đóng điều hướng' : 'Mở điều hướng'}
+                aria-expanded={menuOpen}
+                aria-controls="main-navigation"
+                onClick={() => setMenuOpen(!menuOpen)}
+              >
+                <Icon name="menu" />
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -713,56 +725,15 @@ export default function StudioApp() {
           <aside
             ref={sectionNavRef}
             id="staff-navigation"
-            className={`section-nav ${menuOpen ? 'open' : ''} ${navHovered ? 'pointer-open' : ''} ${navFocused ? 'focus-open' : ''} ${navPinned ? 'pinned' : ''}`}
-            role={menuOpen ? 'dialog' : undefined}
-            aria-modal={menuOpen ? true : undefined}
+            className={`section-nav ${menuOpen ? 'open' : ''}`}
             aria-label="Điều hướng khu vận hành"
-            onMouseEnter={() => setNavHovered(true)}
-            onMouseLeave={() => setNavHovered(false)}
-            onFocusCapture={() => setNavFocused(true)}
-            onBlurCapture={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget))
-                setNavFocused(false);
-            }}
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
                 setMenuOpen(false);
-                setNavPinned(false);
-                setNavFocused(false);
-                if (window.matchMedia('(max-width: 1199px)').matches)
-                  menuButtonRef.current?.focus();
-                else
-                  sectionNavRef.current
-                    ?.querySelector<HTMLButtonElement>('.staff-nav-handle')
-                    ?.focus();
-              } else if (event.key === 'Tab' && menuOpen) {
-                const focusable = Array.from(
-                  event.currentTarget.querySelectorAll<HTMLElement>(
-                    'a[href], button:not(:disabled), select:not(:disabled)',
-                  ),
-                );
-                const first = focusable[0];
-                const last = focusable[focusable.length - 1];
-                if (event.shiftKey && document.activeElement === first) {
-                  event.preventDefault();
-                  last?.focus();
-                } else if (!event.shiftKey && document.activeElement === last) {
-                  event.preventDefault();
-                  first?.focus();
-                }
+                menuButtonRef.current?.focus();
               }
             }}
           >
-            <button
-              type="button"
-              className="staff-nav-handle"
-              aria-label={staffNavExpanded ? 'Thu gọn menu điều hướng' : 'Mở menu điều hướng'}
-              aria-controls="staff-navigation"
-              aria-expanded={staffNavExpanded}
-              onClick={() => setNavPinned((current) => !current)}
-            >
-              <Icon name="menu" size={18} />
-            </button>
             <button
               type="button"
               className="staff-nav-close"
@@ -844,17 +815,6 @@ export default function StudioApp() {
               })}
             </nav>
           </aside>
-          {menuOpen && (
-            <button
-              type="button"
-              className="staff-nav-backdrop"
-              aria-label="Đóng điều hướng"
-              onClick={() => {
-                setMenuOpen(false);
-                menuButtonRef.current?.focus();
-              }}
-            />
-          )}
         </>
       )}
       <main

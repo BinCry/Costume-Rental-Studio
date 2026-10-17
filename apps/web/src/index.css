@@ -6244,70 +6244,57 @@ small {
   }
 }
 
-/* Let the operations workspace use the full canvas; reveal navigation on demand. */
+/* The operations menu expands inside the page grid and never covers content. */
 .app-staff {
   grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+.app-staff > .section-nav {
+  position: static;
+  grid-column: 1;
+  grid-row: 3;
+  width: auto;
+  height: auto;
+  max-height: none;
+  padding: 22px 14px 28px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
+  visibility: visible;
+  z-index: auto;
+}
+.app-staff:not(.nav-open) > .section-nav {
+  display: none;
+}
+.app-staff.nav-open {
+  grid-template-columns: minmax(220px, 256px) minmax(0, 1fr);
+}
+.app-staff.nav-open > .section-nav {
+  display: block;
 }
 .app-staff > .main-content {
   grid-column: 1;
+  grid-row: 3;
 }
-@media (min-width: 1200px) {
-  .app-staff > .section-nav {
-    position: fixed;
-    z-index: 60;
-    inset: 104px auto 0 0;
-    width: min(300px, 86vw);
-    height: auto;
-    max-height: calc(100dvh - 104px);
-    padding: 72px 14px 28px;
-    overflow-x: hidden;
-    overflow-y: auto;
-    border: 1px solid var(--border);
-    border-left: 0;
-    border-radius: 0 var(--radius-md) var(--radius-md) 0;
-    background: var(--surface);
-    box-shadow: var(--shadow-overlay);
-    transform: translateX(calc(-100% + 52px));
-    visibility: visible;
-    transition:
-      transform 180ms ease,
-      box-shadow 180ms ease;
-  }
-  .app-staff > .section-nav.pointer-open,
-  .app-staff > .section-nav.focus-open,
-  .app-staff > .section-nav.pinned {
-    transform: translateX(0);
-    box-shadow: 0 18px 42px rgb(34 24 31 / 16%);
-  }
-  .app-staff > .section-nav:not(.pointer-open):not(.focus-open):not(.pinned) > :not(.staff-nav-handle) {
-    visibility: hidden;
-  }
-  .app-staff .staff-nav-handle {
-    position: absolute;
-    top: 12px;
-    right: 7px;
-    display: inline-grid;
-    width: 40px;
-    height: 40px;
-    place-items: center;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--surface);
-    color: var(--text-secondary);
-    cursor: pointer;
-  }
-  .app-staff .staff-nav-handle:hover,
-  .app-staff .staff-nav-handle:focus-visible {
-    border-color: var(--brand-primary);
-    color: var(--brand-primary);
-    outline: none;
-  }
-  .app-staff > .main-content {
-    grid-column: 1;
-  }
+.app-staff.nav-open > .main-content {
+  grid-column: 2;
 }
-.staff-nav-handle {
-  display: none;
+.staff-menu-toggle {
+  display: inline-grid !important;
+  flex: 0 0 44px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+}
+.staff-menu-toggle:hover,
+.staff-menu-toggle:focus-visible {
+  border-color: var(--brand-primary);
+  color: var(--brand-primary);
+  outline: none;
 }
 .dashboard-toolbar {
   grid-template-columns: minmax(170px, 0.8fr) minmax(250px, 1.4fr) minmax(170px, 0.8fr) minmax(180px, 0.8fr);
@@ -6488,8 +6475,42 @@ small {
 }
 
 @media (max-width: 1199px) {
-  .app-staff .staff-nav-handle {
+  .app-staff {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  }
+  .app-staff.nav-open {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .app-staff > .section-nav {
+    position: static;
+    grid-column: 1;
+    grid-row: 3;
+    width: auto;
+    height: auto;
+    max-height: none;
+    padding: 18px 16px 22px;
+    overflow: visible;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    box-shadow: none;
+    transform: none;
+    visibility: visible;
+  }
+  .app-staff:not(.nav-open) > .section-nav {
     display: none;
+  }
+  .app-staff.nav-open > .section-nav {
+    display: block;
+  }
+  .app-staff > .main-content,
+  .app-staff.nav-open > .main-content {
+    grid-column: 1;
+    grid-row: 4;
+  }
+  .app-staff > .site-footer {
+    grid-column: 1;
+    grid-row: 5;
   }
   .report-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
