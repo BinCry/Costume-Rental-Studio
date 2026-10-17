@@ -37,6 +37,7 @@ import {
 } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
 import {
+  ApiClientError,
   apiEnabled,
   hasAccessToken,
   listCatalogCategories,
@@ -427,7 +428,9 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.employees);
   const [selected, setSelected] = useState('NV-001');
   const [editing, setEditing] = useState<Employee>();
+  const [creatingEmployee, setCreatingEmployee] = useState(false);
   const [issue, setIssue] = useState('');
+  const [staffConflict, setStaffConflict] = useState(false);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
@@ -453,23 +456,32 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
     ? assignmentRole
     : availableAssignmentRoles[0]?.code ?? '';
   const save = async () => {
+    setIssue('');
+    setStaffConflict(false);
     if (!editing?.name.trim() || !editing.email.includes('@')) {
       setIssue('Nhập tên và email hợp lệ.');
       return;
     }
+    if (realApiMode && creatingEmployee && editing.assignments.length === 0) {
+      setIssue('Hãy bấm “+ Gán vai trò” để thêm ít nhất một vai trò tại chi nhánh trước khi tạo tài khoản. Chọn vai trò trong danh sách chưa lưu phân công.');
+      return;
+    }
     setBusy(true);
-    setIssue('');
     try {
-      await studioAdapter.saveEmployee(editing, scenario);
+      const saved = await studioAdapter.saveEmployee(editing, scenario);
       setNotice(
-        realApiMode
-          ? 'Đã lưu hồ sơ nhân viên và các phân công role theo chi nhánh trên hệ thống.'
-          : 'Đã lưu nhân viên và phân công trong fixture.',
+        realApiMode && creatingEmployee && saved.accountStatus === 'PENDING'
+          ? `Đã tạo hồ sơ nhân viên ${saved.employeeCode ?? saved.code}. Tài khoản đang chờ kích hoạt: nhân viên đăng nhập bằng Google với đúng email ${saved.email}; hệ thống sẽ xác minh email và mở quyền đã phân công.`
+          : realApiMode
+            ? 'Đã lưu hồ sơ nhân viên và các phân công vai trò theo chi nhánh trên hệ thống.'
+            : 'Đã lưu nhân viên và phân công trong fixture.',
       );
       setEditing(undefined);
+      setCreatingEmployee(false);
       retry();
     } catch (e) {
       setIssue(issueText(e));
+      setStaffConflict(e instanceof ApiClientError && e.code === 'STAFF_CONFLICT');
     } finally {
       setBusy(false);
     }
@@ -509,8 +521,11 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                   variant="secondary"
                   disabled={!!editing}
                   onClick={() => {
-                    const code = `NV-DEMO-${items.length + 1}`;
+                    const code = realApiMode
+                      ? `NV-${globalThis.crypto?.randomUUID?.().slice(0, 8).toUpperCase() ?? Date.now().toString(36).toUpperCase()}`
+                      : `NV-DEMO-${items.length + 1}`;
                     setSelected(code);
+                    setCreatingEmployee(true);
                     setEditing({
                       code,
                       name: '',
@@ -592,6 +607,7 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                           }
                           setSelected(x.code);
                           setEditing(undefined);
+                          setCreatingEmployee(false);
                           revealDetail();
                         }}
                       >
@@ -643,7 +659,11 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                       ))}
                     </SelectField>
                     {realApiMode && (
-                      <p className="field-hint">Trạng thái đăng nhập được quản lý qua luồng xác thực; màn hình này chỉ cập nhật hồ sơ và trạng thái làm việc.</p>
+                      <p className="field-hint">
+                        {person.accountStatus === 'PENDING'
+                          ? 'Tài khoản đang chờ kích hoạt. Nhân viên cần đăng nhập bằng Google với đúng email đã đăng ký; hệ thống sẽ xác minh email rồi mở quyền đã phân công.'
+                          : 'Trạng thái đăng nhập do luồng xác thực quản lý; màn hình này chỉ cập nhật hồ sơ và trạng thái làm việc.'}
+                      </p>
                     )}
                     <SelectField
                       label="Trạng thái làm việc"
@@ -742,7 +762,10 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                       Lưu hồ sơ & phân công
                     </Button>
                     {editing && (
-                      <Button variant="secondary" onClick={() => setEditing(undefined)}>
+                      <Button variant="secondary" onClick={() => {
+                        setEditing(undefined);
+                        setCreatingEmployee(false);
+                      }}>
                         Bỏ thay đổi
                       </Button>
                     )}
@@ -754,7 +777,36 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                   )}
                   </fieldset>
                 </Panel>
-                <InlineIssue text={issue} />
+                {staffConflict ? (
+                  <Feedback tone="warning" title="Hồ sơ hoặc mã nhân viên đã tồn tại">
+                    <p>{issue}</p>
+                    <p>
+                      Nếu hồ sơ đã được tạo ở lần thử trước, tải lại danh sách rồi mở hồ sơ theo email hoặc mã nhân viên. Tài khoản đang chờ kích hoạt sẽ chuyển sang hoạt động sau khi nhân viên xác minh đúng email bằng Google.
+                    </p>
+                    <div className="feature-actions">
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          setSearch(editing?.email.trim() ?? '');
+                          retry();
+                        }}
+                      >
+                        Tải lại và tìm theo email
+                      </Button>
+                      <Button
+                        variant="quiet"
+                        onClick={() => {
+                          setSearch(editing ? employeeDisplayCode(editing) : '');
+                          retry();
+                        }}
+                      >
+                        Tìm theo mã nhân viên
+                      </Button>
+                    </div>
+                  </Feedback>
+                ) : (
+                  <InlineIssue text={issue} />
+                )}
                 {notice && (
                   <Feedback tone="success" title="Đã lưu">
                     {notice}
@@ -770,6 +822,7 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                 onConfirm={() => {
                   setSelected(pendingEmployee);
                   setEditing(undefined);
+                  setCreatingEmployee(false);
                   setPendingEmployee('');
                   revealDetail();
                 }}

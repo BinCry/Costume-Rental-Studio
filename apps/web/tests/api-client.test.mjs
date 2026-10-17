@@ -165,6 +165,20 @@ describe('web API client session and error handling', () => {
     });
   });
 
+  it('explains a duplicate staff account and directs the operator to find the existing profile', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      error(409, 'STAFF_CONFLICT', 'Email, phone, or employee code already exists'),
+    );
+    const { listStaff } = await import('../src/api/client.ts');
+
+    await expect(listStaff()).rejects.toMatchObject({
+      status: 409,
+      code: 'STAFF_CONFLICT',
+      message:
+        'Email, số điện thoại hoặc mã nhân viên đã được sử dụng. Tải lại danh sách và tìm hồ sơ theo email hoặc mã nhân viên trước khi tạo lại.',
+    });
+  });
+
   it('loads Agent case state and exposes only the current case actions supported by Studio API', async () => {
     const result = {
       caseId: '10000000-0000-4000-8000-000000000002',

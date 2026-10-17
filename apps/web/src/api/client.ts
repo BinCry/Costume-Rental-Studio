@@ -461,6 +461,8 @@ function apiErrorMessage(status: number, code: string) {
       'Yêu cầu đã thay đổi so với lần gửi trước. Hãy tải lại đơn và kiểm tra giao dịch.',
     INVALID_ORDER_TRANSITION: 'Đơn đã chuyển sang trạng thái khác. Hãy tải lại trước khi thao tác.',
     POLICY_OVERLAP: 'Thời hạn chính sách bị trùng. Hãy kiểm tra lại thời điểm áp dụng.',
+    STAFF_CONFLICT:
+      'Email, số điện thoại hoặc mã nhân viên đã được sử dụng. Tải lại danh sách và tìm hồ sơ theo email hoặc mã nhân viên trước khi tạo lại.',
   };
   if (known[code]) return known[code];
   if (status === 0) return 'Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.';
