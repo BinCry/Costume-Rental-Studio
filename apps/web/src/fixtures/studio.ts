@@ -106,6 +106,8 @@ export interface Employee {
   name: string;
   email: string;
   accountStatus: UserStatus;
+  /** True only in the response that linked this new employee record to an existing customer account. */
+  accountLinkedToExistingCustomer?: boolean;
   employmentStatus: 'ACTIVE' | 'ON_LEAVE' | 'TERMINATED';
   assignments: { branch: string; roleCode: string }[];
 }

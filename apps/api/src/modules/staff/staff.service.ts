@@ -74,6 +74,7 @@ export async function createStaff(actor: AuthenticatedActor, input: CreateStaffI
   assertPermission(actor, { module: 'staff', action: 'manage' });
   try {
     return await prisma.$transaction(async (tx) => {
+      const email = input.email.trim().toLowerCase();
       const roles = await tx.role.findMany({
         where: { id: { in: input.assignments.map((assignment) => assignment.roleId) } },
       });
@@ -93,54 +94,149 @@ export async function createStaff(actor: AuthenticatedActor, input: CreateStaffI
           );
         if (assignment.branchId) await lockActiveBranch(tx, assignment.branchId);
       }
-      const user = await tx.user.create({
-        data: {
-          email: input.email.toLowerCase(),
-          phone: input.phone,
-          displayName: input.displayName,
-          status: 'PENDING',
-          employee: {
-            create: {
-              employeeCode: input.employeeCode.toUpperCase(),
-              joinedAt: input.joinedAt,
-              createdBy: actor.id,
-            },
-          },
-        },
-        select: {
-          id: true,
-          email: true,
-          phone: true,
-          displayName: true,
-          avatarUrl: true,
-          status: true,
-          employee: {
-            select: {
-              userId: true,
-              employeeCode: true,
-              employmentStatus: true,
-              joinedAt: true,
-              activatedAt: true,
-              terminatedAt: true,
-            },
-          },
-        },
+      // Serialize staff provisioning with Google sign-in and customer registration.
+      // This lets an admin attach a verified customer account instead of creating a
+      // second identity that can never own the same unique email address.
+      const candidate = await tx.user.findUnique({ where: { email }, select: { id: true } });
+      if (candidate) await lockUserAuthentication(tx, candidate.id);
+      await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtextextended(${`auth-email:${email}`}, 0))`;
+      const existing = await tx.user.findUnique({
+        where: { email },
+        include: { customer: true, employee: true, authIdentities: true, roleAssignments: true },
       });
-      for (const assignment of input.assignments) {
-        await tx.userRoleAssignment.create({
+
+      if (candidate?.id !== existing?.id) {
+        throw new AppError(409, 'STAFF_CONFLICT', 'Account changed; reload and try again');
+      }
+
+      let user: {
+        id: string;
+        email: string | null;
+        phone: string | null;
+        displayName: string;
+        avatarUrl: string | null;
+        status: string;
+        employee: {
+          userId: string;
+          employeeCode: string;
+          employmentStatus: string;
+          joinedAt: Date;
+          activatedAt: Date | null;
+          terminatedAt: Date | null;
+        } | null;
+      };
+      let accountLinkedToExistingCustomer = false;
+
+      if (existing) {
+        if (
+          existing.status !== 'ACTIVE' ||
+          !existing.customer ||
+          existing.employee ||
+          !existing.emailVerifiedAt
+        ) {
+          throw new AppError(
+            409,
+            'STAFF_CONFLICT',
+            'Only an active customer account with a verified email can be linked to staff',
+          );
+        }
+        const now = new Date();
+        const employee = await tx.employee.create({
           data: {
-            userId: user.id,
-            roleId: assignment.roleId,
-            branchId: assignment.branchId ?? null,
-            assignedBy: actor.id,
+            userId: existing.id,
+            employeeCode: input.employeeCode.toUpperCase(),
+            employmentStatus: 'ACTIVE',
+            joinedAt: input.joinedAt,
+            // A verified active customer has already proved control of this email.
+            // The admin's explicit staff assignment can therefore take effect on
+            // this same account without a second identity or a duplicate login.
+            activatedAt: now,
+            createdBy: actor.id,
+          },
+          select: {
+            userId: true,
+            employeeCode: true,
+            employmentStatus: true,
+            joinedAt: true,
+            activatedAt: true,
+            terminatedAt: true,
           },
         });
+        user = { ...existing, employee };
+        accountLinkedToExistingCustomer = true;
+
+        const existingAssignments = new Set(
+          existing.roleAssignments.map(
+            (assignment) => `${assignment.roleId}:${assignment.branchId ?? ''}`,
+          ),
+        );
+        for (const assignment of input.assignments) {
+          const key = `${assignment.roleId}:${assignment.branchId ?? ''}`;
+          if (existingAssignments.has(key)) continue;
+          await tx.userRoleAssignment.create({
+            data: {
+              userId: existing.id,
+              roleId: assignment.roleId,
+              branchId: assignment.branchId ?? null,
+              assignedBy: actor.id,
+            },
+          });
+        }
+      } else {
+        user = await tx.user.create({
+          data: {
+            email,
+            phone: input.phone,
+            displayName: input.displayName,
+            status: 'PENDING',
+            employee: {
+              create: {
+                employeeCode: input.employeeCode.toUpperCase(),
+                joinedAt: input.joinedAt,
+                createdBy: actor.id,
+              },
+            },
+          },
+          select: {
+            id: true,
+            email: true,
+            phone: true,
+            displayName: true,
+            avatarUrl: true,
+            status: true,
+            employee: {
+              select: {
+                userId: true,
+                employeeCode: true,
+                employmentStatus: true,
+                joinedAt: true,
+                activatedAt: true,
+                terminatedAt: true,
+              },
+            },
+          },
+        });
+        for (const assignment of input.assignments) {
+          await tx.userRoleAssignment.create({
+            data: {
+              userId: user.id,
+              roleId: assignment.roleId,
+              branchId: assignment.branchId ?? null,
+              assignedBy: actor.id,
+            },
+          });
+        }
       }
-      return safeCreatedStaffUser(user);
+
+      return safeCreatedStaffUser(user, accountLinkedToExistingCustomer);
     });
   } catch (error) {
     if (isUnique(error))
-      throw new AppError(409, 'STAFF_CONFLICT', 'Email, phone, or employee code already exists');
+      throw new AppError(
+        409,
+        'STAFF_CONFLICT',
+        'Employee code, phone, or linked account is already in use',
+      );
     throw error;
   }
 }
@@ -249,13 +345,8 @@ export async function removeAssignment(
       where: { id: assignmentId, userId },
       include: { role: true },
     });
-    if (!assignment)
-      throw new AppError(404, 'ASSIGNMENT_NOT_FOUND', 'Role assignment not found');
-    if (
-      actor.id === userId &&
-      assignment.branchId === null &&
-      assignment.role.roleCode === 'ADMIN'
-    )
+    if (!assignment) throw new AppError(404, 'ASSIGNMENT_NOT_FOUND', 'Role assignment not found');
+    if (actor.id === userId && assignment.branchId === null && assignment.role.roleCode === 'ADMIN')
       throw new AppError(
         409,
         'SELF_ADMIN_ASSIGNMENT_REMOVAL',
@@ -270,24 +361,28 @@ export async function removeAssignment(
     if (protectsAdmin) await assertActiveGlobalAdmin(tx);
   });
 }
-function safeCreatedStaffUser(user: {
-  id: string;
-  email: string | null;
-  phone: string | null;
-  displayName: string;
-  avatarUrl: string | null;
-  status: string;
-  employee: {
-    userId: string;
-    employeeCode: string;
-    employmentStatus: string;
-    joinedAt: Date;
-    activatedAt: Date | null;
-    terminatedAt: Date | null;
-  } | null;
-}) {
+function safeCreatedStaffUser(
+  user: {
+    id: string;
+    email: string | null;
+    phone: string | null;
+    displayName: string;
+    avatarUrl: string | null;
+    status: string;
+    employee: {
+      userId: string;
+      employeeCode: string;
+      employmentStatus: string;
+      joinedAt: Date;
+      activatedAt: Date | null;
+      terminatedAt: Date | null;
+    } | null;
+  },
+  accountLinkedToExistingCustomer = false,
+) {
   return {
     ...safeStaffUser(user),
+    accountLinkedToExistingCustomer,
     employee: user.employee
       ? {
           userId: user.employee.userId,

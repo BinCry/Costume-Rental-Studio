@@ -165,9 +165,9 @@ describe('web API client session and error handling', () => {
     });
   });
 
-  it('explains a duplicate staff account and directs the operator to find the existing profile', async () => {
+  it('explains why an existing account cannot be linked to a staff profile', async () => {
     globalThis.fetch.mockResolvedValueOnce(
-      error(409, 'STAFF_CONFLICT', 'Email, phone, or employee code already exists'),
+      error(409, 'STAFF_CONFLICT', 'Account is not eligible for staff linking'),
     );
     const { listStaff } = await import('../src/api/client.ts');
 
@@ -175,7 +175,7 @@ describe('web API client session and error handling', () => {
       status: 409,
       code: 'STAFF_CONFLICT',
       message:
-        'Email, số điện thoại hoặc mã nhân viên đã được sử dụng. Tải lại danh sách và tìm hồ sơ theo email hoặc mã nhân viên trước khi tạo lại.',
+        'Không thể liên kết tài khoản này với nhân viên. Kiểm tra trạng thái và xác minh email của tài khoản, hoặc kiểm tra mã nhân viên và số điện thoại có bị trùng không.',
     });
   });
 

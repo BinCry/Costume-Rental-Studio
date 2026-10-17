@@ -470,8 +470,10 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
     try {
       const saved = await studioAdapter.saveEmployee(editing, scenario);
       setNotice(
-        realApiMode && creatingEmployee && saved.accountStatus === 'PENDING'
-          ? `Đã tạo hồ sơ nhân viên ${saved.employeeCode ?? saved.code}. Tài khoản đang chờ kích hoạt: nhân viên đăng nhập bằng Google với đúng email ${saved.email}; hệ thống sẽ xác minh email và mở quyền đã phân công.`
+        realApiMode && creatingEmployee && saved.accountLinkedToExistingCustomer
+          ? `Đã gắn hồ sơ nhân viên ${saved.employeeCode ?? saved.code} vào tài khoản khách hàng đã xác minh ${saved.email}. Tài khoản dùng chung một hồ sơ; hãy đăng xuất rồi đăng nhập lại để làm mới quyền và vào đúng khu vực.`
+          : realApiMode && creatingEmployee && saved.accountStatus === 'PENDING'
+            ? `Đã tạo hồ sơ nhân viên ${saved.employeeCode ?? saved.code}. Tài khoản đang chờ kích hoạt: nhân viên đăng nhập bằng Google với đúng email ${saved.email}; hệ thống sẽ xác minh email và mở quyền đã phân công.`
           : realApiMode
             ? 'Đã lưu hồ sơ nhân viên và các phân công vai trò theo chi nhánh trên hệ thống.'
             : 'Đã lưu nhân viên và phân công trong fixture.',
@@ -641,6 +643,13 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                       value={person.email}
                       onChange={(e) => setEditing({ ...person, email: e.target.value })}
                     />
+                    {realApiMode && creatingEmployee && (
+                      <p className="field-hint">
+                        Nếu email đã thuộc tài khoản khách hàng đang hoạt động và đã xác minh,
+                        hồ sơ nhân viên sẽ được gắn vào chính tài khoản đó. Email mới sẽ chờ nhân
+                        viên đăng nhập bằng Google để kích hoạt.
+                      </p>
+                    )}
                     <SelectField
                       label="Trạng thái tài khoản"
                       value={person.accountStatus}
@@ -778,10 +787,10 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                   </fieldset>
                 </Panel>
                 {staffConflict ? (
-                  <Feedback tone="warning" title="Hồ sơ hoặc mã nhân viên đã tồn tại">
+                  <Feedback tone="warning" title="Không thể tạo hồ sơ nhân viên">
                     <p>{issue}</p>
                     <p>
-                      Nếu hồ sơ đã được tạo ở lần thử trước, tải lại danh sách rồi mở hồ sơ theo email hoặc mã nhân viên. Tài khoản đang chờ kích hoạt sẽ chuyển sang hoạt động sau khi nhân viên xác minh đúng email bằng Google.
+                      Tài khoản khách hàng đang hoạt động và đã xác minh email có thể được gắn hồ sơ nhân viên để dùng chung một lần đăng nhập. Nếu lần tạo trước đã thành công, tải lại danh sách rồi tìm theo email hoặc mã nhân viên.
                     </p>
                     <div className="feature-actions">
                       <Button

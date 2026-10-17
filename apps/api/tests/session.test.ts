@@ -27,7 +27,7 @@ vi.mock('../src/database/prisma.js', () => ({
 }));
 const { createApp } = await import('../src/app.js');
 const { authenticatedActorSelect } = await import('../src/modules/auth/authorization.js');
-const { login, refresh, logout, listSessions, revokeAllSessions, revokeSession } =
+const { login, refresh, logout, listSessions, revokeAllSessions, revokeSession, currentUser } =
   await import('../src/modules/auth/session/session.service.js');
 const { issueAccessToken } = await import('../src/modules/auth/token.service.js');
 const email = 'customer@example.com';
@@ -166,6 +166,32 @@ beforeEach(() => {
 });
 
 describe('email/password login', () => {
+  it('returns both customer and staff roles after an existing customer is enrolled as staff', () => {
+    const enrolledAccount = {
+      ...account,
+      employee: { employmentStatus: 'ACTIVE' },
+      roleAssignments: [
+        ...account.roleAssignments,
+        {
+          branchId: 'branch-1',
+          branch: { status: 'ACTIVE' },
+          role: {
+            roleCode: 'SALES_STAFF',
+            name: 'Nhân viên bán hàng',
+            actorGroup: 'STAFF',
+            isActive: true,
+            rolePermissions: [],
+          },
+        },
+      ],
+    };
+
+    expect(currentUser(enrolledAccount as never).roles.map((role) => role.actorGroup)).toEqual([
+      'CUSTOMER',
+      'STAFF',
+    ]);
+  });
+
   it('verifies email password, stores only hashed refresh token and metadata', async () => {
     const result = await login({ email, password }, { deviceName: 'Browser', ip: '198.51.100.1' });
     expect(result.user.email).toBe(email);

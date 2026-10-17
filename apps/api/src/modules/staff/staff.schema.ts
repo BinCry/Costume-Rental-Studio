@@ -8,7 +8,7 @@ export const staffListSchema = z.object({
   branchId: z.uuid().optional(),
 });
 export const createStaffSchema = z.object({
-  email: z.email(),
+  email: z.email().trim().toLowerCase(),
   phone: z.string().trim().max(30).optional(),
   displayName: z.string().trim().min(1).max(255),
   employeeCode: z.string().trim().min(2).max(50),
@@ -18,8 +18,9 @@ export const createStaffSchema = z.object({
     .default([])
     .refine(
       (assignments) =>
-        new Set(assignments.map((assignment) => `${assignment.roleId}:${assignment.branchId ?? ''}`))
-          .size === assignments.length,
+        new Set(
+          assignments.map((assignment) => `${assignment.roleId}:${assignment.branchId ?? ''}`),
+        ).size === assignments.length,
       'Duplicate role and branch assignments are not allowed',
     ),
 });

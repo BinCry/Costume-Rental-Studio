@@ -462,7 +462,7 @@ function apiErrorMessage(status: number, code: string) {
     INVALID_ORDER_TRANSITION: 'Đơn đã chuyển sang trạng thái khác. Hãy tải lại trước khi thao tác.',
     POLICY_OVERLAP: 'Thời hạn chính sách bị trùng. Hãy kiểm tra lại thời điểm áp dụng.',
     STAFF_CONFLICT:
-      'Email, số điện thoại hoặc mã nhân viên đã được sử dụng. Tải lại danh sách và tìm hồ sơ theo email hoặc mã nhân viên trước khi tạo lại.',
+      'Không thể liên kết tài khoản này với nhân viên. Kiểm tra trạng thái và xác minh email của tài khoản, hoặc kiểm tra mã nhân viên và số điện thoại có bị trùng không.',
   };
   if (known[code]) return known[code];
   if (status === 0) return 'Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.';
@@ -1636,6 +1636,7 @@ interface ApiStaff {
   email: string;
   displayName: string;
   status: Employee['accountStatus'];
+  accountLinkedToExistingCustomer?: boolean;
   employee?: { employeeCode: string; employmentStatus: Employee['employmentStatus'] } | null;
   roleAssignments?: {
     id: string;
@@ -1659,6 +1660,7 @@ function mapStaff(staff: ApiStaff): Employee {
     name: staff.displayName,
     email: staff.email,
     accountStatus: staff.status,
+    accountLinkedToExistingCustomer: staff.accountLinkedToExistingCustomer,
     employmentStatus: staff.employee?.employmentStatus ?? 'ACTIVE',
     assignments: mappedAssignments,
   };
