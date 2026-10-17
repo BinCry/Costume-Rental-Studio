@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import {
   Button,
   ConfirmDialog,
+  EmptyState,
   Feedback,
   Field,
   SelectField,
@@ -1440,24 +1441,21 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
 export function ReportsPage({
   scenario,
   branch,
-  allBranches,
 }: {
   scenario: DemoScenario;
   branch: string;
-  allBranches: boolean;
 }) {
   const realApiMode = apiEnabled && hasAccessToken();
   const loadReports = useCallback(
     (currentScenario: DemoScenario) =>
-      studioAdapter.reports(currentScenario, allBranches ? undefined : branch),
-    [allBranches, branch],
+      branch ? studioAdapter.reports(currentScenario, branch) : Promise.resolve([]),
+    [branch],
   );
   const { loading, error, data, retry } = useFixtureResource(
     scenario,
     loadReports,
-    `${branch}:${allBranches ? 'all' : 'branch'}`,
+    branch,
   );
-  const [filter, setFilter] = useState(branch);
   return (
     <StateGate
       loading={loading}
@@ -1467,33 +1465,30 @@ export function ReportsPage({
       emptyTitle="Chưa có báo cáo"
     >
       {(reports) => {
-        const scoped = realApiMode && allBranches
-          ? reports
-          : reports.filter((r) => r.branch === (allBranches ? filter : branch));
+        const scoped = reports.filter((report) => report.branch === branch);
         return (
           <div className="page">
             <PageHeading
               eyebrow="QUẢN TRỊ / BÁO CÁO"
               title="Báo cáo vận hành"
-              description={
-                realApiMode
-                  ? 'Số liệu lấy từ hệ thống theo chi nhánh và khoảng 30 ngày gần nhất. Cọc đang giữ hiển thị riêng, không cộng vào doanh thu thuê.'
-                  : 'Snapshot fixture theo chi nhánh. Cọc đang giữ hiển thị riêng, không cộng vào doanh thu thuê.'
-              }
+              description="Số liệu của chi nhánh đang chọn trong khoảng 30 ngày gần nhất. Tiền cọc đang giữ được theo dõi riêng, không tính vào doanh thu thuê."
             />
             <FilterBar>
-              {allBranches && !realApiMode ? (
-                <BranchSelector value={filter} onChange={setFilter} />
-              ) : allBranches && realApiMode ? (
-                <p>
-                  Phạm vi: <strong>Toàn chuỗi</strong> · API đang trả số liệu tổng hợp theo quyền được cấp.
-                </p>
-              ) : (
-                <p>
-                  Chi nhánh được cấp quyền: <strong>{branch}</strong>
-                </p>
-              )}
+              <p>
+                Chi nhánh: <strong>{branch || 'Chưa chọn'}</strong>
+              </p>
             </FilterBar>
+            {scoped.length === 0 && (
+              <EmptyState
+                title={branch ? 'Chưa có số liệu cho chi nhánh này' : 'Chưa có chi nhánh được chọn'}
+              >
+                <p>
+                  {branch
+                    ? 'Thử chọn khoảng thời gian khác hoặc quay lại sau khi có hoạt động thuê.'
+                    : 'Chọn một chi nhánh được phân công để xem báo cáo.'}
+                </p>
+              </EmptyState>
+            )}
             {scoped.map((report) => (
               <div key={report.branch}>
                 <p className="muted">
@@ -1537,7 +1532,7 @@ export function ReportsPage({
                   <Panel title="Hoàn cọc">
                     {realApiMode ? (
                       <p className="muted">
-                        API hiện trả số tiền hoàn chính xác ở chỉ số “Đã hoàn cọc”, chưa trả số lượng giao dịch.
+                        Tổng số tiền đã hoàn được thể hiện ở chỉ số “Đã hoàn cọc” phía trên.
                       </p>
                     ) : (
                       <KeyFacts

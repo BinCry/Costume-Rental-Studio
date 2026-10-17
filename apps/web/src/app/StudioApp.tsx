@@ -1212,11 +1212,7 @@ export default function StudioApp() {
               />
             )}
             {(route.screen === 'reports' || route.screen === 'staffReports') && (
-              <ReportsPage
-                scenario={scenario}
-                branch={activeBranch}
-                allBranches={effectivePermissions.includes('reports.read.all')}
-              />
+              <ReportsPage scenario={scenario} branch={activeBranch} />
             )}
           </>
         )}
