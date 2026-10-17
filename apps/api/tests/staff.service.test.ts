@@ -287,14 +287,16 @@ describe('staff service', () => {
       employee: { userId, employeeCode: 'EMP-LINKED', employmentStatus: 'ACTIVE' },
     });
     expect(createAccount).not.toHaveBeenCalled();
+    const activatedAtMatcher: unknown = expect.any(Date);
+    const employeeDataMatcher: unknown = expect.objectContaining({
+      userId,
+      employeeCode: 'EMP-LINKED',
+      activatedAt: activatedAtMatcher,
+      createdBy: actorId,
+    });
     expect(createEmployee).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({
-          userId,
-          employeeCode: 'EMP-LINKED',
-          activatedAt: expect.any(Date),
-          createdBy: actorId,
-        }),
+        data: employeeDataMatcher,
       }),
     );
     expect(createAssignment).toHaveBeenCalledWith({
