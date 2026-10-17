@@ -56,6 +56,7 @@ docs/
 | [`api/customers/create-counter-customer.md`](api/customers/create-counter-customer.md) | Admin/Staff tạo Customer tại quầy |
 | [`api/catalog/delete-catalog.md`](api/catalog/delete-catalog.md) | Hợp đồng hard delete có guard cho category, model, variant và phụ kiện |
 | [`operations/ci-cd.md`](operations/ci-cd.md) | CI, Docker, Coolify và migration production |
+| [`operations/ke-hoach-phat-trien-ops-agent.md`](operations/ke-hoach-phat-trien-ops-agent.md) | Kế hoạch phát triển Ops Agent cho riêng Costume Rental Studio: hiện trạng, hành trình, lộ trình, nghiệm thu và quyết định cần chốt |
 | [`operations/doi-chieu-ui-ops-agent-va-api.md`](operations/doi-chieu-ui-ops-agent-va-api.md) | Đối chiếu màn Ops Agent với API đang có và các API còn thiếu |
 | [`operations/yeu-cau-hoan-thien-ai-agent.md`](operations/yeu-cau-hoan-thien-ai-agent.md) | Bàn giao tính năng, hợp đồng tool/RAG và tiêu chí nghiệm thu cho đội AI Agent |
 
