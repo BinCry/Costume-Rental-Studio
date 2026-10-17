@@ -3,8 +3,8 @@
 - **Dự án:** Costume Rental Studio
 - **Ngày lập/cập nhật:** 18/10/2026
 - **Baseline mã nguồn:** `375fd896e1ff9e4868c91f0674e3b213c7a680c8`
-- **Commit đã kiểm thử trước đợt gia cố Ops hiện tại:** `a3b7205f67349a16579580eff10c998b342f664b` trên nhánh `codex-production-readiness`.
-- **CI gần nhất đã xác minh:** GitHub Actions run #219 thành công trên commit nêu trên; lint, typecheck, tests, migration, concurrency và build API/Web đều đạt. Kiểm tra run mới trên PR trước khi phát hành.
+- **Commit đã kiểm thử gần nhất:** `d59fc3c9ce3b06f4431f16e54c605c97784debed` trên nhánh `codex-production-readiness`.
+- **CI gần nhất đã xác minh:** GitHub Actions run [#223](https://github.com/BinCry/Costume-Rental-Studio/actions/runs/39056615606) thành công trên commit `d59fc3c9ce3b06f4431f16e54c605c97784debed`; lint, 338 API tests (17 skipped), typecheck, build API/Web, migration, PostgreSQL concurrency, 46 FE tests đều đạt.
 - **Phạm vi:** Frontend, API/backend, bảo mật và kiểm thử nghiệm thu. Tài liệu không thay đổi nghiệp vụ, schema hoặc cấu hình môi trường thật.
 
 ## Trạng thái phát hành
@@ -102,7 +102,7 @@ Chỉ chạy trên staging với tài khoản nhân viên/khách riêng và dữ
 
 ### Release gate
 
-- [x] FE/API typecheck, lint, tests, migration, concurrency và build đều đạt GitHub Actions run #219 trên commit `a3b7205f67349a16579580eff10c998b342f664b` (bản trước đợt gia cố Ops hiện tại).
+- [x] FE/API typecheck, lint, tests, migration, PostgreSQL concurrency và build đều đạt GitHub Actions run #223 trên commit `d59fc3c9ce3b06f4431f16e54c605c97784debed`.
 - [ ] Migration không đổi nếu không có yêu cầu nghiệp vụ đã được xác nhận; nếu buộc phải có migration, review tính tương thích và kế hoạch rollback riêng.
 - [ ] E2E staging ở trên đạt trên trình duyệt desktop và thiết bị mobile; ghi lại commit, môi trường, vai trò và kết quả.
 - [ ] Xác minh log không chứa token, mật khẩu, email/số điện thoại hoặc thông tin thanh toán nhạy cảm.
@@ -112,4 +112,4 @@ Chỉ chạy trên staging với tài khoản nhân viên/khách riêng và dữ
 
 ## 5. Giới hạn hiện tại
 
-Danh sách đối chiếu từ baseline `375fd896e1ff9e4868c91f0674e3b213c7a680c8`. CI run #219 trên commit `a3b7205f67349a16579580eff10c998b342f664b` là bằng chứng của bản trước; các thay đổi Ops trong đợt này cần run mới. CI xanh không xác nhận runtime staging/production; các ô staging, responsive/accessibility thủ công, hợp đồng AI Agent và quyết định chính sách gia hạn vẫn phải hoàn tất trước khi chốt phát hành.
+Danh sách đối chiếu từ baseline `375fd896e1ff9e4868c91f0674e3b213c7a680c8`. CI run #223 xác nhận code hiện tại trên nhánh PR; CI xanh không xác nhận runtime staging/production. Các ô staging, responsive/accessibility thủ công, hợp đồng AI Agent và quyết định chính sách gia hạn vẫn phải hoàn tất trước khi chốt phát hành.
