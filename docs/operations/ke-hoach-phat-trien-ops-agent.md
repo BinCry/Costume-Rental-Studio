@@ -4,9 +4,9 @@
 
 **Ngày đối chiếu mã nguồn:** 18/10/2026
 
-**Mốc đối chiếu:** Studio `main` tại `b0733a8724acb0baf963f394e73663eb88b7fc78`; AI Agent `main` tại [`18bbc70374f4296bf602390dd198bc8013b2bcc4`](https://github.com/BinCry/Costume-Rental-Ops-Agent/commit/18bbc70374f4296bf602390dd198bc8013b2bcc4).
+**Mốc đối chiếu:** Studio `main` tại [`fcbb8af`](https://github.com/BinCry/Costume-Rental-Studio/commit/fcbb8af45d9737e4583bb2c8a512d0a3e649cdee); AI Agent `main` tại [`cf2ec57`](https://github.com/BinCry/Costume-Rental-Ops-Agent/commit/cf2ec57be033cd3e6fcc332639de049c066087ed).
 
-**Trạng thái:** kế hoạch triển khai đề xuất sau [khảo sát thực tế 18/10/2026](khao-sat-hien-trang-ops-agent-2026-10-18.md); các quyết định ở mục 8 chưa được phê duyệt.
+**Trạng thái:** kế hoạch sản phẩm đề xuất sau [khảo sát thực tế 18/10/2026](khao-sat-hien-trang-ops-agent-2026-10-18.md). Kết nối AI database đã phục hồi; phần hạ tầng, sao lưu và promotion được hoãn theo yêu cầu chủ dự án. Các quyết định ở mục 8 chưa được phê duyệt.
 
 ## 1. Mục tiêu và ranh giới sản phẩm
 
@@ -27,8 +27,8 @@ Nguồn chuẩn nghiệp vụ và quyền vẫn là Studio API và [`business-ru
 | Tool ghi | 11 tên tool đã khai báo | [`agent-tools.registry.ts`](../../apps/api/src/modules/agent-tools/agent-tools.registry.ts), [`agent-tools.service.ts`](../../apps/api/src/modules/agent-tools/agent-tools.service.ts) | **Tất cả bị chặn bởi `AGENT_WRITE_TOOLS_NOT_READY`**, kể cả khi bật cờ môi trường; chưa phải tính năng vận hành |
 | Phê duyệt, chống trùng | Có route quyết định và trường `approvalId`/`idempotencyKey` trong hợp đồng | [`agent.route.ts`](../../apps/api/src/modules/agent/agent.route.ts), [`agent-tools.schema.ts`](../../apps/api/src/modules/agent-tools/agent-tools.schema.ts) | Quyền duyệt mới được kiểm tra chung, chưa gắn bền với một preview/hành động; chống trùng bền mới có ở checkout/hoàn tiền |
 | Nghiệp vụ gốc | Đơn, bộ đồ, thanh toán, trả đồ, điều chuyển, CRM, chính sách và báo cáo đã có module riêng | [`schema.prisma`](../../apps/api/prisma/schema.prisma), [`business-rules.md`](../business/business-rules.md) | Ops phải gọi và diễn giải các module này, không tạo hệ nghiệp vụ thứ hai |
-| AI Agent riêng | Repo AI `main` đã có FastAPI, LangGraph, case store PostgreSQL, tool client allowlist, RAG/pgvector, migration và tests | [AI README](https://github.com/BinCry/Costume-Rental-Ops-Agent/blob/18bbc70374f4296bf602390dd198bc8013b2bcc4/README.md), [runtime](https://github.com/BinCry/Costume-Rental-Ops-Agent/tree/18bbc70374f4296bf602390dd198bc8013b2bcc4/app/agent_tools), [knowledge](https://github.com/BinCry/Costume-Rental-Ops-Agent/tree/18bbc70374f4296bf602390dd198bc8013b2bcc4/app/knowledge) | Có mã chạy thực, nhưng tình trạng dữ liệu/nguồn ở môi trường triển khai chưa đạt readiness |
-| Triển khai hiện tại | Studio API `/health/ready` 200; AI `/health` 200 nhưng AI `/health/ready` **503 `DATABASE_UNAVAILABLE`**; Coolify ghi cả ứng dụng và AI DB là `Running` | [Khảo sát runtime](khao-sat-hien-trang-ops-agent-2026-10-18.md) | Chưa thể nghiệm thu Agent/RAG liên dịch vụ. Healthcheck Coolify đang kiểm `/health`, không phát hiện thiếu kết nối AI DB |
+| AI Agent riêng | Repo AI `main` có FastAPI, LangGraph, case store PostgreSQL, tool client allowlist, RAG/pgvector, migration và tests | [AI README](https://github.com/BinCry/Costume-Rental-Ops-Agent/blob/cf2ec57be033cd3e6fcc332639de049c066087ed/README.md), [runtime](https://github.com/BinCry/Costume-Rental-Ops-Agent/tree/cf2ec57be033cd3e6fcc332639de049c066087ed/app/agent_tools), [knowledge](https://github.com/BinCry/Costume-Rental-Ops-Agent/tree/cf2ec57be033cd3e6fcc332639de049c066087ed/app/knowledge) | Code hiện có không chứng minh bảy hành trình Ops đã đạt E2E; tool ghi vẫn bị Studio API chặn |
+| Triển khai hiện tại | AI `/health/ready` trả 200 và `database: connected` trong lần kiểm tra sau phục hồi ngày 18/10/2026; lần kiểm trước cùng ngày từng trả 503 | [Nhật ký khảo sát và cập nhật](khao-sat-hien-trang-ops-agent-2026-10-18.md) | Readiness chỉ chứng minh kết nối tại thời điểm kiểm; chưa có bằng chứng hội thoại, citation, quyền theo chi nhánh hoặc tool callback E2E |
 
 Khảo sát này kết hợp mã nguồn, GitHub Actions, giao diện production có phiên sẵn và HTTP health công khai. Chưa chạy hội thoại có xác thực, RAG có citation hoặc thao tác nghiệp vụ end-to-end; các tín hiệu liveness/CI không chứng minh năng lực đó. Repo AI checkout cũ trên máy khác mốc GitHub `main` và có thay đổi chưa commit, nên kế hoạch dùng commit remote đã publish làm baseline.
 
@@ -54,7 +54,7 @@ Nguyên tắc UX: hàng đợi có việc thật mới được hiện trong pro
 4. **Quản lý phê duyệt:** áp dụng cho thao tác có ngưỡng tiền/rủi ro hoặc quyền cao; người duyệt và người tạo được phân tách theo chính sách từng hành động.
 5. **Tự động có giới hạn:** chỉ xem xét cho việc ít rủi ro đã có quy tắc, hạn mức, tần suất, đối soát, cảnh báo và công tắc tắt riêng. Chưa có hành động nào được mặc định vào mức này.
 
-Mức 1 đã có đường triển khai trong mã, nhưng **AI readiness 503 đang chặn nghiệm thu runtime**. Mức 2 cần thêm dữ liệu vận hành, nguồn đáng tin cậy và trigger/hàng đợi thật. Mức 3–5 là **đề xuất tương lai**, chưa thể bật chỉ bằng sửa prompt hoặc cờ môi trường.
+Mức 1 đã có đường triển khai trong mã và AI database đã kết nối trở lại, nhưng chưa qua nghiệm thu E2E theo vai trò/chi nhánh. Mức 2 cần thêm dữ liệu vận hành, nguồn đáng tin cậy và trigger/hàng đợi thật. Mức 3–5 là **đề xuất tương lai**, chưa thể bật chỉ bằng sửa prompt hoặc cờ môi trường.
 
 ## 5. Kiến trúc trách nhiệm đề xuất
 
@@ -78,40 +78,54 @@ Sự kiện nghiệp vụ → bộ tạo việc Ops → hàng đợi theo quyề
 
 ## 6. Lộ trình triển khai có phụ thuộc
 
-Mốc dưới đây là **lịch đề xuất**, giả định nhóm có người phụ trách sản phẩm/nghiệp vụ, Studio BE, AI BE, FE, QA và quyền cấu hình staging/Coolify. Đây chưa phải cam kết phát hành. Nếu lỗi kết nối AI DB hoặc quyết định ở mục 8 kéo dài, dịch các mốc phụ thuộc; không rút ngắn cổng nghiệm thu. Chỉ làm thay đổi production sau khi có kế hoạch rollback và bằng chứng staging tương ứng.
+Mốc dưới đây là **lịch sản phẩm đề xuất**, giả định có chủ nghiệp vụ, Studio BE, AI BE, FE và QA. Đây chưa phải cam kết phát hành. Ưu tiên trước là hợp đồng dữ liệu, trải nghiệm và kiểm thử. Sao lưu, healthcheck triển khai, promotion và rollback hạ tầng nằm ở luồng việc hoãn; chúng vẫn là điều kiện bắt buộc trước khi mở tự động ghi trên production. Có thể phát triển và thử trên dữ liệu giả lập trong lúc chờ hạ tầng.
 
 | Chặng và mốc đề xuất | Phụ thuộc | Đầu ra kiểm được, chủ trì | Điều kiện ra chặng |
 | --- | --- | --- | --- |
-| **G0 — Khôi phục nền tảng, 19–23/10/2026** | Quyền vận hành AI/Coolify | AI BE + vận hành xác định lỗi `DATABASE_UNAVAILABLE`, khôi phục kết nối, kiểm migration/ingestion, cấu hình healthcheck `/health/ready`; ghi image SHA/digest và rollback. QA chụp kết quả. | AI và Studio `/health/ready` đều 200 sau restart/deploy; truy vấn tri thức thử nghiệm có dữ liệu và log đã che secret. Nếu chưa đạt, dừng các luồng Agent phụ thuộc DB. |
-| **G1 — Hợp đồng và an toàn đọc, 26/10–06/11/2026** | G0; quyết định Q-01, Q-04, Q-06 | Product + Studio BE + AI chốt schema request/response/error/version, phạm vi case theo chi nhánh, ma trận role × branch × tool, chủ nguồn policy và thời hạn lưu; bỏ projection `refund.reason` tự do. QA có contract tests hai repo. | Chuyển chi nhánh và gửi case đều bị kiểm ở server; dữ liệu sai quyền bị từ chối; source/citation có phiên bản và hạn hiệu lực; không lộ dữ liệu tự do không cần thiết. Tool ghi vẫn bị chặn. |
-| **G2 — Hỗ trợ đọc cho 7 hành trình, 09–20/11/2026** | G1; dữ liệu staging giả lập | Studio BE + AI mở rộng tool đọc và bộ đánh giá tình huống; FE mở bản ghi nguồn, hiển thị không đủ căn cứ/lỗi; QA chạy trình duyệt → Studio → AI → tool với nhân viên một/nhiều chi nhánh và admin. | Mỗi hành trình ở mục 3 có câu hỏi, dữ liệu gốc, trạng thái thiếu nguồn/xung đột và bằng chứng E2E; không có side effect; câu chính sách không có citation hợp lệ không được khẳng định. |
-| **G3 — Hàng đợi và hồ sơ vận hành, 23/11–04/12/2026** | G1; G2 cho hành trình cần hiển thị | Studio BE sở hữu work item phát sinh từ sự kiện/trạng thái nghiệp vụ và liên kết AI case; AI BE hỗ trợ tìm/tiếp tục case; FE xây danh sách, lọc, phân công, lịch sử, audit. QA kiểm chống trùng và phục hồi mất phản hồi. | Hàng đợi khớp bản ghi nguồn, phân trang theo quyền/chi nhánh, tạo case đầu có khóa chống trùng; không có fixture trong production; người dùng tìm lại được tác vụ/case sau lỗi mạng. |
-| **G4 — Mô phỏng hành động có duyệt, 07–18/12/2026** | G2, G3; quyết định Q-02, Q-03, Q-05 | Studio BE + AI BE làm preview gắn dữ liệu/phiên bản/người duyệt, idempotency và read-back; FE trình bày trước/sau; QA fault injection trên staging. Chưa thực thi ghi trong production. | Thay actor/chi nhánh/đối số/phiên bản làm preview hết hiệu lực; approval dùng một lần; retry không tạo hai tác động; trường hợp timeout được đối soát. |
-| **G5 — Quyết định mở ghi, sau 18/12/2026** | G4 đạt; owner chấp thuận từng nhóm | Product + vận hành ra quyết định Go/No-go theo nhóm, rollout staging → nhóm người dùng nhỏ → production, có kill switch, theo dõi và rollback. Nhóm tài chính chỉ xem xét sau đối soát riêng. | Bằng chứng QA, duyệt nghiệp vụ, giám sát, runbook và kết quả người dùng thật đầy đủ. Không mặc định mở tất cả 11 tool. |
-| **G6 — Tối ưu theo số đo, sau G3/G5** | Baseline và quan sát đủ tin cậy | Product + AI/FE/BE giảm thời gian tìm và xử lý, độ trễ, chi phí, việc bị bỏ sót; xem xét tự động ít rủi ro riêng từng trường hợp. | So với baseline không tăng lỗi quyền, tiền, ghi trùng hoặc bỏ sót; mỗi tự động hóa có policy/giới hạn riêng. |
+| **S0 — Chốt hợp đồng nghiệp vụ, 19–23/10/2026** | Q-01, Q-04; mã nguồn hiện tại | Product + Studio BE + AI BE chốt phạm vi case (đề xuất: một chi nhánh), ma trận role × branch × tool, nguồn chính sách, dữ liệu tối thiểu, mã lỗi và `requestId`; QA lập bộ ca chuẩn. | Có contract versioned được hai repo dùng chung; quyền kiểm ở server; không còn mô tả UI hứa giới hạn chi nhánh khi API chưa ràng buộc. |
+| **S1 — Trợ lý đọc đáng tin cậy, 26/10–06/11/2026** | S0; dữ liệu giả lập hợp lệ | Studio BE + AI BE hoàn thiện tool đọc, kiểm nguồn/citation, bỏ `refund.reason` tự do; FE cho xem bằng chứng và mở đơn/bộ/CRM gốc; QA chạy bảy hành trình ở mục 3. | Mỗi hành trình có kết quả, thiếu dữ liệu hoặc xung đột đúng loại; test theo nhân viên một/nhiều chi nhánh và admin; không có side effect. |
+| **S2 — Việc vận hành chủ động, 09–20/11/2026** | S0; dữ liệu/sự kiện đơn, kho, thanh toán | Studio BE tạo việc từ trạng thái và quy tắc xác định; AI BE tóm tắt/đề xuất; FE thêm hàng đợi, nhận việc, lọc, hạn xử lý và đường về bản ghi nguồn. | Một sự kiện không tạo hai việc; việc đổi trạng thái khi nguồn đổi; không cần nhân viên mở chat để thấy việc; mọi thẻ ghi rõ lý do và thời điểm kiểm. |
+| **S3 — Hồ sơ, bàn giao và phục hồi, 23/11–04/12/2026** | S1, S2 | AI BE + Studio BE hoàn thiện tìm/tiếp tục case, liên kết `studioWorkItemId` ↔ `agentCaseId`, idempotency tạo case và audit; FE giữ bối cảnh/bản nháp, hiển thị lịch sử và bước tiếp theo. | Sau refresh hoặc mất response, nhân viên tìm lại việc/case theo quyền mà không gửi trùng; bàn giao ca có người phụ trách và dấu vết quyết định. |
+| **S4 — Phương án và duyệt có kiểm soát, 07–18/12/2026** | S1–S3; Q-02, Q-03, Q-05 | AI/Studio BE giả lập trên snapshot, tạo preview bất biến và hợp đồng approval gắn action/version/actor/branch; FE cho so sánh phương án và duyệt; QA fault injection. | Thay dữ liệu làm preview hết hiệu lực; phê duyệt dùng một lần; timeout không báo thành công; tool ghi production vẫn bị chặn. |
+| **S5 — Mở từng tự động hóa, sau S4 và cổng hạ tầng** | Quyết định riêng cho mỗi nhóm ghi; các cổng mục 7 | Product quyết Go/No-go cho lịch/chặn bộ trước; sau đó mới xét điều chuyển và đơn. Tài chính, hoàn cọc và thay đổi quyền/chính sách không nằm trong tự động hóa mặc định. | Có E2E, chống trùng bền, đối soát, kill switch, quan sát và rollback; mở theo nhóm/chi nhánh/người dùng, theo dõi số đo rồi mới mở rộng. |
 
-**Đường găng:** AI DB ready → contract chi nhánh và nguồn → E2E tra cứu → sự kiện/hàng đợi → preview/approval → quyết định mở ghi. G2 và thiết kế G3 có thể làm song song sau G1; G4 không chạy trước khi cả hai có bằng chứng. **Thứ tự xem xét nhóm ghi ở G5:** lịch/chặn bộ → điều chuyển → đơn thuê → thanh toán/hoàn tiền. Thứ tự này chưa phải quyết định bật và có thể đổi sau đánh giá rủi ro.
+**Đường găng sản phẩm:** contract chi nhánh/nguồn → E2E đọc → việc thật và case phục hồi → preview/approval → đánh giá mở ghi. Hạ tầng hoãn có thể triển khai song song về sau, nhưng **S5 không được phát hành** khi chưa đạt cổng vận hành ở mục 7. **Thứ tự xem xét nhóm ghi:** lịch/chặn bộ → điều chuyển → đơn thuê; thanh toán/hoàn tiền cần quyết định và nghiệm thu tài chính riêng.
+
+### Các luồng tự động hóa cần tạo từ nghiệp vụ gốc
+
+| Tín hiệu từ Studio | Việc Ops được tạo bằng quy tắc | Agent được phép hỗ trợ | Điều kiện kết thúc |
+| --- | --- | --- | --- |
+| Đơn mới chờ duyệt hoặc bộ chưa được gán | Việc kiểm lịch, chi nhánh và bộ cụ thể | Tóm tắt khả dụng, thiếu dữ liệu, mở đơn | Nhân viên xác nhận/từ chối trong module đơn; việc đối chiếu lại trạng thái nguồn |
+| Bộ của đơn kế tiếp có nguy cơ chưa sẵn sàng vì trả trễ, vệ sinh, sửa hoặc điều chuyển | Việc xử lý xung đột trước mốc nhận | So sánh bộ thay thế và mốc xử lý theo chính sách hiệu lực | Nhân viên giải quyết; không tự cam kết bộ hoặc phí với khách |
+| Đơn sắp giao, đang thuê sắp đến hạn hoặc quá hạn | Việc bàn giao/theo dõi theo mốc của đơn | Chuẩn bị checklist, trạng thái thu tiền/cọc, điểm cần liên hệ | Giao/trả hoặc mốc mới được xác nhận bởi API nguồn |
+| Trả một phần, hư hỏng hoặc hoàn cọc chưa hoàn tất | Việc kiểm tra và quyết toán | Gom bằng chứng, trạng thái khoản thu/hoàn, chính sách liên quan | Người có quyền quyết toán; hoàn cọc chỉ hiển thị trạng thái đã xác minh |
+| Điều chuyển chưa nhận hoặc case CRM cần phản hồi | Việc theo dõi có người nhận và hạn xử lý | Tóm tắt lịch sử, rủi ro và đường mở bản ghi | Module điều chuyển/CRM xác nhận hoàn tất |
+
+Việc được tạo từ sự kiện hoặc lần quét có kiểm soát với khóa `ruleId + sourceId + sourceVersion/mốc nghiệp vụ`; có thể đối chiếu lại bản ghi nguồn để sửa việc bị trễ sự kiện. LLM **không** tự quyết định có tạo, đóng hoặc ưu tiên khẩn cấp một việc; nó chỉ giải thích và đề xuất. Ngưỡng thời gian, phí và khoảng đệm phải lấy từ chính sách cấu hình có hiệu lực.
 
 ### Backlog có thể giao việc
 
 | Mã / ưu tiên | Việc cụ thể và repo | Chủ trì | Phụ thuộc / bằng chứng hoàn tất |
 | --- | --- | --- | --- |
-| OPS-00 / P0 | Sửa AI DB readiness, kiểm migration + ingestion, post-deploy smoke và pin image SHA/digest; repo AI + Coolify | AI BE, vận hành | `/health/ready` 200 ổn định sau deploy; log/cấu hình không lộ secret; có cách rollback |
+| OPS-00 / hoàn tất một phần | AI DB đã kết nối và tri thức đã được nạp trong lần khôi phục 18/10; phần backup, cổng healthcheck triển khai và image pin hoãn; repo AI + Coolify | AI BE, vận hành | Chưa coi readiness một thời điểm là bằng chứng E2E; hạ tầng còn là cổng trước S5 |
 | OPS-01 / P0 | Chốt chi nhánh của case, gửi branch context qua Web → Studio → AI, kiểm lại tại tool; hai repo | Product, Studio BE, AI BE | Ma trận role × branch: một chi nhánh, nhiều chi nhánh, admin, branch không được cấp |
 | OPS-02 / P1 | Lập catalogue 7 hành trình, mở tool đọc thiếu và deep link bản ghi; Studio API/Web + AI | Studio BE, AI BE, FE | Contract versioned + test E2E mỗi hành trình ở staging; trạng thái loading/empty/error/conflict |
 | OPS-03 / P1 | Duyệt nguồn policy, nạp/thu hồi phiên bản, kiểm citation và ca thiếu nguồn; repo AI + Studio | Nghiệp vụ, AI BE | Có owner, hiệu lực, phạm vi, trích dẫn kiểm lại được và bộ đánh giá QA |
 | OPS-04 / P1 | Thiết kế Studio work item/event, liên kết AI case, tìm/lọc/nhận việc/lịch sử/audit; Web giữ bản nháp qua refresh nhưng không tự gửi lại sau timeout; hai repo + Web | Studio BE, AI BE, FE | Không sinh việc trùng, mất response có thể tra cứu lại, UI không hiển thị dữ liệu mẫu |
-| OPS-05 / P1 | Làm contract tests, dữ liệu staging và smoke theo SHA; CI cả hai repo | QA, Studio BE, AI BE | Test quyền/xung đột/timeout/citation, browser → API → AI → tool → nguồn; lưu bằng chứng build/deploy |
+| OPS-05 / P1 | Làm contract tests và dữ liệu giả lập tích hợp cho hai repo | QA, Studio BE, AI BE | Test quyền/xung đột/timeout/citation, browser → API → AI → tool → nguồn; lưu bằng chứng phiên bản mã đã kiểm |
 | OPS-06 / P1 | Giảm dữ liệu gửi mô hình, đặc biệt `refund.reason`, quy định retention/trace và quyền xem case; Studio API + AI | Studio BE, AI BE, Product | Test che PII và dữ liệu tự do; quyền xem/audit theo vai trò; log không chứa nội dung nhạy cảm |
 | OPS-07 / P2 | Preview, approval, idempotency, đối soát/kill switch cho từng tool ghi; Studio API + AI + Web | Studio BE, AI BE, FE | Fault injection và review nghiệp vụ; guard ghi vẫn giữ đến Go/No-go từng nhóm |
-| OPS-08 / P2 | Dashboard SLO/chất lượng và runbook hỗ trợ, promotion/rollback staging → production | Vận hành, QA, Product | Đo baseline, cảnh báo và diễn tập sự cố; release record có image digest, migration và người phê duyệt |
+| OPS-08 / hoãn hạ tầng | Dashboard SLO/chất lượng và runbook hỗ trợ, sao lưu, healthcheck sau deploy, promotion/rollback staging → production | Vận hành, QA, Product | Đo baseline, cảnh báo và diễn tập sự cố; release record có image digest, migration và người phê duyệt trước S5 |
+| OPS-09 / P1 | Bộ quy tắc tạo việc từ đơn chờ, xung đột bộ, sắp giao/trả, quá hạn, quyết toán và CRM; Studio API + Web | Product, Studio BE, FE | Có khóa chống trùng, lý do/mốc/nguồn, assignee và trạng thái đối chiếu lại; không để LLM tạo việc từ suy đoán |
+| OPS-10 / P1 | Tìm/tiếp tục case, lưu bản nháp, liên kết work item, bàn giao ca và audit theo quyền; hai repo + Web | AI BE, Studio BE, FE | Mất response rồi reload vẫn tìm lại đúng việc; không tự gửi lại; xem lịch sử đúng chi nhánh và vai trò |
+| OPS-11 / P2 | Mô phỏng đổi bộ/điều chuyển trên snapshot, so sánh tác động và phát hiện vi phạm rule | Product, Studio BE, AI BE | Không ghi dữ liệu nguồn; từng phương án nêu giả định, dữ liệu đầu vào, phiên bản policy và lý do không khả thi |
 
-**Việc 48 giờ đầu sau khi nhận kế hoạch:** (1) vận hành và AI BE chụp log/kết nối AI DB có che bí mật, xác nhận nguyên nhân 503; (2) Studio BE/AI BE ký bảng contract hiện tại và điểm khác biệt, đặc biệt branch context; (3) QA chuẩn bị bộ dữ liệu staging và kiểm liveness khác readiness; (4) Product quyết định Q-01, Q-04 và người chịu trách nhiệm nguồn. Chưa thử ghi production để “xác nhận” lỗi.
+**Việc đầu tiên sau khi nhận kế hoạch:** (1) Product chốt Q-01, Q-04 và chủ nguồn; (2) Studio BE/AI BE đối chiếu contract hiện có, nhất là chi nhánh, citation và lỗi; (3) QA lập bảy hành trình với dữ liệu giả lập và ma trận vai trò; (4) FE chốt màn hàng đợi/chi tiết việc dựa trên contract. Không thử ghi production để chứng minh khả năng Agent.
 
 ## 7. Cổng nghiệm thu và an toàn phát hành
 
 1. **Phân quyền:** có test tự động cho từng vai trò, trạng thái nhân viên, quyền và chi nhánh; truy cập chéo chi nhánh bị từ chối ở Studio API, kể cả khi UI gửi dữ liệu sai.
-2. **Tool:** mọi tên ngoài allowlist bị từ chối; tool ghi tiếp tục trả `AGENT_WRITE_TOOLS_NOT_READY` và không đổi database cho đến khi nhóm đó vượt G4/G5. Không mở cờ để vượt guard.
+2. **Tool:** mọi tên ngoài allowlist bị từ chối; tool ghi tiếp tục trả `AGENT_WRITE_TOOLS_NOT_READY` và không đổi database cho đến khi nhóm đó vượt S4/S5. Không mở cờ để vượt guard.
 3. **Tri thức:** citation phải truy xuất được tài liệu, phiên bản, đoạn, trạng thái duyệt, đối tượng đọc và hiệu lực tại lúc trả lời. Nếu thiếu, mâu thuẫn hoặc đã thu hồi thì Agent từ chối kết luận chính sách. Không khẳng định đủ căn cứ chỉ vì chuỗi citation không rỗng.
 4. **Ghi dữ liệu:** preview gắn `caseId`, `toolCallId`, tool, đối số chuẩn hóa/hash, đối tượng, chi nhánh, phiên bản, actor, thời hạn và đúng người duyệt. Mỗi quyết định dùng một lần. Cùng khóa và cùng payload trả cùng kết quả; cùng khóa khác payload trả xung đột. Thử lỗi sau commit/trước response phải cho đúng một tác động và có đường đối soát.
 5. **Hành trình thật:** kiểm tra từ trình duyệt qua Studio API, AI runtime, callback, service nghiệp vụ và dữ liệu cuối trên staging bằng dữ liệu giả lập. Bao gồm đơn chờ, giao/thu cọc, trả một phần/hư hỏng, quá hạn, xung đột lịch và điều chuyển.
@@ -126,7 +140,7 @@ Mốc dưới đây là **lịch đề xuất**, giả định nhóm có ngườ
 | --- | --- | --- | --- |
 | Q-01 | Case theo chi nhánh nào? | Gắn một chi nhánh được chọn khi tạo case; đổi chi nhánh tạo case khác; tra cứu toàn chuỗi là quyền riêng | Không thể cam kết hàng đợi và tool được giới hạn đúng chi nhánh |
 | Q-02 | Ai tạo, nhận, xác nhận và duyệt việc? | Nhân viên chỉ nhận/xác nhận việc trong phân công; quản lý duyệt hành động rủi ro theo quyền chi nhánh; tách người tạo và duyệt nơi cần | Không thể hoàn thiện approval và phân công |
-| Q-03 | Nhóm ghi nào được phép mở đầu tiên? | Bắt đầu xem xét lịch/chặn bộ sau G4; tài chính sau cùng | Không thể lên rollout hoặc UX preview cụ thể |
+| Q-03 | Nhóm ghi nào được phép mở đầu tiên? | Bắt đầu xem xét lịch/chặn bộ sau S4; tài chính sau cùng | Không thể lên rollout hoặc UX preview cụ thể |
 | Q-04 | Chính sách nào là nguồn chính thức của Agent? | Chỉ tài liệu được chủ nghiệp vụ duyệt, có phiên bản/hiệu lực/chi nhánh; API nghiệp vụ thắng khi tính tiền/khả dụng | Agent có thể viện dẫn policy cũ hoặc trái kết quả hệ thống |
 | Q-05 | Hoàn cọc được chi trả và đối soát ra sao? | Trước mắt Agent chỉ hiển thị trạng thái và bước cần chốt, không hứa đã hoàn tiền | Không được tự động hóa yêu cầu hoàn tiền |
 | Q-06 | Giữ hội thoại, bằng chứng và log trong bao lâu? | Chốt thời hạn, quyền xem/xóa và dữ liệu được phép gửi tới AI trước khi lưu lịch sử | Rủi ro riêng tư, không thể thiết kế audit/retention |
@@ -147,12 +161,13 @@ Mốc dưới đây là **lịch đề xuất**, giả định nhóm có ngườ
 
 **Điều kiện dừng:** phát hiện truy cập vượt chi nhánh, citation không xác minh được nhưng vẫn kết luận chính sách, tiền/kho bị ghi trùng, kết quả “thành công” không khớp bản ghi nguồn hoặc audit không truy vết được. Tắt nhóm ghi liên quan, giữ nguyên dữ liệu để đối soát, chuyển việc cho người vận hành; không dùng Agent thử ghi lại.
 
-Trước G6 cần đo nền: thời gian từ đơn chờ tới xác nhận, thời gian tìm chính sách, tỷ lệ case cần chuyển người, tỷ lệ câu có nguồn hợp lệ, tỷ lệ thao tác không rõ kết quả, số xung đột lịch được phát hiện trước ngày nhận, thời gian xử lý quá hạn và lỗi quyền/ghi trùng. Mục tiêu số phải chốt sau khi có dữ liệu thật; tài liệu này không giả định mức cải thiện.
+Trước khi tối ưu sau S3/S5 cần đo nền: thời gian từ đơn chờ tới xác nhận, thời gian tìm chính sách, tỷ lệ case cần chuyển người, tỷ lệ câu có nguồn hợp lệ, tỷ lệ thao tác không rõ kết quả, số xung đột lịch được phát hiện trước ngày nhận, thời gian xử lý quá hạn và lỗi quyền/ghi trùng. Mục tiêu số phải chốt sau khi có dữ liệu thật; tài liệu này không giả định mức cải thiện.
 
 ## 10. Tài liệu liên quan và cơ sở tham khảo
 
 - Hợp đồng hiện có, danh sách tool, RAG và phần còn chờ: [`yeu-cau-hoan-thien-ai-agent.md`](yeu-cau-hoan-thien-ai-agent.md).
 - UI production so với API: [`doi-chieu-ui-ops-agent-va-api.md`](doi-chieu-ui-ops-agent-va-api.md).
+- Yêu cầu sản phẩm và giới hạn AI runtime: [AI `docs/product-requirements.md`](https://github.com/BinCry/Costume-Rental-Ops-Agent/blob/main/docs/product-requirements.md).
 - Quy tắc nghiệp vụ: [`business-rules.md`](../business/business-rules.md).
 - [OWASP LLM06:2025 Excessive Agency](https://genai.owasp.org/llmrisk/llm062025-excessive-agency/): tham khảo nguyên tắc giới hạn tool/quyền và duyệt hành động có tác động; các kiểm soát cụ thể ở trên là thiết kế đề xuất cho Studio, chưa phải chứng nhận tuân thủ.
 - [NIST AI RMF — Generative AI Profile](https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf): tham khảo cách quản trị rủi ro và đánh giá vòng đời; không tuyên bố hệ thống đã đạt chuẩn.
