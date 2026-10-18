@@ -11,6 +11,7 @@ import {
   StatusLabel,
   TextAreaField,
 } from '../components/ui';
+import { AssistantMarkdown } from '../components/AssistantMarkdown';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { fixtureAdapter, fixtureClock } from '../fixtures/adapter';
 import type { DemoScenario, QueueTask } from '../fixtures/types';
@@ -2266,7 +2267,11 @@ export function OpsAgentPage({
                           ? 'Trợ lý vận hành'
                           : 'Ops Agent · DEMO'}
                     </span>
-                    <p>{message.text}</p>
+                    {message.role === 'assistant' ? (
+                      <AssistantMarkdown content={message.text} />
+                    ) : (
+                      <p>{message.text}</p>
+                    )}
                     {message.sourceIds.length > 0 && (
                       <div className="ops-chat-citations" aria-label="Nguồn tham khảo">
                         <span>Nguồn:</span>
