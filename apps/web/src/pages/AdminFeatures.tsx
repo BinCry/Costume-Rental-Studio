@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Button,
   ConfirmDialog,
@@ -39,8 +39,12 @@ import type { DemoScenario } from '../fixtures/types';
 import {
   ApiClientError,
   apiEnabled,
+  deleteCatalogMedia,
   hasAccessToken,
   listCatalogCategories,
+  listCatalogMedia,
+  type CatalogMediaRecord,
+  updateCatalogMedia,
   uploadCatalogMedia,
 } from '../api/client';
 
@@ -82,7 +86,73 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
   const [issue, setIssue] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [mediaBusy, setMediaBusy] = useState(false);
+  const [mediaLoading, setMediaLoading] = useState(false);
+  const [mediaProgress, setMediaProgress] = useState<number>();
+  const [mediaIssue, setMediaIssue] = useState('');
+  const [mediaNotice, setMediaNotice] = useState('');
+  const [mediaOwnerLoadedId, setMediaOwnerLoadedId] = useState('');
+  const [mediaOwnerErrorId, setMediaOwnerErrorId] = useState('');
+  const [mediaItems, setMediaItems] = useState<CatalogMediaRecord[]>([]);
   const [mediaFile, setMediaFile] = useState<File>();
+  const [mediaPreviewUrl, setMediaPreviewUrl] = useState('');
+  const [mediaInputKey, setMediaInputKey] = useState(0);
+  const [mediaAltText, setMediaAltText] = useState('');
+  const [editingMediaAltId, setEditingMediaAltId] = useState('');
+  const [editingMediaAltText, setEditingMediaAltText] = useState('');
+  const [replaceTargetId, setReplaceTargetId] = useState('');
+  const [pendingDeleteMedia, setPendingDeleteMedia] = useState<CatalogMediaRecord>();
+  const [savedModelId, setSavedModelId] = useState('');
+  const mediaModel = model?.id === selected ? model : data?.find((item) => item.id === selected) ?? data?.[0];
+  const isPersistedModel = Boolean(
+    mediaModel && (savedModelId === mediaModel.id || data?.some((item) => item.id === mediaModel.id)),
+  );
+  const mediaOwnerId = realApiMode && isPersistedModel && mediaModel?.modelCode?.trim()
+    ? mediaModel.id
+    : undefined;
+
+  useEffect(() => {
+    if (!mediaPreviewUrl) return;
+    return () => URL.revokeObjectURL(mediaPreviewUrl);
+  }, [mediaPreviewUrl]);
+
+  useEffect(() => {
+    let current = true;
+    if (!mediaOwnerId) return;
+    void listCatalogMedia('model', mediaOwnerId)
+      .then((items) => {
+        if (!current) return;
+        setMediaItems([...items].sort((a, b) => a.sortOrder - b.sortOrder));
+        setMediaOwnerLoadedId(mediaOwnerId);
+        setMediaOwnerErrorId('');
+        setReplaceTargetId('');
+        setEditingMediaAltId('');
+        setMediaIssue('');
+      })
+      .catch((error: unknown) => {
+        if (!current) return;
+        setMediaItems([]);
+        setMediaOwnerLoadedId('');
+        setMediaOwnerErrorId(mediaOwnerId);
+        setMediaIssue(issueText(error));
+      })
+      .finally(() => {
+        if (current) setMediaLoading(false);
+      });
+    return () => { current = false; };
+  }, [mediaOwnerId]);
+
+  const resetMediaDraft = () => {
+    setMediaFile(undefined);
+    setMediaPreviewUrl('');
+    setMediaAltText('');
+    setReplaceTargetId('');
+    setEditingMediaAltId('');
+    setPendingDeleteMedia(undefined);
+    setMediaIssue('');
+    setMediaNotice('');
+    setMediaInputKey((value) => value + 1);
+  };
   const saveModel = async () => {
     if (!model?.name.trim()) {
       setIssue('Nhập tên mẫu.');
@@ -98,6 +168,7 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
       const saved = await studioAdapter.saveModel(model, scenario);
       setModel(saved);
       setSelected(saved.id);
+      if (realApiMode) setSavedModelId(saved.id);
       setNotice(realApiMode ? 'Đã lưu mẫu vào danh mục trên máy chủ.' : 'Đã lưu mẫu trong fixture.');
       retry();
     } catch (e) {
@@ -106,23 +177,158 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
       setBusy(false);
     }
   };
-  const saveMedia = async () => {
-    if (!realApiMode || !model?.modelCode || !mediaFile) {
-      setIssue('Chọn ảnh và lưu mẫu trước khi tải media lên máy chủ.');
+  const refreshMedia = async (ownerId: string) => {
+    const items = await listCatalogMedia('model', ownerId);
+    setMediaItems([...items].sort((a, b) => a.sortOrder - b.sortOrder));
+    setMediaOwnerLoadedId(ownerId);
+    setMediaOwnerErrorId('');
+  };
+
+  const retryMediaList = async (ownerId: string) => {
+    setMediaLoading(true);
+    setMediaIssue('');
+    setMediaOwnerErrorId('');
+    try {
+      await refreshMedia(ownerId);
+    } catch (error) {
+      setMediaItems([]);
+      setMediaOwnerLoadedId('');
+      setMediaOwnerErrorId(ownerId);
+      setMediaIssue(issueText(error));
+    } finally {
+      setMediaLoading(false);
+    }
+  };
+
+  const saveMedia = async (target: CostumeDetail, replaceExisting = false) => {
+    if (!realApiMode || !target.modelCode || !mediaFile) {
+      setMediaIssue('Chọn ảnh và lưu mẫu trước khi tải lên.');
       return;
     }
-    setBusy(true);
-    setIssue('');
+    const replacement = replaceExisting
+      ? mediaItems.find((item) => item.id === replaceTargetId)
+      : undefined;
+    if (replaceExisting && !replacement) {
+      setMediaIssue('Ảnh cần thay không còn trong danh sách. Hãy tải lại thư viện ảnh.');
+      return;
+    }
+    if (mediaAltText.trim().length > 500) {
+      setMediaIssue('Mô tả ảnh không được vượt quá 500 ký tự.');
+      return;
+    }
+    const sortOrder = replacement
+      ? replacement.sortOrder
+      : mediaItems.reduce((maximum, item) => Math.max(maximum, item.sortOrder), -1) + 1;
+    const enteredAltText = mediaAltText.trim();
+    const altText = enteredAltText.length > 0 ? enteredAltText : (replacement?.altText ?? target.name);
+    setMediaBusy(true);
+    setMediaProgress(0);
+    setMediaIssue('');
+    setMediaNotice('');
     try {
-      await uploadCatalogMedia('model', model.id, mediaFile, model.name);
-      setMediaFile(undefined);
-      setModel(undefined);
-      setNotice('Đã tải ảnh và gắn vào mẫu trên máy chủ.');
+      await uploadCatalogMedia(
+        'model', target.id, mediaFile, altText, sortOrder, setMediaProgress,
+      );
+    } catch (error) {
+      setMediaIssue(issueText(error));
+      setMediaBusy(false);
+      setMediaProgress(undefined);
+      return;
+    }
+
+    let oldImageDeleteFailed = false;
+    if (replacement) {
+      try {
+        await deleteCatalogMedia(replacement.id);
+      } catch {
+        oldImageDeleteFailed = true;
+      }
+    }
+    setMediaFile(undefined);
+    setMediaPreviewUrl('');
+    setMediaAltText('');
+    setReplaceTargetId('');
+    setMediaProgress(undefined);
+    setMediaInputKey((value) => value + 1);
+    try {
+      await refreshMedia(target.id);
+      setMediaNotice(replacement ? 'Đã tải ảnh mới cho mẫu.' : 'Đã thêm ảnh vào mẫu trên máy chủ.');
       retry();
-    } catch (e) {
-      setIssue(issueText(e));
+    } catch (error) {
+      setMediaItems([]);
+      setMediaOwnerLoadedId('');
+      setMediaOwnerErrorId(target.id);
+      setMediaIssue(`Ảnh đã tải lên nhưng chưa làm mới được thư viện. ${issueText(error)}`);
+    }
+    if (oldImageDeleteFailed) {
+      setMediaIssue('Ảnh mới đã tải lên nhưng ảnh cũ chưa xóa được. Tải lại thư viện rồi xóa ảnh cũ nếu cần.');
+    }
+    setMediaBusy(false);
+  };
+
+  const makePrimaryMedia = async (media: CatalogMediaRecord, ownerId: string) => {
+    setMediaBusy(true);
+    setMediaIssue('');
+    setMediaNotice('');
+    try {
+      const ordered = [
+        media,
+        ...mediaItems.filter((item) => item.id !== media.id).sort((a, b) => a.sortOrder - b.sortOrder),
+      ];
+      for (const [index, item] of ordered.entries()) {
+        await updateCatalogMedia(item.id, { sortOrder: index + 1 });
+      }
+      await updateCatalogMedia(media.id, { sortOrder: 0 });
+      await refreshMedia(ownerId);
+      setMediaNotice('Đã đặt ảnh này làm ảnh đại diện của mẫu.');
+      retry();
+    } catch (error) {
+      setMediaIssue(issueText(error));
+      try {
+        await refreshMedia(ownerId);
+      } catch {
+        // Giữ lỗi thao tác để người dùng có thể tải lại thư viện.
+      }
     } finally {
-      setBusy(false);
+      setMediaBusy(false);
+    }
+  };
+
+  const saveMediaAltText = async (media: CatalogMediaRecord, ownerId: string) => {
+    if (editingMediaAltText.trim().length > 500) {
+      setMediaIssue('Mô tả ảnh không được vượt quá 500 ký tự.');
+      return;
+    }
+    setMediaBusy(true);
+    setMediaIssue('');
+    setMediaNotice('');
+    try {
+      await updateCatalogMedia(media.id, { altText: editingMediaAltText.trim() || null });
+      await refreshMedia(ownerId);
+      setEditingMediaAltId('');
+      setMediaNotice('Đã cập nhật mô tả ảnh.');
+    } catch (error) {
+      setMediaIssue(issueText(error));
+    } finally {
+      setMediaBusy(false);
+    }
+  };
+
+  const removeMedia = async () => {
+    if (!pendingDeleteMedia || !mediaOwnerId) return;
+    setMediaBusy(true);
+    setMediaIssue('');
+    setMediaNotice('');
+    try {
+      await deleteCatalogMedia(pendingDeleteMedia.id);
+      setPendingDeleteMedia(undefined);
+      await refreshMedia(mediaOwnerId);
+      setMediaNotice('Đã xóa ảnh khỏi mẫu.');
+      retry();
+    } catch (error) {
+      setMediaIssue(issueText(error));
+    } finally {
+      setMediaBusy(false);
     }
   };
   const saveVariant = async () => {
@@ -169,7 +375,9 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
               action={canManage ? (
                 <Button
                   variant="secondary"
+                  disabled={mediaBusy}
                   onClick={() => {
+                    resetMediaDraft();
                     const id = `mau-demo-${items.length + 1}`;
                     setSelected(id);
                     setModel({
@@ -199,7 +407,9 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                       <button
                         className={`feature-list-row selectable ${selected === item.id ? 'selected' : ''}`}
                         key={item.id}
+                        disabled={mediaBusy}
                         onClick={() => {
+                          resetMediaDraft();
                           setSelected(item.id);
                           setModel(undefined);
                           setVariant(undefined);
@@ -215,7 +425,7 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                   </div>
                 </Panel>
                 <Panel title="Thông tin mẫu">
-                  <fieldset className="permission-fieldset" disabled={!canManage}>
+                  <fieldset className="permission-fieldset" disabled={!canManage || mediaBusy}>
                   <div className="feature-filters">
                     <Field
                       label="Mã mẫu"
@@ -283,24 +493,200 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                       upload riêng sau khi máy chủ trả về mã mẫu.
                     </p>
                   )}
-                  {realApiMode && editing.modelCode && (
-                    <div className="stack-form">
-                      <Field
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        label="Ảnh đại diện mẫu"
-                        onChange={(e) => setMediaFile(e.target.files?.[0])}
-                        hint="JPEG, PNG hoặc WebP; ảnh sẽ được lưu qua dịch vụ media của máy chủ."
-                      />
-                      <Button
-                        variant="secondary"
-                        loading={busy}
-                        disabled={!mediaFile}
-                        onClick={() => void saveMedia()}
-                      >
-                        Tải ảnh lên
-                      </Button>
-                    </div>
+                  {realApiMode && editing.modelCode && mediaOwnerId !== editing.id && (
+                    <p className="muted small-note">Lưu mẫu trước để mở thư viện ảnh và tải ảnh lên.</p>
+                  )}
+                  {realApiMode && editing.modelCode && mediaOwnerId === editing.id && (
+                    <section className="catalog-media-manager" aria-label="Quản lý ảnh sản phẩm">
+                      <div>
+                        <h3>Ảnh sản phẩm</h3>
+                        <p className="muted small-note">
+                          Thêm ảnh, thay ảnh cũ, chọn ảnh đại diện hoặc gỡ ảnh khỏi mẫu.
+                          Ảnh đại diện xuất hiện trước trong danh mục khách hàng.
+                        </p>
+                      </div>
+                      {mediaOwnerId === editing.id && mediaOwnerErrorId !== editing.id && (mediaLoading || mediaOwnerLoadedId !== editing.id) && (
+                        <p className="muted" role="status">Đang tải thư viện ảnh…</p>
+                      )}
+                      {mediaBusy && mediaProgress !== undefined && (
+                        <div className="catalog-media-progress" role="status" aria-live="polite">
+                          <span>Đang tải và lưu ảnh</span>
+                          <progress max={100} value={mediaProgress} aria-label="Tiến độ tải ảnh" />
+                          <strong>{mediaProgress}%</strong>
+                        </div>
+                      )}
+                      {(mediaOwnerErrorId === editing.id || (mediaOwnerLoadedId === editing.id && mediaIssue)) && (
+                        <Feedback tone="danger" title="Không thể hoàn tất thao tác với ảnh">
+                          {mediaIssue}
+                          <Button
+                            type="button"
+                            variant="quiet"
+                            loading={mediaLoading}
+                            onClick={() => void retryMediaList(editing.id)}
+                          >
+                            Tải lại thư viện ảnh
+                          </Button>
+                        </Feedback>
+                      )}
+                      {mediaOwnerLoadedId === editing.id && !mediaLoading && !mediaIssue && mediaItems.length === 0 && (
+                        <EmptyState title="Mẫu này chưa có ảnh">
+                          Thêm ảnh để khách dễ nhận biết mẫu trang phục.
+                        </EmptyState>
+                      )}
+                      {mediaOwnerLoadedId === editing.id && mediaItems.length > 0 && (
+                        <div className="catalog-media-grid">
+                          {mediaItems.map((media, mediaIndex) => (
+                            <article
+                              className={`catalog-media-card ${replaceTargetId === media.id ? 'selected' : ''}`}
+                              key={media.id}
+                            >
+                              <img src={media.mediaUrl} alt={media.altText ?? editing.name} loading="lazy" />
+                              <div className="catalog-media-card__body">
+                                <strong>{mediaIndex === 0 ? 'Ảnh đại diện' : `Ảnh ${mediaIndex + 1}`}</strong>
+                                <span className="muted small-note">
+                                  {media.altText?.trim() ? media.altText : 'Chưa có mô tả ảnh'}
+                                </span>
+                                {canManage && (
+                                  <div className="catalog-media-card__actions">
+                                    <Button
+                                      type="button"
+                                      variant="quiet"
+                                      disabled={mediaBusy}
+                                      onClick={() => {
+                                        setEditingMediaAltId(editingMediaAltId === media.id ? '' : media.id);
+                                        setEditingMediaAltText(media.altText ?? '');
+                                        setMediaIssue('');
+                                      }}
+                                    >
+                                      {editingMediaAltId === media.id ? 'Đóng mô tả' : 'Sửa mô tả'}
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="quiet"
+                                      disabled={mediaBusy}
+                                      onClick={() => {
+                                        setReplaceTargetId(replaceTargetId === media.id ? '' : media.id);
+                                        setMediaAltText(media.altText ?? editing.name);
+                                      }}
+                                    >
+                                      {replaceTargetId === media.id ? 'Bỏ chọn ảnh' : 'Chọn để thay'}
+                                    </Button>
+                                    {mediaIndex !== 0 && (
+                                      <Button
+                                        type="button"
+                                        variant="secondary"
+                                        loading={mediaBusy}
+                                        onClick={() => void makePrimaryMedia(media, editing.id)}
+                                      >
+                                        Đặt làm ảnh đại diện
+                                      </Button>
+                                    )}
+                                    <Button
+                                      type="button"
+                                      variant="quiet"
+                                      disabled={mediaBusy}
+                                      onClick={() => setPendingDeleteMedia(media)}
+                                    >
+                                      Xóa ảnh
+                                    </Button>
+                                  </div>
+                                )}
+                                {editingMediaAltId === media.id && (
+                                  <div className="catalog-media-alt-editor">
+                                    <Field
+                                      label="Mô tả ảnh"
+                                      value={editingMediaAltText}
+                                      disabled={mediaBusy}
+                                      onChange={(event) => setEditingMediaAltText(event.target.value)}
+                                    />
+                                    <div className="catalog-media-card__actions">
+                                      <Button
+                                        type="button"
+                                        variant="secondary"
+                                        loading={mediaBusy}
+                                        onClick={() => void saveMediaAltText(media, editing.id)}
+                                      >
+                                        Lưu mô tả
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="quiet"
+                                        disabled={mediaBusy}
+                                        onClick={() => setEditingMediaAltId('')}
+                                      >
+                                        Hủy
+                                      </Button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                      {canManage && (
+                        <div className="catalog-media-upload">
+                          <Field
+                            key={mediaInputKey}
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            label="Chọn ảnh"
+                            disabled={mediaBusy || mediaLoading || mediaOwnerLoadedId !== editing.id}
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              setMediaIssue('');
+                              setMediaNotice('');
+                              if (file && !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+                                setMediaFile(undefined);
+                                setMediaPreviewUrl('');
+                                setMediaIssue('Chỉ hỗ trợ ảnh JPEG, PNG hoặc WebP.');
+                                return;
+                              }
+                              setMediaFile(file);
+                              setMediaPreviewUrl(file ? URL.createObjectURL(file) : '');
+                            }}
+                            hint="JPEG, PNG hoặc WebP; giới hạn dung lượng theo cấu hình hệ thống."
+                          />
+                          {mediaPreviewUrl && (
+                            <div className="catalog-media-preview">
+                              <img src={mediaPreviewUrl} alt="Xem trước ảnh sắp tải lên" />
+                              <span className="muted small-note">Ảnh xem trước</span>
+                            </div>
+                          )}
+                          <Field
+                            label="Mô tả ảnh"
+                            value={mediaAltText}
+                            disabled={mediaBusy || mediaLoading || mediaOwnerLoadedId !== editing.id}
+                            onChange={(event) => setMediaAltText(event.target.value)}
+                            hint="Mô tả ngắn giúp người dùng đọc màn hình hiểu nội dung ảnh."
+                          />
+                          <div className="catalog-media-upload__actions">
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              loading={mediaBusy}
+                              disabled={!mediaFile || !canManage || mediaLoading || mediaOwnerLoadedId !== editing.id}
+                              onClick={() => void saveMedia(editing)}
+                            >
+                              Thêm ảnh
+                            </Button>
+                            {replaceTargetId && (
+                              <Button
+                                type="button"
+                                loading={mediaBusy}
+                                disabled={!mediaFile || !canManage || mediaLoading || mediaOwnerLoadedId !== editing.id}
+                                onClick={() => void saveMedia(editing, true)}
+                              >
+                                Thay ảnh đã chọn
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {mediaOwnerLoadedId === editing.id && mediaNotice && (
+                        <Feedback tone="success" title="Ảnh đã được cập nhật">{mediaNotice}</Feedback>
+                      )}
+                    </section>
                   )}
                   <Button loading={busy} onClick={() => void saveModel()}>
                     Lưu mẫu
@@ -412,6 +798,21 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                   <Feedback tone="success" title="Đã lưu">
                     {notice}
                   </Feedback>
+                )}
+                {pendingDeleteMedia && (
+                  <ConfirmDialog
+                    title="Xóa ảnh sản phẩm?"
+                    confirmText="Xóa ảnh"
+                    danger
+                    loading={mediaBusy}
+                    onClose={() => setPendingDeleteMedia(undefined)}
+                    onConfirm={() => void removeMedia()}
+                  >
+                    <p>
+                      Ảnh “{pendingDeleteMedia.altText?.trim() ? pendingDeleteMedia.altText : 'không có mô tả'}” sẽ bị gỡ khỏi mẫu.
+                      Thao tác này không thể hoàn tác.
+                    </p>
+                  </ConfirmDialog>
                 )}
               </div>
             </div>

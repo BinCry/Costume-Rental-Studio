@@ -41,6 +41,93 @@ afterEach(() => {
 });
 
 describe('web API client session and error handling', () => {
+  it('uploads a catalog image with progress and the requested display order', async () => {
+    values.set(accessTokenKey, 'studio-access-token');
+    const listeners = new Map();
+    let formData;
+    class TestXMLHttpRequest {
+      upload = {
+        addEventListener: (event, callback) => listeners.set(`upload:${event}`, callback),
+      };
+      status = 204;
+      open = vi.fn();
+      addEventListener = (event, callback) => listeners.set(event, callback);
+      send = vi.fn((body) => {
+        formData = body;
+        listeners.get('upload:progress')({ lengthComputable: true, loaded: 50, total: 100 });
+        listeners.get('load')();
+      });
+    }
+    vi.stubGlobal('XMLHttpRequest', TestXMLHttpRequest);
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        success({
+          objectKey: 'catalog-staging/models/model-1/image.webp',
+          uploadUrl: 'https://s3.example.test/upload',
+          fields: { key: 'catalog-staging/models/model-1/image.webp', policy: 'signed-policy' },
+        }),
+      )
+      .mockResolvedValueOnce(success({ id: 'media-1' }));
+    const progress = [];
+
+    const { uploadCatalogMedia } = await import('../src/api/client.ts');
+    await uploadCatalogMedia(
+      'model',
+      'model-1',
+      new File(['image-content'], 'look.webp', { type: 'image/webp' }),
+      'Áo dài xanh',
+      4,
+      (value) => progress.push(value),
+    );
+
+    expect(progress).toEqual([48, 100]);
+    expect(formData.get('key')).toBe('catalog-staging/models/model-1/image.webp');
+    expect(formData.get('file').name).toBe('look.webp');
+    expect(globalThis.fetch.mock.calls[0][0]).toBe(
+      'https://api.example.test/api/v1/uploads/presign',
+    );
+    expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body)).toEqual({
+      uploadKey: 'catalog-staging/models/model-1/image.webp',
+      sortOrder: 4,
+      altText: 'Áo dài xanh',
+    });
+  });
+
+  it('lists, reorders, and deletes catalog images using the API media contract', async () => {
+    values.set(accessTokenKey, 'studio-access-token');
+    const media = {
+      id: 'media-1',
+      objectKey: 'catalog/models/model-1/cover.webp',
+      mediaUrl: 'https://cdn.example.test/cover.webp',
+      sortOrder: 2,
+      altText: 'Áo dài màu xanh',
+      modelId: 'model-1',
+    };
+    globalThis.fetch
+      .mockResolvedValueOnce(success([media]))
+      .mockResolvedValueOnce(success({ ...media, sortOrder: 0 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    const { deleteCatalogMedia, listCatalogMedia, updateCatalogMedia } =
+      await import('../src/api/client.ts');
+    await expect(listCatalogMedia('model', 'model/1')).resolves.toEqual([media]);
+    await expect(updateCatalogMedia('media-1', { sortOrder: 0 })).resolves.toMatchObject({
+      id: 'media-1',
+      sortOrder: 0,
+    });
+    await expect(deleteCatalogMedia('media-1')).resolves.toBeUndefined();
+
+    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method ?? 'GET'])).toEqual([
+      ['https://api.example.test/api/v1/catalog/models/model%2F1/media', 'GET'],
+      ['https://api.example.test/api/v1/catalog/media/media-1', 'PATCH'],
+      ['https://api.example.test/api/v1/catalog/media/media-1', 'DELETE'],
+    ]);
+    expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body)).toEqual({ sortOrder: 0 });
+    expect(new Headers(globalThis.fetch.mock.calls[2][1].headers).get('Authorization')).toBe(
+      'Bearer studio-access-token',
+    );
+  });
+
   it('requests every report for the selected branch and date range', async () => {
     values.set(accessTokenKey, 'studio-access-token');
     globalThis.fetch

@@ -22,6 +22,7 @@ docs/
 ├── ui/           # Kế hoạch, quy chuẩn, đánh giá UX và hướng dẫn demo
 ├── reports/      # Báo cáo QA, kiểm toán và đối chiếu
 ├── operations/   # CI/CD và vận hành
+├── qa/           # Kịch bản kiểm thử và nghiệm thu
 ├── journals/     # Nhật ký kỹ thuật theo thời gian
 └── archive/      # Tài liệu cũ chỉ dùng tham khảo
 ```
@@ -56,6 +57,8 @@ docs/
 | [`api/customers/create-counter-customer.md`](api/customers/create-counter-customer.md) | Admin/Staff tạo Customer tại quầy |
 | [`api/catalog/delete-catalog.md`](api/catalog/delete-catalog.md) | Hợp đồng hard delete có guard cho category, model, variant và phụ kiện |
 | [`operations/ci-cd.md`](operations/ci-cd.md) | CI, Docker, Coolify và migration production |
+| [`operations/seaweedfs-s3.md`](operations/seaweedfs-s3.md) | Cấu hình và vận hành kho ảnh S3-compatible |
+| [`operations/quan-ly-anh-san-pham.md`](operations/quan-ly-anh-san-pham.md) | Hướng dẫn quản lý thư viện ảnh sản phẩm qua giao diện và luồng lưu trữ |
 | [`operations/khao-sat-hien-trang-ops-agent-2026-10-18.md`](operations/khao-sat-hien-trang-ops-agent-2026-10-18.md) | Khảo sát mã nguồn, CI, giao diện và runtime Ops Agent ngày 18/10/2026; phân biệt điều đã kiểm chứng với việc chưa thử |
 | [`operations/ke-hoach-phat-trien-ops-agent.md`](operations/ke-hoach-phat-trien-ops-agent.md) | Kế hoạch phát triển Ops Agent cho riêng Costume Rental Studio: hiện trạng, hành trình, lộ trình, nghiệm thu và quyết định cần chốt |
 | [`operations/doi-chieu-ui-ops-agent-va-api.md`](operations/doi-chieu-ui-ops-agent-va-api.md) | Đối chiếu màn Ops Agent với API đang có và các API còn thiếu |
@@ -72,6 +75,12 @@ docs/
 | [`reports/ui-ux-final-audit.md`](reports/ui-ux-final-audit.md) | Nghiệm thu UI/UX giai đoạn fixture |
 | [`reports/responsive-accessibility-qa.md`](reports/responsive-accessibility-qa.md) | QA responsive và accessibility |
 | [`reports/business-ui-coverage.md`](reports/business-ui-coverage.md) | Đối chiếu UI với tình huống nghiệp vụ |
+
+### Kiểm thử và nghiệm thu
+
+| Tài liệu | Mục đích |
+| --- | --- |
+| [`qa/kich-ban-human-test-e2e.md`](qa/kich-ban-human-test-e2e.md) | Kịch bản E2E production có kiểm soát: điều kiện an toàn, tài khoản theo vai trò, luồng nghiệp vụ và phiếu ghi nhận |
 
 ## Archive và chính sách xóa
 

@@ -467,6 +467,15 @@ function apiErrorMessage(status: number, code: string) {
     POLICY_OVERLAP: 'Thời hạn chính sách bị trùng. Hãy kiểm tra lại thời điểm áp dụng.',
     STAFF_CONFLICT:
       'Không thể liên kết tài khoản này với nhân viên. Kiểm tra trạng thái và xác minh email của tài khoản, hoặc kiểm tra mã nhân viên và số điện thoại có bị trùng không.',
+    MEDIA_LIMIT_REACHED:
+      'Mẫu đã đạt số ảnh tối đa. Hãy xóa ảnh không còn dùng hoặc thay ảnh hiện có.',
+    INVALID_UPLOAD:
+      'Tệp tải lên không thuộc mẫu này hoặc không phải ảnh được hỗ trợ. Hãy chọn lại tệp.',
+    MEDIA_ALREADY_REGISTERED: 'Ảnh này đã được lưu. Tải lại danh sách ảnh để kiểm tra trạng thái.',
+    MEDIA_NOT_FOUND: 'Ảnh không còn tồn tại. Tải lại danh sách ảnh trước khi thao tác.',
+    FILE_TOO_LARGE: 'Ảnh vượt quá giới hạn dung lượng được cấu hình. Hãy chọn tệp nhẹ hơn.',
+    INVALID_CATALOG_MEDIA: 'Định dạng ảnh chưa được hỗ trợ. Hãy chọn JPEG, PNG hoặc WebP.',
+    CATALOG_MEDIA_UPLOAD_FAILED: 'Không tải được ảnh lên kho lưu trữ. Hãy thử lại.',
   };
   if (known[code]) return known[code];
   if (status === 0) return 'Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.';
@@ -502,6 +511,7 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
       body = null;
     }
   }
+  if (response.status === 204) return undefined as T;
   if (!response.ok || !body?.success) {
     const code = body?.error?.code ?? 'API_REQUEST_FAILED';
     throw new ApiClientError(
@@ -2504,6 +2514,8 @@ export async function uploadCatalogMedia(
   ownerId: string,
   file: File,
   altText?: string,
+  sortOrder = 0,
+  onProgress?: (percentage: number) => void,
 ) {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type))
     throw new ApiClientError(400, 'INVALID_CATALOG_MEDIA', 'Ảnh phải là JPEG, PNG hoặc WebP');
@@ -2524,21 +2536,78 @@ export async function uploadCatalogMedia(
   const form = new FormData();
   Object.entries(presigned.fields).forEach(([key, value]) => form.append(key, value));
   form.append('file', file);
-  const uploaded = await fetch(presigned.uploadUrl, { method: 'POST', body: form });
-  if (!uploaded.ok)
-    throw new ApiClientError(
-      uploaded.status,
-      'CATALOG_MEDIA_UPLOAD_FAILED',
-      'Không tải được ảnh danh mục',
+  await new Promise<void>((resolve, reject) => {
+    const upload = new XMLHttpRequest();
+    upload.open('POST', presigned.uploadUrl);
+    upload.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable && event.total > 0)
+        onProgress?.(Math.min(95, Math.round((event.loaded / event.total) * 95)));
+    });
+    upload.addEventListener('error', () =>
+      reject(new ApiClientError(0, 'CATALOG_MEDIA_UPLOAD_FAILED', 'Không kết nối được kho ảnh.')),
     );
+    upload.addEventListener('abort', () =>
+      reject(new ApiClientError(0, 'CATALOG_MEDIA_UPLOAD_FAILED', 'Đã hủy tải ảnh lên.')),
+    );
+    upload.addEventListener('load', () => {
+      if (upload.status >= 200 && upload.status < 300) {
+        resolve();
+      } else {
+        reject(
+          new ApiClientError(
+            upload.status,
+            'CATALOG_MEDIA_UPLOAD_FAILED',
+            'Không tải được ảnh danh mục',
+          ),
+        );
+      }
+    });
+    upload.send(form);
+  });
   const path = ownerType === 'model' ? 'models' : 'variants';
-  return request(`/api/v1/catalog/${path}/${encodeURIComponent(ownerId)}/media`, {
+  const media = await request(`/api/v1/catalog/${path}/${encodeURIComponent(ownerId)}/media`, {
     method: 'POST',
     body: JSON.stringify({
       uploadKey: presigned.objectKey,
-      sortOrder: 0,
+      sortOrder,
       altText: optionalText(altText),
     }),
+  });
+  onProgress?.(100);
+  return media;
+}
+
+export interface CatalogMediaRecord {
+  id: string;
+  objectKey: string;
+  mediaUrl: string;
+  sortOrder: number;
+  altText: string | null;
+  modelId?: string | null;
+  variantId?: string | null;
+}
+
+export async function listCatalogMedia(
+  ownerType: 'model' | 'variant',
+  ownerId: string,
+): Promise<CatalogMediaRecord[]> {
+  const path = ownerType === 'model' ? 'models' : 'variants';
+  return request(`/api/v1/catalog/${path}/${encodeURIComponent(ownerId)}/media`);
+}
+
+export async function updateCatalogMedia(
+  mediaId: string,
+  update: { sortOrder?: number; altText?: string | null },
+): Promise<CatalogMediaRecord> {
+  return request(`/api/v1/catalog/media/${encodeURIComponent(mediaId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(update),
+  });
+}
+
+export async function deleteCatalogMedia(mediaId: string): Promise<void> {
+  await request<void>(`/api/v1/catalog/media/${encodeURIComponent(mediaId)}`, {
+    method: 'DELETE',
   });
 }
 
