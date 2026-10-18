@@ -25,10 +25,29 @@ export async function loadInternalToolActor(actorId: string): Promise<Authentica
   return requireActor(actor ?? undefined);
 }
 
-export function authorizeAgentApproval(
+export async function authorizeAgentApproval(
   actor: AuthenticatedActor,
   input: AgentApprovalAuthorizationInput,
+  caseBranchId: string,
 ) {
+  const branch = await prisma.branch.findUnique({
+    where: { id: caseBranchId },
+    select: { status: true },
+  });
+  if (branch?.status !== 'ACTIVE') {
+    throw new AppError(404, 'AGENT_CASE_NOT_FOUND', 'Agent case not found');
+  }
+  if (!input.branchIds.includes(caseBranchId)) {
+    throw new AppError(404, 'AGENT_CASE_NOT_FOUND', 'Agent case not found');
+  }
+  const requestedBranches = await Promise.all(
+    input.branchIds.map((id) =>
+      prisma.branch.findUnique({ where: { id }, select: { status: true } }),
+    ),
+  );
+  if (requestedBranches.some((requestedBranch) => requestedBranch?.status !== 'ACTIVE')) {
+    throw new AppError(404, 'AGENT_CASE_NOT_FOUND', 'Agent case not found');
+  }
   const [module, action] = input.requiredPermission.split(':') as [string, string];
   for (const branchId of input.branchIds) {
     assertPermission(actor, { module, action, branchId });
@@ -58,6 +77,16 @@ function observedResult(
     },
     ...(recordVersion === undefined ? {} : { recordVersion }),
   };
+}
+
+function assertCaseBranch(resourceBranchId: string, caseBranchId: string): void {
+  if (resourceBranchId !== caseBranchId) {
+    throw new AppError(
+      404,
+      'AGENT_CASE_RESOURCE_NOT_FOUND',
+      'Resource not found in this case branch',
+    );
+  }
 }
 
 function safeOrderView(order: Awaited<ReturnType<typeof rentalService.getOrder>>) {
@@ -197,10 +226,21 @@ function safeTransferView(transfer: Transfer) {
   };
 }
 
+function safeCaseTransferView(transfer: Transfer, caseBranchId: string) {
+  return {
+    id: transfer.id,
+    transferCode: transfer.transferCode,
+    status: transfer.status,
+    version: transfer.version,
+    caseBranchRole: transfer.fromBranchId === caseBranchId ? 'FROM' : 'TO',
+  };
+}
+
 export async function executeAgentTool(
   actor: AuthenticatedActor,
   input: AgentToolExecutionInput,
   requestId: string,
+  caseBranchId: string,
 ) {
   const definition = getAgentToolDefinition(input.toolName);
   // Approval IDs are not yet bound to a case/tool/payload/version and only
@@ -213,6 +253,17 @@ export async function executeAgentTool(
       'Agent write tools are unavailable until approval and reconciliation safeguards are ready',
     );
   }
+  const branch = await prisma.branch.findUnique({
+    where: { id: caseBranchId },
+    select: { status: true },
+  });
+  if (branch?.status !== 'ACTIVE') {
+    throw new AppError(404, 'AGENT_CASE_NOT_FOUND', 'Agent case not found');
+  }
+  assertPermission(actor, {
+    ...definition.requiredPermission,
+    branchId: caseBranchId,
+  });
   if (!env[definition.featureFlag]) {
     throw new AppError(503, 'AGENT_TOOL_DISABLED', 'This agent tool is temporarily disabled');
   }
@@ -220,6 +271,7 @@ export async function executeAgentTool(
   switch (input.toolName) {
     case 'get_rental_order': {
       const order = await rentalService.getOrder(actor, input.arguments.orderId);
+      assertCaseBranch(order.pickupBranchId, caseBranchId);
       return observedResult(
         safeOrderView(order),
         requestId,
@@ -228,10 +280,13 @@ export async function executeAgentTool(
       );
     }
     case 'check_availability': {
+      assertCaseBranch(input.arguments.pickupBranchId, caseBranchId);
       const availability = await rentalService.checkAvailability(actor, input.arguments);
       return observedResult(availability, requestId, definition.requiredPermission);
     }
     case 'get_payment_summary': {
+      const order = await rentalService.getOrder(actor, input.arguments.orderId);
+      assertCaseBranch(order.pickupBranchId, caseBranchId);
       const summary = await paymentService.getSettlement(actor, input.arguments.orderId);
       return observedResult(summary, requestId, definition.requiredPermission);
     }
@@ -240,6 +295,7 @@ export async function executeAgentTool(
         page: 1,
         pageSize: input.arguments.pageSize,
         search: input.arguments.search,
+        pickupBranchId: caseBranchId,
         sortBy: 'updatedAt',
         sortOrder: 'desc',
       });
@@ -252,6 +308,7 @@ export async function executeAgentTool(
     case 'get_unit_schedule': {
       const blocks = await schedulingService.listUnitBlocks(actor, {
         unitId: input.arguments.unitId,
+        branchId: caseBranchId,
         from: input.arguments.from,
         to: input.arguments.to,
         page: 1,
@@ -265,10 +322,18 @@ export async function executeAgentTool(
     }
     case 'get_stock_transfer': {
       const transfer = await transferService.getTransfer(actor, input.arguments.transferId);
-      return observedResult(safeTransferView(transfer), requestId, definition.requiredPermission);
+      if (transfer.fromBranchId !== caseBranchId && transfer.toBranchId !== caseBranchId) {
+        throw new AppError(404, 'TRANSFER_NOT_FOUND', 'Transfer not found');
+      }
+      return observedResult(
+        safeCaseTransferView(transfer, caseBranchId),
+        requestId,
+        definition.requiredPermission,
+      );
     }
     case 'get_unit_block': {
       const block = await schedulingService.getUnitBlock(actor, input.arguments.blockId);
+      assertCaseBranch(block.unit.currentBranchId, caseBranchId);
       return observedResult(safeUnitBlockView(block), requestId, definition.requiredPermission);
     }
     case 'get_payment_by_idempotency_key': {
@@ -276,10 +341,12 @@ export async function executeAgentTool(
         actor,
         input.arguments.idempotencyKey,
       );
+      assertCaseBranch(payment.order.pickupBranchId, caseBranchId);
       return observedResult(safePaymentView(payment), requestId, definition.requiredPermission);
     }
     case 'get_payment': {
       const payment = await paymentService.getPayment(actor, input.arguments.paymentId);
+      assertCaseBranch(payment.order.pickupBranchId, caseBranchId);
       return observedResult(safePaymentView(payment), requestId, definition.requiredPermission);
     }
     case 'get_refund_by_idempotency_key': {
@@ -287,12 +354,12 @@ export async function executeAgentTool(
         actor,
         input.arguments.idempotencyKey,
       );
+      assertCaseBranch(refund.payment.order.pickupBranchId, caseBranchId);
       return observedResult(
         {
           id: refund.id,
           paymentId: refund.paymentId,
           amountVnd: refund.amountVnd,
-          reason: refund.reason,
           status: refund.status,
         },
         requestId,

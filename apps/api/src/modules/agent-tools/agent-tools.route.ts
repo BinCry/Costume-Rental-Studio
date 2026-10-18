@@ -31,6 +31,7 @@ function normalizedFailure(error: unknown, requestId: string) {
     'UNIT_BLOCK_NOT_FOUND',
     'TRANSFER_NOT_FOUND',
     'REFUND_NOT_FOUND',
+    'AGENT_CASE_RESOURCE_NOT_FOUND',
   ]);
   const versionConflictCodes = new Set([
     'ORDER_VERSION_CONFLICT',
@@ -82,6 +83,7 @@ agentToolsInternalRouter.post('/execute', async (req, res) => {
   const headers = internalActorHeadersSchema.safeParse({
     actorId: req.header('X-Actor-Id'),
     requestId: req.header('X-Request-Id'),
+    caseBranchId: req.header('X-Case-Branch-Id'),
     contract: req.header('X-Agent-Tools-Contract'),
   });
   if (!headers.success) {
@@ -95,7 +97,12 @@ agentToolsInternalRouter.post('/execute', async (req, res) => {
 
   try {
     const actor = await loadInternalToolActor(headers.data.actorId);
-    const result = await executeAgentTool(actor, parsed.data, headers.data.requestId);
+    const result = await executeAgentTool(
+      actor,
+      parsed.data,
+      headers.data.requestId,
+      headers.data.caseBranchId,
+    );
     return sendSuccess(res, result, 'Agent tool executed');
   } catch (error: unknown) {
     const result = normalizedFailure(error, headers.data.requestId);
@@ -116,6 +123,7 @@ agentToolsInternalRouter.post('/authorize-approval', async (req, res) => {
   const headers = internalActorHeadersSchema.safeParse({
     actorId: req.header('X-Actor-Id'),
     requestId: req.header('X-Request-Id'),
+    caseBranchId: req.header('X-Case-Branch-Id'),
     contract: req.header('X-Agent-Tools-Contract'),
   });
   const input = agentApprovalAuthorizationSchema.safeParse(req.body);
@@ -123,5 +131,9 @@ agentToolsInternalRouter.post('/authorize-approval', async (req, res) => {
     throw new AppError(400, 'VALIDATION_ERROR', 'Invalid approval authorization request');
   }
   const actor = await loadInternalToolActor(headers.data.actorId);
-  return sendSuccess(res, authorizeAgentApproval(actor, input.data), 'Approval authorized');
+  return sendSuccess(
+    res,
+    await authorizeAgentApproval(actor, input.data, headers.data.caseBranchId),
+    'Approval authorized',
+  );
 });

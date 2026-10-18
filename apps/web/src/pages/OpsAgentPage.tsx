@@ -147,9 +147,14 @@ export function requiresOpsAgentStateReview(result?: OpsAgentStateSnapshot) {
   if (!isKnownOpsAgentState(state)) return true;
 
   const terminal = terminalAgentStates.includes(state);
-  const expectsConfirmation =
-    ['WAITING_CONFIRMATION', 'PENDING_CONFIRMATION', 'AWAITING_CONFIRMATION'].includes(state);
-  const expectsApproval = ['WAITING_APPROVAL', 'PENDING_APPROVAL', 'AWAITING_APPROVAL'].includes(state);
+  const expectsConfirmation = [
+    'WAITING_CONFIRMATION',
+    'PENDING_CONFIRMATION',
+    'AWAITING_CONFIRMATION',
+  ].includes(state);
+  const expectsApproval = ['WAITING_APPROVAL', 'PENDING_APPROVAL', 'AWAITING_APPROVAL'].includes(
+    state,
+  );
   const expectsInput = inputAgentStates.includes(state);
   const hasInput = Boolean(result.pendingInput?.trim());
   const hasConfirmation = Boolean(result.pendingConfirmation);
@@ -177,10 +182,10 @@ export function isOpsAgentCaseTerminal(result?: OpsAgentStateSnapshot) {
 export function canContinueOpsAgentCase(result?: OpsAgentCaseResult) {
   return Boolean(
     result &&
-      !requiresOpsAgentStateReview(result) &&
-      !isOpsAgentCaseTerminal(result) &&
-      inputAgentStates.includes(result.state.toUpperCase()) &&
-      Boolean(result.pendingInput?.trim()),
+    !requiresOpsAgentStateReview(result) &&
+    !isOpsAgentCaseTerminal(result) &&
+    inputAgentStates.includes(result.state.toUpperCase()) &&
+    Boolean(result.pendingInput?.trim()),
   );
 }
 
@@ -196,7 +201,11 @@ function agentStateTone(
   const normalized = state.toUpperCase();
   if (needsReview || !isKnownOpsAgentState(normalized)) return 'warning';
   if (['SUCCEEDED', 'COMPLETED'].includes(normalized)) return 'success';
-  if ([...decisionAgentStates, 'NEEDS_INPUT', 'WAITING_FOR_INPUT', 'NEEDS_MORE_INFO'].includes(normalized))
+  if (
+    [...decisionAgentStates, 'NEEDS_INPUT', 'WAITING_FOR_INPUT', 'NEEDS_MORE_INFO'].includes(
+      normalized,
+    )
+  )
     return 'warning';
   if (['FAILED', 'CANCELLED', 'TIMED_OUT'].includes(normalized)) return 'danger';
   if (['RUNNING', 'IN_PROGRESS'].includes(normalized)) return 'info';
@@ -227,10 +236,13 @@ export function opsAgentErrorMessage(error: unknown, fallback: string) {
         'Yêu cầu đã thay đổi hoặc không còn ở trạng thái này. Hãy cập nhật trạng thái trước khi tiếp tục.',
       AI_SERVICE_NOT_CONFIGURED: 'Dịch vụ trợ lý chưa được cấu hình. Hãy liên hệ người phụ trách.',
       AI_SERVICE_UNAVAILABLE: 'Chưa kết nối được dịch vụ trợ lý. Bạn có thể thử lại sau.',
-      AI_SERVICE_TIMEOUT: 'Dịch vụ trợ lý phản hồi quá thời gian. Hãy kiểm tra trạng thái trước khi gửi lại.',
+      AI_SERVICE_TIMEOUT:
+        'Dịch vụ trợ lý phản hồi quá thời gian. Hãy kiểm tra trạng thái trước khi gửi lại.',
       AI_RATE_LIMITED: 'Dịch vụ đang nhận nhiều yêu cầu. Hãy đợi một lúc rồi thử lại.',
-      AGENT_CASE_NOT_FOUND: 'Không tìm thấy yêu cầu này. Hãy kiểm tra phiên hoặc liên hệ người phụ trách.',
-      INVALID_ACCESS_TOKEN: 'Phiên đăng nhập không còn hợp lệ. Hãy đăng nhập lại rồi mở lại khu vực này.',
+      AGENT_CASE_NOT_FOUND:
+        'Không tìm thấy yêu cầu này. Hãy kiểm tra phiên hoặc liên hệ người phụ trách.',
+      INVALID_ACCESS_TOKEN:
+        'Phiên đăng nhập không còn hợp lệ. Hãy đăng nhập lại rồi mở lại khu vực này.',
       FORBIDDEN: 'Tài khoản hiện tại chưa có quyền truy cập hoặc thực hiện thao tác này.',
     };
     const knownMessage = messages[error.code];
@@ -342,9 +354,16 @@ const formatFixtureTime = () =>
 const agentCaseSessionKey = 'costume-rental.ops-agent.case-id';
 
 // eslint-disable-next-line react-refresh/only-export-components
-export function opsAgentCaseStorageKey(actorId: string | undefined, branch: string) {
-  return actorId
-    ? `${agentCaseSessionKey}:${actorId}:${encodeURIComponent(branch)}`
+export function opsAgentCaseStorageKey(actorId: string | undefined, branchId: string) {
+  return actorId && branchId
+    ? `${agentCaseSessionKey}:${actorId}:${encodeURIComponent(branchId)}`
+    : undefined;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function opsAgentDraftStorageKey(actorId: string | undefined, branchId: string) {
+  return actorId && branchId
+    ? `${agentCaseSessionKey}:draft:${actorId}:${encodeURIComponent(branchId)}`
     : undefined;
 }
 
@@ -465,16 +484,20 @@ function QueueRow({
 export function OpsAgentPage({
   scenario,
   branch,
+  branchId,
   go,
   actorId,
 }: {
   scenario: DemoScenario;
   branch: string;
+  branchId?: string;
   go: Navigate;
   actorId?: string;
 }) {
   const useAgentApi = import.meta.env.VITE_OPS_AGENT_MODE === 'api';
-  const scopedCaseSessionKey = opsAgentCaseStorageKey(actorId, branch);
+  const branchScopeId = useAgentApi ? (branchId ?? '') : branch;
+  const scopedCaseSessionKey = opsAgentCaseStorageKey(actorId, branchScopeId);
+  const scopedDraftSessionKey = opsAgentDraftStorageKey(actorId, branchScopeId);
   const uncertainInitialSendSessionKey = scopedCaseSessionKey
     ? `${scopedCaseSessionKey}:uncertain-initial-send`
     : undefined;
@@ -499,7 +522,14 @@ export function OpsAgentPage({
   }>();
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
   const [knowledgeError, setKnowledgeError] = useState('');
-  const [chatDraft, setChatDraft] = useState('');
+  const [chatDraft, setChatDraft] = useState(() => {
+    if (!useAgentApi || !scopedDraftSessionKey || typeof window === 'undefined') return '';
+    try {
+      return window.sessionStorage.getItem(scopedDraftSessionKey) ?? '';
+    } catch {
+      return '';
+    }
+  });
   const [agentCaseId, setAgentCaseId] = useState<string | undefined>(() => {
     if (!useAgentApi || !scopedCaseSessionKey || typeof window === 'undefined') return undefined;
     return window.sessionStorage.getItem(scopedCaseSessionKey) ?? undefined;
@@ -527,6 +557,7 @@ export function OpsAgentPage({
   const caseActionInFlight = useRef(false);
   const messageSendInFlight = useRef(false);
   const agentCaseScopeRef = useRef(scopedCaseSessionKey);
+  const draftScopeRef = useRef(scopedDraftSessionKey);
   const caseScopeGeneration = useRef(0);
   const chatInputContainerRef = useRef<HTMLDivElement>(null);
   const focusCaseAfterAction = useRef(false);
@@ -574,11 +605,12 @@ export function OpsAgentPage({
     )
       return;
     agentCaseScopeRef.current = scopedCaseSessionKey;
+    draftScopeRef.current = scopedDraftSessionKey;
     setActiveCaseScopeKey(scopedCaseSessionKey);
     caseScopeGeneration.current += 1;
     const nextCaseId =
       useAgentApi && scopedCaseSessionKey
-        ? window.sessionStorage.getItem(scopedCaseSessionKey) ?? undefined
+        ? (window.sessionStorage.getItem(scopedCaseSessionKey) ?? undefined)
         : undefined;
     const nextUncertainSend =
       useAgentApi &&
@@ -599,7 +631,15 @@ export function OpsAgentPage({
     setCaseDialogAction(undefined);
     setSendingMessage(false);
     setPendingQuestion('');
-    setChatDraft('');
+    let savedDraft = '';
+    if (useAgentApi && scopedDraftSessionKey) {
+      try {
+        savedDraft = window.sessionStorage.getItem(scopedDraftSessionKey) ?? '';
+      } catch {
+        // Keep the input usable when browser storage is unavailable.
+      }
+    }
+    setChatDraft(savedDraft);
     setSendOutcomeUnknown(nextUncertainSend);
     setSendConflict(false);
     setSendError(
@@ -618,7 +658,24 @@ export function OpsAgentPage({
         sourceIds: useAgentApi ? [] : ['product-scope', 'safety-direction'],
       },
     ]);
-  }, [activeCaseScopeKey, scopedCaseSessionKey, uncertainInitialSendSessionKey, useAgentApi]);
+  }, [
+    activeCaseScopeKey,
+    scopedCaseSessionKey,
+    scopedDraftSessionKey,
+    uncertainInitialSendSessionKey,
+    useAgentApi,
+  ]);
+
+  useEffect(() => {
+    if (!useAgentApi || !scopedDraftSessionKey || draftScopeRef.current !== scopedDraftSessionKey)
+      return;
+    try {
+      if (chatDraft) window.sessionStorage.setItem(scopedDraftSessionKey, chatDraft);
+      else window.sessionStorage.removeItem(scopedDraftSessionKey);
+    } catch {
+      // Draft persistence is best-effort; sending remains available without storage.
+    }
+  }, [chatDraft, scopedDraftSessionKey, useAgentApi]);
 
   useEffect(() => {
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
@@ -628,14 +685,22 @@ export function OpsAgentPage({
   useEffect(() => {
     if (!focusCaseAfterAction.current || caseDialogAction || caseActionLoading) return;
     focusCaseAfterAction.current = false;
-    opsAgentActionFocusTarget('success', caseResultHeadingRef.current, caseErrorPanelRef.current)?.focus();
+    opsAgentActionFocusTarget(
+      'success',
+      caseResultHeadingRef.current,
+      caseErrorPanelRef.current,
+    )?.focus();
   }, [agentResult, caseActionLoading, caseDialogAction]);
 
   useEffect(() => {
     if (!focusCaseErrorAfterAction.current || !caseError || caseDialogAction || caseActionLoading)
       return;
     focusCaseErrorAfterAction.current = false;
-    opsAgentActionFocusTarget('failure', caseResultHeadingRef.current, caseErrorPanelRef.current)?.focus();
+    opsAgentActionFocusTarget(
+      'failure',
+      caseResultHeadingRef.current,
+      caseErrorPanelRef.current,
+    )?.focus();
   }, [caseError, caseActionLoading, caseDialogAction]);
 
   useEffect(() => {
@@ -692,13 +757,11 @@ export function OpsAgentPage({
     (activeCaseScopeKey !== scopedCaseSessionKey ||
       (Boolean(agentCaseId) &&
         (caseLoading ||
-      caseNeedsReconciliation ||
-      !agentResult ||
+          caseNeedsReconciliation ||
+          !agentResult ||
           !canContinueOpsAgentCase(agentResult))));
   const currentCaseStateUnknown =
-    useAgentApi &&
-    Boolean(agentResult) &&
-    requiresOpsAgentStateReview(agentResult);
+    useAgentApi && Boolean(agentResult) && requiresOpsAgentStateReview(agentResult);
 
   const focusTab = (next: AgentTab) => {
     setTab(next);
@@ -718,6 +781,7 @@ export function OpsAgentPage({
   const reloadAgentCase = useCallback(async () => {
     if (
       !agentCaseId ||
+      !branchId ||
       agentCaseScopeRef.current !== scopedCaseSessionKey ||
       caseLoadInFlight.current ||
       caseActionInFlight.current
@@ -728,7 +792,7 @@ export function OpsAgentPage({
     setCaseLoading(true);
     setCaseError('');
     try {
-      const result = await getOpsAgentCase(agentCaseId);
+      const result = await getOpsAgentCase(agentCaseId, branchId);
       if (operationGeneration !== caseScopeGeneration.current) return;
       setAgentResult(result);
       setSendOutcomeUnknown(false);
@@ -746,32 +810,29 @@ export function OpsAgentPage({
         setCaseLoading(false);
       }
     }
-  }, [agentCaseId, scopedCaseSessionKey, uncertainInitialSendSessionKey]);
+  }, [agentCaseId, branchId, scopedCaseSessionKey, uncertainInitialSendSessionKey]);
 
   useEffect(() => {
-    if (!useAgentApi || !agentCaseId || agentResult) return;
+    if (!useAgentApi || !agentCaseId || !branchId || agentResult) return;
     const operationGeneration = caseScopeGeneration.current;
     let isCurrent = true;
-    void getOpsAgentCase(agentCaseId)
+    void getOpsAgentCase(agentCaseId, branchId)
       .then((result) => {
         if (isCurrent && operationGeneration === caseScopeGeneration.current)
           setAgentResult(result);
       })
       .catch((loadError: unknown) => {
         if (isCurrent && operationGeneration === caseScopeGeneration.current) {
-          setCaseError(
-            opsAgentErrorMessage(loadError, 'Không tải được yêu cầu hiện tại.'),
-          );
+          setCaseError(opsAgentErrorMessage(loadError, 'Không tải được yêu cầu hiện tại.'));
         }
       })
       .finally(() => {
-        if (isCurrent && operationGeneration === caseScopeGeneration.current)
-          setCaseLoading(false);
+        if (isCurrent && operationGeneration === caseScopeGeneration.current) setCaseLoading(false);
       });
     return () => {
       isCurrent = false;
     };
-  }, [agentCaseId, agentResult, scopedCaseSessionKey, useAgentApi]);
+  }, [agentCaseId, agentResult, branchId, scopedCaseSessionKey, useAgentApi]);
 
   const forgetAgentCaseReference = () => {
     setAgentCaseId(undefined);
@@ -779,7 +840,9 @@ export function OpsAgentPage({
     setCaseError('');
     setCaseNeedsReconciliation(false);
     setSendOutcomeUnknown(true);
-    setSendError('Không thể tải yêu cầu cũ. Yêu cầu đó có thể vẫn tồn tại; hãy đối soát trước khi gửi yêu cầu khác.');
+    setSendError(
+      'Không thể tải yêu cầu cũ. Yêu cầu đó có thể vẫn tồn tại; hãy đối soát trước khi gửi yêu cầu khác.',
+    );
     if (scopedCaseSessionKey) window.sessionStorage.removeItem(scopedCaseSessionKey);
     if (uncertainInitialSendSessionKey)
       window.sessionStorage.setItem(uncertainInitialSendSessionKey, '1');
@@ -788,6 +851,7 @@ export function OpsAgentPage({
   const runAgentCaseAction = async (action: AgentCaseAction) => {
     if (
       !agentCaseId ||
+      !branchId ||
       !agentResult ||
       agentCaseScopeRef.current !== scopedCaseSessionKey ||
       requiresOpsAgentStateReview(agentResult) ||
@@ -810,6 +874,7 @@ export function OpsAgentPage({
           result = await confirmOpsAgentCase(
             agentCaseId,
             agentResult.pendingConfirmation.confirmationId,
+            branchId,
           );
           break;
         case 'reject-confirmation':
@@ -817,18 +882,19 @@ export function OpsAgentPage({
           result = await rejectOpsAgentConfirmation(
             agentCaseId,
             agentResult.pendingConfirmation.confirmationId,
+            branchId,
           );
           break;
         case 'approve':
           if (!agentResult.pendingApproval) return;
-          result = await approveOpsAgentAction(agentResult.pendingApproval.approvalId);
+          result = await approveOpsAgentAction(agentResult.pendingApproval.approvalId, branchId);
           break;
         case 'reject-approval':
           if (!agentResult.pendingApproval) return;
-          result = await rejectOpsAgentAction(agentResult.pendingApproval.approvalId);
+          result = await rejectOpsAgentAction(agentResult.pendingApproval.approvalId, branchId);
           break;
         case 'cancel':
-          result = await cancelOpsAgentCase(agentCaseId);
+          result = await cancelOpsAgentCase(agentCaseId, branchId);
           break;
       }
       if (operationGeneration !== caseScopeGeneration.current) return;
@@ -921,6 +987,7 @@ export function OpsAgentPage({
     const question = chatDraft.trim();
     if (
       !question ||
+      (useAgentApi && !branchId) ||
       sendingMessage ||
       messageSendInFlight.current ||
       (useAgentApi && agentCaseScopeRef.current !== scopedCaseSessionKey) ||
@@ -942,11 +1009,10 @@ export function OpsAgentPage({
     try {
       let assistantMessage: ChatMessage;
       if (useAgentApi) {
-        const reply = await sendOpsAgentMessage(question, agentCaseId);
+        const reply = await sendOpsAgentMessage(question, branchId!, agentCaseId);
         if (caseScopeGeneration.current !== requestScopeGeneration) return;
         setAgentCaseId(reply.caseId);
-        if (scopedCaseSessionKey)
-          window.sessionStorage.setItem(scopedCaseSessionKey, reply.caseId);
+        if (scopedCaseSessionKey) window.sessionStorage.setItem(scopedCaseSessionKey, reply.caseId);
         setAgentResult(reply);
         setSendOutcomeUnknown(false);
         if (uncertainInitialSendSessionKey)
@@ -974,6 +1040,13 @@ export function OpsAgentPage({
       assistantMessage.id = messageSequence.current++;
       setMessages((current) => [...current, userMessage, assistantMessage]);
       setChatDraft('');
+      if (scopedDraftSessionKey) {
+        try {
+          window.sessionStorage.removeItem(scopedDraftSessionKey);
+        } catch {
+          // Draft persistence is best-effort.
+        }
+      }
     } catch (error) {
       if (caseScopeGeneration.current !== requestScopeGeneration) return;
       const recovery = opsAgentSendRecovery(error, Boolean(agentCaseId));
@@ -1071,6 +1144,13 @@ export function OpsAgentPage({
           </div>
         )}
       </div>
+
+      {useAgentApi && !branchId && (
+        <Feedback tone="warning" title="Chưa xác định được chi nhánh">
+          Chọn một chi nhánh được gán cho tài khoản trước khi gửi câu hỏi. Câu hỏi chưa gửi sẽ được
+          giữ lại trong ô nhập.
+        </Feedback>
+      )}
 
       {!useAgentApi && (
         <div className="ops-agent-notice" role="status">
@@ -1270,13 +1350,18 @@ export function OpsAgentPage({
                   tone="warning"
                   title="Trạng thái yêu cầu cần kiểm tra"
                   action={
-                    <Button variant="secondary" onClick={() => void reloadAgentCase()} loading={caseLoading}>
+                    <Button
+                      variant="secondary"
+                      onClick={() => void reloadAgentCase()}
+                      loading={caseLoading}
+                    >
                       Cập nhật trạng thái
                     </Button>
                   }
                 >
                   Không tiếp tục yêu cầu này cho đến khi trạng thái và dữ liệu chờ được xác nhận.
-                  Nếu vẫn không khớp, hãy liên hệ người phụ trách. Yêu cầu chưa được xem là đã hoàn tất.
+                  Nếu vẫn không khớp, hãy liên hệ người phụ trách. Yêu cầu chưa được xem là đã hoàn
+                  tất.
                 </Feedback>
               )}
 
@@ -2030,9 +2115,9 @@ export function OpsAgentPage({
                           ? 'Cần cập nhật trạng thái hiện tại trước khi tạo yêu cầu mới.'
                           : caseNeedsReconciliation || caseLoading
                             ? 'Hãy cập nhật yêu cầu hiện tại trước khi tạo yêu cầu mới.'
-                          : useAgentApi && agentCaseId && !isOpsAgentCaseTerminal(agentResult)
-                            ? 'Hãy xử lý yêu cầu hiện tại trước khi tạo yêu cầu khác.'
-                            : undefined
+                            : useAgentApi && agentCaseId && !isOpsAgentCaseTerminal(agentResult)
+                              ? 'Hãy xử lý yêu cầu hiện tại trước khi tạo yêu cầu khác.'
+                              : undefined
                   }
                 >
                   {useAgentApi ? 'Yêu cầu mới' : 'Cuộc trò chuyện mới'}
@@ -2141,8 +2226,8 @@ export function OpsAgentPage({
                       </Button>
                     }
                   >
-                    Hãy chờ trợ lý xử lý hoặc cập nhật trạng thái. Tin nhắn mới sẽ không được gửi vào
-                    lúc này.
+                    Hãy chờ trợ lý xử lý hoặc cập nhật trạng thái. Tin nhắn mới sẽ không được gửi
+                    vào lúc này.
                   </Feedback>
                 )}
               {currentCaseStateUnknown && (
@@ -2155,8 +2240,8 @@ export function OpsAgentPage({
                     </Button>
                   }
                 >
-                  Hãy cập nhật trạng thái trước khi gửi tiếp. Trạng thái lạ hoặc dữ liệu chờ không khớp
-                  không được xem là đã hoàn tất.
+                  Hãy cập nhật trạng thái trước khi gửi tiếp. Trạng thái lạ hoặc dữ liệu chờ không
+                  khớp không được xem là đã hoàn tất.
                 </Feedback>
               )}
               <div
@@ -2249,6 +2334,7 @@ export function OpsAgentPage({
                     onClick={() => setChatDraft(question)}
                     disabled={
                       sendingMessage ||
+                      (useAgentApi && !branchId) ||
                       (useAgentApi && (sendOutcomeUnknown || currentCaseNeedsResolution))
                     }
                   >
@@ -2278,6 +2364,7 @@ export function OpsAgentPage({
                     value={chatDraft}
                     disabled={
                       sendingMessage ||
+                      (useAgentApi && !branchId) ||
                       (useAgentApi && (sendOutcomeUnknown || currentCaseNeedsResolution))
                     }
                     maxLength={2000}
@@ -2296,6 +2383,7 @@ export function OpsAgentPage({
                   disabled={
                     !chatDraft.trim() ||
                     sendingMessage ||
+                    (useAgentApi && !branchId) ||
                     (useAgentApi && sendOutcomeUnknown) ||
                     (useAgentApi && currentCaseNeedsResolution)
                   }
@@ -2304,15 +2392,13 @@ export function OpsAgentPage({
                 </Button>
               </form>
               {sendError && (
-                <div
-                  ref={sendErrorPanelRef}
-                  tabIndex={-1}
-                  className="ops-agent-case-error-focus"
-                >
+                <div ref={sendErrorPanelRef} tabIndex={-1} className="ops-agent-case-error-focus">
                   <Feedback
                     tone="danger"
                     title={
-                      sendOutcomeUnknown ? 'Chưa xác nhận được kết quả gửi' : 'Không gửi được câu hỏi'
+                      sendOutcomeUnknown
+                        ? 'Chưa xác nhận được kết quả gửi'
+                        : 'Không gửi được câu hỏi'
                     }
                     action={
                       sendOutcomeUnknown && agentCaseId ? (
@@ -2326,10 +2412,7 @@ export function OpsAgentPage({
                           Kiểm tra yêu cầu
                         </Button>
                       ) : sendOutcomeUnknown ? (
-                        <Button
-                          variant="secondary"
-                          onClick={() => setShowUnknownSendDialog(true)}
-                        >
+                        <Button variant="secondary" onClick={() => setShowUnknownSendDialog(true)}>
                           Đã đối soát, mở lại ô nhập
                         </Button>
                       ) : sendConflict && agentCaseId ? (
@@ -2351,7 +2434,7 @@ export function OpsAgentPage({
                         ? 'Câu hỏi vẫn được giữ. Hãy kiểm tra yêu cầu hiện tại trước khi gửi lại để tránh tạo thao tác trùng.'
                         : chatDraft.trim()
                           ? 'Câu hỏi vẫn được giữ nhưng mã yêu cầu chưa được trả về. Đừng gửi lại cho đến khi người phụ trách đối soát kết quả tạo hồ sơ.'
-                          : 'Nội dung câu hỏi trước không được lưu sau khi tải lại. Hãy đối soát rồi nhập lại câu hỏi nếu cần.'
+                          : 'Câu hỏi được giữ trong ô nhập cho đến khi đối soát xong.'
                       : ''}
                   </Feedback>
                 </div>
@@ -2488,15 +2571,12 @@ export function OpsAgentPage({
                     }
                   >
                     Không xác nhận, duyệt, hủy hoặc gửi tiếp khi trạng thái lạ hay dữ liệu đang chờ
-                    không khớp. Hãy cập nhật trạng thái; nếu vẫn còn, chuyển người phụ trách kiểm tra.
+                    không khớp. Hãy cập nhật trạng thái; nếu vẫn còn, chuyển người phụ trách kiểm
+                    tra.
                   </Feedback>
                 )}
                 {caseError && (
-                  <div
-                    ref={caseErrorPanelRef}
-                    tabIndex={-1}
-                    className="ops-agent-case-error-focus"
-                  >
+                  <div ref={caseErrorPanelRef} tabIndex={-1} className="ops-agent-case-error-focus">
                     <Feedback
                       tone="danger"
                       title="Không hoàn tất được thao tác"
@@ -2557,6 +2637,7 @@ export function OpsAgentPage({
                           onClick={() => setCaseDialogAction('reject-confirmation')}
                           disabled={
                             caseActionLoading ||
+                            !branchId ||
                             caseLoading ||
                             caseNeedsReconciliation ||
                             currentCaseStateUnknown
@@ -2568,6 +2649,7 @@ export function OpsAgentPage({
                           onClick={() => setCaseDialogAction('confirm')}
                           disabled={
                             caseActionLoading ||
+                            !branchId ||
                             caseLoading ||
                             caseNeedsReconciliation ||
                             currentCaseStateUnknown
@@ -2598,6 +2680,7 @@ export function OpsAgentPage({
                           onClick={() => setCaseDialogAction('reject-approval')}
                           disabled={
                             caseActionLoading ||
+                            !branchId ||
                             caseLoading ||
                             caseNeedsReconciliation ||
                             currentCaseStateUnknown
@@ -2609,6 +2692,7 @@ export function OpsAgentPage({
                           onClick={() => setCaseDialogAction('approve')}
                           disabled={
                             caseActionLoading ||
+                            !branchId ||
                             caseLoading ||
                             caseNeedsReconciliation ||
                             currentCaseStateUnknown
@@ -2661,6 +2745,7 @@ export function OpsAgentPage({
                           onClick={() => setCaseDialogAction('cancel')}
                           disabled={
                             caseActionLoading ||
+                            !branchId ||
                             caseLoading ||
                             caseNeedsReconciliation ||
                             currentCaseStateUnknown
@@ -2675,7 +2760,7 @@ export function OpsAgentPage({
                           void reloadAgentCase();
                         }}
                         loading={caseLoading}
-                        disabled={caseActionLoading}
+                        disabled={caseActionLoading || !branchId}
                       >
                         Cập nhật trạng thái
                       </Button>
@@ -2699,14 +2784,16 @@ export function OpsAgentPage({
             setSendError('');
             setShowUnknownSendDialog(false);
             window.requestAnimationFrame(() => {
-              chatInputContainerRef.current?.querySelector<HTMLTextAreaElement>('textarea')?.focus();
+              chatInputContainerRef.current
+                ?.querySelector<HTMLTextAreaElement>('textarea')
+                ?.focus();
             });
           }}
           onClose={() => setShowUnknownSendDialog(false)}
         >
           <p>
-            Chỉ tiếp tục sau khi đã kiểm tra với người phụ trách rằng yêu cầu trước chưa được tạo. Nội
-            dung đang nhập sẽ được giữ lại để bạn xem và quyết định gửi lại.
+            Chỉ tiếp tục sau khi đã kiểm tra với người phụ trách rằng yêu cầu trước chưa được tạo.
+            Nội dung đang nhập sẽ được giữ lại để bạn xem và quyết định gửi lại.
           </p>
         </ConfirmDialog>
       )}

@@ -10,6 +10,9 @@ const baseCallSchema = z
   })
   .strict();
 
+// The internal caller supplies this authenticated case scope separately from
+// the tool arguments so the model cannot widen it.
+
 export const agentToolExecutionSchema = z.discriminatedUnion('toolName', [
   baseCallSchema.extend({
     toolName: z.literal('get_rental_order'),
@@ -206,9 +209,12 @@ export const internalActorHeadersSchema = z
   .object({
     actorId: z.uuid(),
     requestId: z.uuid(),
-    contract: z.literal('agent-tools/v1'),
+    caseBranchId: z.uuid(),
+    contract: z.literal('agent-tools/v2'),
   })
   .strict();
+
+export type InternalActorHeaders = z.infer<typeof internalActorHeadersSchema>;
 
 export const agentApprovalAuthorizationSchema = z
   .object({

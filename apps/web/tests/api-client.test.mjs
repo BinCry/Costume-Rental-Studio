@@ -63,7 +63,9 @@ describe('web API client session and error handling', () => {
         }),
       )
       .mockResolvedValueOnce(success({ totalOrders: 2, overdueOrders: 1 }))
-      .mockResolvedValueOnce(success({ byStatus: [{ status: 'SUCCEEDED', count: 2 }], byMethod: [] }))
+      .mockResolvedValueOnce(
+        success({ byStatus: [{ status: 'SUCCEEDED', count: 2 }], byMethod: [] }),
+      )
       .mockResolvedValueOnce(
         success({
           totalRevenueVnd: '1200000',
@@ -138,9 +140,10 @@ describe('web API client session and error handling', () => {
     values.set(accessTokenKey, 'studio-access-token');
     globalThis.fetch.mockResolvedValueOnce(success(agentResult));
     const { sendOpsAgentMessage } = await import('../src/api/client.ts');
+    const branchId = '20000000-0000-4000-8000-000000000001';
 
     await expect(
-      sendOpsAgentMessage('Kiểm tra đơn RT-TEST-01', agentResult.caseId),
+      sendOpsAgentMessage('Kiểm tra đơn RT-TEST-01', branchId, agentResult.caseId),
     ).resolves.toEqual(agentResult);
 
     const [url, init] = globalThis.fetch.mock.calls[0];
@@ -148,16 +151,51 @@ describe('web API client session and error handling', () => {
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toEqual({
       message: 'Kiểm tra đơn RT-TEST-01',
+      branchId,
       caseId: agentResult.caseId,
     });
     expect(new Headers(init.headers).get('Authorization')).toBe('Bearer studio-access-token');
+  });
+
+  it('sends the selected branch header with Ops Agent case and approval requests', async () => {
+    const result = {
+      caseId: '10000000-0000-4000-8000-000000000001',
+      state: 'SUCCEEDED',
+      message: 'Đã cập nhật.',
+      evidence: [],
+      completed: true,
+    };
+    const branchId = '20000000-0000-4000-8000-000000000001';
+    globalThis.fetch.mockImplementation(() => Promise.resolve(success(result)));
+    const {
+      getOpsAgentCase,
+      confirmOpsAgentCase,
+      rejectOpsAgentConfirmation,
+      approveOpsAgentAction,
+      rejectOpsAgentAction,
+      cancelOpsAgentCase,
+    } = await import('../src/api/client.ts');
+
+    await getOpsAgentCase(result.caseId, branchId);
+    await confirmOpsAgentCase(result.caseId, 'confirmation-1', branchId);
+    await rejectOpsAgentConfirmation(result.caseId, 'confirmation-1', branchId);
+    await approveOpsAgentAction('approval-1', branchId);
+    await rejectOpsAgentAction('approval-1', branchId);
+    await cancelOpsAgentCase(result.caseId, branchId);
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(6);
+    for (const [, init] of globalThis.fetch.mock.calls) {
+      expect(new Headers(init.headers).get('X-Branch-Id')).toBe(branchId);
+    }
   });
 
   it('explains an unconfigured Agent service without falling back to fixture answers', async () => {
     globalThis.fetch.mockResolvedValueOnce(error(503, 'AI_SERVICE_NOT_CONFIGURED', 'Unavailable'));
     const { sendOpsAgentMessage } = await import('../src/api/client.ts');
 
-    await expect(sendOpsAgentMessage('Quy trình nhận đồ trả là gì?')).rejects.toMatchObject({
+    await expect(
+      sendOpsAgentMessage('Quy trình nhận đồ trả là gì?', '20000000-0000-4000-8000-000000000001'),
+    ).rejects.toMatchObject({
       status: 503,
       code: 'AI_SERVICE_NOT_CONFIGURED',
       message:
@@ -219,12 +257,17 @@ describe('web API client session and error handling', () => {
       cancelOpsAgentCase,
     } = await import('../src/api/client.ts');
 
-    await expect(getOpsAgentCase(result.caseId)).resolves.toEqual(result);
-    await confirmOpsAgentCase(result.caseId, result.pendingConfirmation.confirmationId);
-    await rejectOpsAgentConfirmation(result.caseId, result.pendingConfirmation.confirmationId);
-    await approveOpsAgentAction('10000000-0000-4000-8000-000000000004');
-    await rejectOpsAgentAction('10000000-0000-4000-8000-000000000005');
-    await cancelOpsAgentCase(result.caseId);
+    const branchId = '20000000-0000-4000-8000-000000000001';
+    await expect(getOpsAgentCase(result.caseId, branchId)).resolves.toEqual(result);
+    await confirmOpsAgentCase(result.caseId, result.pendingConfirmation.confirmationId, branchId);
+    await rejectOpsAgentConfirmation(
+      result.caseId,
+      result.pendingConfirmation.confirmationId,
+      branchId,
+    );
+    await approveOpsAgentAction('10000000-0000-4000-8000-000000000004', branchId);
+    await rejectOpsAgentAction('10000000-0000-4000-8000-000000000005', branchId);
+    await cancelOpsAgentCase(result.caseId, branchId);
 
     expect(
       globalThis.fetch.mock.calls.map(([url, init]) => [new URL(url).pathname, init.method]),
@@ -417,8 +460,12 @@ describe('web API client session and error handling', () => {
           pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
         }),
       )
-      .mockResolvedValueOnce(success({ available: true, units: [{ id: 'unit-s', unitCode: 'BC-S' }] }))
-      .mockResolvedValueOnce(success({ available: true, units: [{ id: 'unit-m', unitCode: 'BC-M' }] }))
+      .mockResolvedValueOnce(
+        success({ available: true, units: [{ id: 'unit-s', unitCode: 'BC-S' }] }),
+      )
+      .mockResolvedValueOnce(
+        success({ available: true, units: [{ id: 'unit-m', unitCode: 'BC-M' }] }),
+      )
       .mockResolvedValueOnce(success({ ...order, status: 'CONFIRMED', version: 4 }));
     const { confirmOrder, listOrders } = await import('../src/api/client.ts');
 
@@ -446,10 +493,9 @@ describe('web API client session and error handling', () => {
     });
 
     const availabilityRequests = globalThis.fetch.mock.calls.slice(1, 3);
-    expect(availabilityRequests.map(([url]) => new URL(url).searchParams.get('variantId'))).toEqual([
-      'variant-s',
-      'variant-m',
-    ]);
+    expect(availabilityRequests.map(([url]) => new URL(url).searchParams.get('variantId'))).toEqual(
+      ['variant-s', 'variant-m'],
+    );
     await confirmOrder('RT-MIXED-01', 3, ['BC-M', 'BC-S']);
     expect(JSON.parse(globalThis.fetch.mock.calls[3][1].body)).toEqual({
       expectedVersion: 3,

@@ -67,6 +67,7 @@ agentRouter.get(
       throw new AppError(400, 'VALIDATION_ERROR', 'Invalid agent case identifier');
     const result = await getAgentCase(
       caseId.data,
+      parseId(req.header('X-Branch-Id'), 'Invalid agent branch identifier'),
       res.locals.actor as AuthenticatedActor,
       typeof req.id === 'string' ? req.id : undefined,
     );
@@ -88,6 +89,7 @@ agentRouter.post(
     const result = await confirmAgentCase(
       parseId(req.params.caseId, 'Invalid agent case identifier'),
       parseId(req.params.confirmationId, 'Invalid confirmation identifier'),
+      parseId(req.header('X-Branch-Id'), 'Invalid agent branch identifier'),
       res.locals.actor as AuthenticatedActor,
       typeof req.id === 'string' ? req.id : undefined,
     );
@@ -103,6 +105,7 @@ agentRouter.post(
     const result = await rejectAgentCaseConfirmation(
       parseId(req.params.caseId, 'Invalid agent case identifier'),
       parseId(req.params.confirmationId, 'Invalid confirmation identifier'),
+      parseId(req.header('X-Branch-Id'), 'Invalid agent branch identifier'),
       res.locals.actor as AuthenticatedActor,
       typeof req.id === 'string' ? req.id : undefined,
     );
@@ -117,6 +120,7 @@ agentRouter.post(
   async (req, res) => {
     const result = await cancelAgentCase(
       parseId(req.params.caseId, 'Invalid agent case identifier'),
+      parseId(req.header('X-Branch-Id'), 'Invalid agent branch identifier'),
       res.locals.actor as AuthenticatedActor,
       typeof req.id === 'string' ? req.id : undefined,
     );
@@ -133,6 +137,7 @@ agentRouter.post(
     if (!input.success) throw new AppError(400, 'VALIDATION_ERROR', 'Invalid approval decision');
     const result = await approveAgentAction(
       parseId(req.params.approvalId, 'Invalid approval identifier'),
+      parseId(req.header('X-Branch-Id'), 'Invalid agent branch identifier'),
       res.locals.actor as AuthenticatedActor,
       typeof req.id === 'string' ? req.id : undefined,
       input.data,
@@ -150,6 +155,7 @@ agentRouter.post(
     if (!input.success) throw new AppError(400, 'VALIDATION_ERROR', 'Invalid approval decision');
     const result = await rejectAgentAction(
       parseId(req.params.approvalId, 'Invalid approval identifier'),
+      parseId(req.header('X-Branch-Id'), 'Invalid agent branch identifier'),
       res.locals.actor as AuthenticatedActor,
       typeof req.id === 'string' ? req.id : undefined,
       input.data,

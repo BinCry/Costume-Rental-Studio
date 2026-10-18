@@ -30,6 +30,7 @@ const { createApp } = await import('../src/app.js');
 
 const userId = '10000000-0000-4000-8000-000000000001';
 const caseId = '10000000-0000-4000-8000-000000000002';
+const branchId = '10000000-0000-4000-8000-000000000006';
 const result = {
   caseId,
   state: 'SUCCEEDED',
@@ -104,15 +105,26 @@ describe('Agent public API', () => {
       .post('/api/v1/agent/messages')
       .set('Authorization', `Bearer ${token}`)
       .set('X-Actor-Id', 'forged-user-id')
-      .send({ message: 'Tình trạng đơn của tôi?' })
+      .send({ message: 'Tình trạng đơn của tôi?', branchId })
       .expect(200);
 
     expect((response.body as AgentRouteResponse).data).toEqual(result);
     expect(mocks.sendMessage).toHaveBeenCalledWith(
-      { message: 'Tình trạng đơn của tôi?' },
+      { message: 'Tình trạng đơn của tôi?', branchId },
       expect.objectContaining({ id: userId }),
       expect.any(String),
     );
+  });
+
+  it('requires a valid branch identifier in the message contract', async () => {
+    const token = await accessToken();
+    await request(createApp())
+      .post('/api/v1/agent/messages')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ message: 'Tình trạng đơn của tôi?' })
+      .expect(400);
+
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
   it('denies customers access to the staff Ops Agent API', async () => {
@@ -164,15 +176,27 @@ describe('Agent public API', () => {
     const token = await accessToken();
     const response = await request(createApp())
       .get(`/api/v1/agent/cases/${caseId}`)
+      .set('X-Branch-Id', branchId)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
     expect((response.body as AgentRouteResponse).data).toEqual(result);
     expect(mocks.getCase).toHaveBeenCalledWith(
       caseId,
+      branchId,
       expect.objectContaining({ id: userId }),
       expect.any(String),
     );
+  });
+
+  it('requires the selected branch header when loading a case', async () => {
+    const token = await accessToken();
+    await request(createApp())
+      .get(`/api/v1/agent/cases/${caseId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(400);
+
+    expect(mocks.getCase).not.toHaveBeenCalled();
   });
 
   it('proxies an approval decision with the authenticated approver', async () => {
@@ -180,12 +204,14 @@ describe('Agent public API', () => {
     const approvalId = '10000000-0000-4000-8000-000000000003';
     await request(createApp())
       .post(`/api/v1/agent/approvals/${approvalId}/approve`)
+      .set('X-Branch-Id', branchId)
       .set('Authorization', `Bearer ${token}`)
       .send({ reason: 'Reviewed' })
       .expect(200);
 
     expect(mocks.approveAction).toHaveBeenCalledWith(
       approvalId,
+      branchId,
       expect.objectContaining({ id: userId }),
       expect.any(String),
       { reason: 'Reviewed' },

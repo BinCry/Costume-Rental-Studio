@@ -166,8 +166,8 @@ export default function StudioApp() {
   const [branch, setBranch] = useState('Chi nhánh Quận 1');
   const [customerCode, setCustomerCode] = useState('KH-001');
   const [menuOpen, setMenuOpen] = useState(false);
-  const [mobileStaffNav, setMobileStaffNav] = useState(() =>
-    window.matchMedia('(max-width: 1199px)').matches,
+  const [mobileStaffNav, setMobileStaffNav] = useState(
+    () => window.matchMedia('(max-width: 1199px)').matches,
   );
   const [signingOut, setSigningOut] = useState(false);
   const [expandedStaffGroup, setExpandedStaffGroup] = useState<string | null>(
@@ -856,7 +856,9 @@ export default function StudioApp() {
                     aria-label="Chi nhánh làm việc"
                     value={activeBranch}
                     onChange={(event) => setBranch(event.target.value)}
-                    disabled={!apiBranchesReady || apiBranchesFailed || apiBranchOptions.length === 0}
+                    disabled={
+                      !apiBranchesReady || apiBranchesFailed || apiBranchOptions.length === 0
+                    }
                   >
                     {!apiBranchesReady ? (
                       <option value="">Đang tải danh sách chi nhánh…</option>
@@ -1149,9 +1151,12 @@ export default function StudioApp() {
             )}
             {route.screen === 'opsAgent' && (
               <OpsAgentPage
-                key={`${apiIdentity?.id ?? 'anonymous-ops-agent'}:${encodeURIComponent(activeBranch)}`}
+                key={`${apiIdentity?.id ?? 'anonymous-ops-agent'}:${
+                  activeBranchId ?? encodeURIComponent(activeBranch)
+                }`}
                 scenario={scenario}
                 branch={activeBranch}
+                branchId={activeBranchId}
                 actorId={apiIdentity?.id}
                 go={go}
               />

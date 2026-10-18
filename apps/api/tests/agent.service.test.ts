@@ -1,6 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AuthenticatedActor } from '../src/modules/auth/authorization.js';
+
+const branchFindUnique = vi.hoisted(() => vi.fn());
+vi.mock('../src/database/prisma.js', () => ({
+  prisma: { branch: { findUnique: branchFindUnique } },
+}));
 
 const {
   approveAgentAction,
@@ -15,27 +20,28 @@ const {
 const caseId = '10000000-0000-4000-8000-000000000002';
 const confirmationId = '10000000-0000-4000-8000-000000000003';
 const approvalId = '10000000-0000-4000-8000-000000000004';
+const branchId = '10000000-0000-4000-8000-000000000005';
 const actor = {
   id: '10000000-0000-4000-8000-000000000001',
   status: 'ACTIVE',
   employee: { employmentStatus: 'ACTIVE' },
   roleAssignments: [
     {
-      branchId: '10000000-0000-4000-8000-000000000005',
+      branchId,
       branch: { status: 'ACTIVE' },
       role: {
         actorGroup: 'STAFF',
         isActive: true,
-          rolePermissions: [
-            {
-              permission: {
-                code: 'knowledge.read.branch',
-                module: 'knowledge',
-                action: 'read',
-                scope: 'BRANCH',
-              },
+        rolePermissions: [
+          {
+            permission: {
+              code: 'knowledge.read.branch',
+              module: 'knowledge',
+              action: 'read',
+              scope: 'BRANCH',
             },
-          ],
+          },
+        ],
       },
     },
   ],
@@ -79,28 +85,28 @@ const upstreamResult = {
 };
 
 afterEach(() => vi.unstubAllGlobals());
+beforeEach(() => branchFindUnique.mockResolvedValue({ status: 'ACTIVE' }));
 
 describe('agent service response contracts', () => {
   it('parses the nested result envelope returned by the message endpoint', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi
-        .fn()
-        .mockResolvedValue(
-          new Response(
-            JSON.stringify({
-              success: true,
-              data: { result: upstreamResult },
-              message: 'Agent message completed',
-            }),
-            { status: 200, headers: { 'Content-Type': 'application/json' } },
-          ),
+    branchFindUnique.mockResolvedValue({ status: 'ACTIVE' });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ success: true, data: { result: upstreamResult }, message: 'ok' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
         ),
-    );
+      );
+    vi.stubGlobal('fetch', fetchMock);
 
-    await expect(sendAgentMessage({ message: 'Help me rent a costume.' }, actor)).resolves.toEqual(
-      result,
-    );
+    await expect(
+      sendAgentMessage({ message: 'Help me rent a costume.', branchId }, actor),
+    ).resolves.toEqual(result);
+    expect(JSON.parse((fetchMock.mock.calls[0] as [URL, RequestInit])[1].body as string)).toEqual({
+      message: 'Help me rent a costume.',
+      branchId,
+    });
   });
 
   it('does not create an Ops Agent case for a customer actor', async () => {
@@ -119,10 +125,41 @@ describe('agent service response contracts', () => {
       ],
     } as unknown as AuthenticatedActor;
 
-    await expect(sendAgentMessage({ message: 'Help me rent a costume.' }, customer)).rejects.toMatchObject({
+    branchFindUnique.mockResolvedValue({ status: 'ACTIVE' });
+    await expect(
+      sendAgentMessage({ message: 'Help me rent a costume.', branchId }, customer),
+    ).rejects.toMatchObject({
       statusCode: 403,
       code: 'STAFF_ACCESS_REQUIRED',
     });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a branch without knowledge.read permission before calling AI', async () => {
+    branchFindUnique.mockResolvedValue({ status: 'ACTIVE' });
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const unauthorized = {
+      ...actor,
+      roleAssignments: [
+        { ...actor.roleAssignments[0], branchId: '10000000-0000-4000-8000-000000000006' },
+      ],
+    } as AuthenticatedActor;
+
+    await expect(
+      sendAgentMessage({ message: 'Help me rent a costume.', branchId }, unauthorized),
+    ).rejects.toMatchObject({ statusCode: 403, code: 'FORBIDDEN' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-active branch before calling AI', async () => {
+    branchFindUnique.mockResolvedValue({ status: 'INACTIVE' });
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      sendAgentMessage({ message: 'Help me rent a costume.', branchId }, actor),
+    ).rejects.toMatchObject({ statusCode: 400, code: 'INVALID_AGENT_BRANCH' });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -140,37 +177,39 @@ describe('agent service response contracts', () => {
       ),
     );
 
-    await expect(getAgentCase(caseId, actor)).resolves.toEqual(result);
+    branchFindUnique.mockResolvedValue({ status: 'ACTIVE' });
+    await expect(getAgentCase(caseId, branchId, actor)).resolves.toEqual(result);
   });
 
   it.each([
     {
       name: 'confirm confirmation',
-      invoke: () => confirmAgentCase(caseId, confirmationId, actor),
+      invoke: () => confirmAgentCase(caseId, confirmationId, branchId, actor),
       path: `/api/v1/agent/cases/${caseId}/confirmations/${confirmationId}/confirm`,
       body: undefined,
     },
     {
       name: 'reject confirmation',
-      invoke: () => rejectAgentCaseConfirmation(caseId, confirmationId, actor),
+      invoke: () => rejectAgentCaseConfirmation(caseId, confirmationId, branchId, actor),
       path: `/api/v1/agent/cases/${caseId}/confirmations/${confirmationId}/reject`,
       body: undefined,
     },
     {
       name: 'cancel case',
-      invoke: () => cancelAgentCase(caseId, actor),
+      invoke: () => cancelAgentCase(caseId, branchId, actor),
       path: `/api/v1/agent/cases/${caseId}/cancel`,
       body: undefined,
     },
     {
       name: 'approve action',
-      invoke: () => approveAgentAction(approvalId, actor, undefined, { reason: 'Reviewed' }),
+      invoke: () =>
+        approveAgentAction(approvalId, branchId, actor, undefined, { reason: 'Reviewed' }),
       path: `/api/v1/agent/approvals/${approvalId}/approve`,
       body: JSON.stringify({ reason: 'Reviewed' }),
     },
     {
       name: 'reject action',
-      invoke: () => rejectAgentAction(approvalId, actor, undefined, { reason: 'Denied' }),
+      invoke: () => rejectAgentAction(approvalId, branchId, actor, undefined, { reason: 'Denied' }),
       path: `/api/v1/agent/approvals/${approvalId}/reject`,
       body: JSON.stringify({ reason: 'Denied' }),
     },
@@ -191,12 +230,14 @@ describe('agent service response contracts', () => {
         ),
       );
       vi.stubGlobal('fetch', fetchMock);
+      branchFindUnique.mockResolvedValue({ status: 'ACTIVE' });
 
       await expect(invoke()).resolves.toEqual(result);
       const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
       expect(url.pathname).toBe(path);
       expect(init.method).toBe('POST');
       expect(init.body).toBe(body);
+      expect(new Headers(init.headers).get('X-Case-Branch-Id')).toBe(branchId);
     },
   );
 });

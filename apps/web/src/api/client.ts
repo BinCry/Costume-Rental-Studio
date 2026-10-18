@@ -1421,7 +1421,8 @@ export async function confirmOrder(orderCode: string, version: number, unitCodes
   const allocations = unitCodes.map((code) => {
     const variantId = unitVariants?.get(code);
     const itemIndex = remainingItems?.findIndex((item) => item.variantId === variantId) ?? -1;
-    if (!remainingItems || itemIndex < 0) return { orderItemId: undefined, unitId: units?.get(code) };
+    if (!remainingItems || itemIndex < 0)
+      return { orderItemId: undefined, unitId: units?.get(code) };
     const [item] = remainingItems.splice(itemIndex, 1);
     return { orderItemId: item.id, unitId: units?.get(code) };
   });
@@ -2848,48 +2849,59 @@ export interface OpsKnowledgeAnswer {
   provisional: boolean;
 }
 
-export async function sendOpsAgentMessage(message: string, caseId?: string) {
+export async function sendOpsAgentMessage(message: string, branchId: string, caseId?: string) {
   return request<OpsAgentMessageResult>('/api/v1/agent/messages', {
     method: 'POST',
-    body: JSON.stringify({ message, ...(caseId ? { caseId } : {}) }),
+    body: JSON.stringify({ message, branchId, ...(caseId ? { caseId } : {}) }),
   });
 }
 
-export async function getOpsAgentCase(caseId: string) {
-  return request<OpsAgentCaseResult>(`/api/v1/agent/cases/${encodeURIComponent(caseId)}`);
+export async function getOpsAgentCase(caseId: string, branchId: string) {
+  return request<OpsAgentCaseResult>(`/api/v1/agent/cases/${encodeURIComponent(caseId)}`, {
+    headers: { 'X-Branch-Id': branchId },
+  });
 }
 
-export async function confirmOpsAgentCase(caseId: string, confirmationId: string) {
+export async function confirmOpsAgentCase(
+  caseId: string,
+  confirmationId: string,
+  branchId: string,
+) {
   return request<OpsAgentCaseResult>(
     `/api/v1/agent/cases/${encodeURIComponent(caseId)}/confirmations/${encodeURIComponent(confirmationId)}/confirm`,
-    { method: 'POST' },
+    { method: 'POST', headers: { 'X-Branch-Id': branchId } },
   );
 }
 
-export async function rejectOpsAgentConfirmation(caseId: string, confirmationId: string) {
+export async function rejectOpsAgentConfirmation(
+  caseId: string,
+  confirmationId: string,
+  branchId: string,
+) {
   return request<OpsAgentCaseResult>(
     `/api/v1/agent/cases/${encodeURIComponent(caseId)}/confirmations/${encodeURIComponent(confirmationId)}/reject`,
-    { method: 'POST' },
+    { method: 'POST', headers: { 'X-Branch-Id': branchId } },
   );
 }
 
-export async function approveOpsAgentAction(approvalId: string) {
+export async function approveOpsAgentAction(approvalId: string, branchId: string) {
   return request<OpsAgentCaseResult>(
     `/api/v1/agent/approvals/${encodeURIComponent(approvalId)}/approve`,
-    { method: 'POST', body: JSON.stringify({}) },
+    { method: 'POST', headers: { 'X-Branch-Id': branchId }, body: JSON.stringify({}) },
   );
 }
 
-export async function rejectOpsAgentAction(approvalId: string) {
+export async function rejectOpsAgentAction(approvalId: string, branchId: string) {
   return request<OpsAgentCaseResult>(
     `/api/v1/agent/approvals/${encodeURIComponent(approvalId)}/reject`,
-    { method: 'POST', body: JSON.stringify({}) },
+    { method: 'POST', headers: { 'X-Branch-Id': branchId }, body: JSON.stringify({}) },
   );
 }
 
-export async function cancelOpsAgentCase(caseId: string) {
+export async function cancelOpsAgentCase(caseId: string, branchId: string) {
   return request<OpsAgentCaseResult>(`/api/v1/agent/cases/${encodeURIComponent(caseId)}/cancel`, {
     method: 'POST',
+    headers: { 'X-Branch-Id': branchId },
   });
 }
 

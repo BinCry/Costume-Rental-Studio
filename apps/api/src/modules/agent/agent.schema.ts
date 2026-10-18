@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const agentMessageInputSchema = z
   .object({
     message: z.string().trim().min(2).max(2_000),
+    branchId: z.uuid(),
     caseId: z.uuid().optional(),
   })
   .strict();

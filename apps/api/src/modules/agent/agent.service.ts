@@ -1,5 +1,7 @@
 import { AppError } from '../../common/errors/app-error.js';
 import { env } from '../../config/env.js';
+import { prisma } from '../../database/prisma.js';
+import { assertPermission } from '../auth/authorization.js';
 import {
   opsAgentKnowledgeActorContext,
   type KnowledgeActorContext,
@@ -52,7 +54,7 @@ function upstreamError(status: number): AppError {
   return new AppError(503, 'AI_SERVICE_UNAVAILABLE', 'Agent service is unavailable');
 }
 
-function agentHeaders(actor: KnowledgeActorContext, requestId?: string): Headers {
+function agentHeaders(actor: KnowledgeActorContext, branchId: string, requestId?: string): Headers {
   if (!env.AI_INTERNAL_API_KEY) {
     throw new AppError(503, 'AI_SERVICE_NOT_CONFIGURED', 'Agent service is not configured');
   }
@@ -61,15 +63,38 @@ function agentHeaders(actor: KnowledgeActorContext, requestId?: string): Headers
     'X-AI-Service-Key': env.AI_INTERNAL_API_KEY,
     'X-Actor-Id': actor.userId,
     'X-Knowledge-Audiences': actor.audiences.join(','),
+    'X-Case-Branch-Id': branchId,
   });
   if (requestId) headers.set('X-Request-Id', requestId);
   return headers;
+}
+
+async function authorizeAgentBranch(
+  actor: AuthenticatedActor,
+  branchId: string,
+): Promise<KnowledgeActorContext> {
+  const knowledgeActor = opsAgentKnowledgeActorContext(actor);
+  const branch = await prisma.branch.findUnique({
+    where: { id: branchId },
+    select: { status: true },
+  });
+  if (branch?.status !== 'ACTIVE') {
+    throw new AppError(400, 'INVALID_AGENT_BRANCH', 'Selected branch is not active');
+  }
+  assertPermission(actor, {
+    module: 'knowledge',
+    action: 'read',
+    scope: 'BRANCH',
+    branchId,
+  });
+  return knowledgeActor;
 }
 
 async function callAgent(
   path: string,
   init: RequestInit,
   actor: KnowledgeActorContext,
+  branchId: string,
   requestId?: string,
   responseEnvelope: 'message' | 'case' = 'case',
 ): Promise<AgentCaseResult> {
@@ -80,7 +105,7 @@ async function callAgent(
   try {
     response = await fetch(new URL(path, env.AI_SERVICE_URL), {
       ...init,
-      headers: agentHeaders(actor, requestId),
+      headers: agentHeaders(actor, branchId, requestId),
       signal: AbortSignal.timeout(env.AI_SERVICE_TIMEOUT_MS),
     });
   } catch (error: unknown) {
@@ -110,10 +135,12 @@ export async function sendAgentMessage(
   actor: AuthenticatedActor,
   requestId?: string,
 ): Promise<AgentCaseResult> {
+  const knowledgeActor = await authorizeAgentBranch(actor, input.branchId);
   return callAgent(
     '/api/v1/agent/messages',
     { method: 'POST', body: JSON.stringify(input) },
-    opsAgentKnowledgeActorContext(actor),
+    knowledgeActor,
+    input.branchId,
     requestId,
     'message',
   );
@@ -121,19 +148,22 @@ export async function sendAgentMessage(
 
 export async function getAgentCase(
   caseId: string,
+  branchId: string,
   actor: AuthenticatedActor,
   requestId?: string,
 ): Promise<AgentCaseResult> {
   return callAgent(
     `/api/v1/agent/cases/${encodeURIComponent(caseId)}`,
     { method: 'GET' },
-    opsAgentKnowledgeActorContext(actor),
+    await authorizeAgentBranch(actor, branchId),
+    branchId,
     requestId,
   );
 }
 
 async function caseAction(
   path: string,
+  branchId: string,
   actor: AuthenticatedActor,
   requestId?: string,
   input?: AgentDecisionInput,
@@ -141,7 +171,8 @@ async function caseAction(
   return callAgent(
     path,
     { method: 'POST', body: input ? JSON.stringify(input) : undefined },
-    opsAgentKnowledgeActorContext(actor),
+    await authorizeAgentBranch(actor, branchId),
+    branchId,
     requestId,
   );
 }
@@ -149,11 +180,13 @@ async function caseAction(
 export async function confirmAgentCase(
   caseId: string,
   confirmationId: string,
+  branchId: string,
   actor: AuthenticatedActor,
   requestId?: string,
 ): Promise<AgentCaseResult> {
   return caseAction(
     `/api/v1/agent/cases/${encodeURIComponent(caseId)}/confirmations/${encodeURIComponent(confirmationId)}/confirm`,
+    branchId,
     actor,
     requestId,
   );
@@ -162,11 +195,13 @@ export async function confirmAgentCase(
 export async function rejectAgentCaseConfirmation(
   caseId: string,
   confirmationId: string,
+  branchId: string,
   actor: AuthenticatedActor,
   requestId?: string,
 ): Promise<AgentCaseResult> {
   return caseAction(
     `/api/v1/agent/cases/${encodeURIComponent(caseId)}/confirmations/${encodeURIComponent(confirmationId)}/reject`,
+    branchId,
     actor,
     requestId,
   );
@@ -174,20 +209,28 @@ export async function rejectAgentCaseConfirmation(
 
 export async function cancelAgentCase(
   caseId: string,
+  branchId: string,
   actor: AuthenticatedActor,
   requestId?: string,
 ): Promise<AgentCaseResult> {
-  return caseAction(`/api/v1/agent/cases/${encodeURIComponent(caseId)}/cancel`, actor, requestId);
+  return caseAction(
+    `/api/v1/agent/cases/${encodeURIComponent(caseId)}/cancel`,
+    branchId,
+    actor,
+    requestId,
+  );
 }
 
 export async function approveAgentAction(
   approvalId: string,
+  branchId: string,
   actor: AuthenticatedActor,
   requestId?: string,
   input?: AgentDecisionInput,
 ): Promise<AgentCaseResult> {
   return caseAction(
     `/api/v1/agent/approvals/${encodeURIComponent(approvalId)}/approve`,
+    branchId,
     actor,
     requestId,
     input,
@@ -196,12 +239,14 @@ export async function approveAgentAction(
 
 export async function rejectAgentAction(
   approvalId: string,
+  branchId: string,
   actor: AuthenticatedActor,
   requestId?: string,
   input?: AgentDecisionInput,
 ): Promise<AgentCaseResult> {
   return caseAction(
     `/api/v1/agent/approvals/${encodeURIComponent(approvalId)}/reject`,
+    branchId,
     actor,
     requestId,
     input,

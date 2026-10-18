@@ -8,6 +8,8 @@
 
 **Trạng thái:** kế hoạch sản phẩm đề xuất sau [khảo sát thực tế 18/10/2026](khao-sat-hien-trang-ops-agent-2026-10-18.md). Kết nối AI database đã phục hồi; phần hạ tầng, sao lưu và promotion được hoãn theo yêu cầu chủ dự án. Các quyết định ở mục 8 chưa được phê duyệt.
 
+**Cập nhật triển khai S0:** bản mã đang chuẩn bị đã ràng buộc một case với một chi nhánh trên Web → Studio API → AI → callback, chuyển callback sang `agent-tools/v2`, giảm projection `refund.reason` và giữ bản nháp Web qua refresh. Chi tiết ở [hợp đồng chi nhánh](hop-dong-chi-nhanh-ops-agent.md). Đã kiểm tra unit/route test Studio và Web; migration AI 006, kiểm thử Python runtime/E2E, đồng bộ phát hành hai service và các quyết định nghiệp vụ vẫn là cổng chưa đạt. Đây chưa phải trạng thái production.
+
 ## 1. Mục tiêu và ranh giới sản phẩm
 
 Ops Agent hỗ trợ nhân viên và quản trị viên **của Costume Rental Studio** xử lý công việc cho thuê trang phục qua nhiều chi nhánh: đọc tình trạng hiện tại, giải thích chính sách có nguồn, nhận diện việc cần làm, chuẩn bị phương án và chuyển quyết định có tác động cho người có quyền. Giá trị cần đo là thời gian tìm thông tin, thời gian xử lý đơn, số lần chuyển qua lại giữa màn hình, chất lượng bàn giao ca và khả năng truy vết quyết định.

@@ -24,6 +24,7 @@ const ids = {
   callId: '10000000-0000-4000-8000-000000000002',
   actorId: '10000000-0000-4000-8000-000000000003',
   requestId: '10000000-0000-4000-8000-000000000004',
+  caseBranchId: '10000000-0000-4000-8000-000000000006',
   orderId: '10000000-0000-4000-8000-000000000005',
 };
 
@@ -31,7 +32,8 @@ const internalHeaders = {
   'X-AI-Service-Key': process.env.AI_INTERNAL_API_KEY,
   'X-Actor-Id': ids.actorId,
   'X-Request-Id': ids.requestId,
-  'X-Agent-Tools-Contract': 'agent-tools/v1',
+  'X-Case-Branch-Id': ids.caseBranchId,
+  'X-Agent-Tools-Contract': 'agent-tools/v2',
 };
 
 interface ErrorResponse {
@@ -87,6 +89,23 @@ describe('POST /api/v1/internal/agent-tools/execute', () => {
     expect(mocks.loadActor).not.toHaveBeenCalled();
   });
 
+  it('requires a valid case branch from the trusted AI callback', async () => {
+    const response = await request(createApp())
+      .post('/api/v1/internal/agent-tools/execute')
+      .set({
+        'X-AI-Service-Key': internalHeaders['X-AI-Service-Key'],
+        'X-Actor-Id': ids.actorId,
+        'X-Request-Id': ids.requestId,
+        'X-Agent-Tools-Contract': 'agent-tools/v2',
+        'X-Case-Branch-Id': 'not-a-uuid',
+      })
+      .send(execution)
+      .expect(400);
+
+    expect((response.body as ErrorResponse).error.code).toBe('INVALID_ACTOR_CONTEXT');
+    expect(mocks.loadActor).not.toHaveBeenCalled();
+  });
+
   it('executes only a validated allowlisted read tool for the loaded actor', async () => {
     const response = await request(createApp())
       .post('/api/v1/internal/agent-tools/execute')
@@ -99,6 +118,7 @@ describe('POST /api/v1/internal/agent-tools/execute', () => {
       { id: ids.actorId },
       expect.objectContaining({ toolName: 'get_rental_order' }),
       ids.requestId,
+      ids.caseBranchId,
     );
     expect((response.body as SuccessResponse).data.status).toBe('ok');
   });
@@ -133,11 +153,13 @@ describe('POST /api/v1/internal/agent-tools/execute', () => {
     { code: 'UNIT_UNAVAILABLE', expectedStatus: 'business_conflict' },
     { code: 'VARIANT_NOT_FOUND', expectedStatus: 'not_found' },
   ])('normalizes $code as $expectedStatus', async ({ code, expectedStatus }) => {
-    mocks.execute.mockRejectedValue(new AppError(
-      code.endsWith('NOT_FOUND') ? 404 : 409,
-      code,
-      'Business rule rejected the operation',
-    ));
+    mocks.execute.mockRejectedValue(
+      new AppError(
+        code.endsWith('NOT_FOUND') ? 404 : 409,
+        code,
+        'Business rule rejected the operation',
+      ),
+    );
 
     const response = await request(createApp())
       .post('/api/v1/internal/agent-tools/execute')
@@ -160,6 +182,7 @@ describe('POST /api/v1/internal/agent-tools/execute', () => {
     expect(mocks.authorize).toHaveBeenCalledWith(
       { id: ids.actorId },
       { requiredPermission: 'payments:manage', branchIds: [branchId] },
+      ids.caseBranchId,
     );
     expect((response.body as { data: { decision: string } }).data.decision).toBe('allowed');
   });

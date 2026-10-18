@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  findBranch: vi.fn(),
   listOrders: vi.fn(),
   getUnitBlock: vi.fn(),
   listUnitBlocks: vi.fn(),
@@ -21,7 +22,9 @@ const mocks = vi.hoisted(() => ({
   getRefundByIdempotencyKey: vi.fn(),
 }));
 
-vi.mock('../src/database/prisma.js', () => ({ prisma: {} }));
+vi.mock('../src/database/prisma.js', () => ({
+  prisma: { branch: { findUnique: mocks.findBranch } },
+}));
 vi.mock('../src/modules/rentals/rental.service.js', () => ({
   listOrders: mocks.listOrders,
   extendOrder: mocks.extendOrder,
@@ -49,16 +52,26 @@ vi.mock('../src/modules/transfers/transfer.service.js', () => ({
   endTransfer: mocks.endTransfer,
 }));
 
-const { authorizeAgentApproval, executeAgentTool } = await import(
-  '../src/modules/agent-tools/agent-tools.service.js'
-);
+const { authorizeAgentApproval, executeAgentTool } =
+  await import('../src/modules/agent-tools/agent-tools.service.js');
 const { agentToolRegistry } = await import('../src/modules/agent-tools/agent-tools.registry.js');
 
 const actor = {
   id: '10000000-0000-4000-8000-000000000001',
   status: 'ACTIVE',
   employee: { employmentStatus: 'ACTIVE' },
-  roleAssignments: [],
+  roleAssignments: [
+    {
+      branchId: null,
+      branch: null,
+      role: {
+        isActive: true,
+        rolePermissions: ['rentals', 'payments', 'inventory', 'transfers'].map((module) => ({
+          permission: { module, action: 'read', scope: 'ALL' },
+        })),
+      },
+    },
+  ],
 } as never;
 
 function serializeToolData(value: unknown) {
@@ -67,7 +80,10 @@ function serializeToolData(value: unknown) {
   );
 }
 
-beforeEach(() => vi.resetAllMocks());
+beforeEach(() => {
+  vi.resetAllMocks();
+  mocks.findBranch.mockResolvedValue({ status: 'ACTIVE' });
+});
 
 describe('agent tool data minimization', () => {
   it('removes customer identifiers and private order fields from order search results', async () => {
@@ -103,6 +119,7 @@ describe('agent tool data minimization', () => {
         arguments: { search: 'RT-1002', pageSize: 5 },
       },
       '10000000-0000-4000-8000-000000000007',
+      '10000000-0000-4000-8000-000000000004',
     );
 
     expect(result.data).toEqual({
@@ -131,7 +148,7 @@ describe('agent approval permission boundaries', () => {
   const assignedBranchId = '10000000-0000-4000-8000-000000000020';
   const otherBranchId = '10000000-0000-4000-8000-000000000021';
 
-  it('allows branch-scoped staff to authorize only the assigned branch', () => {
+  it('allows branch-scoped staff to authorize only the assigned branch', async () => {
     const branchActor = {
       id: '10000000-0000-4000-8000-000000000022',
       status: 'ACTIVE',
@@ -150,21 +167,29 @@ describe('agent approval permission boundaries', () => {
       ],
     } as never;
 
-    expect(
-      authorizeAgentApproval(branchActor, {
-        requiredPermission: 'payments:manage',
-        branchIds: [assignedBranchId],
-      }),
-    ).toMatchObject({ decision: 'allowed' });
-    expect(() =>
-      authorizeAgentApproval(branchActor, {
-        requiredPermission: 'payments:manage',
-        branchIds: [otherBranchId],
-      }),
-    ).toThrowError('Permission denied for manage payments');
+    await expect(
+      authorizeAgentApproval(
+        branchActor,
+        {
+          requiredPermission: 'payments:manage',
+          branchIds: [assignedBranchId],
+        },
+        assignedBranchId,
+      ),
+    ).resolves.toMatchObject({ decision: 'allowed' });
+    await expect(
+      authorizeAgentApproval(
+        branchActor,
+        {
+          requiredPermission: 'payments:manage',
+          branchIds: [otherBranchId],
+        },
+        otherBranchId,
+      ),
+    ).rejects.toThrowError('Permission denied for manage payments');
   });
 
-  it('allows global manage permission for all requested branches', () => {
+  it('allows global manage permission for all requested branches', async () => {
     const globalActor = {
       id: '10000000-0000-4000-8000-000000000023',
       status: 'ACTIVE',
@@ -183,12 +208,16 @@ describe('agent approval permission boundaries', () => {
       ],
     } as never;
 
-    expect(
-      authorizeAgentApproval(globalActor, {
-        requiredPermission: 'payments:manage',
-        branchIds: [assignedBranchId, otherBranchId],
-      }),
-    ).toMatchObject({ decision: 'allowed' });
+    await expect(
+      authorizeAgentApproval(
+        globalActor,
+        {
+          requiredPermission: 'payments:manage',
+          branchIds: [assignedBranchId, otherBranchId],
+        },
+        assignedBranchId,
+      ),
+    ).resolves.toMatchObject({ decision: 'allowed' });
   });
 });
 
@@ -215,6 +244,7 @@ describe('Ops Agent read projections', () => {
       conditionGrade: 'GOOD',
       conditionNotes: 'private unit note',
       operationalStatus: 'AVAILABLE',
+      currentBranchId: '10000000-0000-4000-8000-000000000033',
       acquisitionCostVnd: 9_000_000n,
       variant: {
         id: '10000000-0000-4000-8000-000000000032',
@@ -258,6 +288,7 @@ describe('Ops Agent read projections', () => {
         arguments: { blockId: block.id },
       } as never,
       '10000000-0000-4000-8000-000000000042',
+      '10000000-0000-4000-8000-000000000033',
     );
 
     expect(result.data).toMatchObject({
@@ -303,6 +334,7 @@ describe('Ops Agent read projections', () => {
         arguments: { unitId: block.unitId },
       } as never,
       '10000000-0000-4000-8000-000000000044',
+      '10000000-0000-4000-8000-000000000033',
     );
 
     expect(result.data).toMatchObject({
@@ -311,7 +343,7 @@ describe('Ops Agent read projections', () => {
     expect(serializeToolData(result.data)).not.toContain('private@example.com');
   });
 
-  it('returns branch and garment identifiers without contact, staff-user or free-note fields for transfers', async () => {
+  it('limits transfer reads to an endpoint branch and returns a minimal projection', async () => {
     const transfer = {
       id: '10000000-0000-4000-8000-000000000050',
       transferCode: 'TR-050',
@@ -413,43 +445,57 @@ describe('Ops Agent read projections', () => {
         },
       ],
     };
-    mocks.getTransfer.mockResolvedValueOnce(transfer);
-    const result = await executeAgentTool(
-      actor,
-      {
-        caseId: '10000000-0000-4000-8000-000000000040',
-        toolCallId: '10000000-0000-4000-8000-000000000058',
-        idempotencyKey: 'case:call:transfer',
-        toolName: 'get_stock_transfer',
-        arguments: { transferId: transfer.id },
-      } as never,
-      '10000000-0000-4000-8000-000000000059',
-    );
-
-    expect(result.data).toMatchObject({
-      transferCode: 'TR-050',
-      version: 2,
-      fromBranch: { branchCode: 'BR-051', name: 'Quận 1' },
-      toBranch: { branchCode: 'BR-052', name: 'Quận 3' },
-      requester: { employeeCode: 'EMP-051' },
-      items: [{ unit: { unitCode: 'UNIT-054', variant: { model: { name: 'Áo dài xanh' } } } }],
-    });
-    const serialized = serializeToolData(result.data);
-    for (const privateValue of [
-      'private@example.com',
-      'Private branch address',
-      '0900000000',
-      'requester-user-id',
-      'private-avatar',
-      'private condition note',
-      'private unit note',
-      'acquisitionCostVnd',
-      'dailyRentalPriceVnd',
-      'depositAmountVnd',
-      'replacementValueVnd',
-    ]) {
-      expect(serialized).not.toContain(privateValue);
+    mocks.getTransfer.mockResolvedValue(transfer);
+    for (const [caseBranchId, caseBranchRole] of [
+      ['10000000-0000-4000-8000-000000000051', 'FROM'],
+      ['10000000-0000-4000-8000-000000000052', 'TO'],
+    ] as const) {
+      const result = await executeAgentTool(
+        actor,
+        {
+          caseId: '10000000-0000-4000-8000-000000000040',
+          toolCallId: '10000000-0000-4000-8000-000000000058',
+          idempotencyKey: 'case:call:transfer',
+          toolName: 'get_stock_transfer',
+          arguments: { transferId: transfer.id },
+        } as never,
+        '10000000-0000-4000-8000-000000000059',
+        caseBranchId,
+      );
+      expect(result.data).toEqual({
+        id: transfer.id,
+        transferCode: 'TR-050',
+        status: 'REQUESTED',
+        version: 2,
+        caseBranchRole,
+      });
+      const serialized = serializeToolData(result.data);
+      for (const privateValue of [
+        'private@example.com',
+        'Private branch address',
+        'requester-user-id',
+        'private-avatar',
+        'private condition note',
+        'private unit note',
+      ]) {
+        expect(serialized).not.toContain(privateValue);
+      }
     }
+
+    await expect(
+      executeAgentTool(
+        actor,
+        {
+          caseId: '10000000-0000-4000-8000-000000000040',
+          toolCallId: '10000000-0000-4000-8000-000000000058',
+          idempotencyKey: 'case:call:transfer',
+          toolName: 'get_stock_transfer',
+          arguments: { transferId: transfer.id },
+        } as never,
+        '10000000-0000-4000-8000-000000000059',
+        '10000000-0000-4000-8000-000000000060',
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 
   it('does not return payment idempotency or provider fields to the Agent', async () => {
@@ -478,6 +524,7 @@ describe('Ops Agent read projections', () => {
         arguments: { paymentId: '10000000-0000-4000-8000-000000000070' },
       } as never,
       '10000000-0000-4000-8000-000000000073',
+      'branch-1',
     );
 
     expect(result.data).toMatchObject({
@@ -500,10 +547,45 @@ describe('Ops Agent read projections', () => {
       expect(serialized).not.toContain(privateValue);
     }
   });
+
+  it('omits free-form refund reason from Agent projection', async () => {
+    process.env.AGENT_READ_TOOLS_ENABLED = 'true';
+    mocks.getRefundByIdempotencyKey.mockResolvedValueOnce({
+      id: '10000000-0000-4000-8000-000000000074',
+      paymentId: '10000000-0000-4000-8000-000000000075',
+      amountVnd: 500_000n,
+      reason: 'customer private note: private@example.com',
+      status: 'SUCCEEDED',
+      payment: { order: { pickupBranchId: '10000000-0000-4000-8000-000000000078' } },
+    });
+    const result = await executeAgentTool(
+      actor,
+      {
+        caseId: '10000000-0000-4000-8000-000000000040',
+        toolCallId: '10000000-0000-4000-8000-000000000076',
+        idempotencyKey: 'refund-key',
+        toolName: 'get_refund_by_idempotency_key',
+        arguments: { idempotencyKey: 'refund-key' },
+      } as never,
+      '10000000-0000-4000-8000-000000000077',
+      '10000000-0000-4000-8000-000000000078',
+    );
+
+    expect(result.data).toEqual({
+      id: '10000000-0000-4000-8000-000000000074',
+      paymentId: '10000000-0000-4000-8000-000000000075',
+      amountVnd: 500_000n,
+      status: 'SUCCEEDED',
+    });
+    expect(serializeToolData(result.data)).not.toContain('customer private note');
+    expect(serializeToolData(result.data)).not.toContain('private@example.com');
+  });
 });
 
 describe('Ops Agent write safety gate', () => {
-  const writeTools = Object.values(agentToolRegistry).filter((definition) => definition.mode === 'write');
+  const writeTools = Object.values(agentToolRegistry).filter(
+    (definition) => definition.mode === 'write',
+  );
 
   it.each(writeTools)(
     '$name fails closed until the approval and retry contracts exist',
@@ -519,6 +601,7 @@ describe('Ops Agent write safety gate', () => {
             arguments: {},
           } as never,
           '10000000-0000-4000-8000-000000000062',
+          '10000000-0000-4000-8000-000000000063',
         ),
       ).rejects.toMatchObject({ statusCode: 503, code: 'AGENT_WRITE_TOOLS_NOT_READY' });
 
