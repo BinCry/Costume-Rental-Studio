@@ -2356,11 +2356,7 @@ export function OpsAgentPage({
                 <div ref={chatInputContainerRef} className="ops-chat-input">
                   <TextAreaField
                     label="Câu hỏi"
-                    hint={
-                      useAgentApi
-                        ? 'Enter để gửi · Shift + Enter để xuống dòng. Dùng mã đơn thay tên hoặc số điện thoại; không gửi mật khẩu hay mã OTP.'
-                        : 'Enter để gửi · Shift + Enter để xuống dòng. Không nhập thông tin khách thật.'
-                    }
+                    aria-describedby="ops-agent-chat-hint"
                     placeholder={
                       useAgentApi
                         ? 'Mô tả tình huống hoặc yêu cầu bạn cần hỗ trợ…'
@@ -2395,6 +2391,11 @@ export function OpsAgentPage({
                 >
                   {sendingMessage ? 'Đang gửi…' : 'Gửi câu hỏi'}
                 </Button>
+                <p id="ops-agent-chat-hint" className="ops-chat-form-hint">
+                  {useAgentApi
+                    ? 'Enter để gửi · Shift + Enter để xuống dòng. Dùng mã đơn thay tên hoặc số điện thoại; không gửi mật khẩu hay mã OTP.'
+                    : 'Enter để gửi · Shift + Enter để xuống dòng. Không nhập thông tin khách thật.'}
+                </p>
               </form>
               {sendError && (
                 <div ref={sendErrorPanelRef} tabIndex={-1} className="ops-agent-case-error-focus">

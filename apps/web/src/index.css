@@ -5435,13 +5435,15 @@ small {
   font-size: 10px;
 }
 .ops-chat-suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-width: 840px;
   padding: 8px 0 12px;
 }
 .ops-chat-suggestions button {
   min-height: 44px;
+  width: 100%;
   max-width: 100%;
   padding: 7px 10px;
   border: 1px solid var(--border);
@@ -5483,18 +5485,28 @@ small {
 .ops-chat-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: end;
+  grid-template-areas:
+    'input submit'
+    'hint hint';
+  gap: 0 10px;
+  align-items: center;
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
 .ops-chat-input {
+  grid-area: input;
   min-width: 0;
 }
-.ops-chat-input .field-hint {
-  margin-bottom: 0;
+.ops-chat-form-hint {
+  grid-area: hint;
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
 }
 .ops-chat-form > .button {
+  grid-area: submit;
   min-width: 112px;
 }
 .ops-chat-side {
@@ -5556,6 +5568,10 @@ small {
   }
 }
 @media (max-width: 560px) {
+  .ops-chat-suggestions {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: none;
+  }
   .ops-agent-page {
     padding-top: 22px;
   }
@@ -5681,6 +5697,11 @@ small {
   }
   .ops-chat-form {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'input'
+      'submit'
+      'hint';
+    gap: 8px;
   }
   .ops-chat-form > .button {
     justify-self: stretch;
