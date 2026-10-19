@@ -187,6 +187,16 @@ export function canContinueOpsAgentCase(result?: OpsAgentCaseResult) {
   );
 }
 
+// Keep a follow-up attached only while the server explicitly awaits user input.
+// A terminal case is left in the transcript, while the next send starts a new case.
+// eslint-disable-next-line react-refresh/only-export-components
+export function opsAgentCaseIdForNextMessage(
+  caseId: string | undefined,
+  result?: OpsAgentCaseResult,
+) {
+  return caseId && canContinueOpsAgentCase(result) ? caseId : undefined;
+}
+
 function agentStateLabel(state: string, needsReview = false) {
   if (needsReview) return 'Cần kiểm tra trạng thái';
   return agentStateLabels[state.toUpperCase()] ?? 'Cần kiểm tra trạng thái';
@@ -778,7 +788,7 @@ export function OpsAgentPage({
         (caseLoading ||
           caseNeedsReconciliation ||
           !agentResult ||
-          !canContinueOpsAgentCase(agentResult))));
+          (!isOpsAgentCaseTerminal(agentResult) && !canContinueOpsAgentCase(agentResult)))));
   const currentCaseStateUnknown =
     useAgentApi && Boolean(agentResult) && requiresOpsAgentStateReview(agentResult);
 
@@ -1070,7 +1080,11 @@ export function OpsAgentPage({
     try {
       let assistantMessage: ChatMessage;
       if (useAgentApi) {
-        const reply = await sendOpsAgentMessage(question, branchId!, agentCaseId);
+        const reply = await sendOpsAgentMessage(
+          question,
+          branchId!,
+          opsAgentCaseIdForNextMessage(agentCaseId, agentResult),
+        );
         if (caseScopeGeneration.current !== requestScopeGeneration) return;
         setAgentCaseId(reply.caseId);
         if (scopedCaseSessionKey) window.sessionStorage.setItem(scopedCaseSessionKey, reply.caseId);
@@ -2194,7 +2208,7 @@ export function OpsAgentPage({
                                 : undefined
                     }
                   >
-                    {useAgentApi ? 'Tình huống mới' : 'Cuộc trò chuyện mới'}
+                    Cuộc trò chuyện mới
                   </Button>
                 )}
               </div>
@@ -2471,6 +2485,16 @@ export function OpsAgentPage({
                   </button>
                 ))}
               </div>
+              {useAgentApi &&
+                agentCaseId &&
+                agentResult &&
+                isOpsAgentCaseTerminal(agentResult) &&
+                !currentCaseStateUnknown && (
+                  <p className="ops-chat-new-request-note" role="status">
+                    Yêu cầu trước đã kết thúc. Bạn có thể nhắn tiếp; tin nhắn mới sẽ mở yêu cầu khác
+                    và giữ nguyên lịch sử trò chuyện.
+                  </p>
+                )}
               <form
                 className="ops-chat-form"
                 onSubmit={(event) => {
@@ -2661,7 +2685,11 @@ export function OpsAgentPage({
             >
               <summary className="ops-agent-case-summary">
                 <span>
-                  <span className="eyebrow">YÊU CẦU ĐANG THEO DÕI</span>
+                  <span className="eyebrow">
+                    {agentResult && isOpsAgentCaseTerminal(agentResult)
+                      ? 'YÊU CẦU GẦN NHẤT'
+                      : 'YÊU CẦU ĐANG THEO DÕI'}
+                  </span>
                   <strong>{agentResult?.goal?.summary ?? 'Yêu cầu hỗ trợ vận hành'}</strong>
                 </span>
                 {agentResult ? (

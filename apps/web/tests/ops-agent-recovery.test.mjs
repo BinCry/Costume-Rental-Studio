@@ -4,6 +4,7 @@ const { ApiClientError } = await import('../src/api/client.ts');
 const {
   canContinueOpsAgentCase,
   isOpsAgentCaseTerminal,
+  opsAgentCaseIdForNextMessage,
   nextOpsAgentTabIndex,
   opsAgentActionFocusTarget,
   opsAgentErrorMessage,
@@ -57,9 +58,7 @@ describe('Ops Agent safe state and recovery behavior', () => {
   });
 
   it('requires review when a known state conflicts with completion or pending work', () => {
-    expect(
-      requiresOpsAgentStateReview(baseCase('RUNNING', { completed: true })),
-    ).toBe(true);
+    expect(requiresOpsAgentStateReview(baseCase('RUNNING', { completed: true }))).toBe(true);
     expect(
       requiresOpsAgentStateReview(
         baseCase('WAITING_APPROVAL', {
@@ -77,9 +76,9 @@ describe('Ops Agent safe state and recovery behavior', () => {
         }),
       ),
     ).toBe(true);
-    expect(
-      requiresOpsAgentStateReview(baseCase('NEEDS_INPUT', { pendingInput: '   ' })),
-    ).toBe(true);
+    expect(requiresOpsAgentStateReview(baseCase('NEEDS_INPUT', { pendingInput: '   ' }))).toBe(
+      true,
+    );
   });
 
   it('allows only a coherent input request to continue and treats a clean terminal state as done', () => {
@@ -90,6 +89,9 @@ describe('Ops Agent safe state and recovery behavior', () => {
     expect(isOpsAgentCaseTerminal(waitingForInput)).toBe(false);
     expect(requiresOpsAgentStateReview(completed)).toBe(false);
     expect(isOpsAgentCaseTerminal(completed)).toBe(true);
+    expect(opsAgentCaseIdForNextMessage('case-1', waitingForInput)).toBe('case-1');
+    expect(opsAgentCaseIdForNextMessage('case-1', completed)).toBeUndefined();
+    expect(opsAgentCaseIdForNextMessage(undefined, completed)).toBeUndefined();
   });
 
   it('blocks retry after ambiguous timeout and requires refresh after case conflict', () => {
@@ -101,7 +103,10 @@ describe('Ops Agent safe state and recovery behavior', () => {
       new ApiClientError(409, 'AGENT_CASE_CONFLICT', 'Case changed'),
       true,
     );
-    const rateLimit = opsAgentSendRecovery(new ApiClientError(429, 'AI_RATE_LIMITED', 'Busy'), true);
+    const rateLimit = opsAgentSendRecovery(
+      new ApiClientError(429, 'AI_RATE_LIMITED', 'Busy'),
+      true,
+    );
 
     expect(timeout).toEqual({
       outcomeUnknown: true,
@@ -124,16 +129,18 @@ describe('Ops Agent safe state and recovery behavior', () => {
       ),
     ).toContain('trạng thái');
     expect(
-      opsAgentErrorMessage(
-        new ApiClientError(409, 'AGENT_CASE_CONFLICT', 'Conflict'),
-        'Fallback',
-      ),
+      opsAgentErrorMessage(new ApiClientError(409, 'AGENT_CASE_CONFLICT', 'Conflict'), 'Fallback'),
     ).toContain('cập nhật trạng thái');
     expect(
       opsAgentEvidenceLabel({ sourceType: 'knowledge', sourceId: 'doc-1', citation: '  ' }),
     ).toBe('Tài liệu được truy xuất');
     expect(
-      opsKnowledgeAnswerText({ outcome: 'answered', answer: '  ', sources: [], provisional: false }),
+      opsKnowledgeAnswerText({
+        outcome: 'answered',
+        answer: '  ',
+        sources: [],
+        provisional: false,
+      }),
     ).toContain('chưa trả về nội dung');
   });
 });
