@@ -58,9 +58,9 @@ const tabs: { id: AgentTab; label: string }[] = [
 
 const apiTabs: { id: AgentTab; label: string }[] = [
   { id: 'overview', label: 'Bàn làm việc' },
-  { id: 'chat', label: 'Hỏi trợ lý' },
-  { id: 'knowledge', label: 'Tra cứu hướng dẫn' },
-  { id: 'case', label: 'Yêu cầu hiện tại' },
+  { id: 'chat', label: 'Hỗ trợ tình huống' },
+  { id: 'knowledge', label: 'Tra cứu tài liệu' },
+  { id: 'case', label: 'Theo dõi yêu cầu' },
 ];
 
 const agentActionCopy: Record<
@@ -507,7 +507,6 @@ export function OpsAgentPage({
     Boolean(uncertainInitialSendSessionKey) &&
     typeof window !== 'undefined' &&
     window.sessionStorage.getItem(uncertainInitialSendSessionKey!) === '1';
-  const availableTabs = useAgentApi ? apiTabs : tabs;
   const [tab, setTab] = useState<AgentTab>('overview');
   const [queueFilter, setQueueFilter] = useState<QueueFilter>('all');
   const [queueSearch, setQueueSearch] = useState('');
@@ -535,6 +534,9 @@ export function OpsAgentPage({
     if (!useAgentApi || !scopedCaseSessionKey || typeof window === 'undefined') return undefined;
     return window.sessionStorage.getItem(scopedCaseSessionKey) ?? undefined;
   });
+  const availableTabs = useAgentApi
+    ? apiTabs.filter((item) => item.id !== 'case' || Boolean(agentCaseId))
+    : tabs;
   const [agentResult, setAgentResult] = useState<OpsAgentCaseResult>();
   const [caseLoading, setCaseLoading] = useState(() => Boolean(agentCaseId));
   const [caseActionLoading, setCaseActionLoading] = useState(false);
@@ -560,6 +562,11 @@ export function OpsAgentPage({
   const agentCaseScopeRef = useRef(scopedCaseSessionKey);
   const draftScopeRef = useRef(scopedDraftSessionKey);
   const caseScopeGeneration = useRef(0);
+  const visibleTab =
+    availableTabs.some((item) => item.id === tab) &&
+    (!useAgentApi || activeCaseScopeKey === scopedCaseSessionKey)
+      ? tab
+      : 'overview';
   const chatInputContainerRef = useRef<HTMLDivElement>(null);
   const focusCaseAfterAction = useRef(false);
   const focusCaseErrorAfterAction = useRef(false);
@@ -573,7 +580,7 @@ export function OpsAgentPage({
       role: 'assistant',
       text:
         import.meta.env.VITE_OPS_AGENT_MODE === 'api'
-          ? 'Tôi có thể hỗ trợ tra cứu hướng dẫn và phân tích tình huống vận hành. Hãy mô tả việc bạn cần xử lý.'
+          ? 'Tôi có thể phân tích tình huống vận hành và giúp bạn theo dõi yêu cầu xử lý. Nếu chỉ cần tìm quy trình, hãy dùng mục Tra cứu tài liệu.'
           : 'Mình có thể gợi ý checklist từ nội dung demo. Câu trả lời không thay đổi đơn, xác nhận thanh toán hay ghi vào nhật ký.',
       sourceIds:
         import.meta.env.VITE_OPS_AGENT_MODE === 'api' ? [] : ['product-scope', 'safety-direction'],
@@ -811,7 +818,15 @@ export function OpsAgentPage({
         setCaseLoading(false);
       }
     }
-  }, [agentCaseId, branchId, scopedCaseSessionKey, uncertainInitialSendSessionKey]);
+  }, [
+    agentCaseId,
+    branchId,
+    scopedCaseSessionKey,
+    setSendConflict,
+    setSendError,
+    setSendOutcomeUnknown,
+    uncertainInitialSendSessionKey,
+  ]);
 
   useEffect(() => {
     if (!useAgentApi || !agentCaseId || !branchId || agentResult) return;
@@ -837,6 +852,7 @@ export function OpsAgentPage({
 
   const forgetAgentCaseReference = () => {
     setAgentCaseId(undefined);
+    setTab('overview');
     setAgentResult(undefined);
     setCaseError('');
     setCaseNeedsReconciliation(false);
@@ -1096,7 +1112,7 @@ export function OpsAgentPage({
         id: 0,
         role: 'assistant',
         text: useAgentApi
-          ? 'Cuộc trò chuyện mới sẽ được gửi tới trợ lý vận hành. Dùng mã đơn khi có thể; không gửi mật khẩu, mã OTP hoặc thông tin thanh toán đầy đủ.'
+          ? 'Tình huống mới sẽ tạo một yêu cầu để theo dõi. Dùng mã đơn khi cần; không gửi mật khẩu, mã OTP hoặc thông tin thanh toán đầy đủ.'
           : 'Cuộc trò chuyện mới chỉ tồn tại trong trình duyệt này. Hãy chọn câu hỏi gợi ý; không gửi dữ liệu khách thật.',
         sourceIds: useAgentApi ? [] : ['product-scope'],
       },
@@ -1105,10 +1121,10 @@ export function OpsAgentPage({
 
   const suggestedQuestions = useAgentApi
     ? [
-        'Hướng dẫn kiểm tra đồ khi giao cho khách',
-        'Cách đối chiếu yêu cầu thuê mới',
-        'Cần lưu ý gì khi nhận lại đồ thuê?',
-        'Chính sách hoàn cọc cần kiểm tra ở đâu?',
+        'Khách chưa trả đồ nhưng lịch thuê kế tiếp sắp bắt đầu. Tôi nên làm gì?',
+        'Yêu cầu thuê đang chờ xác nhận. Tôi cần kiểm tra những điểm nào?',
+        'Tôi phát hiện trang phục bị hỏng khi nhận lại. Bước tiếp theo là gì?',
+        'Có yêu cầu hoàn cọc đang chờ xử lý. Tôi cần đối chiếu thông tin nào?',
       ]
     : [
         'Tôi nên đối chiếu yêu cầu thuê thế nào?',
@@ -1125,7 +1141,7 @@ export function OpsAgentPage({
           <h1>{useAgentApi ? 'Trợ lý vận hành' : 'Ops Agent'}</h1>
           <p>
             {useAgentApi
-              ? 'Tra cứu hướng dẫn, hỏi về tình huống vận hành và xem lại yêu cầu cần bạn xử lý.'
+              ? 'Tra cứu tài liệu chỉ đọc; gửi tình huống để tạo yêu cầu; theo dõi trạng thái riêng sau khi gửi.'
               : 'Tra cứu checklist và việc cần chú ý tại chi nhánh. Nhân viên vẫn xử lý trên màn hình Studio.'}
           </p>
         </div>
@@ -1174,10 +1190,10 @@ export function OpsAgentPage({
               id={'ops-agent-tab-' + item.id}
               type="button"
               role="tab"
-              aria-selected={tab === item.id}
+              aria-selected={visibleTab === item.id}
               aria-controls={'ops-agent-panel-' + item.id}
-              tabIndex={tab === item.id ? 0 : -1}
-              className={tab === item.id ? 'ops-agent-tab active' : 'ops-agent-tab'}
+              tabIndex={visibleTab === item.id ? 0 : -1}
+              className={visibleTab === item.id ? 'ops-agent-tab active' : 'ops-agent-tab'}
               onClick={() => setTab(item.id)}
               onKeyDown={(event) => handleTabKeyDown(event, item.id)}
             >
@@ -1220,21 +1236,21 @@ export function OpsAgentPage({
         </Feedback>
       )}
 
-      <TabPanel tab={tab}>
-        {tab === 'overview' &&
+      <TabPanel tab={visibleTab}>
+        {visibleTab === 'overview' &&
           (useAgentApi ? (
             <div className="ops-live-home">
               <section className="ops-live-home-hero">
                 <div>
                   <p className="eyebrow">HỖ TRỢ CA LÀM VIỆC</p>
-                  <h2>Bạn cần xử lý việc gì?</h2>
+                  <h2>Bạn cần tra cứu hay xử lý tình huống?</h2>
                   <p>
-                    Hỏi về tình huống đang gặp hoặc tra cứu hướng dẫn. Hãy xem câu trả lời và nguồn
-                    trước khi thực hiện bước tiếp theo.
+                    Tra cứu tài liệu để tìm quy trình và nguồn tham khảo. Nếu cần phân tích một việc
+                    đang xảy ra, hãy gửi tình huống để tạo yêu cầu theo dõi riêng.
                   </p>
                 </div>
                 <Button onClick={() => setTab('chat')}>
-                  Hỏi trợ lý <Icon name="arrow" size={17} />
+                  Mô tả tình huống <Icon name="arrow" size={17} />
                 </Button>
               </section>
 
@@ -1247,8 +1263,8 @@ export function OpsAgentPage({
                   <span className="ops-live-home-action-icon">
                     <Icon name="spark" size={19} />
                   </span>
-                  <strong>Hỏi trợ lý vận hành</strong>
-                  <span>Mô tả việc cần hỗ trợ và xem các bước gợi ý.</span>
+                  <strong>Hỗ trợ tình huống</strong>
+                  <span>Trợ lý phân tích vấn đề và tạo yêu cầu để theo dõi kết quả.</span>
                   <Icon name="arrow" size={17} />
                 </button>
                 <button
@@ -1259,8 +1275,10 @@ export function OpsAgentPage({
                   <span className="ops-live-home-action-icon">
                     <Icon name="search" size={19} />
                   </span>
-                  <strong>Tra cứu hướng dẫn</strong>
-                  <span>Tìm câu trả lời kèm nguồn tài liệu phù hợp.</span>
+                  <strong>Tra cứu tài liệu</strong>
+                  <span>
+                    Tìm quy trình trong kho tri thức kèm nguồn; không tạo yêu cầu vận hành.
+                  </span>
                   <Icon name="arrow" size={17} />
                 </button>
               </div>
@@ -1270,21 +1288,21 @@ export function OpsAgentPage({
                 Studio; hệ thống không hiển thị hàng đợi mẫu trong chế độ API.
               </Feedback>
 
-              <section className="feature-panel ops-live-home-request">
-                <div className="feature-panel-head">
-                  <div>
-                    <p className="eyebrow">PHIÊN LÀM VIỆC</p>
-                    <h2>Yêu cầu hiện tại</h2>
+              {agentCaseId && (
+                <section className="feature-panel ops-live-home-request">
+                  <div className="feature-panel-head">
+                    <div>
+                      <p className="eyebrow">TRẠNG THÁI XỬ LÝ</p>
+                      <h2>Theo dõi yêu cầu</h2>
+                    </div>
+                    {agentResult && (
+                      <StatusLabel
+                        text={agentStateLabel(agentResult.state, currentCaseStateUnknown)}
+                        tone={agentStateTone(agentResult.state, currentCaseStateUnknown)}
+                      />
+                    )}
                   </div>
-                  {agentResult && (
-                    <StatusLabel
-                      text={agentStateLabel(agentResult.state, currentCaseStateUnknown)}
-                      tone={agentStateTone(agentResult.state, currentCaseStateUnknown)}
-                    />
-                  )}
-                </div>
-                {agentCaseId ? (
-                  caseLoading && !agentResult ? (
+                  {caseLoading && !agentResult ? (
                     <div className="ops-queue-skeleton" role="status" aria-label="Đang tải yêu cầu">
                       <span />
                       <span />
@@ -1312,11 +1330,11 @@ export function OpsAgentPage({
                         <p>
                           {agentResult.pendingApproval?.summary ??
                             agentResult.pendingConfirmation?.summary ??
-                            agentResult.message}
+                            'Mở chi tiết để xem kết quả, căn cứ và bước tiếp theo.'}
                         </p>
                       </div>
                       <Button variant="secondary" onClick={() => setTab('case')}>
-                        Xem yêu cầu <Icon name="arrow" size={16} />
+                        Xem chi tiết <Icon name="arrow" size={16} />
                       </Button>
                     </div>
                   ) : (
@@ -1330,21 +1348,9 @@ export function OpsAgentPage({
                     >
                       Hệ thống đang lấy trạng thái mới nhất cho phiên này.
                     </EmptyState>
-                  )
-                ) : (
-                  <div className="ops-live-home-request-empty">
-                    <div>
-                      <strong>Chưa có yêu cầu nào trong phiên này</strong>
-                      <p>
-                        Khi bạn gửi một yêu cầu cho trợ lý, trạng thái xử lý sẽ hiển thị tại đây.
-                      </p>
-                    </div>
-                    <Button variant="secondary" onClick={() => setTab('chat')}>
-                      Bắt đầu hỏi
-                    </Button>
-                  </div>
-                )}
-              </section>
+                  )}
+                </section>
+              )}
 
               {currentCaseStateUnknown && (
                 <Feedback
@@ -1560,7 +1566,7 @@ export function OpsAgentPage({
             </div>
           ))}
 
-        {tab === 'queue' && (
+        {visibleTab === 'queue' && (
           <div className="ops-queue-view">
             <div className="feature-heading">
               <div>
@@ -1673,7 +1679,7 @@ export function OpsAgentPage({
           </div>
         )}
 
-        {tab === 'workflows' && (
+        {visibleTab === 'workflows' && (
           <div className="ops-workflows-view">
             <div className="feature-heading">
               <div>
@@ -1739,18 +1745,18 @@ export function OpsAgentPage({
           </div>
         )}
 
-        {tab === 'knowledge' &&
+        {visibleTab === 'knowledge' &&
           (useAgentApi ? (
             <div className="ops-live-knowledge">
               <div className="feature-heading">
                 <div>
-                  <h2>Tra cứu hướng dẫn</h2>
+                  <h2>Tra cứu tài liệu</h2>
                   <p>
-                    Tìm câu trả lời từ tài liệu được phép. Nguồn đi kèm giúp bạn kiểm tra căn cứ
-                    trước khi áp dụng.
+                    Tìm quy trình trong kho tri thức và kiểm tra nguồn trước khi áp dụng. Tra cứu
+                    này chỉ đọc tài liệu, không tạo yêu cầu vận hành.
                   </p>
                 </div>
-                <StatusLabel text="Dẫn nguồn khi có căn cứ" tone="neutral" />
+                <StatusLabel text="Tra cứu chỉ đọc" tone="neutral" />
               </div>
               <section className="feature-panel ops-live-knowledge-panel">
                 <form
@@ -1851,7 +1857,7 @@ export function OpsAgentPage({
                               setTab('chat');
                             }}
                           >
-                            Hỏi trợ lý về tình huống này
+                            Gửi tình huống cho trợ lý
                           </Button>
                         }
                       >
@@ -2025,7 +2031,7 @@ export function OpsAgentPage({
             </div>
           ))}
 
-        {tab === 'activity' && (
+        {visibleTab === 'activity' && (
           <div className="ops-activity-view">
             <div className="feature-heading">
               <div>
@@ -2080,18 +2086,21 @@ export function OpsAgentPage({
           </div>
         )}
 
-        {tab === 'chat' && (
+        {visibleTab === 'chat' && (
           <div className={useAgentApi ? 'ops-chat-layout ops-chat-live' : 'ops-chat-layout'}>
-            <section className="feature-panel ops-chat-main" aria-label="Hỏi Ops Agent">
+            <section
+              className="feature-panel ops-chat-main"
+              aria-label={useAgentApi ? 'Hỗ trợ tình huống' : 'Hỏi Ops Agent'}
+            >
               <div className="ops-chat-heading">
                 <div>
                   <p className="eyebrow">
-                    {useAgentApi ? 'TRỢ LÝ VẬN HÀNH' : 'TRẢ LỜI THEO TỪ KHÓA'}
+                    {useAgentApi ? 'TẠO VÀ THEO DÕI YÊU CẦU' : 'TRẢ LỜI THEO TỪ KHÓA'}
                   </p>
-                  <h2>{useAgentApi ? 'Hỏi trợ lý' : 'Hỏi Agent'}</h2>
+                  <h2>{useAgentApi ? 'Hỗ trợ tình huống' : 'Hỏi Agent'}</h2>
                   <p>
                     {useAgentApi
-                      ? 'Mô tả việc cần hỗ trợ. Khi có căn cứ, câu trả lời sẽ kèm nguồn để bạn kiểm tra.'
+                      ? 'Mô tả vấn đề đang gặp. Trợ lý sẽ phân tích và tạo hoặc tiếp tục yêu cầu hiện tại; trạng thái, kết quả và bước cần xác nhận nằm ở “Theo dõi yêu cầu”.'
                       : 'Không có mô hình AI. Câu trả lời mẫu chỉ dựa trên từ khóa và nguồn fixture.'}
                   </p>
                 </div>
@@ -2121,7 +2130,7 @@ export function OpsAgentPage({
                               : undefined
                   }
                 >
-                  {useAgentApi ? 'Yêu cầu mới' : 'Cuộc trò chuyện mới'}
+                  {useAgentApi ? 'Tình huống mới' : 'Cuộc trò chuyện mới'}
                 </Button>
               </div>
               <div className="ops-chat-context">
@@ -2141,7 +2150,7 @@ export function OpsAgentPage({
                       if (!agentResult) void reloadAgentCase();
                     }}
                   >
-                    Yêu cầu hiện tại
+                    Theo dõi yêu cầu
                     {agentResult
                       ? ` · ${agentStateLabel(agentResult.state, currentCaseStateUnknown)}`
                       : ''}
@@ -2203,7 +2212,7 @@ export function OpsAgentPage({
                   title="Trợ lý đang chờ bạn bổ sung thông tin"
                   action={
                     <Button variant="secondary" onClick={() => setTab('case')}>
-                      Xem yêu cầu
+                      Theo dõi yêu cầu
                     </Button>
                   }
                 >
@@ -2220,7 +2229,7 @@ export function OpsAgentPage({
                 !agentResult.pendingApproval && (
                   <Feedback
                     tone="info"
-                    title="Yêu cầu hiện tại chưa sẵn sàng cho câu hỏi tiếp theo"
+                    title="Yêu cầu chưa sẵn sàng để tiếp tục"
                     action={
                       <Button variant="secondary" onClick={() => setTab('case')}>
                         Xem trạng thái
@@ -2473,20 +2482,20 @@ export function OpsAgentPage({
                 )}
               </ul>
               <Button variant="quiet" onClick={() => setTab('knowledge')}>
-                {useAgentApi ? 'Tra cứu hướng dẫn' : 'Xem nguồn mẫu'}
+                {useAgentApi ? 'Tra cứu tài liệu' : 'Xem nguồn mẫu'}
               </Button>
             </aside>
           </div>
         )}
 
-        {tab === 'case' && (
+        {visibleTab === 'case' && (
           <div className="ops-agent-case-view">
             <div className="feature-heading">
               <div>
-                <h2>{useAgentApi ? 'Yêu cầu hiện tại' : 'Hồ sơ Agent'}</h2>
+                <h2>{useAgentApi ? 'Theo dõi yêu cầu' : 'Hồ sơ Agent'}</h2>
                 <p>
                   {useAgentApi
-                    ? 'Theo dõi kết quả và xử lý yêu cầu đang chờ bạn xác nhận.'
+                    ? 'Trạng thái của yêu cầu gửi từ mục “Hỗ trợ tình huống”. Xem kết quả, nguồn và xác nhận bước đang chờ tại đây.'
                     : 'Theo dõi hồ sơ được tạo trong bản demo.'}
                 </p>
               </div>
@@ -2507,7 +2516,7 @@ export function OpsAgentPage({
                 title="Chưa có yêu cầu trong phiên này"
                 action={
                   <Button variant="secondary" onClick={() => setTab('chat')}>
-                    Hỏi trợ lý
+                    Mô tả tình huống
                   </Button>
                 }
               >
