@@ -2462,22 +2462,22 @@ export function OpsAgentPage({
                     <p>{pendingQuestion}</p>
                   </article>
                 )}
+                {!hasUserMessages && (
+                  <div className="ops-chat-suggestions" aria-label="Gợi ý câu hỏi">
+                    {suggestedQuestions.map((question) => (
+                      <button
+                        type="button"
+                        key={question}
+                        onClick={() => setChatDraft(question)}
+                        disabled={sendingMessage || knowledgeLoading}
+                      >
+                        {question}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div ref={messageEndRef} />
               </div>
-              {!hasUserMessages && (
-                <div className="ops-chat-suggestions" aria-label="Gợi ý câu hỏi">
-                  {suggestedQuestions.map((question) => (
-                    <button
-                      type="button"
-                      key={question}
-                      onClick={() => setChatDraft(question)}
-                      disabled={sendingMessage || knowledgeLoading}
-                    >
-                      {question}
-                    </button>
-                  ))}
-                </div>
-              )}
               <form className="ops-chat-form" onSubmit={(event) => void sendMessage(event)}>
                 <div ref={chatInputContainerRef} className="ops-chat-input">
                   <TextAreaField

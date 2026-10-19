@@ -6385,14 +6385,31 @@ small {
   scrollbar-gutter: stable;
 }
 .ops-chat-live .ops-chat-thread-empty {
+  align-items: center;
   justify-content: center;
+  gap: 14px;
 }
 .ops-chat-live .ops-chat-message.assistant {
   width: min(100%, 820px);
   max-width: min(100%, 820px);
-  padding: 5px 0;
-  border-color: transparent;
-  background: transparent;
+  padding: 16px 18px;
+  border-color: var(--border);
+  border-radius: 16px;
+  background: var(--surface-muted);
+}
+.ops-chat-live .ops-chat-thread-empty .ops-chat-suggestions {
+  align-self: center;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: min(100%, 820px);
+  padding: 0;
+  overflow: visible;
+  white-space: normal;
+}
+.ops-chat-live .ops-chat-thread-empty .ops-chat-suggestions button {
+  max-width: min(100%, 310px);
+  white-space: normal;
 }
 .ops-chat-live .ops-chat-message.user {
   max-width: min(82%, 700px);
