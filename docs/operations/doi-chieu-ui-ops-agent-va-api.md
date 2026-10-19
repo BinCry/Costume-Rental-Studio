@@ -10,14 +10,14 @@ Lộ trình và điều kiện mở từng mức tự động hóa: [`ke-hoach-p
 
 | API | Màn hình trong UI | Cách dùng |
 |---|---|---|
-| `POST /api/v1/agent/messages` | Hỏi Agent | Tạo hồ sơ mới hoặc gửi câu hỏi tiếp theo cho hồ sơ đang mở. Câu trả lời hiển thị nguồn tài liệu/dữ liệu nghiệp vụ nếu API trả về. |
+| `POST /api/v1/agent/messages` | Khung chat Trợ lý vận hành | Mọi tin nhắn trong khung chat dùng cùng một nút gửi; Agent trả lời dựa trên tri thức và dữ liệu đọc được. Nếu hồ sơ trước đã kết thúc, lượt gửi tiếp tạo hồ sơ nghiệp vụ mới nhưng vẫn nối vào transcript đang hiển thị trên trình duyệt. |
 | `GET /api/v1/agent/cases/{caseId}` | Hồ sơ Agent | Tải lại trạng thái hồ sơ đang mở của tài khoản đăng nhập. Mã hồ sơ chỉ giữ trong `sessionStorage`, không hiển thị UUID. |
 | `POST /api/v1/agent/cases/{caseId}/confirmations/{confirmationId}/confirm` | Hồ sơ Agent | Xác nhận yêu cầu đang chờ; thao tác đi qua hộp thoại xác nhận và API kiểm tra quyền. |
 | `POST /api/v1/agent/cases/{caseId}/confirmations/{confirmationId}/reject` | Hồ sơ Agent | Từ chối yêu cầu đang chờ. |
 | `POST /api/v1/agent/approvals/{approvalId}/approve` | Hồ sơ Agent | Chuyển tiếp quyết định duyệt sau kiểm tra điều kiện truy cập chung. Studio API chưa ràng buộc `approvalId` với đúng preview/tool/đối số/phiên bản; mọi tool ghi vẫn bị chặn. |
 | `POST /api/v1/agent/approvals/{approvalId}/reject` | Hồ sơ Agent | Từ chối thao tác cần quyền cao. |
 | `POST /api/v1/agent/cases/{caseId}/cancel` | Hồ sơ Agent | Hủy hồ sơ Agent còn hoạt động; giao diện nêu rõ thao tác đã hoàn tất trước đó không bị hoàn tác. |
-| `POST /api/v1/knowledge/answer` | Tra cứu tri thức | Gửi câu hỏi, hiển thị câu trả lời, tình trạng đủ căn cứ và trích dẫn do API trả về. |
+| `POST /api/v1/knowledge/answer` | Hợp đồng tra cứu chỉ đọc | API vẫn sẵn sàng cho luồng tra cứu chuyên biệt; khung chat production không bắt nhân viên chọn giữa tra cứu và gửi tình huống. |
 
 Các route `/agent/*` chỉ nhận tài khoản nhân viên đang làm việc, có vai trò ADMIN/STAFF đang hoạt động và quyền tra cứu tri thức nội bộ phù hợp với phạm vi chi nhánh. Khách hàng bị từ chối ngay tại Studio API. `/knowledge/answer` vẫn giữ luồng khách/guest riêng; nhân viên cần `knowledge.read.branch` ở chi nhánh được phân công hoặc `knowledge.read.all` cho quyền toàn hệ thống. Giao diện không tự suy quyền để quyết định kết quả.
 
@@ -27,10 +27,10 @@ Khi lỗi mạng hoặc máy chủ khiến kết quả gửi chưa rõ, UI giữ
 
 ## Quy ước trải nghiệm khi chạy production
 
-- Chế độ production chỉ hiển thị Bàn làm việc, Hỏi trợ lý, Tra cứu hướng dẫn và Yêu cầu hiện tại. Các mục này dẫn tới hành động hoặc trạng thái mà nhân viên có thể sử dụng ngay.
+- Chế độ production gộp trao đổi với Trợ lý vào một màn chat. Nhân viên gửi một tin nhắn theo cách thông thường; trạng thái yêu cầu và các bước xác nhận chỉ xuất hiện khi lượt Agent cần xử lý nghiệp vụ.
 - Hàng đợi, checklist, danh mục nguồn mẫu và nhật ký fixture chỉ xuất hiện trong bản demo. Chúng không nằm trong điều hướng production và không được dùng làm số liệu của ca làm việc.
 - Nhân viên nhìn thấy trạng thái và căn cứ nghiệp vụ cần để quyết định. Tên route, thuật ngữ nội bộ như RAG/tool, mã UUID và cấu hình API không xuất hiện trong luồng thường ngày.
-- Khi chưa đủ nguồn, màn tra cứu đưa nhân viên sang hỏi trợ lý hoặc nhắc đối chiếu với người phụ trách. Khi chưa rõ kết quả gửi, UI giữ câu hỏi và hướng dẫn kiểm tra yêu cầu trước khi gửi lại.
+- Khi chưa đủ nguồn, trợ lý nêu rõ chưa có căn cứ và nhắc đối chiếu với người phụ trách. Khi chưa rõ kết quả gửi, UI giữ câu hỏi và hướng dẫn kiểm tra yêu cầu trước khi gửi lại.
 - Trạng thái kết nối được thể hiện theo từng thao tác. Bật cấu hình API không được xem là bằng chứng rằng Agent hay kho tri thức đang hoạt động.
 
 ## Nội dung vẫn dùng fixture
@@ -47,7 +47,8 @@ Các mục dưới đây chưa thuộc phạm vi màn hình production hiện t�
 | Nhu cầu | API còn thiếu | Trạng thái UI hiện tại |
 |---|---|---|
 | Duyệt hàng đợi hồ sơ của nhiều nhân viên | `GET /agent/cases` có phân trang, lọc trạng thái và phạm vi chi nhánh | Chưa mở hàng đợi nhóm trong production; mỗi nhân viên chỉ xem yêu cầu hiện tại của phiên mình. |
-| Mở lại nội dung hội thoại | API đọc các message theo hồ sơ | Yêu cầu hiện tại hiển thị kết quả gần nhất; không gọi đó là lịch sử hội thoại. |
+| Hội thoại có ngữ cảnh sau khi một yêu cầu kết thúc | `conversationId`/`threadId` riêng với `caseId`, API gửi lượt chat theo conversation và API đọc transcript theo actor/chi nhánh | FE giữ transcript trong bộ nhớ của trang. Sau khi case kết thúc, tin nhắn sau tạo case mới nhưng backend chưa nhận transcript cũ; câu trả lời chưa có bảo đảm hiểu ngữ cảnh các lượt trước. Không gọi transcript này là lịch sử đã lưu. |
+| Mở lại nội dung của một hồ sơ | API đọc các message theo `caseId` | UI hiện chỉ có thể tải trạng thái/kết quả mới nhất; chưa thể mở lại toàn bộ trao đổi trong hồ sơ. |
 | Nhật ký hoạt động và audit | API sự kiện có actor, hành động, nguồn, thời gian, kết quả, quyền và phân trang | Nhật ký không xuất hiện trong điều hướng production cho tới khi có API và quyền truy cập tương ứng. |
 | Liệt kê và quản lý nguồn tri thức | API danh sách tài liệu, metadata/version, tải lên, ingestion/index, trạng thái duyệt và lịch sử | Production chỉ có tra cứu hướng dẫn bằng `knowledge/answer`; không hiển thị danh mục fixture hoặc chức năng quản lý giả. |
 | Tìm tài liệu không cần sinh câu trả lời | Endpoint tìm kiếm trả đoạn trích và score/citation | Chưa có màn tìm kiếm thuần; hiện có thể hỏi hướng dẫn và xem các nguồn mà API trả về. |

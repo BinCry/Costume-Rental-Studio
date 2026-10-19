@@ -599,7 +599,7 @@ export function OpsAgentPage({
       role: 'assistant',
       text:
         import.meta.env.VITE_OPS_AGENT_MODE === 'api'
-          ? 'Bạn có thể tra cứu quy trình hoặc gửi một tình huống để trợ lý phân tích. Hãy nhập nội dung rồi chọn cách gửi phù hợp.'
+          ? 'Chào bạn, mình có thể hỗ trợ các câu hỏi về quy trình và công việc tại studio. Bạn cứ mô tả điều cần xử lý; mình sẽ trả lời kèm căn cứ khi có.'
           : 'Mình có thể gợi ý checklist từ nội dung demo. Câu trả lời không thay đổi đơn, xác nhận thanh toán hay ghi vào nhật ký.',
       sourceIds:
         import.meta.env.VITE_OPS_AGENT_MODE === 'api' ? [] : ['product-scope', 'safety-direction'],
@@ -682,7 +682,7 @@ export function OpsAgentPage({
         id: 0,
         role: 'assistant',
         text: useAgentApi
-          ? 'Bạn có thể tra cứu quy trình hoặc gửi một tình huống để trợ lý phân tích. Hãy nhập nội dung rồi chọn cách gửi phù hợp.'
+          ? 'Chào bạn, mình có thể hỗ trợ các câu hỏi về quy trình và công việc tại studio. Bạn cứ mô tả điều cần xử lý; mình sẽ trả lời kèm căn cứ khi có.'
           : 'Mình có thể gợi ý checklist từ nội dung demo. Câu trả lời không thay đổi đơn, xác nhận thanh toán hay ghi vào nhật ký.',
         sourceIds: useAgentApi ? [] : ['product-scope', 'safety-direction'],
       },
@@ -1077,18 +1077,18 @@ export function OpsAgentPage({
       text: question,
       sourceIds: [],
     };
+    const caseIdForMessage = useAgentApi
+      ? opsAgentCaseIdForNextMessage(agentCaseId, agentResult)
+      : undefined;
     try {
       let assistantMessage: ChatMessage;
       if (useAgentApi) {
-        const reply = await sendOpsAgentMessage(
-          question,
-          branchId!,
-          opsAgentCaseIdForNextMessage(agentCaseId, agentResult),
-        );
+        const reply = await sendOpsAgentMessage(question, branchId!, caseIdForMessage);
         if (caseScopeGeneration.current !== requestScopeGeneration) return;
         setAgentCaseId(reply.caseId);
         if (scopedCaseSessionKey) window.sessionStorage.setItem(scopedCaseSessionKey, reply.caseId);
         setAgentResult(reply);
+        setCaseDetailsOpen(false);
         setSendOutcomeUnknown(false);
         if (uncertainInitialSendSessionKey)
           window.sessionStorage.removeItem(uncertainInitialSendSessionKey);
@@ -1115,6 +1115,9 @@ export function OpsAgentPage({
       assistantMessage.id = messageSequence.current++;
       setMessages((current) => [...current, userMessage, assistantMessage]);
       setChatDraft('');
+      window.requestAnimationFrame(() => {
+        chatInputContainerRef.current?.querySelector<HTMLTextAreaElement>('textarea')?.focus();
+      });
       if (scopedDraftSessionKey) {
         try {
           window.sessionStorage.removeItem(scopedDraftSessionKey);
@@ -1124,18 +1127,22 @@ export function OpsAgentPage({
       }
     } catch (error) {
       if (caseScopeGeneration.current !== requestScopeGeneration) return;
-      const recovery = opsAgentSendRecovery(error, Boolean(agentCaseId));
+      const recovery = opsAgentSendRecovery(error, Boolean(caseIdForMessage));
       focusSendErrorAfterFailure.current = true;
       setSendOutcomeUnknown(recovery.outcomeUnknown);
       if (recovery.requiresCaseRefresh) setCaseNeedsReconciliation(true);
-      if (recovery.outcomeUnknown && !agentCaseId && uncertainInitialSendSessionKey)
+      if (recovery.outcomeUnknown && !caseIdForMessage && uncertainInitialSendSessionKey) {
         window.sessionStorage.setItem(uncertainInitialSendSessionKey, '1');
-      setSendConflict(recovery.conflict && Boolean(agentCaseId));
+        setAgentCaseId(undefined);
+        setAgentResult(undefined);
+        if (scopedCaseSessionKey) window.sessionStorage.removeItem(scopedCaseSessionKey);
+      }
+      setSendConflict(recovery.conflict && Boolean(caseIdForMessage));
       setSendError(
         opsAgentErrorMessage(
           error,
           useAgentApi
-            ? 'Không gửi được tình huống tới trợ lý.'
+            ? 'Không gửi được tin nhắn cho trợ lý.'
             : 'Không gửi được câu hỏi tới Ops Agent.',
         ),
       );
@@ -1179,7 +1186,7 @@ export function OpsAgentPage({
         id: 0,
         role: 'assistant',
         text: useAgentApi
-          ? 'Tình huống mới sẽ tạo một yêu cầu để theo dõi. Dùng mã đơn khi cần; không gửi mật khẩu, mã OTP hoặc thông tin thanh toán đầy đủ.'
+          ? 'Chào bạn, mình có thể hỗ trợ các câu hỏi về quy trình và công việc tại studio. Bạn cứ mô tả điều cần xử lý; mình sẽ trả lời kèm căn cứ khi có.'
           : 'Cuộc trò chuyện mới chỉ tồn tại trong trình duyệt này. Hãy chọn câu hỏi gợi ý; không gửi dữ liệu khách thật.',
         sourceIds: useAgentApi ? [] : ['product-scope'],
       },
@@ -1188,10 +1195,10 @@ export function OpsAgentPage({
 
   const suggestedQuestions = useAgentApi
     ? [
-        'Quy trình kiểm tra trang phục khi giao cho khách gồm những gì?',
-        'Khách chưa trả đồ nhưng lịch thuê kế tiếp sắp bắt đầu. Tôi nên làm gì?',
-        'Khi nhận lại trang phục, cần kiểm tra những gì?',
-        'Tôi phát hiện trang phục bị hỏng khi nhận lại. Bước tiếp theo là gì?',
+        'Kiểm tra trang phục trước khi giao khách',
+        'Khách chưa trả đồ, đơn kế tiếp sắp bắt đầu',
+        'Cần làm gì khi nhận lại đồ bị hỏng?',
+        'Tra cứu chính sách hoàn cọc',
       ]
     : [
         'Tôi nên đối chiếu yêu cầu thuê thế nào?',
@@ -1208,7 +1215,7 @@ export function OpsAgentPage({
           <h1>{useAgentApi ? 'Trợ lý vận hành' : 'Ops Agent'}</h1>
           <p>
             {useAgentApi
-              ? 'Tra cứu quy trình hoặc mô tả tình huống ngay tại một màn hình.'
+              ? 'Trao đổi với trợ lý về quy trình và công việc tại chi nhánh.'
               : 'Tra cứu checklist và việc cần chú ý tại chi nhánh. Nhân viên vẫn xử lý trên màn hình Studio.'}
           </p>
         </div>
@@ -1231,8 +1238,7 @@ export function OpsAgentPage({
 
       {useAgentApi && !branchId && (
         <Feedback tone="warning" title="Chưa xác định được chi nhánh">
-          Chọn chi nhánh được gán trước khi gửi tình huống cho trợ lý. Bạn vẫn có thể tra cứu tài
-          liệu; nội dung chưa gửi sẽ được giữ trong ô nhập.
+          Chọn chi nhánh được gán trước khi gửi tin nhắn. Nội dung bạn đã nhập sẽ được giữ lại.
         </Feedback>
       )}
 
@@ -1932,7 +1938,7 @@ export function OpsAgentPage({
                               setTab('chat');
                             }}
                           >
-                            Gửi tình huống cho trợ lý
+                            Hỏi trợ lý tiếp
                           </Button>
                         }
                       >
@@ -2165,23 +2171,20 @@ export function OpsAgentPage({
           <div className={useAgentApi ? 'ops-chat-layout ops-chat-live' : 'ops-chat-layout'}>
             <section
               className="feature-panel ops-chat-main"
-              aria-label={useAgentApi ? 'Hỗ trợ tình huống' : 'Hỏi Ops Agent'}
+              aria-label={useAgentApi ? 'Cuộc trò chuyện với trợ lý vận hành' : 'Hỏi Ops Agent'}
             >
               <div className="ops-chat-heading">
                 <div>
-                  <p className="eyebrow">
-                    {useAgentApi ? 'TRỢ LÝ VẬN HÀNH' : 'TRẢ LỜI THEO TỪ KHÓA'}
-                  </p>
                   <h2 id={useAgentApi ? 'ops-agent-support-title' : undefined}>
-                    {useAgentApi ? 'Hỗ trợ vận hành' : 'Hỏi Agent'}
+                    {useAgentApi ? 'Cuộc trò chuyện' : 'Hỏi Agent'}
                   </h2>
                   <p>
                     {useAgentApi
-                      ? 'Nhập nội dung một lần: tra cứu quy trình hoặc gửi tình huống để trợ lý phân tích và tạo yêu cầu theo dõi.'
+                      ? 'Trao đổi tự nhiên về quy trình, đơn thuê và các tình huống tại studio.'
                       : 'Không có mô hình AI. Câu trả lời mẫu chỉ dựa trên từ khóa và nguồn fixture.'}
                   </p>
                 </div>
-                {(!useAgentApi || agentCaseId) && (
+                {(!useAgentApi || messages.some((message) => message.role === 'user')) && (
                   <Button
                     variant="secondary"
                     onClick={newConversation}
@@ -2222,8 +2225,8 @@ export function OpsAgentPage({
               )}
               {useAgentApi && agentCaseId && caseLoading && !agentResult && (
                 <Feedback tone="info" title="Đang kiểm tra yêu cầu hiện tại">
-                  Gửi tình huống mới đang tạm khóa để tránh trùng yêu cầu; bạn vẫn có thể tra cứu
-                  tài liệu.
+                  Đang khôi phục lượt trao đổi trước. Bạn có thể gửi tin nhắn sau khi trạng thái
+                  được xác nhận.
                 </Feedback>
               )}
               {useAgentApi && agentCaseId && caseError && !caseLoading && !agentResult && (
@@ -2240,21 +2243,9 @@ export function OpsAgentPage({
                     </Button>
                   }
                 >
-                  {caseError} Yêu cầu cũ có thể vẫn tồn tại, vì vậy gửi tình huống mới đang tạm
-                  khóa.
+                  {caseError} Hãy cập nhật trạng thái trước khi gửi tiếp để tránh tạo yêu cầu trùng.
                 </Feedback>
               )}
-              {useAgentApi &&
-                agentCaseId &&
-                agentResult &&
-                !isOpsAgentCaseTerminal(agentResult) &&
-                !currentCaseStateUnknown &&
-                !sendOutcomeUnknown && (
-                  <p className="ops-chat-new-request-note" role="status">
-                    Bạn đang làm việc trong yêu cầu hiện tại. Để mở yêu cầu mới, hãy chờ yêu cầu này
-                    kết thúc.
-                  </p>
-                )}
               {useAgentApi &&
                 agentResult &&
                 (agentResult.pendingConfirmation ?? agentResult.pendingApproval) && (
@@ -2405,7 +2396,7 @@ export function OpsAgentPage({
                             variant="secondary"
                             onClick={() => setChatDraft(message.question ?? '')}
                           >
-                            Gửi tình huống cho trợ lý
+                            Hỏi trợ lý tiếp
                           </Button>
                         )}
                       </div>
@@ -2473,54 +2464,36 @@ export function OpsAgentPage({
                 )}
                 <div ref={messageEndRef} />
               </div>
-              <div className="ops-chat-suggestions" aria-label="Câu hỏi gợi ý">
-                {suggestedQuestions.map((question) => (
-                  <button
-                    type="button"
-                    key={question}
-                    onClick={() => setChatDraft(question)}
-                    disabled={sendingMessage || knowledgeLoading}
-                  >
-                    {question}
-                  </button>
-                ))}
-              </div>
-              {useAgentApi &&
-                agentCaseId &&
-                agentResult &&
-                isOpsAgentCaseTerminal(agentResult) &&
-                !currentCaseStateUnknown && (
-                  <p className="ops-chat-new-request-note" role="status">
-                    Yêu cầu trước đã kết thúc. Bạn có thể nhắn tiếp; tin nhắn mới sẽ mở yêu cầu khác
-                    và giữ nguyên lịch sử trò chuyện.
-                  </p>
-                )}
-              <form
-                className="ops-chat-form"
-                onSubmit={(event) => {
-                  if (!useAgentApi) {
-                    void sendMessage(event);
-                    return;
-                  }
-                  const action = event.nativeEvent.submitter?.getAttribute('data-action');
-                  if (action === 'situation') void sendMessage(event);
-                  else {
-                    event.preventDefault();
-                    void submitKnowledgeLookup();
-                  }
-                }}
-              >
+              {!messages.some((message) => message.role === 'user') && (
+                <div className="ops-chat-suggestions" aria-label="Gợi ý câu hỏi">
+                  {suggestedQuestions.map((question) => (
+                    <button
+                      type="button"
+                      key={question}
+                      onClick={() => setChatDraft(question)}
+                      disabled={sendingMessage || knowledgeLoading}
+                    >
+                      {question}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <form className="ops-chat-form" onSubmit={(event) => void sendMessage(event)}>
                 <div ref={chatInputContainerRef} className="ops-chat-input">
                   <TextAreaField
-                    label={useAgentApi ? 'Nội dung cần hỗ trợ' : 'Câu hỏi'}
+                    label={useAgentApi ? 'Tin nhắn' : 'Câu hỏi'}
                     aria-describedby="ops-agent-chat-hint"
                     placeholder={
                       useAgentApi
-                        ? 'Nhập câu hỏi quy trình hoặc mô tả tình huống…'
+                        ? 'Nhắn cho Trợ lý vận hành…'
                         : 'Hỏi về checklist hoặc nguồn tài liệu...'
                     }
                     value={chatDraft}
-                    disabled={sendingMessage || (useAgentApi && knowledgeLoading)}
+                    disabled={
+                      sendingMessage ||
+                      knowledgeLoading ||
+                      (useAgentApi && (sendOutcomeUnknown || currentCaseNeedsResolution))
+                    }
                     maxLength={2000}
                     onChange={(event) => {
                       setChatDraft(event.target.value);
@@ -2535,41 +2508,23 @@ export function OpsAgentPage({
                     rows={2}
                   />
                 </div>
-                {useAgentApi ? (
-                  <div className="ops-chat-actions">
-                    <Button
-                      type="submit"
-                      variant="secondary"
-                      data-action="knowledge"
-                      disabled={chatDraft.trim().length < 2 || knowledgeLoading || sendingMessage}
-                      loading={knowledgeLoading}
-                    >
-                      Tra cứu hướng dẫn
-                    </Button>
-                    <Button
-                      type="submit"
-                      data-action="situation"
-                      disabled={
-                        !chatDraft.trim() ||
-                        sendingMessage ||
-                        knowledgeLoading ||
-                        !branchId ||
-                        sendOutcomeUnknown ||
-                        currentCaseNeedsResolution
-                      }
-                      loading={sendingMessage}
-                    >
-                      Gửi tình huống
-                    </Button>
-                  </div>
-                ) : (
-                  <Button type="submit" disabled={!chatDraft.trim() || sendingMessage}>
-                    {sendingMessage ? 'Đang gửi…' : 'Gửi câu hỏi'}
-                  </Button>
-                )}
+                <Button
+                  type="submit"
+                  aria-label="Gửi tin nhắn"
+                  disabled={
+                    !chatDraft.trim() ||
+                    sendingMessage ||
+                    (!branchId && useAgentApi) ||
+                    sendOutcomeUnknown ||
+                    currentCaseNeedsResolution
+                  }
+                  loading={sendingMessage}
+                >
+                  {sendingMessage ? 'Đang gửi…' : useAgentApi ? 'Gửi' : 'Gửi câu hỏi'}
+                </Button>
                 <p id="ops-agent-chat-hint" className="ops-chat-form-hint">
                   {useAgentApi
-                    ? 'Enter để tra cứu · Shift + Enter để xuống dòng · “Gửi tình huống” tạo yêu cầu theo dõi. Dùng mã đơn; không gửi mật khẩu hay mã OTP.'
+                    ? 'Enter để gửi · Shift + Enter để xuống dòng. Không gửi mật khẩu, mã OTP hoặc thông tin thanh toán đầy đủ.'
                     : 'Enter để gửi · Shift + Enter để xuống dòng. Không nhập thông tin khách thật.'}
                 </p>
               </form>
@@ -2604,7 +2559,7 @@ export function OpsAgentPage({
                       sendOutcomeUnknown
                         ? 'Chưa xác nhận được kết quả gửi'
                         : useAgentApi
-                          ? 'Không gửi được tình huống'
+                          ? 'Không gửi được tin nhắn'
                           : 'Không gửi được câu hỏi'
                     }
                     action={

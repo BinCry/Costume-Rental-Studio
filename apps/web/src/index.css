@@ -6349,6 +6349,170 @@ small {
   }
 }
 
+/* API-mode Ops Agent: keep one continuous conversation and a persistent composer. */
+.ops-chat-live .ops-chat-main.feature-panel {
+  height: min(760px, calc(100dvh - 270px));
+  min-height: 520px;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+.ops-chat-live .ops-chat-heading {
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--border);
+}
+.ops-chat-live .ops-chat-heading h2 {
+  margin-bottom: 3px;
+  font-size: 17px;
+}
+.ops-chat-live .ops-chat-heading p:not(.eyebrow) {
+  font-size: 13px;
+  line-height: 19px;
+}
+.ops-chat-live .ops-chat-thread {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  padding: 22px clamp(16px, 4vw, 52px);
+  gap: 18px;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.ops-chat-live .ops-chat-message.assistant {
+  width: min(100%, 820px);
+  max-width: min(100%, 820px);
+  padding: 5px 0;
+  border-color: transparent;
+  background: transparent;
+}
+.ops-chat-live .ops-chat-message.user {
+  max-width: min(82%, 700px);
+  padding: 12px 16px;
+  border-radius: 18px 18px 4px 18px;
+}
+.ops-chat-live .ops-chat-role {
+  margin-bottom: 6px;
+  font-size: 11px;
+}
+.ops-chat-live .ops-chat-message.assistant .ops-chat-role {
+  color: var(--brand-primary);
+}
+.ops-chat-live .ops-chat-message p,
+.ops-chat-live .ops-chat-markdown {
+  font-size: 15px;
+  line-height: 1.6;
+}
+.ops-chat-live .ops-chat-suggestions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  max-width: none;
+  padding: 8px 22px 12px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
+}
+.ops-chat-live .ops-chat-suggestions::-webkit-scrollbar {
+  display: none;
+}
+.ops-chat-live .ops-chat-suggestions button {
+  width: auto;
+  max-width: 310px;
+  flex: 0 0 auto;
+  padding-inline: 13px;
+  background: var(--surface-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.ops-chat-live .ops-chat-form {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'input submit'
+    'hint hint';
+  gap: 7px 12px;
+  padding: 12px 22px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 -8px 20px rgb(24 24 27 / 3%);
+}
+.ops-chat-live .ops-chat-input .field {
+  gap: 4px;
+}
+.ops-chat-live .ops-chat-input .field > label {
+  font-size: 12px;
+  line-height: 16px;
+}
+.ops-chat-live .ops-chat-input textarea {
+  min-height: 48px;
+  max-height: 128px;
+  padding: 12px 15px;
+  border-radius: 16px;
+  resize: vertical;
+}
+.ops-chat-live .ops-chat-form > .button {
+  min-width: 80px;
+  min-height: 48px;
+  align-self: end;
+  border-radius: 14px;
+}
+.ops-chat-live .ops-chat-form-hint {
+  margin-top: 0;
+  font-size: 11px;
+}
+.ops-chat-live + .ops-agent-case-details {
+  margin-top: 10px;
+}
+
+@media (max-width: 820px) {
+  .ops-chat-live .ops-chat-main.feature-panel {
+    height: min(720px, 74dvh);
+    min-height: 480px;
+  }
+}
+@media (max-width: 560px) {
+  .ops-chat-live .ops-chat-main.feature-panel {
+    height: min(680px, 76dvh);
+    min-height: 430px;
+  }
+  .ops-chat-live .ops-chat-heading {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    padding: 13px 14px;
+  }
+  .ops-chat-live .ops-chat-heading > .button {
+    justify-self: end;
+  }
+  .ops-chat-live .ops-chat-heading p:not(.eyebrow) {
+    max-width: 42ch;
+  }
+  .ops-chat-live .ops-chat-thread {
+    padding: 16px 14px;
+  }
+  .ops-chat-live .ops-chat-message.user {
+    max-width: 92%;
+  }
+  .ops-chat-live .ops-chat-suggestions {
+    padding: 6px 14px 10px;
+  }
+  .ops-chat-live .ops-chat-form {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'input submit'
+      'hint hint';
+    gap: 6px 8px;
+    padding: 10px 14px 12px;
+  }
+  .ops-chat-live .ops-chat-form > .button {
+    min-width: 64px;
+    padding-inline: 12px;
+  }
+}
+
 /* UX audit: keep summaries, secondary filters, and text readable at narrow widths. */
 .booking-mobile-summary {
   display: none;

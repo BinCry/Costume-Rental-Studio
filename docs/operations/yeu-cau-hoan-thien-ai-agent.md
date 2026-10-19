@@ -13,7 +13,7 @@ Ops Agent là trợ lý cho nhân viên studio: trả lời quy trình dựa tr�
 
 **Trạng thái thực thi hiện tại:** đường hỏi đáp/tra cứu và tool đọc đã có hợp đồng; 11 tool ghi mới được khai báo, đang bị Studio API chặn toàn bộ bằng `AGENT_WRITE_TOOLS_NOT_READY`. Các mô tả thao tác ghi dưới đây là yêu cầu cho giai đoạn tiếp theo, không phải khả năng đã phát hành.
 
-Ở production, nhân viên dùng bốn khu vực: **Bàn làm việc**, **Hỏi trợ lý**, **Tra cứu hướng dẫn** và **Yêu cầu hiện tại**. Hàng đợi, checklist, số liệu và danh mục tài liệu giả lập chỉ dành cho demo. Tài liệu đối chiếu giao diện/API: [`doi-chieu-ui-ops-agent-va-api.md`](doi-chieu-ui-ops-agent-va-api.md).
+Ở production, nhân viên hỏi trợ lý trong **một khung chat**. Nội dung trả lời và căn cứ nằm cùng transcript; thông tin yêu cầu/chờ xác nhận là phần phụ trợ, không thay thế hay khóa hội thoại sau khi câu trả lời kết thúc. Hàng đợi, checklist, số liệu và danh mục tài liệu giả lập chỉ dành cho demo. Tài liệu đối chiếu giao diện/API: [`doi-chieu-ui-ops-agent-va-api.md`](doi-chieu-ui-ops-agent-va-api.md).
 
 ## 2. Hợp đồng tích hợp hiện có
 
@@ -85,6 +85,7 @@ Trường `idempotencyKey` hiện bắt buộc trong payload, nhưng Studio API 
 2. Xử lý câu hỏi bổ sung (`pendingInput`), xác nhận, từ chối, duyệt, từ chối duyệt và hủy hồ sơ theo trạng thái hiện tại. Quyết định thao tác phải đi qua endpoint Studio API tương ứng.
 3. Trả `message` thân thiện cho nhân viên, `evidence` có nguồn rõ, và `completed`/trạng thái chờ chính xác. Không đưa `stepsUsed`, token, lý do kết thúc nội bộ hay UUID vào lời trả lời thường ngày.
 4. Khi có xung đột dữ liệu, thiếu quyền, hết hạn xác nhận, dịch vụ lỗi hoặc kết quả không chắc chắn, giữ nguyên trạng thái chưa hoàn tất và hướng nhân viên đến bước phục hồi; không tự lặp thao tác ghi.
+5. Tách **hội thoại** khỏi **hồ sơ yêu cầu**: một hội thoại có thể có nhiều lượt hỏi đáp và nhiều `caseId`; case hoàn tất không được khóa ô chat hoặc chấm dứt hội thoại. Bổ sung định danh hội thoại ổn định (`conversationId`/`threadId`) cùng API đọc transcript đã được phân quyền. Mỗi lượt cần khôi phục đúng ngữ cảnh, nhưng việc thực thi tool vẫn phải kiểm tra quyền hiện hành; không suy quyền từ transcript.
 
 ### B. Tri thức và RAG
 
@@ -131,6 +132,7 @@ Các mục sau cần API/quyết định sản phẩm trước khi làm UI hoặ
 
 - Hàng đợi hồ sơ toàn nhóm, lọc theo chi nhánh/trạng thái và phân công hồ sơ cho nhân viên.
 - Lịch sử đầy đủ các message của hồ sơ và tìm lại hồ sơ cũ.
+- API hội thoại độc lập với vòng đời từng case để gửi tiếp nhiều lượt có ngữ cảnh và đọc lại transcript theo actor/chi nhánh; cần chính sách lưu, xóa và thời hạn lưu dữ liệu rõ ràng.
 - Nhật ký kiểm toán hiển thị cho quản lý (ai làm gì, lúc nào, kết quả và căn cứ quyền).
 - Quản lý tài liệu tri thức: danh sách, tải lên, phiên bản, duyệt, lập chỉ mục, vô hiệu hóa và lịch sử xử lý.
 - Tìm tài liệu thuần không sinh câu trả lời.
