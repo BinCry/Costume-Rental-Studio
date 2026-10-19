@@ -60,6 +60,20 @@ const tabs: { id: AgentTab; label: string }[] = [
 
 const apiTabs: { id: AgentTab; label: string }[] = [{ id: 'chat', label: 'Hỗ trợ vận hành' }];
 
+function initialChatMessages(useAgentApi: boolean, isNewConversation = false): ChatMessage[] {
+  if (useAgentApi) return [];
+  return [
+    {
+      id: 0,
+      role: 'assistant',
+      text: isNewConversation
+        ? 'Cuộc trò chuyện mới chỉ tồn tại trong trình duyệt này. Hãy chọn câu hỏi gợi ý; không gửi dữ liệu khách thật.'
+        : 'Mình có thể gợi ý checklist từ nội dung demo. Câu trả lời không thay đổi đơn, xác nhận thanh toán hay ghi vào nhật ký.',
+      sourceIds: isNewConversation ? ['product-scope'] : ['product-scope', 'safety-direction'],
+    },
+  ];
+}
+
 const agentActionCopy: Record<
   AgentCaseAction,
   { title: string; confirmText: string; description: string; danger?: boolean }
@@ -592,22 +606,17 @@ export function OpsAgentPage({
   const focusSendErrorAfterFailure = useRef(false);
   const sendErrorPanelRef = useRef<HTMLDivElement>(null);
   const caseResultHeadingRef = useRef<HTMLHeadingElement>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 0,
-      role: 'assistant',
-      text:
-        import.meta.env.VITE_OPS_AGENT_MODE === 'api'
-          ? 'Chào bạn, mình có thể hỗ trợ các câu hỏi về quy trình và công việc tại studio. Bạn cứ mô tả điều cần xử lý; mình sẽ trả lời kèm căn cứ khi có.'
-          : 'Mình có thể gợi ý checklist từ nội dung demo. Câu trả lời không thay đổi đơn, xác nhận thanh toán hay ghi vào nhật ký.',
-      sourceIds:
-        import.meta.env.VITE_OPS_AGENT_MODE === 'api' ? [] : ['product-scope', 'safety-direction'],
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => initialChatMessages(useAgentApi));
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const messageEndRef = useRef<HTMLDivElement>(null);
   const messageSequence = useRef(1);
   const caseDetailsRef = useRef<HTMLDetailsElement>(null);
+  useLayoutEffect(() => {
+    const textarea = chatInputContainerRef.current?.querySelector('textarea');
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 152)}px`;
+  }, [chatDraft]);
   const loadQueue = useCallback(
     (currentScenario: DemoScenario) =>
       useAgentApi ? Promise.resolve([] as QueueTask[]) : fixtureAdapter.listQueue(currentScenario),
@@ -676,16 +685,7 @@ export function OpsAgentPage({
         : '',
     );
     messageSequence.current = 1;
-    setMessages([
-      {
-        id: 0,
-        role: 'assistant',
-        text: useAgentApi
-          ? 'Chào bạn, mình có thể hỗ trợ các câu hỏi về quy trình và công việc tại studio. Bạn cứ mô tả điều cần xử lý; mình sẽ trả lời kèm căn cứ khi có.'
-          : 'Mình có thể gợi ý checklist từ nội dung demo. Câu trả lời không thay đổi đơn, xác nhận thanh toán hay ghi vào nhật ký.',
-        sourceIds: useAgentApi ? [] : ['product-scope', 'safety-direction'],
-      },
-    ]);
+    setMessages(initialChatMessages(useAgentApi));
   }, [
     activeCaseScopeKey,
     scopedCaseSessionKey,
@@ -1180,16 +1180,7 @@ export function OpsAgentPage({
     setSendConflict(false);
     if (uncertainInitialSendSessionKey)
       window.sessionStorage.removeItem(uncertainInitialSendSessionKey);
-    setMessages([
-      {
-        id: 0,
-        role: 'assistant',
-        text: useAgentApi
-          ? 'Chào bạn, mình có thể hỗ trợ các câu hỏi về quy trình và công việc tại studio. Bạn cứ mô tả điều cần xử lý; mình sẽ trả lời kèm căn cứ khi có.'
-          : 'Cuộc trò chuyện mới chỉ tồn tại trong trình duyệt này. Hãy chọn câu hỏi gợi ý; không gửi dữ liệu khách thật.',
-        sourceIds: useAgentApi ? [] : ['product-scope'],
-      },
-    ]);
+    setMessages(initialChatMessages(useAgentApi, true));
   };
 
   const suggestedQuestions = useAgentApi
@@ -1214,6 +1205,11 @@ export function OpsAgentPage({
         caseNeedsReconciliation ||
         currentCaseStateUnknown ||
         Boolean(agentCaseId && !isOpsAgentCaseTerminal(agentResult))));
+  const canStartNewConversation =
+    hasUserMessages ||
+    (useAgentApi && Boolean(agentCaseId && agentResult && isOpsAgentCaseTerminal(agentResult)));
+  const showWelcome =
+    useAgentApi && !hasUserMessages && !agentCaseId && !sendOutcomeUnknown && !sendingMessage;
 
   return (
     <div className="page staff-page ops-agent-page">
@@ -1227,7 +1223,15 @@ export function OpsAgentPage({
               : 'Tra cứu checklist và việc cần chú ý tại chi nhánh. Nhân viên vẫn xử lý trên màn hình Studio.'}
           </p>
         </div>
-        {useAgentApi && hasUserMessages && (
+        {useAgentApi && (
+          <div className="ops-agent-heading-meta">
+            <span className="ops-agent-branch-context" aria-label="Chi nhánh đang làm việc">
+              <Icon name="pin" size={16} />
+              <span>{branch || 'Chưa xác định chi nhánh'}</span>
+            </span>
+          </div>
+        )}
+        {useAgentApi && canStartNewConversation && (
           <Button
             className="ops-agent-heading-action"
             variant="secondary"
@@ -2311,177 +2315,242 @@ export function OpsAgentPage({
                 </Feedback>
               )}
               <div
-                className={`ops-chat-thread${useAgentApi && !hasUserMessages ? 'ops-chat-thread-empty' : ''}`}
+                className={[
+                  'ops-chat-thread',
+                  useAgentApi && !hasUserMessages && 'ops-chat-thread-empty',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
                 role="log"
                 aria-label="Nội dung trò chuyện"
                 aria-live="polite"
                 aria-relevant="additions"
                 aria-atomic="false"
               >
-                {messages.map((message) => (
-                  <article
-                    className={
-                      'ops-chat-message ' + (message.role === 'user' ? 'user' : 'assistant')
-                    }
-                    key={message.id}
-                  >
-                    <span className="ops-chat-role">
-                      {message.role === 'user'
-                        ? 'Bạn'
-                        : useAgentApi
-                          ? 'Trợ lý vận hành'
-                          : 'Ops Agent · DEMO'}
+                {showWelcome ? (
+                  <section className="ops-chat-welcome" aria-labelledby="ops-chat-welcome-title">
+                    <span className="ops-chat-welcome-mark" aria-hidden="true">
+                      <Icon name="spark" size={20} />
                     </span>
-                    {message.role === 'assistant' && message.knowledgeAnswer ? (
-                      <div className="ops-chat-knowledge-result">
-                        <div className="ops-chat-knowledge-result-head">
-                          <span className="eyebrow">TRA CỨU HƯỚNG DẪN</span>
-                          <StatusLabel
-                            text={
-                              message.knowledgeAnswer.outcome === 'insufficient_context'
-                                ? 'Chưa đủ căn cứ'
-                                : message.knowledgeAnswer.provisional
-                                  ? 'Câu trả lời tạm'
-                                  : 'Có câu trả lời'
-                            }
-                            tone={
-                              message.knowledgeAnswer.outcome === 'insufficient_context' ||
-                              message.knowledgeAnswer.provisional
-                                ? 'warning'
-                                : 'success'
-                            }
-                          />
-                        </div>
-                        <AssistantMarkdown content={message.text} />
-                        {message.knowledgeAnswer.provisional && (
-                          <Feedback tone="warning" title="Cần người phụ trách đối chiếu">
-                            Nội dung này là tạm thời, chưa phải chính sách đã duyệt.
-                          </Feedback>
-                        )}
-                        <div className="ops-knowledge-citations">
-                          <h3>Nguồn tham khảo</h3>
-                          {message.knowledgeAnswer.sources.length > 0 ? (
-                            <ul>
-                              {message.knowledgeAnswer.sources.map((source, index) => (
-                                <li key={`${source.documentId}:${source.citation}:${index}`}>
-                                  <div>
-                                    <strong>{source.heading || 'Tài liệu tham khảo'}</strong>
-                                    <span>
-                                      {source.citation.trim() || 'Chưa có vị trí trích dẫn cụ thể.'}
-                                    </span>
-                                  </div>
-                                  <div className="ops-knowledge-citation-meta">
-                                    <StatusLabel
-                                      text={
-                                        source.businessAuthority
-                                          ? 'Nguồn nghiệp vụ'
-                                          : 'Nguồn tham khảo'
-                                      }
-                                      tone={source.businessAuthority ? 'info' : 'neutral'}
-                                    />
-                                    <StatusLabel
-                                      text={knowledgeSourceStatusLabel(source.status)}
-                                      tone={knowledgeSourceStatusTone(source.status)}
-                                    />
-                                  </div>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p>Chưa có nguồn cụ thể để đối chiếu.</p>
-                          )}
-                        </div>
-                        {message.knowledgeAnswer.outcome === 'insufficient_context' && (
-                          <Button
-                            variant="secondary"
-                            onClick={() => setChatDraft(message.question ?? '')}
-                          >
-                            Hỏi trợ lý tiếp
-                          </Button>
-                        )}
-                      </div>
-                    ) : message.role === 'assistant' ? (
-                      <AssistantMarkdown content={message.text} />
-                    ) : (
-                      <p>{message.text}</p>
+                    <p className="eyebrow">HỖ TRỢ CA LÀM VIỆC</p>
+                    <h2 id="ops-chat-welcome-title">Hôm nay bạn cần hỗ trợ gì?</h2>
+                    <p className="ops-chat-welcome-description">
+                      Hỏi về quy trình thuê, giao nhận, kiểm tra trang phục hoặc chính sách của chi
+                      nhánh.
+                    </p>
+                    <div className="ops-chat-suggestions" aria-label="Gợi ý câu hỏi">
+                      {suggestedQuestions.map((question) => (
+                        <button
+                          type="button"
+                          key={question}
+                          onClick={() => {
+                            setChatDraft(question);
+                            chatInputContainerRef.current?.querySelector('textarea')?.focus();
+                          }}
+                          disabled={sendingMessage || knowledgeLoading}
+                        >
+                          <span>{question}</span>
+                          <Icon name="arrow" size={15} />
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                ) : useAgentApi && !hasUserMessages && agentCaseId && !caseLoading ? (
+                  <section className="ops-chat-resume" aria-labelledby="ops-chat-resume-title">
+                    <p className="eyebrow">YÊU CẦU ĐANG THEO DÕI</p>
+                    <h2 id="ops-chat-resume-title">Tiếp tục từ yêu cầu hiện tại</h2>
+                    <p>
+                      Nội dung trao đổi trước chưa được cung cấp để tải lại. Hãy kiểm tra trạng thái
+                      bên dưới trước khi tiếp tục.
+                    </p>
+                    {agentResult && (
+                      <StatusLabel
+                        text={agentStateLabel(agentResult.state, currentCaseStateUnknown)}
+                        tone={agentStateTone(agentResult.state, currentCaseStateUnknown)}
+                      />
                     )}
-                    {message.sourceIds.length > 0 && (
-                      <div className="ops-chat-citations" aria-label="Nguồn tham khảo">
-                        <span>Nguồn:</span>
-                        {message.sourceIds.map((sourceId) => {
-                          const source = opsAgentSources.find((item) => item.id === sourceId);
-                          return source ? (
-                            <button
-                              type="button"
-                              key={source.id}
-                              onClick={() => {
-                                setSelectedSourceId(source.id);
-                                setTab('knowledge');
-                              }}
-                            >
-                              {source.title}
-                            </button>
-                          ) : null;
-                        })}
-                      </div>
-                    )}
-                    {message.role === 'assistant' && message.evidence && (
-                      <div className="ops-chat-citations" aria-label="Bằng chứng Agent đã sử dụng">
-                        <span>Nguồn đã dùng:</span>
-                        {message.evidence.length > 0 ? (
-                          message.evidence.map((item, index) => (
-                            <span
-                              className="ops-chat-evidence"
-                              key={`${item.sourceType}:${item.sourceId}:${index}`}
-                            >
-                              <strong>
-                                {item.sourceType === 'knowledge'
-                                  ? 'Tài liệu tham khảo'
-                                  : 'Thông tin từ Studio'}
-                              </strong>
-                              <span>{opsAgentEvidenceLabel(item)}</span>
-                              {item.observedAt && (
-                                <time dateTime={item.observedAt}>
-                                  {new Date(item.observedAt).toLocaleString('vi-VN')}
-                                </time>
+                    <div className="ops-chat-resume-actions">
+                      <Button variant="secondary" onClick={openCaseDetails}>
+                        Kiểm tra trạng thái
+                      </Button>
+                    </div>
+                  </section>
+                ) : (
+                  <>
+                    {messages.map((message) => (
+                      <article
+                        className={
+                          'ops-chat-message ' + (message.role === 'user' ? 'user' : 'assistant')
+                        }
+                        key={message.id}
+                      >
+                        <span className="ops-chat-role">
+                          {message.role === 'user'
+                            ? 'Bạn'
+                            : useAgentApi
+                              ? 'Trợ lý vận hành'
+                              : 'Ops Agent · DEMO'}
+                        </span>
+                        {message.role === 'assistant' && message.knowledgeAnswer ? (
+                          <div className="ops-chat-knowledge-result">
+                            <div className="ops-chat-knowledge-result-head">
+                              <span className="eyebrow">TRA CỨU HƯỚNG DẪN</span>
+                              <StatusLabel
+                                text={
+                                  message.knowledgeAnswer.outcome === 'insufficient_context'
+                                    ? 'Chưa đủ căn cứ'
+                                    : message.knowledgeAnswer.provisional
+                                      ? 'Câu trả lời tạm'
+                                      : 'Có câu trả lời'
+                                }
+                                tone={
+                                  message.knowledgeAnswer.outcome === 'insufficient_context' ||
+                                  message.knowledgeAnswer.provisional
+                                    ? 'warning'
+                                    : 'success'
+                                }
+                              />
+                            </div>
+                            <AssistantMarkdown content={message.text} />
+                            {message.knowledgeAnswer.provisional && (
+                              <Feedback tone="warning" title="Cần người phụ trách đối chiếu">
+                                Nội dung này là tạm thời, chưa phải chính sách đã duyệt.
+                              </Feedback>
+                            )}
+                            <div className="ops-knowledge-citations">
+                              <h3>Nguồn tham khảo</h3>
+                              {message.knowledgeAnswer.sources.length > 0 ? (
+                                <ul>
+                                  {message.knowledgeAnswer.sources.map((source, index) => (
+                                    <li key={`${source.documentId}:${source.citation}:${index}`}>
+                                      <div>
+                                        <strong>{source.heading || 'Tài liệu tham khảo'}</strong>
+                                        <span>
+                                          {source.citation.trim() ||
+                                            'Chưa có vị trí trích dẫn cụ thể.'}
+                                        </span>
+                                      </div>
+                                      <div className="ops-knowledge-citation-meta">
+                                        <StatusLabel
+                                          text={
+                                            source.businessAuthority
+                                              ? 'Nguồn nghiệp vụ'
+                                              : 'Nguồn tham khảo'
+                                          }
+                                          tone={source.businessAuthority ? 'info' : 'neutral'}
+                                        />
+                                        <StatusLabel
+                                          text={knowledgeSourceStatusLabel(source.status)}
+                                          tone={knowledgeSourceStatusTone(source.status)}
+                                        />
+                                      </div>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p>Chưa có nguồn cụ thể để đối chiếu.</p>
                               )}
-                            </span>
-                          ))
+                            </div>
+                            {message.knowledgeAnswer.outcome === 'insufficient_context' && (
+                              <Button
+                                variant="secondary"
+                                onClick={() => setChatDraft(message.question ?? '')}
+                              >
+                                Hỏi trợ lý tiếp
+                              </Button>
+                            )}
+                          </div>
+                        ) : message.role === 'assistant' ? (
+                          <AssistantMarkdown content={message.text} />
                         ) : (
-                          <span className="ops-chat-evidence">
-                            Câu trả lời này chưa kèm nguồn để đối chiếu.
-                          </span>
+                          <p>{message.text}</p>
                         )}
+                        {message.sourceIds.length > 0 && (
+                          <div className="ops-chat-citations" aria-label="Nguồn tham khảo">
+                            <span>Nguồn:</span>
+                            {message.sourceIds.map((sourceId) => {
+                              const source = opsAgentSources.find((item) => item.id === sourceId);
+                              return source ? (
+                                <button
+                                  type="button"
+                                  key={source.id}
+                                  onClick={() => {
+                                    setSelectedSourceId(source.id);
+                                    setTab('knowledge');
+                                  }}
+                                >
+                                  {source.title}
+                                </button>
+                              ) : null;
+                            })}
+                          </div>
+                        )}
+                        {message.role === 'assistant' && message.evidence && (
+                          <div
+                            className="ops-chat-citations"
+                            aria-label="Bằng chứng Agent đã sử dụng"
+                          >
+                            <span>Nguồn đã dùng:</span>
+                            {message.evidence.length > 0 ? (
+                              message.evidence.map((item, index) => (
+                                <span
+                                  className="ops-chat-evidence"
+                                  key={`${item.sourceType}:${item.sourceId}:${index}`}
+                                >
+                                  <strong>
+                                    {item.sourceType === 'knowledge'
+                                      ? 'Tài liệu tham khảo'
+                                      : 'Thông tin từ Studio'}
+                                  </strong>
+                                  <span>{opsAgentEvidenceLabel(item)}</span>
+                                  {item.observedAt && (
+                                    <time dateTime={item.observedAt}>
+                                      {new Date(item.observedAt).toLocaleString('vi-VN')}
+                                    </time>
+                                  )}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="ops-chat-evidence">
+                                Câu trả lời này chưa kèm nguồn để đối chiếu.
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </article>
+                    ))}
+                    {!useAgentApi && !hasUserMessages && (
+                      <div className="ops-chat-suggestions" aria-label="Gợi ý câu hỏi">
+                        {suggestedQuestions.map((question) => (
+                          <button
+                            type="button"
+                            key={question}
+                            onClick={() => {
+                              setChatDraft(question);
+                              chatInputContainerRef.current?.querySelector('textarea')?.focus();
+                            }}
+                            disabled={sendingMessage || knowledgeLoading}
+                          >
+                            {question}
+                          </button>
+                        ))}
                       </div>
                     )}
-                  </article>
-                ))}
+                  </>
+                )}
                 {sendingMessage && (
                   <article className="ops-chat-message user" aria-live="polite">
                     <span className="ops-chat-role">Bạn · đang gửi</span>
                     <p>{pendingQuestion}</p>
                   </article>
                 )}
-                {!hasUserMessages && (
-                  <div className="ops-chat-suggestions" aria-label="Gợi ý câu hỏi">
-                    {suggestedQuestions.map((question) => (
-                      <button
-                        type="button"
-                        key={question}
-                        onClick={() => setChatDraft(question)}
-                        disabled={sendingMessage || knowledgeLoading}
-                      >
-                        {question}
-                      </button>
-                    ))}
-                  </div>
-                )}
                 <div ref={messageEndRef} />
               </div>
               <form className="ops-chat-form" onSubmit={(event) => void sendMessage(event)}>
                 <div ref={chatInputContainerRef} className="ops-chat-input">
                   <TextAreaField
-                    label={useAgentApi ? 'Tin nhắn' : 'Câu hỏi'}
+                    className={useAgentApi ? 'ops-chat-composer-field' : undefined}
+                    label={useAgentApi ? 'Tin nhắn cho trợ lý vận hành' : 'Câu hỏi'}
                     aria-describedby="ops-agent-chat-hint"
                     placeholder={
                       useAgentApi
@@ -2500,7 +2569,12 @@ export function OpsAgentPage({
                       setKnowledgeError('');
                     }}
                     onKeyDown={(event) => {
-                      if (event.key === 'Enter' && !event.shiftKey) {
+                      if (
+                        event.key === 'Enter' &&
+                        !event.shiftKey &&
+                        !event.nativeEvent.isComposing &&
+                        event.nativeEvent.keyCode !== 229
+                      ) {
                         event.preventDefault();
                         event.currentTarget.form?.requestSubmit();
                       }
