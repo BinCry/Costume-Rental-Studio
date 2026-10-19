@@ -38,8 +38,10 @@ interface ChatMessage {
   id: number;
   role: 'assistant' | 'user';
   text: string;
+  question?: string;
   sourceIds: string[];
   evidence?: OpsAgentEvidence[];
+  knowledgeAnswer?: OpsKnowledgeAnswer;
 }
 interface QueueFilterOption {
   id: QueueFilter;
@@ -56,12 +58,7 @@ const tabs: { id: AgentTab; label: string }[] = [
   { id: 'case', label: 'Hồ sơ Agent' },
 ];
 
-const apiTabs: { id: AgentTab; label: string }[] = [
-  { id: 'overview', label: 'Bàn làm việc' },
-  { id: 'chat', label: 'Hỗ trợ tình huống' },
-  { id: 'knowledge', label: 'Tra cứu tài liệu' },
-  { id: 'case', label: 'Theo dõi yêu cầu' },
-];
+const apiTabs: { id: AgentTab; label: string }[] = [{ id: 'chat', label: 'Hỗ trợ vận hành' }];
 
 const agentActionCopy: Record<
   AgentCaseAction,
@@ -403,29 +400,40 @@ const priorityRank: Record<QueueTask['group'], number> = {
   'Ngày khác': 4,
 };
 
-function TabPanel({ tab, children }: { tab: AgentTab; children: ReactNode }) {
+function TabPanel({
+  tab,
+  children,
+  labelledBy,
+  hasTabs = true,
+}: {
+  tab: AgentTab;
+  children: ReactNode;
+  labelledBy?: string;
+  hasTabs?: boolean;
+}) {
   return (
     <>
       <section
         className="ops-agent-panel"
         id={'ops-agent-panel-' + tab}
         role="tabpanel"
-        aria-labelledby={'ops-agent-tab-' + tab}
+        aria-labelledby={labelledBy ?? 'ops-agent-tab-' + tab}
         tabIndex={0}
       >
         {children}
       </section>
-      {tabs
-        .filter((item) => item.id !== tab)
-        .map((item) => (
-          <section
-            key={item.id}
-            id={'ops-agent-panel-' + item.id}
-            role="tabpanel"
-            aria-labelledby={'ops-agent-tab-' + item.id}
-            hidden
-          />
-        ))}
+      {hasTabs &&
+        tabs
+          .filter((item) => item.id !== tab)
+          .map((item) => (
+            <section
+              key={item.id}
+              id={'ops-agent-panel-' + item.id}
+              role="tabpanel"
+              aria-labelledby={'ops-agent-tab-' + item.id}
+              hidden
+            />
+          ))}
     </>
   );
 }
@@ -507,7 +515,7 @@ export function OpsAgentPage({
     Boolean(uncertainInitialSendSessionKey) &&
     typeof window !== 'undefined' &&
     window.sessionStorage.getItem(uncertainInitialSendSessionKey!) === '1';
-  const [tab, setTab] = useState<AgentTab>('overview');
+  const [tab, setTab] = useState<AgentTab>(useAgentApi ? 'chat' : 'overview');
   const [queueFilter, setQueueFilter] = useState<QueueFilter>('all');
   const [queueSearch, setQueueSearch] = useState('');
   const [knowledgeSearch, setKnowledgeSearch] = useState('');
@@ -522,6 +530,7 @@ export function OpsAgentPage({
   }>();
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
   const [knowledgeError, setKnowledgeError] = useState('');
+  const [caseDetailsOpen, setCaseDetailsOpen] = useState(false);
   const [chatDraft, setChatDraft] = useState(() => {
     if (!useAgentApi || !scopedDraftSessionKey || typeof window === 'undefined') return '';
     try {
@@ -566,7 +575,7 @@ export function OpsAgentPage({
     availableTabs.some((item) => item.id === tab) &&
     (!useAgentApi || activeCaseScopeKey === scopedCaseSessionKey)
       ? tab
-      : 'overview';
+      : (availableTabs[0]?.id ?? 'overview');
   const chatInputContainerRef = useRef<HTMLDivElement>(null);
   const focusCaseAfterAction = useRef(false);
   const focusCaseErrorAfterAction = useRef(false);
@@ -580,7 +589,7 @@ export function OpsAgentPage({
       role: 'assistant',
       text:
         import.meta.env.VITE_OPS_AGENT_MODE === 'api'
-          ? 'Tôi có thể phân tích tình huống vận hành và giúp bạn theo dõi yêu cầu xử lý. Nếu chỉ cần tìm quy trình, hãy dùng mục Tra cứu tài liệu.'
+          ? 'Bạn có thể tra cứu quy trình hoặc gửi một tình huống để trợ lý phân tích. Hãy nhập nội dung rồi chọn cách gửi phù hợp.'
           : 'Mình có thể gợi ý checklist từ nội dung demo. Câu trả lời không thay đổi đơn, xác nhận thanh toán hay ghi vào nhật ký.',
       sourceIds:
         import.meta.env.VITE_OPS_AGENT_MODE === 'api' ? [] : ['product-scope', 'safety-direction'],
@@ -589,6 +598,7 @@ export function OpsAgentPage({
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const messageEndRef = useRef<HTMLDivElement>(null);
   const messageSequence = useRef(1);
+  const caseDetailsRef = useRef<HTMLDetailsElement>(null);
   const loadQueue = useCallback(
     (currentScenario: DemoScenario) =>
       useAgentApi ? Promise.resolve([] as QueueTask[]) : fixtureAdapter.listQueue(currentScenario),
@@ -637,6 +647,7 @@ export function OpsAgentPage({
     setCaseNeedsReconciliation(false);
     setCaseError('');
     setCaseDialogAction(undefined);
+    setCaseDetailsOpen(false);
     setSendingMessage(false);
     setPendingQuestion('');
     let savedDraft = '';
@@ -661,7 +672,7 @@ export function OpsAgentPage({
         id: 0,
         role: 'assistant',
         text: useAgentApi
-          ? 'Tôi có thể hỗ trợ tra cứu hướng dẫn và phân tích tình huống vận hành. Hãy mô tả việc bạn cần xử lý.'
+          ? 'Bạn có thể tra cứu quy trình hoặc gửi một tình huống để trợ lý phân tích. Hãy nhập nội dung rồi chọn cách gửi phù hợp.'
           : 'Mình có thể gợi ý checklist từ nội dung demo. Câu trả lời không thay đổi đơn, xác nhận thanh toán hay ghi vào nhật ký.',
         sourceIds: useAgentApi ? [] : ['product-scope', 'safety-direction'],
       },
@@ -852,7 +863,8 @@ export function OpsAgentPage({
 
   const forgetAgentCaseReference = () => {
     setAgentCaseId(undefined);
-    setTab('overview');
+    setTab(useAgentApi ? 'chat' : 'overview');
+    setCaseDetailsOpen(false);
     setAgentResult(undefined);
     setCaseError('');
     setCaseNeedsReconciliation(false);
@@ -863,6 +875,18 @@ export function OpsAgentPage({
     if (scopedCaseSessionKey) window.sessionStorage.removeItem(scopedCaseSessionKey);
     if (uncertainInitialSendSessionKey)
       window.sessionStorage.setItem(uncertainInitialSendSessionKey, '1');
+  };
+
+  const openCaseDetails = () => {
+    setCaseDetailsOpen(true);
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    window.requestAnimationFrame(() => {
+      caseDetailsRef.current?.scrollIntoView({
+        behavior: reducedMotion ? 'auto' : 'smooth',
+        block: 'nearest',
+      });
+    });
+    if (!agentResult) void reloadAgentCase();
   };
 
   const runAgentCaseAction = async (action: AgentCaseAction) => {
@@ -942,23 +966,43 @@ export function OpsAgentPage({
   };
 
   const loadKnowledgeAnswer = async (query = knowledgeQuery.trim()) => {
-    if (query.length < 2 || knowledgeLoading) return;
+    if (query.length < 2 || knowledgeLoading) return undefined;
     setKnowledgeAnswer(undefined);
     setKnowledgeLoading(true);
     setKnowledgeError('');
     try {
       const result = await answerOpsKnowledge(query, 5);
       setKnowledgeAnswer({ query, result });
+      return result;
     } catch (lookupError) {
       setKnowledgeError(knowledgeRequestError(lookupError));
+      return undefined;
     } finally {
       setKnowledgeLoading(false);
     }
   };
 
-  const askKnowledge = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    await loadKnowledgeAnswer();
+  const submitKnowledgeLookup = async (query = chatDraft.trim()) => {
+    if (query.length < 2 || knowledgeLoading || sendingMessage) return;
+    setKnowledgeQuery(query);
+    const result = await loadKnowledgeAnswer(query);
+    if (!result) return;
+    const userMessage: ChatMessage = {
+      id: messageSequence.current++,
+      role: 'user',
+      text: query,
+      sourceIds: [],
+    };
+    const assistantMessage: ChatMessage = {
+      id: messageSequence.current++,
+      role: 'assistant',
+      text: opsKnowledgeAnswerText(result),
+      question: query,
+      sourceIds: [],
+      knowledgeAnswer: result,
+    };
+    setMessages((current) => [...current, userMessage, assistantMessage]);
+    setChatDraft('');
   };
 
   const openTask = (task: QueueTask) => {
@@ -1073,7 +1117,14 @@ export function OpsAgentPage({
       if (recovery.outcomeUnknown && !agentCaseId && uncertainInitialSendSessionKey)
         window.sessionStorage.setItem(uncertainInitialSendSessionKey, '1');
       setSendConflict(recovery.conflict && Boolean(agentCaseId));
-      setSendError(opsAgentErrorMessage(error, 'Không gửi được câu hỏi tới Ops Agent.'));
+      setSendError(
+        opsAgentErrorMessage(
+          error,
+          useAgentApi
+            ? 'Không gửi được tình huống tới trợ lý.'
+            : 'Không gửi được câu hỏi tới Ops Agent.',
+        ),
+      );
     } finally {
       if (caseScopeGeneration.current === requestScopeGeneration) {
         setPendingQuestion('');
@@ -1095,6 +1146,8 @@ export function OpsAgentPage({
     )
       return;
     messageSequence.current = 1;
+    if (useAgentApi) setTab('chat');
+    setCaseDetailsOpen(false);
     setSelectedTask(undefined);
     setChatDraft('');
     setAgentCaseId(undefined);
@@ -1121,10 +1174,10 @@ export function OpsAgentPage({
 
   const suggestedQuestions = useAgentApi
     ? [
+        'Quy trình kiểm tra trang phục khi giao cho khách gồm những gì?',
         'Khách chưa trả đồ nhưng lịch thuê kế tiếp sắp bắt đầu. Tôi nên làm gì?',
-        'Yêu cầu thuê đang chờ xác nhận. Tôi cần kiểm tra những điểm nào?',
+        'Khi nhận lại trang phục, cần kiểm tra những gì?',
         'Tôi phát hiện trang phục bị hỏng khi nhận lại. Bước tiếp theo là gì?',
-        'Có yêu cầu hoàn cọc đang chờ xử lý. Tôi cần đối chiếu thông tin nào?',
       ]
     : [
         'Tôi nên đối chiếu yêu cầu thuê thế nào?',
@@ -1141,7 +1194,7 @@ export function OpsAgentPage({
           <h1>{useAgentApi ? 'Trợ lý vận hành' : 'Ops Agent'}</h1>
           <p>
             {useAgentApi
-              ? 'Tra cứu tài liệu chỉ đọc; gửi tình huống để tạo yêu cầu; theo dõi trạng thái riêng sau khi gửi.'
+              ? 'Tra cứu quy trình hoặc mô tả tình huống ngay tại một màn hình.'
               : 'Tra cứu checklist và việc cần chú ý tại chi nhánh. Nhân viên vẫn xử lý trên màn hình Studio.'}
           </p>
         </div>
@@ -1164,8 +1217,8 @@ export function OpsAgentPage({
 
       {useAgentApi && !branchId && (
         <Feedback tone="warning" title="Chưa xác định được chi nhánh">
-          Chọn một chi nhánh được gán cho tài khoản trước khi gửi câu hỏi. Câu hỏi chưa gửi sẽ được
-          giữ lại trong ô nhập.
+          Chọn chi nhánh được gán trước khi gửi tình huống cho trợ lý. Bạn vẫn có thể tra cứu tài
+          liệu; nội dung chưa gửi sẽ được giữ trong ô nhập.
         </Feedback>
       )}
 
@@ -1179,29 +1232,31 @@ export function OpsAgentPage({
         </div>
       )}
 
-      <div className="ops-tabs-wrap">
-        <div className="ops-agent-tabs" role="tablist" aria-label="Các khu vực Ops Agent">
-          {availableTabs.map((item, index) => (
-            <button
-              key={item.id}
-              ref={(element) => {
-                tabRefs.current[index] = element;
-              }}
-              id={'ops-agent-tab-' + item.id}
-              type="button"
-              role="tab"
-              aria-selected={visibleTab === item.id}
-              aria-controls={'ops-agent-panel-' + item.id}
-              tabIndex={visibleTab === item.id ? 0 : -1}
-              className={visibleTab === item.id ? 'ops-agent-tab active' : 'ops-agent-tab'}
-              onClick={() => setTab(item.id)}
-              onKeyDown={(event) => handleTabKeyDown(event, item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
+      {!useAgentApi && (
+        <div className="ops-tabs-wrap">
+          <div className="ops-agent-tabs" role="tablist" aria-label="Các khu vực Ops Agent">
+            {availableTabs.map((item, index) => (
+              <button
+                key={item.id}
+                ref={(element) => {
+                  tabRefs.current[index] = element;
+                }}
+                id={'ops-agent-tab-' + item.id}
+                type="button"
+                role="tab"
+                aria-selected={visibleTab === item.id}
+                aria-controls={'ops-agent-panel-' + item.id}
+                tabIndex={visibleTab === item.id ? 0 : -1}
+                className={visibleTab === item.id ? 'ops-agent-tab active' : 'ops-agent-tab'}
+                onClick={() => setTab(item.id)}
+                onKeyDown={(event) => handleTabKeyDown(event, item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {!useAgentApi && scenario === 'conflict' && !conflictCleared && (
         <Feedback
@@ -1236,7 +1291,11 @@ export function OpsAgentPage({
         </Feedback>
       )}
 
-      <TabPanel tab={visibleTab}>
+      <TabPanel
+        tab={visibleTab}
+        labelledBy={useAgentApi ? 'ops-agent-support-title' : undefined}
+        hasTabs={!useAgentApi}
+      >
         {visibleTab === 'overview' &&
           (useAgentApi ? (
             <div className="ops-live-home">
@@ -1762,7 +1821,9 @@ export function OpsAgentPage({
                 <form
                   className="ops-knowledge-query"
                   onSubmit={(event) => {
-                    void askKnowledge(event);
+                    event.preventDefault();
+                    setChatDraft(knowledgeQuery);
+                    void submitKnowledgeLookup(knowledgeQuery);
                   }}
                 >
                   <TextAreaField
@@ -2095,71 +2156,60 @@ export function OpsAgentPage({
               <div className="ops-chat-heading">
                 <div>
                   <p className="eyebrow">
-                    {useAgentApi ? 'TẠO VÀ THEO DÕI YÊU CẦU' : 'TRẢ LỜI THEO TỪ KHÓA'}
+                    {useAgentApi ? 'TRỢ LÝ VẬN HÀNH' : 'TRẢ LỜI THEO TỪ KHÓA'}
                   </p>
-                  <h2>{useAgentApi ? 'Hỗ trợ tình huống' : 'Hỏi Agent'}</h2>
+                  <h2 id={useAgentApi ? 'ops-agent-support-title' : undefined}>
+                    {useAgentApi ? 'Hỗ trợ vận hành' : 'Hỏi Agent'}
+                  </h2>
                   <p>
                     {useAgentApi
-                      ? 'Mô tả vấn đề đang gặp. Trợ lý sẽ phân tích và tạo hoặc tiếp tục yêu cầu hiện tại; trạng thái, kết quả và bước cần xác nhận nằm ở “Theo dõi yêu cầu”.'
+                      ? 'Nhập nội dung một lần: tra cứu quy trình hoặc gửi tình huống để trợ lý phân tích và tạo yêu cầu theo dõi.'
                       : 'Không có mô hình AI. Câu trả lời mẫu chỉ dựa trên từ khóa và nguồn fixture.'}
                   </p>
                 </div>
-                <Button
-                  variant="secondary"
-                  onClick={newConversation}
-                  disabled={
-                    sendingMessage ||
-                    (useAgentApi &&
-                      (sendOutcomeUnknown ||
-                        caseLoading ||
-                        caseNeedsReconciliation ||
-                        currentCaseStateUnknown ||
-                        (!!agentCaseId && !isOpsAgentCaseTerminal(agentResult))))
-                  }
-                  title={
-                    sendingMessage
-                      ? 'Đang chờ kết quả của câu hỏi hiện tại.'
-                      : useAgentApi && sendOutcomeUnknown
-                        ? 'Hãy đối soát kết quả gửi chưa rõ trước khi tạo yêu cầu khác.'
-                        : currentCaseStateUnknown
-                          ? 'Cần cập nhật trạng thái hiện tại trước khi tạo yêu cầu mới.'
-                          : caseNeedsReconciliation || caseLoading
-                            ? 'Hãy cập nhật yêu cầu hiện tại trước khi tạo yêu cầu mới.'
-                            : useAgentApi && agentCaseId && !isOpsAgentCaseTerminal(agentResult)
-                              ? 'Hãy xử lý yêu cầu hiện tại trước khi tạo yêu cầu khác.'
-                              : undefined
-                  }
-                >
-                  {useAgentApi ? 'Tình huống mới' : 'Cuộc trò chuyện mới'}
-                </Button>
-              </div>
-              <div className="ops-chat-context">
-                {!useAgentApi && (
-                  <>
-                    <Icon name="pin" size={16} />
-                    <span>Phạm vi: {branch}</span>
-                    {selectedTask && <span>· Đơn mẫu: {selectedTask.orderId}</span>}
-                    <span className="ops-offline-label">Ngoại tuyến</span>
-                  </>
-                )}
-                {useAgentApi && agentCaseId && (
+                {(!useAgentApi || agentCaseId) && (
                   <Button
-                    variant="quiet"
-                    onClick={() => {
-                      setTab('case');
-                      if (!agentResult) void reloadAgentCase();
-                    }}
+                    variant="secondary"
+                    onClick={newConversation}
+                    disabled={
+                      sendingMessage ||
+                      (useAgentApi &&
+                        (sendOutcomeUnknown ||
+                          caseLoading ||
+                          caseNeedsReconciliation ||
+                          currentCaseStateUnknown ||
+                          Boolean(agentCaseId && !isOpsAgentCaseTerminal(agentResult))))
+                    }
+                    title={
+                      sendingMessage
+                        ? 'Đang chờ kết quả của câu hỏi hiện tại.'
+                        : useAgentApi && sendOutcomeUnknown
+                          ? 'Hãy đối soát kết quả gửi chưa rõ trước khi tạo yêu cầu khác.'
+                          : currentCaseStateUnknown
+                            ? 'Cần cập nhật trạng thái hiện tại trước khi tạo yêu cầu mới.'
+                            : caseNeedsReconciliation || caseLoading
+                              ? 'Hãy cập nhật yêu cầu hiện tại trước khi tạo yêu cầu mới.'
+                              : useAgentApi && agentCaseId && !isOpsAgentCaseTerminal(agentResult)
+                                ? 'Hãy xử lý yêu cầu hiện tại trước khi tạo yêu cầu khác.'
+                                : undefined
+                    }
                   >
-                    Theo dõi yêu cầu
-                    {agentResult
-                      ? ` · ${agentStateLabel(agentResult.state, currentCaseStateUnknown)}`
-                      : ''}
+                    {useAgentApi ? 'Tình huống mới' : 'Cuộc trò chuyện mới'}
                   </Button>
                 )}
               </div>
+              {!useAgentApi && (
+                <div className="ops-chat-context">
+                  <Icon name="pin" size={16} />
+                  <span>Phạm vi: {branch}</span>
+                  {selectedTask && <span>· Đơn mẫu: {selectedTask.orderId}</span>}
+                  <span className="ops-offline-label">Ngoại tuyến</span>
+                </div>
+              )}
               {useAgentApi && agentCaseId && caseLoading && !agentResult && (
                 <Feedback tone="info" title="Đang kiểm tra yêu cầu hiện tại">
-                  Câu hỏi mới đang tạm khóa để tránh gửi trùng. Nội dung bản nháp vẫn được giữ lại.
+                  Gửi tình huống mới đang tạm khóa để tránh trùng yêu cầu; bạn vẫn có thể tra cứu
+                  tài liệu.
                 </Feedback>
               )}
               {useAgentApi && agentCaseId && caseError && !caseLoading && !agentResult && (
@@ -2176,7 +2226,8 @@ export function OpsAgentPage({
                     </Button>
                   }
                 >
-                  {caseError} Yêu cầu cũ có thể vẫn tồn tại, vì vậy câu hỏi mới đang tạm khóa.
+                  {caseError} Yêu cầu cũ có thể vẫn tồn tại, vì vậy gửi tình huống mới đang tạm
+                  khóa.
                 </Feedback>
               )}
               {useAgentApi &&
@@ -2197,8 +2248,8 @@ export function OpsAgentPage({
                     tone="warning"
                     title="Yêu cầu cần bạn xem"
                     action={
-                      <Button variant="secondary" onClick={() => setTab('case')}>
-                        Xem yêu cầu
+                      <Button variant="secondary" onClick={openCaseDetails}>
+                        Xem bước cần xử lý
                       </Button>
                     }
                   >
@@ -2211,8 +2262,8 @@ export function OpsAgentPage({
                   tone="warning"
                   title="Trợ lý đang chờ bạn bổ sung thông tin"
                   action={
-                    <Button variant="secondary" onClick={() => setTab('case')}>
-                      Theo dõi yêu cầu
+                    <Button variant="secondary" onClick={openCaseDetails}>
+                      Xem yêu cầu
                     </Button>
                   }
                 >
@@ -2231,7 +2282,7 @@ export function OpsAgentPage({
                     tone="info"
                     title="Yêu cầu chưa sẵn sàng để tiếp tục"
                     action={
-                      <Button variant="secondary" onClick={() => setTab('case')}>
+                      <Button variant="secondary" onClick={openCaseDetails}>
                         Xem trạng thái
                       </Button>
                     }
@@ -2245,7 +2296,7 @@ export function OpsAgentPage({
                   tone="warning"
                   title="Trạng thái yêu cầu cần kiểm tra"
                   action={
-                    <Button variant="secondary" onClick={() => setTab('case')}>
+                    <Button variant="secondary" onClick={openCaseDetails}>
                       Kiểm tra yêu cầu
                     </Button>
                   }
@@ -2276,7 +2327,75 @@ export function OpsAgentPage({
                           ? 'Trợ lý vận hành'
                           : 'Ops Agent · DEMO'}
                     </span>
-                    {message.role === 'assistant' ? (
+                    {message.role === 'assistant' && message.knowledgeAnswer ? (
+                      <div className="ops-chat-knowledge-result">
+                        <div className="ops-chat-knowledge-result-head">
+                          <span className="eyebrow">TRA CỨU HƯỚNG DẪN</span>
+                          <StatusLabel
+                            text={
+                              message.knowledgeAnswer.outcome === 'insufficient_context'
+                                ? 'Chưa đủ căn cứ'
+                                : message.knowledgeAnswer.provisional
+                                  ? 'Câu trả lời tạm'
+                                  : 'Có câu trả lời'
+                            }
+                            tone={
+                              message.knowledgeAnswer.outcome === 'insufficient_context' ||
+                              message.knowledgeAnswer.provisional
+                                ? 'warning'
+                                : 'success'
+                            }
+                          />
+                        </div>
+                        <AssistantMarkdown content={message.text} />
+                        {message.knowledgeAnswer.provisional && (
+                          <Feedback tone="warning" title="Cần người phụ trách đối chiếu">
+                            Nội dung này là tạm thời, chưa phải chính sách đã duyệt.
+                          </Feedback>
+                        )}
+                        <div className="ops-knowledge-citations">
+                          <h3>Nguồn tham khảo</h3>
+                          {message.knowledgeAnswer.sources.length > 0 ? (
+                            <ul>
+                              {message.knowledgeAnswer.sources.map((source, index) => (
+                                <li key={`${source.documentId}:${source.citation}:${index}`}>
+                                  <div>
+                                    <strong>{source.heading || 'Tài liệu tham khảo'}</strong>
+                                    <span>
+                                      {source.citation.trim() || 'Chưa có vị trí trích dẫn cụ thể.'}
+                                    </span>
+                                  </div>
+                                  <div className="ops-knowledge-citation-meta">
+                                    <StatusLabel
+                                      text={
+                                        source.businessAuthority
+                                          ? 'Nguồn nghiệp vụ'
+                                          : 'Nguồn tham khảo'
+                                      }
+                                      tone={source.businessAuthority ? 'info' : 'neutral'}
+                                    />
+                                    <StatusLabel
+                                      text={knowledgeSourceStatusLabel(source.status)}
+                                      tone={knowledgeSourceStatusTone(source.status)}
+                                    />
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p>Chưa có nguồn cụ thể để đối chiếu.</p>
+                          )}
+                        </div>
+                        {message.knowledgeAnswer.outcome === 'insufficient_context' && (
+                          <Button
+                            variant="secondary"
+                            onClick={() => setChatDraft(message.question ?? '')}
+                          >
+                            Gửi tình huống cho trợ lý
+                          </Button>
+                        )}
+                      </div>
+                    ) : message.role === 'assistant' ? (
                       <AssistantMarkdown content={message.text} />
                     ) : (
                       <p>{message.text}</p>
@@ -2346,11 +2465,7 @@ export function OpsAgentPage({
                     type="button"
                     key={question}
                     onClick={() => setChatDraft(question)}
-                    disabled={
-                      sendingMessage ||
-                      (useAgentApi && !branchId) ||
-                      (useAgentApi && (sendOutcomeUnknown || currentCaseNeedsResolution))
-                    }
+                    disabled={sendingMessage || knowledgeLoading}
                   >
                     {question}
                   </button>
@@ -2359,26 +2474,34 @@ export function OpsAgentPage({
               <form
                 className="ops-chat-form"
                 onSubmit={(event) => {
-                  void sendMessage(event);
+                  if (!useAgentApi) {
+                    void sendMessage(event);
+                    return;
+                  }
+                  const action = event.nativeEvent.submitter?.getAttribute('data-action');
+                  if (action === 'situation') void sendMessage(event);
+                  else {
+                    event.preventDefault();
+                    void submitKnowledgeLookup();
+                  }
                 }}
               >
                 <div ref={chatInputContainerRef} className="ops-chat-input">
                   <TextAreaField
-                    label="Câu hỏi"
+                    label={useAgentApi ? 'Nội dung cần hỗ trợ' : 'Câu hỏi'}
                     aria-describedby="ops-agent-chat-hint"
                     placeholder={
                       useAgentApi
-                        ? 'Mô tả tình huống hoặc yêu cầu bạn cần hỗ trợ…'
+                        ? 'Nhập câu hỏi quy trình hoặc mô tả tình huống…'
                         : 'Hỏi về checklist hoặc nguồn tài liệu...'
                     }
                     value={chatDraft}
-                    disabled={
-                      sendingMessage ||
-                      (useAgentApi && !branchId) ||
-                      (useAgentApi && (sendOutcomeUnknown || currentCaseNeedsResolution))
-                    }
+                    disabled={sendingMessage || (useAgentApi && knowledgeLoading)}
                     maxLength={2000}
-                    onChange={(event) => setChatDraft(event.target.value)}
+                    onChange={(event) => {
+                      setChatDraft(event.target.value);
+                      setKnowledgeError('');
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault();
@@ -2388,24 +2511,67 @@ export function OpsAgentPage({
                     rows={2}
                   />
                 </div>
-                <Button
-                  type="submit"
-                  disabled={
-                    !chatDraft.trim() ||
-                    sendingMessage ||
-                    (useAgentApi && !branchId) ||
-                    (useAgentApi && sendOutcomeUnknown) ||
-                    (useAgentApi && currentCaseNeedsResolution)
-                  }
-                >
-                  {sendingMessage ? 'Đang gửi…' : 'Gửi câu hỏi'}
-                </Button>
+                {useAgentApi ? (
+                  <div className="ops-chat-actions">
+                    <Button
+                      type="submit"
+                      variant="secondary"
+                      data-action="knowledge"
+                      disabled={chatDraft.trim().length < 2 || knowledgeLoading || sendingMessage}
+                      loading={knowledgeLoading}
+                    >
+                      Tra cứu hướng dẫn
+                    </Button>
+                    <Button
+                      type="submit"
+                      data-action="situation"
+                      disabled={
+                        !chatDraft.trim() ||
+                        sendingMessage ||
+                        knowledgeLoading ||
+                        !branchId ||
+                        sendOutcomeUnknown ||
+                        currentCaseNeedsResolution
+                      }
+                      loading={sendingMessage}
+                    >
+                      Gửi tình huống
+                    </Button>
+                  </div>
+                ) : (
+                  <Button type="submit" disabled={!chatDraft.trim() || sendingMessage}>
+                    {sendingMessage ? 'Đang gửi…' : 'Gửi câu hỏi'}
+                  </Button>
+                )}
                 <p id="ops-agent-chat-hint" className="ops-chat-form-hint">
                   {useAgentApi
-                    ? 'Enter để gửi · Shift + Enter để xuống dòng. Dùng mã đơn thay tên hoặc số điện thoại; không gửi mật khẩu hay mã OTP.'
+                    ? 'Enter để tra cứu · Shift + Enter để xuống dòng · “Gửi tình huống” tạo yêu cầu theo dõi. Dùng mã đơn; không gửi mật khẩu hay mã OTP.'
                     : 'Enter để gửi · Shift + Enter để xuống dòng. Không nhập thông tin khách thật.'}
                 </p>
               </form>
+              {knowledgeLoading && (
+                <div className="ops-knowledge-loading" role="status" aria-live="polite">
+                  <span className="button-spinner" aria-hidden="true" /> Đang tra cứu tài liệu…
+                </div>
+              )}
+              {knowledgeError && (
+                <Feedback
+                  tone="danger"
+                  title="Không tra cứu được tài liệu"
+                  action={
+                    <Button
+                      variant="secondary"
+                      onClick={() => void submitKnowledgeLookup(knowledgeQuery)}
+                      disabled={knowledgeLoading || !knowledgeQuery.trim()}
+                      loading={knowledgeLoading}
+                    >
+                      Thử lại
+                    </Button>
+                  }
+                >
+                  {knowledgeError} Câu hỏi được giữ trong ô nhập nếu cần thử lại.
+                </Feedback>
+              )}
               {sendError && (
                 <div ref={sendErrorPanelRef} tabIndex={-1} className="ops-agent-case-error-focus">
                   <Feedback
@@ -2413,17 +2579,13 @@ export function OpsAgentPage({
                     title={
                       sendOutcomeUnknown
                         ? 'Chưa xác nhận được kết quả gửi'
-                        : 'Không gửi được câu hỏi'
+                        : useAgentApi
+                          ? 'Không gửi được tình huống'
+                          : 'Không gửi được câu hỏi'
                     }
                     action={
                       sendOutcomeUnknown && agentCaseId ? (
-                        <Button
-                          variant="secondary"
-                          onClick={() => {
-                            setTab('case');
-                            void reloadAgentCase();
-                          }}
-                        >
+                        <Button variant="secondary" onClick={openCaseDetails}>
                           Kiểm tra yêu cầu
                         </Button>
                       ) : sendOutcomeUnknown ? (
@@ -2431,13 +2593,7 @@ export function OpsAgentPage({
                           Đã đối soát, mở lại ô nhập
                         </Button>
                       ) : sendConflict && agentCaseId ? (
-                        <Button
-                          variant="secondary"
-                          onClick={() => {
-                            setTab('case');
-                            void reloadAgentCase();
-                          }}
-                        >
+                        <Button variant="secondary" onClick={openCaseDetails}>
                           Cập nhật yêu cầu
                         </Button>
                       ) : undefined
@@ -2446,156 +2602,96 @@ export function OpsAgentPage({
                     {sendError}{' '}
                     {sendOutcomeUnknown
                       ? agentCaseId
-                        ? 'Câu hỏi vẫn được giữ. Hãy kiểm tra yêu cầu hiện tại trước khi gửi lại để tránh tạo thao tác trùng.'
+                        ? 'Nội dung vẫn được giữ. Hãy kiểm tra yêu cầu hiện tại trước khi gửi lại để tránh tạo thao tác trùng.'
                         : chatDraft.trim()
-                          ? 'Câu hỏi vẫn được giữ nhưng mã yêu cầu chưa được trả về. Đừng gửi lại cho đến khi người phụ trách đối soát kết quả tạo hồ sơ.'
-                          : 'Câu hỏi được giữ trong ô nhập cho đến khi đối soát xong.'
+                          ? 'Nội dung vẫn được giữ nhưng mã yêu cầu chưa được trả về. Đừng gửi lại cho đến khi người phụ trách đối soát kết quả tạo hồ sơ.'
+                          : 'Nội dung được giữ trong ô nhập cho đến khi đối soát xong.'
                       : ''}
                   </Feedback>
                 </div>
               )}
             </section>
-            <aside className="feature-panel ops-chat-side">
-              <div className="feature-panel-head">
-                <div>
-                  <p className="eyebrow">HƯỚNG DẪN</p>
-                  <h2>{useAgentApi ? 'Cách làm việc an toàn' : 'Giới hạn của bản demo'}</h2>
+            {!useAgentApi && (
+              <aside className="feature-panel ops-chat-side">
+                <div className="feature-panel-head">
+                  <div>
+                    <p className="eyebrow">HƯỚNG DẪN</p>
+                    <h2>{useAgentApi ? 'Cách làm việc an toàn' : 'Giới hạn của bản demo'}</h2>
+                  </div>
                 </div>
-              </div>
-              <ul className="ops-chat-limits">
-                {useAgentApi ? (
-                  <>
-                    <li>Mô tả rõ việc cần làm; dùng mã đơn nếu cần nhắc đến một hồ sơ cụ thể.</li>
-                    <li>Kiểm tra câu trả lời và nguồn tham khảo trước khi làm theo.</li>
-                    <li>
-                      Khi có yêu cầu xác nhận, chỉ tiếp tục nếu nội dung và đối tượng đều chính xác.
-                    </li>
-                    <li>Không gửi mật khẩu, mã OTP hoặc thông tin thanh toán đầy đủ.</li>
-                  </>
-                ) : (
-                  <>
-                    <li>Chỉ dùng checklist và câu trả lời theo từ khóa.</li>
-                    <li>Không đọc dữ liệu khách từ hội thoại.</li>
-                    <li>Không xác nhận đơn, bộ, khoản thu hoặc hoàn cọc.</li>
-                    <li>Lịch sử không được gửi lên máy chủ.</li>
-                  </>
+                <ul className="ops-chat-limits">
+                  {useAgentApi ? (
+                    <>
+                      <li>Mô tả rõ việc cần làm; dùng mã đơn nếu cần nhắc đến một hồ sơ cụ thể.</li>
+                      <li>Kiểm tra câu trả lời và nguồn tham khảo trước khi làm theo.</li>
+                      <li>
+                        Khi có yêu cầu xác nhận, chỉ tiếp tục nếu nội dung và đối tượng đều chính
+                        xác.
+                      </li>
+                      <li>Không gửi mật khẩu, mã OTP hoặc thông tin thanh toán đầy đủ.</li>
+                    </>
+                  ) : (
+                    <>
+                      <li>Chỉ dùng checklist và câu trả lời theo từ khóa.</li>
+                      <li>Không đọc dữ liệu khách từ hội thoại.</li>
+                      <li>Không xác nhận đơn, bộ, khoản thu hoặc hoàn cọc.</li>
+                      <li>Lịch sử không được gửi lên máy chủ.</li>
+                    </>
+                  )}
+                </ul>
+                {!useAgentApi && (
+                  <Button variant="quiet" onClick={() => setTab('knowledge')}>
+                    Xem nguồn mẫu
+                  </Button>
                 )}
-              </ul>
-              <Button variant="quiet" onClick={() => setTab('knowledge')}>
-                {useAgentApi ? 'Tra cứu tài liệu' : 'Xem nguồn mẫu'}
-              </Button>
-            </aside>
+              </aside>
+            )}
           </div>
         )}
 
-        {visibleTab === 'case' && (
-          <div className="ops-agent-case-view">
-            <div className="feature-heading">
-              <div>
-                <h2>{useAgentApi ? 'Theo dõi yêu cầu' : 'Hồ sơ Agent'}</h2>
-                <p>
-                  {useAgentApi
-                    ? 'Trạng thái của yêu cầu gửi từ mục “Hỗ trợ tình huống”. Xem kết quả, nguồn và xác nhận bước đang chờ tại đây.'
-                    : 'Theo dõi hồ sơ được tạo trong bản demo.'}
-                </p>
-              </div>
-              {agentResult && (
-                <StatusLabel
-                  text={agentStateLabel(agentResult.state, currentCaseStateUnknown)}
-                  tone={agentStateTone(agentResult.state, currentCaseStateUnknown)}
-                />
-              )}
-            </div>
-
-            {!useAgentApi ? (
-              <Feedback tone="info" title="Hồ sơ Agent chỉ có ở chế độ API">
-                Chế độ fixture không tạo hay lưu hồ sơ trên máy chủ.
-              </Feedback>
-            ) : !agentCaseId ? (
-              <EmptyState
-                title="Chưa có yêu cầu trong phiên này"
-                action={
-                  <Button variant="secondary" onClick={() => setTab('chat')}>
-                    Mô tả tình huống
-                  </Button>
-                }
-              >
-                Gửi yêu cầu cho trợ lý. Trạng thái và các bước cần bạn xử lý sẽ xuất hiện tại đây.
-              </EmptyState>
-            ) : caseLoading && !agentResult ? (
-              <div className="ops-queue-skeleton" role="status" aria-label="Đang tải yêu cầu">
-                <span />
-                <span />
-              </div>
-            ) : caseError && !agentResult ? (
-              <Feedback
-                tone="danger"
-                title="Không tải được yêu cầu"
-                action={
-                  <div className="ops-agent-case-recovery-actions">
-                    <Button
-                      variant="secondary"
-                      onClick={() => {
-                        void reloadAgentCase();
-                      }}
-                      loading={caseLoading}
-                    >
-                      Thử tải lại
-                    </Button>
-                    <Button variant="quiet" onClick={forgetAgentCaseReference}>
-                      Bỏ liên kết phiên
-                    </Button>
-                  </div>
-                }
-              >
-                {caseError} Bạn có thể thử lại hoặc bỏ liên kết với yêu cầu trong phiên này. Việc bỏ
-                liên kết không hủy yêu cầu đã gửi.
-              </Feedback>
-            ) : !agentResult ? (
-              <EmptyState
-                title="Cần cập nhật trạng thái yêu cầu"
-                action={
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      void reloadAgentCase();
-                    }}
-                    loading={caseLoading}
-                  >
-                    Cập nhật trạng thái
-                  </Button>
-                }
-              >
-                Yêu cầu đã được ghi nhận trong phiên này, nhưng trạng thái mới nhất chưa hiển thị.
-              </EmptyState>
-            ) : (
-              <>
-                {currentCaseStateUnknown && (
-                  <Feedback
-                    tone="warning"
-                    title="Trạng thái yêu cầu cần kiểm tra"
-                    action={
-                      <Button
-                        variant="secondary"
-                        onClick={() => void reloadAgentCase()}
-                        loading={caseLoading}
-                        disabled={caseActionLoading}
-                      >
-                        Cập nhật trạng thái
-                      </Button>
-                    }
-                  >
-                    Không xác nhận, duyệt, hủy hoặc gửi tiếp khi trạng thái lạ hay dữ liệu đang chờ
-                    không khớp. Hãy cập nhật trạng thái; nếu vẫn còn, chuyển người phụ trách kiểm
-                    tra.
-                  </Feedback>
+        {useAgentApi &&
+          agentCaseId &&
+          activeCaseScopeKey === scopedCaseSessionKey &&
+          visibleTab === 'chat' && (
+            <details
+              className="ops-agent-case-details"
+              ref={caseDetailsRef}
+              open={caseDetailsOpen}
+              onToggle={(event) => setCaseDetailsOpen(event.currentTarget.open)}
+            >
+              <summary className="ops-agent-case-summary">
+                <span>
+                  <span className="eyebrow">YÊU CẦU ĐANG THEO DÕI</span>
+                  <strong>{agentResult?.goal?.summary ?? 'Yêu cầu hỗ trợ vận hành'}</strong>
+                </span>
+                {agentResult ? (
+                  <StatusLabel
+                    text={agentStateLabel(agentResult.state, currentCaseStateUnknown)}
+                    tone={agentStateTone(agentResult.state, currentCaseStateUnknown)}
+                  />
+                ) : (
+                  <StatusLabel text="Đang tải" tone="neutral" />
                 )}
-                {caseError && (
-                  <div ref={caseErrorPanelRef} tabIndex={-1} className="ops-agent-case-error-focus">
-                    <Feedback
-                      tone="danger"
-                      title="Không hoàn tất được thao tác"
-                      action={
+              </summary>
+              <div className="ops-agent-case-view">
+                <div className="feature-heading">
+                  <div>
+                    <h2>Chi tiết yêu cầu</h2>
+                    <p>Xem kết quả, nguồn tham khảo và bước cần xác nhận.</p>
+                  </div>
+                </div>
+
+                {caseLoading && !agentResult ? (
+                  <div className="ops-queue-skeleton" role="status" aria-label="Đang tải yêu cầu">
+                    <span />
+                    <span />
+                  </div>
+                ) : caseError && !agentResult ? (
+                  <Feedback
+                    tone="danger"
+                    title="Không tải được yêu cầu"
+                    action={
+                      <div className="ops-agent-case-recovery-actions">
                         <Button
                           variant="secondary"
                           onClick={() => {
@@ -2603,187 +2699,273 @@ export function OpsAgentPage({
                           }}
                           loading={caseLoading}
                         >
-                          Cập nhật trạng thái
+                          Thử tải lại
                         </Button>
-                      }
-                    >
-                      {caseError} Tải lại trước khi thử thao tác lần nữa; kết quả của yêu cầu trước
-                      có thể chưa xác định.
-                    </Feedback>
-                  </div>
-                )}
-                <section className="feature-panel ops-agent-case-card">
-                  <div className="feature-panel-head">
-                    <div>
-                      <p className="eyebrow">YÊU CẦU HỖ TRỢ</p>
-                      <h3 ref={caseResultHeadingRef} tabIndex={-1}>
-                        {agentResult.goal?.summary ?? 'Yêu cầu hỗ trợ vận hành'}
-                      </h3>
-                    </div>
-                    <StatusLabel
-                      text={agentStateLabel(agentResult.state, currentCaseStateUnknown)}
-                      tone={agentStateTone(agentResult.state, currentCaseStateUnknown)}
-                    />
-                  </div>
-                  <div className="ops-agent-case-message">
-                    <h4>Kết quả gần nhất</h4>
-                    <p>{agentResult.message || 'Chưa có nội dung kết quả.'}</p>
-                  </div>
-                  {agentResult.pendingInput && (
-                    <Feedback tone="warning" title="Agent cần bạn bổ sung thông tin">
-                      {agentResult.pendingInput}
-                    </Feedback>
-                  )}
-                  {agentResult.pendingConfirmation && (
-                    <section
-                      className="ops-agent-pending-action"
-                      aria-label="Yêu cầu đang chờ xác nhận"
-                    >
-                      <div>
-                        <StatusLabel text="Chờ xác nhận" tone="warning" />
-                        <h4>{agentResult.pendingConfirmation.summary}</h4>
-                        <p>
-                          Hạn xác nhận: {formatAgentTime(agentResult.pendingConfirmation.expiresAt)}
-                        </p>
-                      </div>
-                      <div className="ops-agent-pending-actions">
-                        <Button
-                          variant="secondary"
-                          onClick={() => setCaseDialogAction('reject-confirmation')}
-                          disabled={
-                            caseActionLoading ||
-                            !branchId ||
-                            caseLoading ||
-                            caseNeedsReconciliation ||
-                            currentCaseStateUnknown
-                          }
-                        >
-                          Từ chối
-                        </Button>
-                        <Button
-                          onClick={() => setCaseDialogAction('confirm')}
-                          disabled={
-                            caseActionLoading ||
-                            !branchId ||
-                            caseLoading ||
-                            caseNeedsReconciliation ||
-                            currentCaseStateUnknown
-                          }
-                        >
-                          Xác nhận yêu cầu
+                        <Button variant="quiet" onClick={forgetAgentCaseReference}>
+                          Bỏ liên kết phiên
                         </Button>
                       </div>
-                    </section>
-                  )}
-                  {agentResult.pendingApproval && (
-                    <section
-                      className="ops-agent-pending-action"
-                      aria-label="Thao tác đang chờ người có quyền duyệt"
-                    >
-                      <div>
-                        <StatusLabel text="Cần quyền duyệt" tone="warning" />
-                        <h4>{agentResult.pendingApproval.summary}</h4>
-                        <p>
-                          Quyền cần có:{' '}
-                          {agentPermissionLabel(agentResult.pendingApproval.requiredPermission)}
-                        </p>
-                        <p>Hạn duyệt: {formatAgentTime(agentResult.pendingApproval.expiresAt)}</p>
-                      </div>
-                      <div className="ops-agent-pending-actions">
-                        <Button
-                          variant="secondary"
-                          onClick={() => setCaseDialogAction('reject-approval')}
-                          disabled={
-                            caseActionLoading ||
-                            !branchId ||
-                            caseLoading ||
-                            caseNeedsReconciliation ||
-                            currentCaseStateUnknown
-                          }
-                        >
-                          Từ chối
-                        </Button>
-                        <Button
-                          onClick={() => setCaseDialogAction('approve')}
-                          disabled={
-                            caseActionLoading ||
-                            !branchId ||
-                            caseLoading ||
-                            caseNeedsReconciliation ||
-                            currentCaseStateUnknown
-                          }
-                        >
-                          Duyệt thao tác
-                        </Button>
-                      </div>
-                    </section>
-                  )}
-                  {agentResult.evidence.length > 0 && (
-                    <div className="ops-agent-case-evidence">
-                      <h4>Nguồn đã đối chiếu</h4>
-                      <ul>
-                        {agentResult.evidence.map((evidence, index) => (
-                          <li key={`${evidence.sourceType}:${evidence.sourceId}:${index}`}>
-                            <StatusLabel
-                              text={
-                                evidence.sourceType === 'knowledge'
-                                  ? 'Tài liệu'
-                                  : 'Dữ liệu nghiệp vụ'
-                              }
-                              tone={evidence.sourceType === 'knowledge' ? 'info' : 'success'}
-                            />
-                            <span>{opsAgentEvidenceLabel(evidence)}</span>
-                            {evidence.observedAt && (
-                              <time dateTime={evidence.observedAt}>
-                                {formatAgentTime(evidence.observedAt)}
-                              </time>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {agentResult.handoff && (
-                    <Feedback tone="info" title="Agent bàn giao cho nhân viên">
-                      {agentResult.handoff.nextAction} {agentResult.handoff.sideEffects}
-                    </Feedback>
-                  )}
-                  <div className="ops-agent-case-footer">
-                    <p>
-                      Yêu cầu này thuộc phiên làm việc hiện tại. Thao tác cần quyền sẽ được kiểm tra
-                      trước khi thực hiện.
-                    </p>
-                    <div>
-                      {!isOpsAgentCaseTerminal(agentResult) && !currentCaseStateUnknown && (
-                        <Button
-                          variant="danger"
-                          onClick={() => setCaseDialogAction('cancel')}
-                          disabled={
-                            caseActionLoading ||
-                            !branchId ||
-                            caseLoading ||
-                            caseNeedsReconciliation ||
-                            currentCaseStateUnknown
-                          }
-                        >
-                          Hủy yêu cầu
-                        </Button>
-                      )}
+                    }
+                  >
+                    {caseError} Bạn có thể thử lại hoặc bỏ liên kết với yêu cầu trong phiên này.
+                    Việc bỏ liên kết không hủy yêu cầu đã gửi.
+                  </Feedback>
+                ) : !agentResult ? (
+                  <EmptyState
+                    title="Cần cập nhật trạng thái yêu cầu"
+                    action={
                       <Button
                         variant="secondary"
                         onClick={() => {
                           void reloadAgentCase();
                         }}
                         loading={caseLoading}
-                        disabled={caseActionLoading || !branchId}
                       >
                         Cập nhật trạng thái
                       </Button>
-                    </div>
-                  </div>
-                </section>
-              </>
-            )}
+                    }
+                  >
+                    Yêu cầu đã được ghi nhận trong phiên này, nhưng trạng thái mới nhất chưa hiển
+                    thị.
+                  </EmptyState>
+                ) : (
+                  <>
+                    {currentCaseStateUnknown && (
+                      <Feedback
+                        tone="warning"
+                        title="Trạng thái yêu cầu cần kiểm tra"
+                        action={
+                          <Button
+                            variant="secondary"
+                            onClick={() => void reloadAgentCase()}
+                            loading={caseLoading}
+                            disabled={caseActionLoading}
+                          >
+                            Cập nhật trạng thái
+                          </Button>
+                        }
+                      >
+                        Không xác nhận, duyệt, hủy hoặc gửi tiếp khi trạng thái lạ hay dữ liệu đang
+                        chờ không khớp. Hãy cập nhật trạng thái; nếu vẫn còn, chuyển người phụ trách
+                        kiểm tra.
+                      </Feedback>
+                    )}
+                    {caseError && (
+                      <div
+                        ref={caseErrorPanelRef}
+                        tabIndex={-1}
+                        className="ops-agent-case-error-focus"
+                      >
+                        <Feedback
+                          tone="danger"
+                          title="Không hoàn tất được thao tác"
+                          action={
+                            <Button
+                              variant="secondary"
+                              onClick={() => {
+                                void reloadAgentCase();
+                              }}
+                              loading={caseLoading}
+                            >
+                              Cập nhật trạng thái
+                            </Button>
+                          }
+                        >
+                          {caseError} Tải lại trước khi thử thao tác lần nữa; kết quả của yêu cầu
+                          trước có thể chưa xác định.
+                        </Feedback>
+                      </div>
+                    )}
+                    <section className="feature-panel ops-agent-case-card">
+                      <div className="feature-panel-head">
+                        <div>
+                          <p className="eyebrow">YÊU CẦU HỖ TRỢ</p>
+                          <h3 ref={caseResultHeadingRef} tabIndex={-1}>
+                            {agentResult.goal?.summary ?? 'Yêu cầu hỗ trợ vận hành'}
+                          </h3>
+                        </div>
+                        <StatusLabel
+                          text={agentStateLabel(agentResult.state, currentCaseStateUnknown)}
+                          tone={agentStateTone(agentResult.state, currentCaseStateUnknown)}
+                        />
+                      </div>
+                      <div className="ops-agent-case-message">
+                        <h4>Kết quả gần nhất</h4>
+                        <p>{agentResult.message || 'Chưa có nội dung kết quả.'}</p>
+                      </div>
+                      {agentResult.pendingInput && (
+                        <Feedback tone="warning" title="Agent cần bạn bổ sung thông tin">
+                          {agentResult.pendingInput}
+                        </Feedback>
+                      )}
+                      {agentResult.pendingConfirmation && (
+                        <section
+                          className="ops-agent-pending-action"
+                          aria-label="Yêu cầu đang chờ xác nhận"
+                        >
+                          <div>
+                            <StatusLabel text="Chờ xác nhận" tone="warning" />
+                            <h4>{agentResult.pendingConfirmation.summary}</h4>
+                            <p>
+                              Hạn xác nhận:{' '}
+                              {formatAgentTime(agentResult.pendingConfirmation.expiresAt)}
+                            </p>
+                          </div>
+                          <div className="ops-agent-pending-actions">
+                            <Button
+                              variant="secondary"
+                              onClick={() => setCaseDialogAction('reject-confirmation')}
+                              disabled={
+                                caseActionLoading ||
+                                !branchId ||
+                                caseLoading ||
+                                caseNeedsReconciliation ||
+                                currentCaseStateUnknown
+                              }
+                            >
+                              Từ chối
+                            </Button>
+                            <Button
+                              onClick={() => setCaseDialogAction('confirm')}
+                              disabled={
+                                caseActionLoading ||
+                                !branchId ||
+                                caseLoading ||
+                                caseNeedsReconciliation ||
+                                currentCaseStateUnknown
+                              }
+                            >
+                              Xác nhận yêu cầu
+                            </Button>
+                          </div>
+                        </section>
+                      )}
+                      {agentResult.pendingApproval && (
+                        <section
+                          className="ops-agent-pending-action"
+                          aria-label="Thao tác đang chờ người có quyền duyệt"
+                        >
+                          <div>
+                            <StatusLabel text="Cần quyền duyệt" tone="warning" />
+                            <h4>{agentResult.pendingApproval.summary}</h4>
+                            <p>
+                              Quyền cần có:{' '}
+                              {agentPermissionLabel(agentResult.pendingApproval.requiredPermission)}
+                            </p>
+                            <p>
+                              Hạn duyệt: {formatAgentTime(agentResult.pendingApproval.expiresAt)}
+                            </p>
+                          </div>
+                          <div className="ops-agent-pending-actions">
+                            <Button
+                              variant="secondary"
+                              onClick={() => setCaseDialogAction('reject-approval')}
+                              disabled={
+                                caseActionLoading ||
+                                !branchId ||
+                                caseLoading ||
+                                caseNeedsReconciliation ||
+                                currentCaseStateUnknown
+                              }
+                            >
+                              Từ chối
+                            </Button>
+                            <Button
+                              onClick={() => setCaseDialogAction('approve')}
+                              disabled={
+                                caseActionLoading ||
+                                !branchId ||
+                                caseLoading ||
+                                caseNeedsReconciliation ||
+                                currentCaseStateUnknown
+                              }
+                            >
+                              Duyệt thao tác
+                            </Button>
+                          </div>
+                        </section>
+                      )}
+                      {agentResult.evidence.length > 0 && (
+                        <div className="ops-agent-case-evidence">
+                          <h4>Nguồn đã đối chiếu</h4>
+                          <ul>
+                            {agentResult.evidence.map((evidence, index) => (
+                              <li key={`${evidence.sourceType}:${evidence.sourceId}:${index}`}>
+                                <StatusLabel
+                                  text={
+                                    evidence.sourceType === 'knowledge'
+                                      ? 'Tài liệu'
+                                      : 'Dữ liệu nghiệp vụ'
+                                  }
+                                  tone={evidence.sourceType === 'knowledge' ? 'info' : 'success'}
+                                />
+                                <span>{opsAgentEvidenceLabel(evidence)}</span>
+                                {evidence.observedAt && (
+                                  <time dateTime={evidence.observedAt}>
+                                    {formatAgentTime(evidence.observedAt)}
+                                  </time>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {agentResult.handoff && (
+                        <Feedback tone="info" title="Agent bàn giao cho nhân viên">
+                          {agentResult.handoff.nextAction} {agentResult.handoff.sideEffects}
+                        </Feedback>
+                      )}
+                      <div className="ops-agent-case-footer">
+                        <p>
+                          Yêu cầu này thuộc phiên làm việc hiện tại. Thao tác cần quyền sẽ được kiểm
+                          tra trước khi thực hiện.
+                        </p>
+                        <div>
+                          {!isOpsAgentCaseTerminal(agentResult) && !currentCaseStateUnknown && (
+                            <Button
+                              variant="danger"
+                              onClick={() => setCaseDialogAction('cancel')}
+                              disabled={
+                                caseActionLoading ||
+                                !branchId ||
+                                caseLoading ||
+                                caseNeedsReconciliation ||
+                                currentCaseStateUnknown
+                              }
+                            >
+                              Hủy yêu cầu
+                            </Button>
+                          )}
+                          <Button
+                            variant="secondary"
+                            onClick={() => {
+                              void reloadAgentCase();
+                            }}
+                            loading={caseLoading}
+                            disabled={caseActionLoading || !branchId}
+                          >
+                            Cập nhật trạng thái
+                          </Button>
+                        </div>
+                      </div>
+                    </section>
+                  </>
+                )}
+              </div>
+            </details>
+          )}
+
+        {!useAgentApi && visibleTab === 'case' && (
+          <div className="ops-agent-case-view">
+            <div className="feature-heading">
+              <div>
+                <h2>Hồ sơ Agent</h2>
+                <p>Theo dõi hồ sơ được tạo trong bản demo.</p>
+              </div>
+            </div>
+            <Feedback tone="info" title="Hồ sơ Agent chỉ có ở chế độ API">
+              Chế độ fixture không tạo hay lưu hồ sơ trên máy chủ.
+            </Feedback>
           </div>
         )}
       </TabPanel>

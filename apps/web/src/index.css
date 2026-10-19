@@ -5211,6 +5211,9 @@ small {
   gap: 16px;
   align-items: start;
 }
+.ops-chat-live {
+  grid-template-columns: minmax(0, 1fr);
+}
 .ops-chat-main.feature-panel,
 .ops-chat-side.feature-panel {
   margin: 0;
@@ -5509,6 +5512,83 @@ small {
   grid-area: submit;
   min-width: 112px;
 }
+.ops-chat-actions {
+  grid-area: submit;
+  display: flex;
+  gap: 8px;
+}
+.ops-chat-actions > .button {
+  min-width: 128px;
+  white-space: nowrap;
+}
+.ops-chat-knowledge-result {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.ops-chat-knowledge-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ops-chat-knowledge-result-head .eyebrow {
+  margin: 0;
+}
+.ops-chat-knowledge-result .ops-knowledge-citations {
+  gap: 8px;
+}
+.ops-agent-case-details {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.ops-agent-case-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 66px;
+  padding: 12px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+.ops-agent-case-summary::-webkit-details-marker {
+  display: none;
+}
+.ops-agent-case-summary > span:first-child {
+  display: grid;
+  flex: 1 1 200px;
+  gap: 3px;
+  min-width: 0;
+}
+.ops-agent-case-summary .eyebrow {
+  margin: 0;
+  font-size: 10px;
+}
+.ops-agent-case-summary strong {
+  overflow-wrap: anywhere;
+}
+.ops-agent-case-summary::after {
+  content: '+';
+  margin-left: auto;
+  color: var(--brand-primary);
+  font-size: 20px;
+  line-height: 1;
+}
+.ops-agent-case-details[open] > .ops-agent-case-summary {
+  border-bottom: 1px solid var(--border);
+}
+.ops-agent-case-details[open] > .ops-agent-case-summary::after {
+  content: '−';
+}
+.ops-agent-case-details > .ops-agent-case-view {
+  padding: 16px;
+}
 .ops-chat-side {
   position: sticky;
   top: 16px;
@@ -5705,6 +5785,14 @@ small {
   }
   .ops-chat-form > .button {
     justify-self: stretch;
+  }
+  .ops-chat-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ops-chat-actions > .button {
+    min-width: 0;
+    white-space: normal;
   }
   .ops-conflict-actions {
     flex-direction: column;
