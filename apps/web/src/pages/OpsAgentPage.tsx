@@ -255,8 +255,7 @@ export function opsAgentErrorMessage(error: unknown, fallback: string) {
     };
     const knownMessage = messages[error.code];
     if (knownMessage) return knownMessage;
-    if (error.status === 0)
-      return 'Mất kết nối tới dịch vụ trợ lý. Hãy cập nhật trạng thái trước khi gửi lại.';
+    if (error.status === 0) return 'Chưa nhận được phản hồi từ trợ lý.';
     if (error.status === 409)
       return 'Yêu cầu đã thay đổi. Hãy cập nhật trạng thái mới nhất trước khi tiếp tục.';
     if (error.status === 408 || error.status === 504)
@@ -1206,6 +1205,15 @@ export function OpsAgentPage({
         'Có thể xác nhận chuyển khoản ở đây không?',
         'Chính sách hoàn cọc đã được chốt chưa?',
       ];
+  const hasUserMessages = messages.some((message) => message.role === 'user');
+  const newConversationDisabled =
+    sendingMessage ||
+    (useAgentApi &&
+      (sendOutcomeUnknown ||
+        caseLoading ||
+        caseNeedsReconciliation ||
+        currentCaseStateUnknown ||
+        Boolean(agentCaseId && !isOpsAgentCaseTerminal(agentResult))));
 
   return (
     <div className="page staff-page ops-agent-page">
@@ -1219,6 +1227,23 @@ export function OpsAgentPage({
               : 'Tra cứu checklist và việc cần chú ý tại chi nhánh. Nhân viên vẫn xử lý trên màn hình Studio.'}
           </p>
         </div>
+        {useAgentApi && hasUserMessages && (
+          <Button
+            className="ops-agent-heading-action"
+            variant="secondary"
+            onClick={newConversation}
+            disabled={newConversationDisabled}
+            title={
+              newConversationDisabled
+                ? sendOutcomeUnknown
+                  ? 'Hãy đối soát kết quả gửi chưa rõ trước khi bắt đầu cuộc trò chuyện mới.'
+                  : 'Hãy cập nhật trạng thái yêu cầu hiện tại trước khi bắt đầu cuộc trò chuyện mới.'
+                : undefined
+            }
+          >
+            Cuộc trò chuyện mới
+          </Button>
+        )}
         {!useAgentApi && (
           <div className="ops-agent-heading-meta">
             <span className="ops-demo-badge">
@@ -2173,48 +2198,23 @@ export function OpsAgentPage({
               className="feature-panel ops-chat-main"
               aria-label={useAgentApi ? 'Cuộc trò chuyện với trợ lý vận hành' : 'Hỏi Ops Agent'}
             >
-              <div className="ops-chat-heading">
-                <div>
-                  <h2 id={useAgentApi ? 'ops-agent-support-title' : undefined}>
-                    {useAgentApi ? 'Cuộc trò chuyện' : 'Hỏi Agent'}
-                  </h2>
-                  <p>
-                    {useAgentApi
-                      ? 'Trao đổi tự nhiên về quy trình, đơn thuê và các tình huống tại studio.'
-                      : 'Không có mô hình AI. Câu trả lời mẫu chỉ dựa trên từ khóa và nguồn fixture.'}
-                  </p>
-                </div>
-                {(!useAgentApi || messages.some((message) => message.role === 'user')) && (
+              {!useAgentApi && (
+                <div className="ops-chat-heading">
+                  <div>
+                    <h2>Hỏi Agent</h2>
+                    <p>
+                      Không có mô hình AI. Câu trả lời mẫu chỉ dựa trên từ khóa và nguồn fixture.
+                    </p>
+                  </div>
                   <Button
                     variant="secondary"
                     onClick={newConversation}
-                    disabled={
-                      sendingMessage ||
-                      (useAgentApi &&
-                        (sendOutcomeUnknown ||
-                          caseLoading ||
-                          caseNeedsReconciliation ||
-                          currentCaseStateUnknown ||
-                          Boolean(agentCaseId && !isOpsAgentCaseTerminal(agentResult))))
-                    }
-                    title={
-                      sendingMessage
-                        ? 'Đang chờ kết quả của câu hỏi hiện tại.'
-                        : useAgentApi && sendOutcomeUnknown
-                          ? 'Hãy đối soát kết quả gửi chưa rõ trước khi tạo yêu cầu khác.'
-                          : currentCaseStateUnknown
-                            ? 'Cần cập nhật trạng thái hiện tại trước khi tạo yêu cầu mới.'
-                            : caseNeedsReconciliation || caseLoading
-                              ? 'Hãy cập nhật yêu cầu hiện tại trước khi tạo yêu cầu mới.'
-                              : useAgentApi && agentCaseId && !isOpsAgentCaseTerminal(agentResult)
-                                ? 'Hãy xử lý yêu cầu hiện tại trước khi tạo yêu cầu khác.'
-                                : undefined
-                    }
+                    disabled={newConversationDisabled}
                   >
                     Cuộc trò chuyện mới
                   </Button>
-                )}
-              </div>
+                </div>
+              )}
               {!useAgentApi && (
                 <div className="ops-chat-context">
                   <Icon name="pin" size={16} />
@@ -2311,7 +2311,7 @@ export function OpsAgentPage({
                 </Feedback>
               )}
               <div
-                className="ops-chat-thread"
+                className={`ops-chat-thread${useAgentApi && !hasUserMessages ? 'ops-chat-thread-empty' : ''}`}
                 role="log"
                 aria-label="Nội dung trò chuyện"
                 aria-live="polite"
@@ -2464,7 +2464,7 @@ export function OpsAgentPage({
                 )}
                 <div ref={messageEndRef} />
               </div>
-              {!messages.some((message) => message.role === 'user') && (
+              {!hasUserMessages && (
                 <div className="ops-chat-suggestions" aria-label="Gợi ý câu hỏi">
                   {suggestedQuestions.map((question) => (
                     <button
@@ -2554,10 +2554,10 @@ export function OpsAgentPage({
               {sendError && (
                 <div ref={sendErrorPanelRef} tabIndex={-1} className="ops-agent-case-error-focus">
                   <Feedback
-                    tone="danger"
+                    tone={sendOutcomeUnknown ? 'warning' : 'danger'}
                     title={
                       sendOutcomeUnknown
-                        ? 'Chưa xác nhận được kết quả gửi'
+                        ? 'Chưa rõ tin nhắn đã được nhận chưa'
                         : useAgentApi
                           ? 'Không gửi được tin nhắn'
                           : 'Không gửi được câu hỏi'
@@ -2565,11 +2565,11 @@ export function OpsAgentPage({
                     action={
                       sendOutcomeUnknown && agentCaseId ? (
                         <Button variant="secondary" onClick={openCaseDetails}>
-                          Kiểm tra yêu cầu
+                          Kiểm tra trạng thái
                         </Button>
                       ) : sendOutcomeUnknown ? (
                         <Button variant="secondary" onClick={() => setShowUnknownSendDialog(true)}>
-                          Đã đối soát, mở lại ô nhập
+                          Kiểm tra rồi mở nhập
                         </Button>
                       ) : sendConflict && agentCaseId ? (
                         <Button variant="secondary" onClick={openCaseDetails}>
@@ -2578,14 +2578,9 @@ export function OpsAgentPage({
                       ) : undefined
                     }
                   >
-                    {sendError}{' '}
                     {sendOutcomeUnknown
-                      ? agentCaseId
-                        ? 'Nội dung vẫn được giữ. Hãy kiểm tra yêu cầu hiện tại trước khi gửi lại để tránh tạo thao tác trùng.'
-                        : chatDraft.trim()
-                          ? 'Nội dung vẫn được giữ nhưng mã yêu cầu chưa được trả về. Đừng gửi lại cho đến khi người phụ trách đối soát kết quả tạo hồ sơ.'
-                          : 'Nội dung được giữ trong ô nhập cho đến khi đối soát xong.'
-                      : ''}
+                      ? `${sendError} ${chatDraft.trim() ? 'Tin nhắn vẫn nằm trong ô nhập.' : ''} Kiểm tra yêu cầu trước khi gửi lại để tránh tạo yêu cầu trùng.`
+                      : sendError}
                   </Feedback>
                 </div>
               )}
@@ -2955,7 +2950,7 @@ export function OpsAgentPage({
       {showUnknownSendDialog && (
         <ConfirmDialog
           title="Đã đối soát lần gửi trước chưa?"
-          confirmText="Đã đối soát, mở lại ô nhập"
+          confirmText="Đã kiểm tra, tiếp tục"
           onConfirm={() => {
             if (uncertainInitialSendSessionKey)
               window.sessionStorage.removeItem(uncertainInitialSendSessionKey);
@@ -2972,8 +2967,8 @@ export function OpsAgentPage({
           onClose={() => setShowUnknownSendDialog(false)}
         >
           <p>
-            Chỉ tiếp tục sau khi đã kiểm tra với người phụ trách rằng yêu cầu trước chưa được tạo.
-            Nội dung đang nhập sẽ được giữ lại để bạn xem và quyết định gửi lại.
+            Chỉ tiếp tục nếu bạn đã kiểm tra yêu cầu trước đó và xác nhận chưa có yêu cầu trùng. Tin
+            nhắn đang nhập sẽ được giữ nguyên để bạn quyết định gửi lại.
           </p>
         </ConfirmDialog>
       )}

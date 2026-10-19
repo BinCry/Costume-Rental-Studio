@@ -95,6 +95,10 @@ describe('Ops Agent safe state and recovery behavior', () => {
   });
 
   it('blocks retry after ambiguous timeout and requires refresh after case conflict', () => {
+    const disconnectedBeforeCaseId = opsAgentSendRecovery(
+      new ApiClientError(0, 'NETWORK_ERROR', 'Network error'),
+      false,
+    );
     const timeout = opsAgentSendRecovery(
       new ApiClientError(504, 'AI_SERVICE_TIMEOUT', 'Gateway timeout'),
       true,
@@ -108,6 +112,11 @@ describe('Ops Agent safe state and recovery behavior', () => {
       true,
     );
 
+    expect(disconnectedBeforeCaseId).toEqual({
+      outcomeUnknown: true,
+      requiresCaseRefresh: false,
+      conflict: false,
+    });
     expect(timeout).toEqual({
       outcomeUnknown: true,
       requiresCaseRefresh: true,
@@ -122,6 +131,9 @@ describe('Ops Agent safe state and recovery behavior', () => {
   });
 
   it('shows actionable, localized recovery guidance and safe fallbacks for missing content', () => {
+    expect(
+      opsAgentErrorMessage(new ApiClientError(0, 'NETWORK_ERROR', 'Network error'), 'Fallback'),
+    ).toBe('Chưa nhận được phản hồi từ trợ lý.');
     expect(
       opsAgentErrorMessage(
         new ApiClientError(504, 'AI_SERVICE_TIMEOUT', 'Gateway timeout'),

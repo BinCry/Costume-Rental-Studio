@@ -4555,6 +4555,10 @@ small {
 .ops-agent-heading {
   align-items: center;
 }
+.ops-agent-heading-action {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
 .ops-agent-heading h1 {
   margin-bottom: 7px;
 }
@@ -6351,8 +6355,8 @@ small {
 
 /* API-mode Ops Agent: keep one continuous conversation and a persistent composer. */
 .ops-chat-live .ops-chat-main.feature-panel {
-  height: min(760px, calc(100dvh - 270px));
-  min-height: 520px;
+  height: clamp(460px, calc(100dvh - 245px), 900px);
+  min-height: 0;
   padding: 0;
   gap: 0;
   overflow: hidden;
@@ -6379,6 +6383,9 @@ small {
   gap: 18px;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+.ops-chat-live .ops-chat-thread-empty {
+  justify-content: center;
 }
 .ops-chat-live .ops-chat-message.assistant {
   width: min(100%, 820px);
@@ -6467,17 +6474,43 @@ small {
 .ops-chat-live + .ops-agent-case-details {
   margin-top: 10px;
 }
+.ops-chat-live .ops-agent-case-error-focus {
+  flex: 0 0 auto;
+  padding: 0 14px 12px;
+}
+.ops-chat-live .ops-agent-case-error-focus .feedback {
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 9px 12px;
+}
+.ops-chat-live .ops-agent-case-error-focus .feedback strong {
+  font-size: 13px;
+  line-height: 18px;
+}
+.ops-chat-live .ops-agent-case-error-focus .feedback p {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 17px;
+}
+.ops-chat-live .ops-agent-case-error-focus .feedback > .button {
+  flex: 0 0 auto;
+  min-width: 164px;
+  min-height: 40px;
+  padding: 8px 12px;
+  white-space: nowrap;
+}
 
 @media (max-width: 820px) {
   .ops-chat-live .ops-chat-main.feature-panel {
-    height: min(720px, 74dvh);
-    min-height: 480px;
+    height: min(820px, calc(100dvh - 210px));
+    min-height: 460px;
   }
 }
 @media (max-width: 560px) {
   .ops-chat-live .ops-chat-main.feature-panel {
-    height: min(680px, 76dvh);
-    min-height: 430px;
+    height: min(760px, calc(100dvh - 180px));
+    min-height: 420px;
   }
   .ops-chat-live .ops-chat-heading {
     grid-template-columns: minmax(0, 1fr) auto;
@@ -6486,6 +6519,10 @@ small {
   }
   .ops-chat-live .ops-chat-heading > .button {
     justify-self: end;
+  }
+  .ops-agent-heading-action {
+    width: 100%;
+    justify-content: center;
   }
   .ops-chat-live .ops-chat-heading p:not(.eyebrow) {
     max-width: 42ch;
@@ -6510,6 +6547,14 @@ small {
   .ops-chat-live .ops-chat-form > .button {
     min-width: 64px;
     padding-inline: 12px;
+  }
+  .ops-chat-live .ops-agent-case-error-focus .feedback {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .ops-chat-live .ops-agent-case-error-focus .feedback > .button {
+    align-self: flex-start;
+    min-width: 0;
   }
 }
 
