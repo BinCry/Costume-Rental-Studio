@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { AppError } from '../../common/errors/app-error.js';
 import { env } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
@@ -18,6 +20,7 @@ import * as transferService from '../transfers/transfer.service.js';
 import type {
   AgentApprovalAuthorizationInput,
   AgentToolExecutionInput,
+  AgentToolName,
 } from './agent-tools.schema.js';
 import { getAgentToolDefinition } from './agent-tools.registry.js';
 
@@ -89,6 +92,84 @@ function assertCaseBranch(resourceBranchId: string, caseBranchId: string): void 
       404,
       'AGENT_CASE_RESOURCE_NOT_FOUND',
       'Resource not found in this case branch',
+    );
+  }
+}
+
+const releasedWriteReadbacks = new Map<AgentToolName, AgentToolName>([
+  ['reallocate_rental_item', 'get_rental_order'],
+  ['record_overdue_follow_up', 'get_customer_interaction_by_idempotency_key'],
+]);
+
+function canonicalJson(value: unknown): string {
+  if (value instanceof Date) return JSON.stringify(value.toISOString());
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function normalizeFrozenValue(value: unknown): unknown {
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.valueOf())) return parsed.toISOString();
+  }
+  if (Array.isArray(value)) return value.map(normalizeFrozenValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, normalizeFrozenValue(item)]),
+    );
+  }
+  return value;
+}
+
+function assertReleasedWriteAuthorization(input: AgentToolExecutionInput): void {
+  const expectedReadback = releasedWriteReadbacks.get(input.toolName);
+  if (!expectedReadback) {
+    throw new AppError(
+      503,
+      'AGENT_WRITE_TOOLS_NOT_READY',
+      'This agent write tool is not released for execution',
+    );
+  }
+  if (!input.confirmationId || !input.payloadHash || !input.readbackTool || !input.actionSnapshot) {
+    throw new AppError(
+      403,
+      'AGENT_WRITE_AUTHORIZATION_REQUIRED',
+      'A frozen human confirmation is required for this write tool',
+    );
+  }
+  if (input.readbackTool !== expectedReadback) {
+    throw new AppError(
+      409,
+      'AGENT_WRITE_AUTHORIZATION_MISMATCH',
+      'The write read-back contract does not match the released tool',
+    );
+  }
+  const { payloadHash: snapshotHash, ...unsignedSnapshot } = input.actionSnapshot;
+  const actualHash = createHash('sha256').update(canonicalJson(unsignedSnapshot)).digest('hex');
+  const expectedIdempotencyKey = `agent:${input.caseId}:${input.toolName}:${input.payloadHash}`;
+  const snapshotMatchesRequest =
+    input.actionSnapshot.toolName === input.toolName &&
+    input.actionSnapshot.readbackTool === input.readbackTool &&
+    (input.actionSnapshot.expectedVersion ?? null) === (input.expectedVersion ?? null) &&
+    canonicalJson(normalizeFrozenValue(input.actionSnapshot.arguments)) ===
+      canonicalJson(normalizeFrozenValue(input.arguments));
+  if (
+    actualHash !== input.payloadHash ||
+    snapshotHash !== input.payloadHash ||
+    input.idempotencyKey !== expectedIdempotencyKey ||
+    !snapshotMatchesRequest
+  ) {
+    throw new AppError(
+      409,
+      'AGENT_WRITE_AUTHORIZATION_MISMATCH',
+      'The write payload no longer matches the frozen human confirmation',
     );
   }
 }
@@ -265,15 +346,8 @@ export async function executeAgentTool(
   caseBranchId: string,
 ) {
   const definition = getAgentToolDefinition(input.toolName);
-  // Approval IDs are not yet bound to a case/tool/payload/version and only
-  // financial writes have durable idempotency. Never let an environment flag
-  // accidentally expose mutation tools before those contracts are implemented.
-  if (definition.mode === 'write') {
-    throw new AppError(
-      503,
-      'AGENT_WRITE_TOOLS_NOT_READY',
-      'Agent write tools are unavailable until approval and reconciliation safeguards are ready',
-    );
+  if (definition.mode === 'write' && !releasedWriteReadbacks.has(input.toolName)) {
+    throw new AppError(503, 'AGENT_WRITE_TOOLS_NOT_READY', 'This agent write tool is not released');
   }
   const branch = await prisma.branch.findUnique({
     where: { id: caseBranchId },
@@ -289,6 +363,7 @@ export async function executeAgentTool(
   if (!env[definition.featureFlag]) {
     throw new AppError(503, 'AGENT_TOOL_DISABLED', 'This agent tool is temporarily disabled');
   }
+  if (definition.mode === 'write') assertReleasedWriteAuthorization(input);
 
   switch (input.toolName) {
     case 'get_rental_order': {
@@ -463,6 +538,12 @@ export async function executeAgentTool(
       if (!input.expectedVersion)
         throw new AppError(400, 'EXPECTED_VERSION_REQUIRED', 'expectedVersion is required');
       const { orderId, ...allocation } = input.arguments;
+      const resource = await prisma.rentalOrder.findUnique({
+        where: { id: orderId },
+        select: { pickupBranchId: true },
+      });
+      if (!resource) throw new AppError(404, 'RENTAL_ORDER_NOT_FOUND', 'Rental order not found');
+      assertCaseBranch(resource.pickupBranchId, caseBranchId);
       const order = await rentalService.reallocateOrder(actor, orderId, {
         ...allocation,
         expectedVersion: input.expectedVersion,
@@ -491,6 +572,12 @@ export async function executeAgentTool(
       );
     }
     case 'record_overdue_follow_up': {
+      const resource = await prisma.rentalOrder.findUnique({
+        where: { id: input.arguments.orderId },
+        select: { pickupBranchId: true },
+      });
+      if (!resource) throw new AppError(404, 'RENTAL_ORDER_NOT_FOUND', 'Rental order not found');
+      assertCaseBranch(resource.pickupBranchId, caseBranchId);
       const interaction = await crmService.recordOverdueFollowUp(actor, {
         ...input.arguments,
         sourceReference: `agent-case:${input.caseId}`,

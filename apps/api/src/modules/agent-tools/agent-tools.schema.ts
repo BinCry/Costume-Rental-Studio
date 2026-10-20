@@ -8,7 +8,14 @@ const baseCallSchema = z
     toolCallId: z.uuid(),
     idempotencyKey: z.string().trim().min(1).max(255),
     expectedVersion: z.coerce.number().int().positive().nullable().optional(),
+    confirmationId: z.uuid().nullable().optional(),
     approvalId: z.uuid().nullable().optional(),
+    payloadHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+    readbackTool: z.string().trim().min(1).max(80).optional(),
+    actionSnapshot: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 

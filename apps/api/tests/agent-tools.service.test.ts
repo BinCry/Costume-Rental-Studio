@@ -1,7 +1,10 @@
+import { createHash } from 'node:crypto';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   findBranch: vi.fn(),
+  findOrderBranch: vi.fn(),
   listOrders: vi.fn(),
   getUnitBlock: vi.fn(),
   listUnitBlocks: vi.fn(),
@@ -20,16 +23,24 @@ const mocks = vi.hoisted(() => ({
   getPayment: vi.fn(),
   getPaymentByIdempotencyKey: vi.fn(),
   getRefundByIdempotencyKey: vi.fn(),
+  recordOverdueFollowUp: vi.fn(),
 }));
 
 vi.mock('../src/database/prisma.js', () => ({
-  prisma: { branch: { findUnique: mocks.findBranch } },
+  prisma: {
+    branch: { findUnique: mocks.findBranch },
+    rentalOrder: { findUnique: mocks.findOrderBranch },
+  },
 }));
 vi.mock('../src/modules/rentals/rental.service.js', () => ({
   listOrders: mocks.listOrders,
   extendOrder: mocks.extendOrder,
   reallocateOrder: mocks.reallocateOrder,
   cancelOrder: mocks.cancelOrder,
+}));
+vi.mock('../src/modules/crm/crm.service.js', () => ({
+  getCustomerInteractionByIdempotencyKey: vi.fn(),
+  recordOverdueFollowUp: mocks.recordOverdueFollowUp,
 }));
 vi.mock('../src/modules/payments/payment.service.js', () => ({
   createCheckout: mocks.createCheckout,
@@ -55,6 +66,7 @@ vi.mock('../src/modules/transfers/transfer.service.js', () => ({
 const { authorizeAgentApproval, executeAgentTool } =
   await import('../src/modules/agent-tools/agent-tools.service.js');
 const { agentToolRegistry } = await import('../src/modules/agent-tools/agent-tools.registry.js');
+const { env } = await import('../src/config/env.js');
 
 const actor = {
   id: '10000000-0000-4000-8000-000000000001',
@@ -74,6 +86,74 @@ const actor = {
   ],
 } as never;
 
+const rentalWriteActor = {
+  id: '10000000-0000-4000-8000-000000000001',
+  status: 'ACTIVE',
+  employee: { employmentStatus: 'ACTIVE' },
+  roleAssignments: [
+    {
+      branchId: null,
+      branch: null,
+      role: {
+        isActive: true,
+        rolePermissions: [{ permission: { module: 'rentals', action: 'manage', scope: 'ALL' } }],
+      },
+    },
+  ],
+} as never;
+
+const crmWriteActor = {
+  id: '10000000-0000-4000-8000-000000000001',
+  status: 'ACTIVE',
+  employee: { employmentStatus: 'ACTIVE' },
+  roleAssignments: [
+    {
+      branchId: null,
+      branch: null,
+      role: {
+        isActive: true,
+        rolePermissions: [{ permission: { module: 'crm', action: 'manage', scope: 'ALL' } }],
+      },
+    },
+  ],
+} as never;
+
+function canonical(value: unknown): string {
+  if (value instanceof Date) return JSON.stringify(value.toISOString());
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function frozenAction(
+  toolName: string,
+  arguments_: Record<string, unknown>,
+  expectedVersion: number | null,
+  readbackTool: string,
+  extra: Record<string, unknown> = {},
+) {
+  const unsigned = {
+    toolName,
+    arguments: arguments_,
+    expectedVersion,
+    readbackTool,
+    ...extra,
+  };
+  return {
+    ...unsigned,
+    payloadHash: createHash('sha256').update(canonical(unsigned)).digest('hex'),
+  };
+}
+
+function writeIdempotencyKey(caseId: string, toolName: string, payloadHash: string): string {
+  return `agent:${caseId}:${toolName}:${payloadHash}`;
+}
+
 function serializeToolData(value: unknown) {
   return JSON.stringify(value, (_key, item: unknown) =>
     typeof item === 'bigint' ? item.toString() : item,
@@ -83,6 +163,8 @@ function serializeToolData(value: unknown) {
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.findBranch.mockResolvedValue({ status: 'ACTIVE' });
+  env.AGENT_RENTAL_WRITE_ENABLED = true;
+  env.AGENT_CRM_WRITE_ENABLED = true;
 });
 
 describe('agent tool data minimization', () => {
@@ -583,8 +665,9 @@ describe('Ops Agent read projections', () => {
 });
 
 describe('Ops Agent write safety gate', () => {
+  const releasedWriteTools = new Set(['reallocate_rental_item', 'record_overdue_follow_up']);
   const writeTools = Object.values(agentToolRegistry).filter(
-    (definition) => definition.mode === 'write',
+    (definition) => definition.mode === 'write' && !releasedWriteTools.has(definition.name),
   );
 
   it.each(writeTools)(
@@ -622,4 +705,324 @@ describe('Ops Agent write safety gate', () => {
       }
     },
   );
+
+  it('executes a confirmed rental reallocation and preserves the frozen payload contract', async () => {
+    const branchId = '10000000-0000-4000-8000-000000000063';
+    const orderId = '10000000-0000-4000-8000-000000000064';
+    const orderItemId = '10000000-0000-4000-8000-000000000065';
+    const unitId = '10000000-0000-4000-8000-000000000066';
+    const arguments_ = { orderId, orderItemId, unitId, reason: 'Readiness recovery' };
+    const resultOrder = {
+      id: orderId,
+      orderCode: 'RT-064',
+      pickupBranchId: branchId,
+      status: 'CONFIRMED',
+      plannedStartAt: new Date('2026-10-20T08:00:00.000Z'),
+      plannedDueAt: new Date('2026-10-21T08:00:00.000Z'),
+      version: 8,
+      items: [
+        {
+          id: orderItemId,
+          variantId: '10000000-0000-4000-8000-000000000067',
+          unitId,
+          occupiedFrom: new Date('2026-10-20T08:00:00.000Z'),
+          occupiedUntil: new Date('2026-10-21T08:00:00.000Z'),
+        },
+      ],
+    };
+    mocks.findOrderBranch.mockResolvedValueOnce({ pickupBranchId: branchId });
+    mocks.reallocateOrder.mockResolvedValueOnce(resultOrder);
+    const snapshot = frozenAction('reallocate_rental_item', arguments_, 7, 'get_rental_order', {
+      recommendation: { analysisId: 'analysis-1', optionId: 'option-1' },
+    });
+    expect(snapshot.payloadHash).toBe(
+      'a4a763ca94132d9fabd29b06ec535ead1395f62a539b2f831a57c11ceed33f16',
+    );
+
+    const result = await executeAgentTool(
+      rentalWriteActor,
+      {
+        caseId: '10000000-0000-4000-8000-000000000060',
+        toolCallId: '10000000-0000-4000-8000-000000000061',
+        confirmationId: '10000000-0000-4000-8000-000000000068',
+        idempotencyKey: writeIdempotencyKey(
+          '10000000-0000-4000-8000-000000000060',
+          'reallocate_rental_item',
+          snapshot.payloadHash,
+        ),
+        toolName: 'reallocate_rental_item',
+        arguments: arguments_,
+        expectedVersion: 7,
+        readbackTool: 'get_rental_order',
+        payloadHash: snapshot.payloadHash,
+        actionSnapshot: snapshot,
+      } as never,
+      '10000000-0000-4000-8000-000000000062',
+      branchId,
+    );
+
+    expect(mocks.reallocateOrder).toHaveBeenCalledWith(rentalWriteActor, orderId, {
+      orderItemId,
+      unitId,
+      reason: 'Readiness recovery',
+      expectedVersion: 7,
+    });
+    expect(result).toMatchObject({ status: 'ok', recordVersion: 8 });
+  });
+
+  it('records a confirmed overdue follow-up idempotently in the case branch', async () => {
+    const branchId = '10000000-0000-4000-8000-000000000063';
+    const orderId = '10000000-0000-4000-8000-000000000064';
+    const occurredAt = new Date('2026-10-20T07:00:00.000Z');
+    const arguments_ = {
+      orderId,
+      channel: 'PHONE' as const,
+      outcome: 'CONTACTED' as const,
+      occurredAt,
+    };
+    const interaction = {
+      id: '10000000-0000-4000-8000-000000000069',
+      branchId,
+      orderId,
+      interactionType: 'FOLLOW_UP',
+      channel: 'PHONE',
+      outcome: 'CONTACTED',
+      promisedReturnAt: null,
+      nextFollowUpAt: null,
+      sourceReference: 'agent-case:10000000-0000-4000-8000-000000000060',
+      idempotencyKey: 'agent:overdue:064',
+      occurredAt,
+    };
+    mocks.findOrderBranch.mockResolvedValueOnce({ pickupBranchId: branchId });
+    mocks.recordOverdueFollowUp.mockResolvedValueOnce(interaction);
+    const frozenArguments = {
+      ...arguments_,
+      occurredAt: '2026-10-20T07:00:00+00:00',
+    };
+    const snapshot = frozenAction(
+      'record_overdue_follow_up',
+      frozenArguments,
+      null,
+      'get_customer_interaction_by_idempotency_key',
+      { recommendation: { analysisId: 'analysis-2', findingId: 'finding-2' } },
+    );
+    expect(snapshot.payloadHash).toBe(
+      '4421746e186c3249272bd0dd78f1d6d6cd59d2c38efcecfa2319429e2b468b6e',
+    );
+    interaction.idempotencyKey = writeIdempotencyKey(
+      '10000000-0000-4000-8000-000000000060',
+      'record_overdue_follow_up',
+      snapshot.payloadHash,
+    );
+
+    const result = await executeAgentTool(
+      crmWriteActor,
+      {
+        caseId: '10000000-0000-4000-8000-000000000060',
+        toolCallId: '10000000-0000-4000-8000-000000000061',
+        confirmationId: '10000000-0000-4000-8000-000000000068',
+        idempotencyKey: writeIdempotencyKey(
+          '10000000-0000-4000-8000-000000000060',
+          'record_overdue_follow_up',
+          snapshot.payloadHash,
+        ),
+        toolName: 'record_overdue_follow_up',
+        arguments: arguments_,
+        readbackTool: 'get_customer_interaction_by_idempotency_key',
+        payloadHash: snapshot.payloadHash,
+        actionSnapshot: snapshot,
+      } as never,
+      '10000000-0000-4000-8000-000000000062',
+      branchId,
+    );
+
+    expect(mocks.recordOverdueFollowUp).toHaveBeenCalledWith(crmWriteActor, {
+      ...arguments_,
+      sourceReference: 'agent-case:10000000-0000-4000-8000-000000000060',
+      idempotencyKey: writeIdempotencyKey(
+        '10000000-0000-4000-8000-000000000060',
+        'record_overdue_follow_up',
+        snapshot.payloadHash,
+      ),
+    });
+    expect(result).toMatchObject({ status: 'ok', data: interaction });
+  });
+
+  it('rejects a released write without frozen confirmation evidence', async () => {
+    await expect(
+      executeAgentTool(
+        rentalWriteActor,
+        {
+          caseId: '10000000-0000-4000-8000-000000000060',
+          toolCallId: '10000000-0000-4000-8000-000000000061',
+          idempotencyKey: 'agent:readiness:missing-confirmation',
+          toolName: 'reallocate_rental_item',
+          expectedVersion: 7,
+          arguments: {
+            orderId: '10000000-0000-4000-8000-000000000064',
+            orderItemId: '10000000-0000-4000-8000-000000000065',
+            unitId: '10000000-0000-4000-8000-000000000066',
+            reason: 'Readiness recovery',
+          },
+        } as never,
+        '10000000-0000-4000-8000-000000000062',
+        '10000000-0000-4000-8000-000000000063',
+      ),
+    ).rejects.toMatchObject({ statusCode: 403, code: 'AGENT_WRITE_AUTHORIZATION_REQUIRED' });
+    expect(mocks.reallocateOrder).not.toHaveBeenCalled();
+  });
+
+  it('rejects a released write when the payload differs from the confirmed hash', async () => {
+    const actionSnapshot = {
+      ...frozenAction(
+        'reallocate_rental_item',
+        {
+          orderId: '10000000-0000-4000-8000-000000000064',
+          orderItemId: '10000000-0000-4000-8000-000000000065',
+          unitId: '10000000-0000-4000-8000-000000000066',
+          reason: 'Original reason',
+        },
+        7,
+        'get_rental_order',
+      ),
+      payloadHash: '0'.repeat(64),
+    };
+    await expect(
+      executeAgentTool(
+        rentalWriteActor,
+        {
+          caseId: '10000000-0000-4000-8000-000000000060',
+          toolCallId: '10000000-0000-4000-8000-000000000061',
+          confirmationId: '10000000-0000-4000-8000-000000000068',
+          idempotencyKey: 'agent:readiness:mismatch',
+          toolName: 'reallocate_rental_item',
+          expectedVersion: 7,
+          arguments: {
+            orderId: '10000000-0000-4000-8000-000000000064',
+            orderItemId: '10000000-0000-4000-8000-000000000065',
+            unitId: '10000000-0000-4000-8000-000000000066',
+            reason: 'Tampered reason',
+          },
+          readbackTool: 'get_rental_order',
+          payloadHash: '0'.repeat(64),
+          actionSnapshot,
+        } as never,
+        '10000000-0000-4000-8000-000000000062',
+        '10000000-0000-4000-8000-000000000063',
+      ),
+    ).rejects.toMatchObject({ statusCode: 409, code: 'AGENT_WRITE_AUTHORIZATION_MISMATCH' });
+    expect(mocks.reallocateOrder).not.toHaveBeenCalled();
+  });
+
+  it('rejects replaying a confirmed snapshot with a different idempotency key', async () => {
+    const arguments_ = {
+      orderId: '10000000-0000-4000-8000-000000000064',
+      channel: 'PHONE' as const,
+      outcome: 'CONTACTED' as const,
+      occurredAt: new Date('2026-10-20T07:00:00.000Z'),
+    };
+    const snapshot = frozenAction(
+      'record_overdue_follow_up',
+      { ...arguments_, occurredAt: '2026-10-20T07:00:00+00:00' },
+      null,
+      'get_customer_interaction_by_idempotency_key',
+    );
+
+    await expect(
+      executeAgentTool(
+        crmWriteActor,
+        {
+          caseId: '10000000-0000-4000-8000-000000000060',
+          toolCallId: '10000000-0000-4000-8000-000000000061',
+          confirmationId: '10000000-0000-4000-8000-000000000068',
+          idempotencyKey: 'agent:changed-key',
+          toolName: 'record_overdue_follow_up',
+          arguments: arguments_,
+          readbackTool: 'get_customer_interaction_by_idempotency_key',
+          payloadHash: snapshot.payloadHash,
+          actionSnapshot: snapshot,
+        } as never,
+        '10000000-0000-4000-8000-000000000062',
+        '10000000-0000-4000-8000-000000000063',
+      ),
+    ).rejects.toMatchObject({ statusCode: 409, code: 'AGENT_WRITE_AUTHORIZATION_MISMATCH' });
+    expect(mocks.recordOverdueFollowUp).not.toHaveBeenCalled();
+  });
+
+  it('rejects a confirmed write whose resource is outside the case branch', async () => {
+    const arguments_ = {
+      orderId: '10000000-0000-4000-8000-000000000064',
+      orderItemId: '10000000-0000-4000-8000-000000000065',
+      unitId: '10000000-0000-4000-8000-000000000066',
+      reason: 'Readiness recovery',
+    };
+    mocks.findOrderBranch.mockResolvedValueOnce({
+      pickupBranchId: '10000000-0000-4000-8000-000000000099',
+    });
+    const snapshot = frozenAction('reallocate_rental_item', arguments_, 7, 'get_rental_order');
+
+    await expect(
+      executeAgentTool(
+        rentalWriteActor,
+        {
+          caseId: '10000000-0000-4000-8000-000000000060',
+          toolCallId: '10000000-0000-4000-8000-000000000061',
+          confirmationId: '10000000-0000-4000-8000-000000000068',
+          idempotencyKey: writeIdempotencyKey(
+            '10000000-0000-4000-8000-000000000060',
+            'reallocate_rental_item',
+            snapshot.payloadHash,
+          ),
+          toolName: 'reallocate_rental_item',
+          expectedVersion: 7,
+          arguments: arguments_,
+          readbackTool: 'get_rental_order',
+          payloadHash: snapshot.payloadHash,
+          actionSnapshot: snapshot,
+        } as never,
+        '10000000-0000-4000-8000-000000000062',
+        '10000000-0000-4000-8000-000000000063',
+      ),
+    ).rejects.toMatchObject({ statusCode: 404, code: 'AGENT_CASE_RESOURCE_NOT_FOUND' });
+    expect(mocks.reallocateOrder).not.toHaveBeenCalled();
+  });
+
+  it('keeps a released write disabled when its feature flag is off', async () => {
+    env.AGENT_RENTAL_WRITE_ENABLED = false;
+    await expect(
+      executeAgentTool(
+        rentalWriteActor,
+        {
+          caseId: '10000000-0000-4000-8000-000000000060',
+          toolCallId: '10000000-0000-4000-8000-000000000061',
+          idempotencyKey: 'agent:readiness:disabled',
+          toolName: 'reallocate_rental_item',
+          expectedVersion: 7,
+          arguments: {},
+        } as never,
+        '10000000-0000-4000-8000-000000000062',
+        '10000000-0000-4000-8000-000000000063',
+      ),
+    ).rejects.toMatchObject({ statusCode: 503, code: 'AGENT_TOOL_DISABLED' });
+    expect(mocks.reallocateOrder).not.toHaveBeenCalled();
+  });
+
+  it('keeps overdue follow-up disabled when the CRM feature flag is off', async () => {
+    env.AGENT_CRM_WRITE_ENABLED = false;
+    await expect(
+      executeAgentTool(
+        crmWriteActor,
+        {
+          caseId: '10000000-0000-4000-8000-000000000060',
+          toolCallId: '10000000-0000-4000-8000-000000000061',
+          idempotencyKey: 'agent:overdue:disabled',
+          toolName: 'record_overdue_follow_up',
+          arguments: {},
+        } as never,
+        '10000000-0000-4000-8000-000000000062',
+        '10000000-0000-4000-8000-000000000063',
+      ),
+    ).rejects.toMatchObject({ statusCode: 503, code: 'AGENT_TOOL_DISABLED' });
+    expect(mocks.recordOverdueFollowUp).not.toHaveBeenCalled();
+  });
 });

@@ -123,6 +123,30 @@ describe('agent tool contract', () => {
     expect(result.success).toBe(false);
   });
 
+  it('accepts frozen confirmation evidence and validates its payload hash format', () => {
+    const valid = agentToolExecutionSchema.safeParse({
+      ...base,
+      toolName: 'reallocate_rental_item',
+      arguments: executions.find(([name]) => name === 'reallocate_rental_item')?.[1],
+      expectedVersion: 1,
+      confirmationId: id(13),
+      payloadHash: 'a'.repeat(64),
+      readbackTool: 'get_rental_order',
+    });
+    const invalidHash = agentToolExecutionSchema.safeParse({
+      ...base,
+      toolName: 'reallocate_rental_item',
+      arguments: executions.find(([name]) => name === 'reallocate_rental_item')?.[1],
+      expectedVersion: 1,
+      confirmationId: id(13),
+      payloadHash: 'not-a-sha256',
+      readbackTool: 'get_rental_order',
+    });
+
+    expect(valid.success).toBe(true);
+    expect(invalidHash.success).toBe(false);
+  });
+
   it('keeps unit identity mandatory for the two unit-level readiness rules', () => {
     const result = agentToolExecutionSchema.safeParse({
       ...base,
