@@ -17,6 +17,7 @@ Một rule trong `business-rules.md` có thể là quyết định đã chốt n
 ```text
 docs/
 ├── business/     # Nghiệp vụ chính thức và phân tích ngoại lệ
+├── agent/        # Vòng đời, capability và tích hợp Operations Agent
 ├── database/     # ERD, tóm tắt, constraints và checklist review
 ├── api/          # Hợp đồng và flow API theo module
 ├── ui/           # Kế hoạch, quy chuẩn, đánh giá UX và hướng dẫn demo
@@ -63,6 +64,14 @@ docs/
 | [`operations/ke-hoach-phat-trien-ops-agent.md`](operations/ke-hoach-phat-trien-ops-agent.md) | Kế hoạch phát triển Ops Agent cho riêng Costume Rental Studio: hiện trạng, hành trình, lộ trình, nghiệm thu và quyết định cần chốt |
 | [`operations/doi-chieu-ui-ops-agent-va-api.md`](operations/doi-chieu-ui-ops-agent-va-api.md) | Đối chiếu màn Ops Agent với API đang có và các API còn thiếu |
 | [`operations/yeu-cau-hoan-thien-ai-agent.md`](operations/yeu-cau-hoan-thien-ai-agent.md) | Bàn giao tính năng, hợp đồng tool/RAG và tiêu chí nghiệm thu cho đội AI Agent |
+
+### Operations Agent
+
+| Tài liệu | Mục đích |
+| --- | --- |
+| [`agent/operations-agent-lifecycle.md`](agent/operations-agent-lifecycle.md) | Vòng đời phát hiện → đánh giá → giả lập → đề xuất → thực thi → theo dõi; role, job nền, trạng thái hiện tại và phạm vi MVP |
+| [`agent/phase4-rental-readiness-execution.md`](agent/phase4-rental-readiness-execution.md) | Revalidation, confirmation, verified same-branch reallocation và recovery cho readiness recommendation |
+| [`agent/case4-overdue-return-follow-up.md`](agent/case4-overdue-return-follow-up.md) | Confirmation, CRM interaction, idempotency và lifecycle cho kết quả liên hệ trả trễ |
 
 ### UI và báo cáo
 

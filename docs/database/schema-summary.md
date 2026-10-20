@@ -1,6 +1,6 @@
 # Database Schema Summary
 
-Schema hiện tại có **33 bảng**, chia thành 7 nhóm. Danh sách field đầy đủ nằm trong [`schema.dbml`](schema.dbml) và `apps/api/prisma/schema.prisma`.
+Schema hiện tại có **34 bảng**, chia thành 7 nhóm. Danh sách field đầy đủ nằm trong [`schema.dbml`](schema.dbml) và `apps/api/prisma/schema.prisma`.
 
 ## 1. Identity và phân quyền — 10 bảng
 
@@ -17,7 +17,7 @@ Schema hiện tại có **33 bảng**, chia thành 7 nhóm. Danh sách field đ�
 | `role_permissions` | role và permission | Composite PK |
 | `user_role_assignments` | user, role, branch, người gán | Không trùng cả khi `branch_id` null |
 
-## 2. Catalog, inventory và transfer — 10 bảng
+## 2. Catalog, inventory và transfer — 11 bảng
 
 | Bảng | Dữ liệu chính | Ràng buộc quan trọng |
 |---|---|---|
@@ -28,7 +28,8 @@ Schema hiện tại có **33 bảng**, chia thành 7 nhóm. Danh sách field đ�
 | `costume_media` | model hoặc variant, object key, thứ tự | Chính xác một trong `model_id`, `variant_id` có giá trị |
 | `costume_units` | barcode, variant, chi nhánh, tình trạng, trạng thái | `unit_code` unique; chỉ `READY` được thuê |
 | `unit_events` | lịch sử vòng đời unit | Append-only; unit là quan hệ sở hữu |
-| `unit_blocks` | vệ sinh, sửa, kiểm tra, khóa thủ công | `blocked_from < blocked_until`; state–timestamp hợp lệ |
+| `unit_blocks` | vệ sinh, sửa, kiểm tra, khóa thủ công; capacity window và effort còn lại | `blocked_from < blocked_until`; `PLANNED` dùng estimate, `IN_PROGRESS` dùng remaining effort; window phải cùng chi nhánh |
+| `branch_capacity_windows` | khung thời gian và tổng ngân sách phút công đã khai báo của chi nhánh | Khoảng thời gian hợp lệ, không trùng đúng cùng branch/window; active window được prorate, expired window không tạo finding mới; không suy capacity từ nhân sự/giờ mở cửa |
 | `stock_transfers` | phiếu chuyển chi nhánh và workflow actor/time | Nguồn khác đích; optimistic `version` |
 | `stock_transfer_items` | unit và tình trạng xuất/nhận | Unique `(transfer_id, unit_id)`; không trùng transfer hoạt động |
 

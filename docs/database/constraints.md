@@ -112,6 +112,12 @@ ALTER TABLE costume_units
 ALTER TABLE unit_blocks
   ADD CONSTRAINT ck_unit_block_range
     CHECK (blocked_from < blocked_until),
+  ADD CONSTRAINT unit_blocks_estimated_effort_minutes_check
+    CHECK (estimated_effort_minutes IS NULL OR estimated_effort_minutes > 0),
+  ADD CONSTRAINT unit_blocks_remaining_effort_minutes_check
+    CHECK (remaining_effort_minutes IS NULL OR remaining_effort_minutes >= 0),
+  ADD CONSTRAINT unit_blocks_planned_remaining_effort_check
+    CHECK (status <> 'PLANNED' OR remaining_effort_minutes IS NULL),
   ADD CONSTRAINT ck_unit_block_cost
     CHECK (cost_vnd IS NULL OR cost_vnd >= 0),
   ADD CONSTRAINT ck_unit_block_started
@@ -127,6 +133,19 @@ ALTER TABLE unit_blocks
       OR (started_at IS NOT NULL AND finished_at >= started_at)
     );
 ```
+
+`capacity_window_id` là liên kết tùy chọn và `ON DELETE SET NULL`. Service chỉ cho
+gán block vào capacity window cùng chi nhánh với unit. `estimated_effort_minutes`
+là effort của block `PLANNED`; khi bắt đầu `IN_PROGRESS`, service khởi tạo
+`remaining_effort_minutes` từ estimate, cho phép cập nhật phần còn lại và đặt về
+`0` khi hoàn tất hoặc hủy. Block ở trạng thái terminal không đóng góp workload.
+
+`branch_capacity_windows` yêu cầu `starts_at < ends_at`, `available_minutes > 0`
+và unique `(branch_id, starts_at, ends_at)`. `available_minutes` là tổng ngân sách
+phút công của toàn window; không được suy ra từ giờ mở cửa, số nhân viên hoặc độ
+dài `blocked_from`–`blocked_until`. Detector giữ nguyên toàn bộ ngân sách cho
+window tương lai, phân bổ theo phần thời gian chưa trôi qua cho window đang hoạt
+động và không tạo finding mới khi window đã hết hạn.
 
 ### 2.4. Điều chuyển
 

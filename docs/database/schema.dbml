@@ -472,11 +472,14 @@ Table unit_events {
 Table unit_blocks {
   id uuid [pk]
   unit_id uuid [not null]
+  capacity_window_id uuid
   block_type unit_block_type [not null]
   status unit_block_status [not null, default: 'PLANNED']
   blocked_from timestamptz [not null]
   blocked_until timestamptz [not null]
   assigned_to uuid
+  estimated_effort_minutes int
+  remaining_effort_minutes int
   cost_vnd bigint
   reason text [not null]
   notes text
@@ -489,9 +492,29 @@ Table unit_blocks {
   indexes {
     (unit_id, blocked_from, blocked_until)
     (assigned_to, status, blocked_from)
+    (capacity_window_id, status)
   }
 
-  Note: 'Unified unavailability and maintenance workflow. PLANNED/IN_PROGRESS blocks make the unit unavailable. Deleting the owning unit cascades its blocks; assigned_to and created_by become null if the employee is deleted. Require blocked_from < blocked_until and cost_vnd >= 0 when set.'
+  Note: 'Unified unavailability and maintenance workflow. capacity_window_id explicitly assigns at most one operational capacity window. PLANNED workload uses estimated_effort_minutes; IN_PROGRESS workload uses remaining_effort_minutes; terminal states contribute no remaining workload. Block duration represents unit unavailability, not labor effort. Deleting the owning unit cascades its blocks; deleting the capacity window, assignee or creator sets the corresponding reference null. Require blocked_from < blocked_until, estimated effort > 0 when set, remaining effort >= 0 when set, PLANNED remaining effort null, and cost_vnd >= 0 when set.'
+}
+
+Table branch_capacity_windows {
+  id uuid [pk]
+  branch_id uuid [not null]
+  starts_at timestamptz [not null]
+  ends_at timestamptz [not null]
+  available_minutes int [not null]
+  notes text
+  created_by uuid [not null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (branch_id, starts_at, ends_at) [unique]
+    (starts_at, ends_at)
+  }
+
+  Note: 'Declared branch labor capacity. available_minutes is the labor-minute budget for the complete window, not elapsed clock time and not inferred from opening hours or employee count. Future windows retain the full budget; active-window remaining capacity is prorated by the unelapsed share; expired windows produce no new capacity finding. Require starts_at < ends_at and available_minutes > 0.'
 }
 
 Table stock_transfers {
@@ -914,6 +937,9 @@ Ref: employees.user_id < unit_events.recorded_by
 Ref: costume_units.id < unit_blocks.unit_id
 Ref: employees.user_id < unit_blocks.assigned_to
 Ref: employees.user_id < unit_blocks.created_by
+Ref: branch_capacity_windows.id < unit_blocks.capacity_window_id [delete: set null]
+Ref: branches.id < branch_capacity_windows.branch_id [delete: cascade]
+Ref: employees.user_id < branch_capacity_windows.created_by
 Ref: branches.id < stock_transfers.from_branch_id
 Ref: branches.id < stock_transfers.to_branch_id
 Ref: employees.user_id < stock_transfers.requested_by
@@ -991,6 +1017,7 @@ TableGroup catalog_and_inventory {
   costume_units
   unit_events
   unit_blocks
+  branch_capacity_windows
   stock_transfers
   stock_transfer_items
 }
