@@ -11,22 +11,22 @@ Một case Ops Agent gắn với **một chi nhánh đang chọn** từ khi tạ
 
 ## Hợp đồng Web → Studio → AI
 
-| Bước | Dữ liệu bắt buộc | Kiểm tra |
-| --- | --- | --- |
-| Web tạo/tiếp tục case | `POST /api/v1/agent/messages`: `message`, `branchId` UUID, `caseId` UUID nếu tiếp tục | Studio xác thực nhân viên, chi nhánh `ACTIVE` và `knowledge.read` tại chi nhánh trước khi gọi AI. |
-| Web đọc/ra quyết định | GET case, POST confirm/reject/cancel/approve/reject: `X-Branch-Id` UUID | Studio kiểm lại quyền tại mỗi lần gọi. Web lưu case và bản nháp theo `actorId + branchId`; timeout không tự gửi lại. |
-| Studio gọi AI | Cùng body message; tất cả request có `X-Case-Branch-Id` UUID, service key và actor context | AI so body `branchId` với header; case đang có phải thuộc đúng actor và branch. Trường hợp sai hoặc case cũ không có branch trả 404, không tự gán lại. |
-| AI gọi Studio tool | `X-Agent-Tools-Contract: agent-tools/v2`, `X-Case-Branch-Id` UUID cùng service key, actor, request ID và tool allowlist | Studio kiểm lại chi nhánh `ACTIVE`, quyền actor và branch của tài nguyên. Dữ liệu chi nhánh khác không được đưa vào ngữ cảnh model. |
-| AI xác minh quyền duyệt | `/api/v1/internal/agent-tools/authorize-approval` cùng header contract và branch | Branch case phải nằm trong danh sách branch của quyết định; người duyệt phải có quyền tại từng branch liên quan. |
+| Bước                    | Dữ liệu bắt buộc                                                                                                        | Kiểm tra                                                                                                                                               |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Web tạo/tiếp tục case   | `POST /api/v1/agent/messages`: `message`, `branchId` UUID, `caseId` UUID nếu tiếp tục                                   | Studio xác thực nhân viên, chi nhánh `ACTIVE` và `knowledge.read` tại chi nhánh trước khi gọi AI.                                                      |
+| Web đọc/ra quyết định   | GET case, POST confirm/reject/cancel/approve/reject: `X-Branch-Id` UUID                                                 | Studio kiểm lại quyền tại mỗi lần gọi. Web lưu case và bản nháp theo `actorId + branchId`; timeout không tự gửi lại.                                   |
+| Studio gọi AI           | Cùng body message; tất cả request có `X-Case-Branch-Id` UUID, service key và actor context                              | AI so body `branchId` với header; case đang có phải thuộc đúng actor và branch. Trường hợp sai hoặc case cũ không có branch trả 404, không tự gán lại. |
+| AI gọi Studio tool      | `X-Agent-Tools-Contract: agent-tools/v2`, `X-Case-Branch-Id` UUID cùng service key, actor, request ID và tool allowlist | Studio kiểm lại chi nhánh `ACTIVE`, quyền actor và branch của tài nguyên. Dữ liệu chi nhánh khác không được đưa vào ngữ cảnh model.                    |
+| AI xác minh quyền duyệt | `/api/v1/internal/agent-tools/authorize-approval` cùng header contract và branch                                        | Branch case phải nằm trong danh sách branch của quyết định; người duyệt phải có quyền tại từng branch liên quan.                                       |
 
-Với điều chuyển giữa hai chi nhánh, case được phép đọc phiếu nếu branch case là **một trong hai đầu** và actor có quyền tương ứng. Projection chỉ trả mã phiếu, trạng thái, phiên bản và vai trò `FROM`/`TO` của branch case; không đưa thông tin riêng của chi nhánh còn lại hoặc khách hàng vào model. Tool ghi vẫn bị chặn bởi `AGENT_WRITE_TOOLS_NOT_READY`.
+Với điều chuyển giữa hai chi nhánh, case được phép đọc phiếu nếu branch case là **một trong hai đầu** và actor có quyền tương ứng. Projection chỉ trả mã phiếu, trạng thái, phiên bản và vai trò `FROM`/`TO` của branch case; không đưa thông tin riêng của chi nhánh còn lại hoặc khách hàng vào model. Tool ghi điều chuyển vẫn bị chặn bởi `AGENT_WRITE_TOOLS_NOT_READY`; chỉ `reallocate_rental_item` và `record_overdue_follow_up` đã được phát hành theo confirmation snapshot, và Studio vẫn kiểm tra lại branch của tài nguyên trước khi ghi.
 
 ## Dữ liệu và lỗi cần giữ nguyên ý nghĩa
 
 - `INVALID_AGENT_BRANCH`/`FORBIDDEN` từ Studio: chi nhánh không hoạt động hoặc actor không còn quyền; Web yêu cầu chọn chi nhánh hợp lệ, không tiếp tục gửi case cũ.
 - `AGENT_CASE_NOT_FOUND`: case thuộc actor/branch khác hoặc case lịch sử không có branch; không tiết lộ case của người khác.
 - `AI_SERVICE_TIMEOUT` khi gửi lần đầu: không tự gửi lại vì có thể case đã được tạo. Giữ bản nháp và báo cần đối soát; tính năng tìm lại case theo khóa yêu cầu là việc còn phải làm ở OPS-10.
-- `AGENT_WRITE_TOOLS_NOT_READY`: không diễn giải là thao tác đã thực hiện. Không mở tool ghi chỉ bằng cấu hình.
+- `AGENT_WRITE_TOOLS_NOT_READY`: tool ghi đó chưa thuộc allowlist phát hành; không diễn giải là thao tác đã thực hiện và không mở chỉ bằng cấu hình. Hai tool đã phát hành vẫn cần đủ confirmation snapshot hợp lệ, quyền, branch và feature flag.
 - `refund.reason` là văn bản tự do; projection tool không chuyển trường này cho model.
 
 ## Cổng phát hành

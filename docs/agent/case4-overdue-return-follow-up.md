@@ -13,9 +13,10 @@ After an employee actually contacts the customer, the employee can record the ou
 3. The employee submits structured follow-up data to `POST /api/v1/agent/cases/:caseId/overdue-follow-ups/confirmations`.
 4. The AI service verifies the owner, branch, case version, active analysis, open finding, and live overdue context.
 5. The service freezes exactly one `record_overdue_follow_up` action. Customer identity and free-text notes are not accepted.
-6. The employee confirms through the existing confirmation endpoint.
-7. Studio rechecks CRM permission and that the rental is still `ACTIVE`, derives the customer and branch from the order, and creates one idempotent `FOLLOW_UP` interaction.
-8. The AI service reads the interaction back by idempotency key. A verified write moves the Agent Case to `MONITORING`; it does not resolve the finding.
+6. The employee confirms through the existing confirmation endpoint. The AI service sends `confirmationId`, `payloadHash`, `readbackTool`, and the frozen `actionSnapshot` with the write request.
+7. Studio recomputes the canonical snapshot hash and requires the frozen tool, arguments, expected version, and `get_customer_interaction_by_idempotency_key` read-back contract to match. It also requires the deterministic key `agent:{caseId}:record_overdue_follow_up:{payloadHash}`, then rechecks the active branch, actor RBAC, resource branch, and `AGENT_CRM_WRITE_ENABLED`.
+8. Studio verifies that the rental is still `ACTIVE`, derives the customer and branch from the order, and creates one idempotent `FOLLOW_UP` interaction.
+9. The AI service reads the interaction back by idempotency key. A verified write moves the Agent Case to `MONITORING`; it does not resolve the finding.
 
 ## Structured outcomes
 
@@ -45,3 +46,4 @@ A physical return or an approved extension remains a separate rental workflow. T
 
 Apply migration `20261019220000_overdue_follow_up_interactions` before enabling the write path. Keep `AGENT_CRM_WRITE_ENABLED=false` in both services until the migration and both application versions are deployed.
 
+This release is limited to `record_overdue_follow_up`; unrelated write tools remain fail-closed. The interaction's unique idempotency key prevents duplicate CRM rows, but Studio does not yet have a general durable authorization/idempotency ledger that binds every confirmation, actor, frozen payload, and execution result.
