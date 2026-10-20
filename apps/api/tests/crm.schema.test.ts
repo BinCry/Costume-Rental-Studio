@@ -39,8 +39,12 @@ describe('CRM schemas', () => {
     expect(
       createInteractionSchema.safeParse({
         branchId: id,
-        interactionType: 'NOTE',
+        interactionType: 'FOLLOW_UP',
         channel: 'CHAT',
+        outcome: 'PROMISED_RETURN',
+        occurredAt: '2026-10-19T12:00:00Z',
+        promisedReturnAt: '2026-10-20T08:00:00Z',
+        nextFollowUpAt: '2026-10-20T09:00:00Z',
         summary: 'Called back',
       }).success,
     ).toBe(true);
@@ -50,6 +54,24 @@ describe('CRM schemas', () => {
         interactionType: 'OTHER',
         channel: 'CHAT',
         summary: 'Called back',
+      }).success,
+    ).toBe(false);
+    expect(
+      createInteractionSchema.safeParse({
+        branchId: id,
+        interactionType: 'NOTE',
+        channel: 'CHAT',
+        outcome: 'NO_ANSWER',
+        summary: 'Called back',
+      }).success,
+    ).toBe(false);
+    expect(
+      createInteractionSchema.safeParse({
+        branchId: id,
+        interactionType: 'FOLLOW_UP',
+        channel: 'PHONE',
+        outcome: 'PROMISED_RETURN',
+        summary: 'Customer promised a return',
       }).success,
     ).toBe(false);
     expect(updateCaseSchema.safeParse({}).success).toBe(false);

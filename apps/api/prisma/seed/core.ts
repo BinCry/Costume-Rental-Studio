@@ -63,6 +63,10 @@ const permissionDefinitions = [
   ['policies.manage.all', 'policies', 'manage', PermissionScope.ALL],
   ['knowledge.read.all', 'knowledge', 'read', PermissionScope.ALL],
   ['knowledge.read.branch', 'knowledge', 'read', PermissionScope.BRANCH],
+  ['agents.read.branch', 'agents', 'read', PermissionScope.BRANCH],
+  ['agents.manage.branch', 'agents', 'manage', PermissionScope.BRANCH],
+  ['agents.read.all', 'agents', 'read', PermissionScope.ALL],
+  ['agents.manage.all', 'agents', 'manage', PermissionScope.ALL],
 ] as const;
 
 export interface CoreSeedContext {
@@ -225,6 +229,8 @@ export async function seedCore(db: SeedDatabase): Promise<CoreSeedContext> {
       'crm.manage.branch',
       'reports.read.branch',
       'knowledge.read.branch',
+      'agents.read.branch',
+      'agents.manage.branch',
     ],
     INVENTORY_STAFF: [
       'catalog.read.all',
@@ -234,6 +240,8 @@ export async function seedCore(db: SeedDatabase): Promise<CoreSeedContext> {
       'transfers.manage.branch',
       'rentals.read.branch',
       'knowledge.read.branch',
+      'agents.read.branch',
+      'agents.manage.branch',
     ],
     CUSTOMER: ['catalog.read.all', 'rentals.read.own', 'rentals.manage.own'],
   };
@@ -341,7 +349,8 @@ export async function seedCore(db: SeedDatabase): Promise<CoreSeedContext> {
       lateCancelFeePercent: 30,
       refundSlaBusinessDays: 5,
       createdBy: admin.id,
-      changeReason: 'Mức đệm lịch khởi điểm đã duyệt: 12 giờ dự phòng trả trễ + 12 giờ vệ sinh/chuẩn bị.',
+      changeReason:
+        'Mức đệm lịch khởi điểm đã duyệt: 12 giờ dự phòng trả trễ + 12 giờ vệ sinh/chuẩn bị.',
     },
   });
 

@@ -4,6 +4,14 @@ const caseStatus = z.enum(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']);
 const casePriority = z.enum(['LOW', 'NORMAL', 'HIGH', 'URGENT']);
 const interactionType = z.enum(['INQUIRY', 'CONSULTATION', 'COMPLAINT', 'FOLLOW_UP', 'NOTE']);
 const interactionChannel = z.enum(['IN_PERSON', 'PHONE', 'EMAIL', 'CHAT', 'SOCIAL']);
+export const overdueFollowUpOutcome = z.enum([
+  'CONTACTED',
+  'PROMISED_RETURN',
+  'NO_ANSWER',
+  'REFUSED_RETURN',
+  'REQUESTED_EXTENSION',
+  'OTHER',
+]);
 const page = z.coerce.number().int().min(1).default(1);
 const pageSize = z.coerce.number().int().min(1).max(100).default(20);
 
@@ -75,10 +83,82 @@ export const createInteractionSchema = z
     caseId: z.uuid().optional(),
     interactionType,
     channel: interactionChannel,
+    outcome: overdueFollowUpOutcome.optional(),
     summary: z.string().trim().min(1).max(10_000),
+    promisedReturnAt: z.coerce.date().optional(),
+    nextFollowUpAt: z.coerce.date().optional(),
     occurredAt: z.coerce.date().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (value.occurredAt && value.occurredAt > new Date()) {
+      context.addIssue({
+        code: 'custom',
+        path: ['occurredAt'],
+        message: 'occurredAt cannot be in the future',
+      });
+    }
+    if (value.outcome && value.interactionType !== 'FOLLOW_UP') {
+      context.addIssue({
+        code: 'custom',
+        path: ['outcome'],
+        message: 'outcome is only allowed for FOLLOW_UP interactions',
+      });
+    }
+    if (value.nextFollowUpAt && value.interactionType !== 'FOLLOW_UP') {
+      context.addIssue({
+        code: 'custom',
+        path: ['nextFollowUpAt'],
+        message: 'nextFollowUpAt is only allowed for FOLLOW_UP interactions',
+      });
+    }
+    if (
+      value.outcome &&
+      ['NO_ANSWER', 'REQUESTED_EXTENSION', 'REFUSED_RETURN'].includes(value.outcome) &&
+      !value.nextFollowUpAt
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['nextFollowUpAt'],
+        message: `nextFollowUpAt is required for ${value.outcome}`,
+      });
+    }
+    if ((value.outcome || value.promisedReturnAt || value.nextFollowUpAt) && !value.occurredAt) {
+      context.addIssue({
+        code: 'custom',
+        path: ['occurredAt'],
+        message: 'occurredAt is required for structured follow-up data',
+      });
+    }
+    if (value.outcome === 'PROMISED_RETURN' && !value.promisedReturnAt) {
+      context.addIssue({
+        code: 'custom',
+        path: ['promisedReturnAt'],
+        message: 'promisedReturnAt is required for PROMISED_RETURN',
+      });
+    }
+    if (value.outcome !== 'PROMISED_RETURN' && value.promisedReturnAt) {
+      context.addIssue({
+        code: 'custom',
+        path: ['promisedReturnAt'],
+        message: 'promisedReturnAt is only allowed for PROMISED_RETURN',
+      });
+    }
+    if (value.occurredAt && value.promisedReturnAt && value.promisedReturnAt <= value.occurredAt) {
+      context.addIssue({
+        code: 'custom',
+        path: ['promisedReturnAt'],
+        message: 'promisedReturnAt must be after occurredAt',
+      });
+    }
+    if (value.occurredAt && value.nextFollowUpAt && value.nextFollowUpAt <= value.occurredAt) {
+      context.addIssue({
+        code: 'custom',
+        path: ['nextFollowUpAt'],
+        message: 'nextFollowUpAt must be after occurredAt',
+      });
+    }
+  });
 
 export type ListCasesInput = z.infer<typeof listCasesSchema>;
 export type CreateCaseInput = z.infer<typeof createCaseSchema>;

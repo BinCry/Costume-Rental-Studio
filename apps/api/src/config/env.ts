@@ -35,6 +35,12 @@ const optionalPositiveInteger = z.preprocess(
   z.coerce.number().int().positive().optional(),
 );
 
+const optionalIntegerRange = (minimum: number, maximum: number) =>
+  z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.coerce.number().int().min(minimum).max(maximum).optional(),
+  );
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']),
@@ -97,8 +103,24 @@ const envSchema = z
     AGENT_READ_TOOLS_ENABLED: optionalBoolean.default(true),
     AGENT_SCHEDULING_WRITE_ENABLED: optionalBoolean.default(false),
     AGENT_RENTAL_WRITE_ENABLED: optionalBoolean.default(false),
+    AGENT_CRM_WRITE_ENABLED: optionalBoolean.default(false),
     AGENT_TRANSFER_WRITE_ENABLED: optionalBoolean.default(false),
     AGENT_FINANCIAL_WRITE_ENABLED: optionalBoolean.default(false),
+    AGENT_READINESS_DETECTION_ENABLED: optionalBoolean.default(false),
+    AGENT_READINESS_INTERVAL_MS: optionalIntegerRange(1_000, 86_400_000).default(60_000),
+    AGENT_READINESS_LOOKAHEAD_MINUTES: optionalIntegerRange(1, 10_080).default(24 * 60),
+    AGENT_READINESS_BATCH_SIZE: optionalIntegerRange(1, 100).default(100),
+    AGENT_OVERDUE_RETURN_DETECTION_ENABLED: optionalBoolean.default(false),
+    AGENT_OVERDUE_RETURN_INTERVAL_MS: optionalIntegerRange(1_000, 86_400_000).default(60_000),
+    AGENT_OVERDUE_RETURN_BATCH_SIZE: optionalIntegerRange(1, 100).default(100),
+    AGENT_CAPACITY_DETECTION_ENABLED: optionalBoolean.default(false),
+    AGENT_CAPACITY_INTERVAL_MS: optionalIntegerRange(1_000, 86_400_000).default(60_000),
+    AGENT_CAPACITY_LOOKAHEAD_MINUTES: optionalIntegerRange(1, 10_080).default(24 * 60),
+    AGENT_CAPACITY_BATCH_SIZE: optionalIntegerRange(1, 100).default(100),
+    // Phase 3 is opt-in: it only produces a read-only recommendation and
+    // never invokes rental write tools.
+    AGENT_READINESS_ANALYSIS_ENABLED: optionalBoolean.default(false),
+    AGENT_READINESS_EXECUTION_ENABLED: optionalBoolean.default(false),
     TRUST_PROXY_HOPS: z.preprocess(
       (value) => (value === '' ? undefined : value),
       z.coerce.number().int().min(1).optional(),
@@ -215,6 +237,64 @@ const envSchema = z
             'AI_SERVICE_URL must be an http(s) origin without credentials, path, query, or hash',
         });
       }
+    }
+    if (
+      value.AGENT_READINESS_DETECTION_ENABLED &&
+      (!value.AI_SERVICE_URL || !value.AI_INTERNAL_API_KEY)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['AGENT_READINESS_DETECTION_ENABLED'],
+        message:
+          'AI_SERVICE_URL and AI_INTERNAL_API_KEY are required when agent readiness detection is enabled',
+      });
+    }
+    if (
+      value.AGENT_OVERDUE_RETURN_DETECTION_ENABLED &&
+      (!value.AI_SERVICE_URL || !value.AI_INTERNAL_API_KEY)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['AGENT_OVERDUE_RETURN_DETECTION_ENABLED'],
+        message:
+          'AI_SERVICE_URL and AI_INTERNAL_API_KEY are required when overdue-return detection is enabled',
+      });
+    }
+    if (
+      value.AGENT_CAPACITY_DETECTION_ENABLED &&
+      (!value.AI_SERVICE_URL || !value.AI_INTERNAL_API_KEY)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['AGENT_CAPACITY_DETECTION_ENABLED'],
+        message:
+          'AI_SERVICE_URL and AI_INTERNAL_API_KEY are required when capacity detection is enabled',
+      });
+    }
+    if (
+      value.AGENT_READINESS_ANALYSIS_ENABLED &&
+      (!value.AI_SERVICE_URL || !value.AI_INTERNAL_API_KEY)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['AGENT_READINESS_ANALYSIS_ENABLED'],
+        message:
+          'AI_SERVICE_URL and AI_INTERNAL_API_KEY are required when agent readiness analysis is enabled',
+      });
+    }
+    if (
+      value.AGENT_READINESS_EXECUTION_ENABLED &&
+      (!value.AI_SERVICE_URL ||
+        !value.AI_INTERNAL_API_KEY ||
+        !value.AGENT_READINESS_ANALYSIS_ENABLED ||
+        !value.AGENT_RENTAL_WRITE_ENABLED)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['AGENT_READINESS_EXECUTION_ENABLED'],
+        message:
+          'AI service, readiness analysis, and AGENT_RENTAL_WRITE_ENABLED are required when readiness execution is enabled',
+      });
     }
   });
 

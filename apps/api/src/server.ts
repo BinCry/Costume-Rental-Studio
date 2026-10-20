@@ -4,12 +4,24 @@ import { logger } from './config/logger.js';
 import { prisma } from './database/prisma.js';
 import { startMediaMaintenance } from './modules/uploads/media-maintenance.service.js';
 import { startRentalMaintenance } from './modules/rentals/rental-maintenance.service.js';
+import { startOverdueRentalDetection } from './modules/rentals/rental-overdue.service.js';
+import { startRentalReadinessDetection } from './modules/rentals/rental-readiness.service.js';
+import { startOperationalCapacityDetection } from './modules/scheduling/operational-capacity.service.js';
 
 const server = app.listen(env.PORT, () => {
   logger.info({ port: env.PORT }, 'API server started');
 });
 const mediaMaintenance = env.BACKGROUND_WORKER_ENABLED ? startMediaMaintenance() : undefined;
 const rentalMaintenance = env.BACKGROUND_WORKER_ENABLED ? startRentalMaintenance() : undefined;
+const rentalReadinessDetection = env.BACKGROUND_WORKER_ENABLED
+  ? startRentalReadinessDetection()
+  : undefined;
+const overdueRentalDetection = env.BACKGROUND_WORKER_ENABLED
+  ? startOverdueRentalDetection()
+  : undefined;
+const operationalCapacityDetection = env.BACKGROUND_WORKER_ENABLED
+  ? startOperationalCapacityDetection()
+  : undefined;
 
 let isShuttingDown = false;
 
@@ -22,6 +34,9 @@ function shutdown(signal: NodeJS.Signals) {
   logger.info({ signal }, 'Shutting down API server');
   mediaMaintenance?.stop();
   rentalMaintenance?.stop();
+  rentalReadinessDetection?.stop();
+  overdueRentalDetection?.stop();
+  operationalCapacityDetection?.stop();
 
   server.close((error) => {
     if (error) {

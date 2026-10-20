@@ -527,7 +527,7 @@ export const openApiDocument = {
       get: {
         tags: ['Agent'],
         security: [{ bearerAuth: [] }],
-        summary: 'Read an Ops Agent case owned by the authenticated employee',
+        summary: 'Read an owned interactive case or an accessible branch operational case',
         parameters: [
           {
             name: 'caseId',
@@ -543,6 +543,162 @@ export const openApiDocument = {
           '403': { $ref: '#/components/responses/Forbidden' },
           '404': { $ref: '#/components/responses/NotFound' },
           '503': { description: 'Agent dependency unavailable' },
+        },
+      },
+    },
+    '/agent/cases': {
+      get: {
+        tags: ['Agent'],
+        security: [{ bearerAuth: [] }],
+        summary: 'List branch-scoped operational Agent Cases',
+        parameters: [
+          { name: 'branchId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          { name: 'state', in: 'query', schema: { type: 'string' } },
+          {
+            name: 'ownership',
+            in: 'query',
+            schema: { type: 'string', enum: ['unassigned', 'mine', 'all'], default: 'all' },
+          },
+          { name: 'cursor', in: 'query', schema: { type: 'string' } },
+          { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100 } },
+        ],
+        responses: {
+          '200': { description: 'Operational Agent Case queue' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '503': { description: 'Agent dependency unavailable' },
+        },
+      },
+    },
+    '/agent/cases/{caseId}/claim': {
+      post: {
+        tags: ['Agent'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Claim an unassigned operational Agent Case',
+        parameters: [
+          {
+            name: 'caseId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['expectedVersion'],
+                properties: { expectedVersion: { type: 'integer', minimum: 1 } },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Agent Case claimed' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/agent/cases/{caseId}/release': {
+      post: {
+        tags: ['Agent'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Release an owned operational Agent Case',
+        parameters: [
+          {
+            name: 'caseId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['expectedVersion'],
+                properties: { expectedVersion: { type: 'integer', minimum: 1 } },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Agent Case released' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/agent/cases/{caseId}/analyze': {
+      post: {
+        tags: ['Agent'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Create a read-only rental readiness recommendation for a claimed case',
+        parameters: [
+          {
+            name: 'caseId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['expectedVersion'],
+                properties: { expectedVersion: { type: 'integer', minimum: 1 } },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Read-only recommendation is ready; no rental data was changed' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '409': { $ref: '#/components/responses/Conflict' },
+          '503': { description: 'Analysis or its dependency is unavailable' },
+        },
+      },
+    },
+    '/agent/cases/{caseId}/confirmations': {
+      post: {
+        tags: ['Agent'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Revalidate and freeze the recommended rental readiness reallocation',
+        parameters: [
+          {
+            name: 'caseId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['analysisId', 'expectedVersion'],
+                properties: {
+                  analysisId: { type: 'string', format: 'uuid' },
+                  expectedVersion: { type: 'integer', minimum: 1 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Frozen confirmation is ready for an operational decision' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '409': { $ref: '#/components/responses/Conflict' },
+          '503': { description: 'Readiness execution is disabled or unavailable' },
         },
       },
     },

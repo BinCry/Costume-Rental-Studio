@@ -3,10 +3,14 @@ import { pageResult } from '../../common/http/query.js';
 import { prisma } from '../../database/prisma.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { assertPermission, requireActor, type AuthenticatedActor } from '../auth/authorization.js';
+import { lockActiveBranch } from '../branches/branch.service.js';
 import type {
   CompletionInput,
+  CreateCapacityWindowInput,
   CreateUnitBlockInput,
+  ListCapacityWindowsInput,
   ListUnitBlocksInput,
+  UpdateCapacityWindowInput,
   UpdateUnitBlockInput,
 } from './scheduling.schema.js';
 
@@ -44,6 +48,24 @@ async function lockUnit(tx: Prisma.TransactionClient, id: string) {
   >`SELECT id FROM costume_units WHERE id = ${id}::uuid FOR UPDATE`;
   if (!rows.length) throw new AppError(404, 'UNIT_NOT_FOUND', 'Unit not found');
   return tx.costumeUnit.findUniqueOrThrow({ where: { id } });
+}
+async function assertCapacityWindowBranch(
+  tx: Prisma.TransactionClient,
+  capacityWindowId: string | null | undefined,
+  branchId: string,
+) {
+  if (!capacityWindowId) return;
+  const window = await tx.branchCapacityWindow.findUnique({
+    where: { id: capacityWindowId },
+    select: { branchId: true },
+  });
+  if (!window) throw new AppError(404, 'CAPACITY_WINDOW_NOT_FOUND', 'Capacity window not found');
+  if (window.branchId !== branchId)
+    throw new AppError(
+      409,
+      'CAPACITY_WINDOW_BRANCH_MISMATCH',
+      'Capacity window must belong to the unit current branch',
+    );
 }
 async function assertNoConflict(
   tx: Prisma.TransactionClient,
@@ -151,6 +173,7 @@ export async function createUnitBlock(actor: AuthenticatedActor, input: CreateUn
   return prisma.$transaction(async (tx) => {
     const unit = await lockUnit(tx, input.unitId);
     assertManage(actor, unit.currentBranchId);
+    await assertCapacityWindowBranch(tx, input.capacityWindowId, unit.currentBranchId);
     await assertNoConflict(tx, unit.id, input.blockedFrom, input.blockedUntil);
     const result = await tx.unitBlock.create({
       data: {
@@ -174,8 +197,6 @@ export async function updateUnitBlock(
   return prisma.$transaction(async (tx) => {
     const block = await lockBlock(tx, id);
     assertManage(actor, block.unit.currentBranchId);
-    if (block.status !== 'PLANNED')
-      throw new AppError(409, 'UNIT_BLOCK_LOCKED', 'Only planned blocks can be updated');
     if (block.updatedAt.getTime() !== input.expectedUpdatedAt.getTime())
       throw new AppError(
         409,
@@ -184,10 +205,38 @@ export async function updateUnitBlock(
       );
     const { expectedUpdatedAt, ...data } = input;
     void expectedUpdatedAt;
+    if (block.status === 'IN_PROGRESS') {
+      const changedFields = Object.keys(data).filter(
+        (key) => data[key as keyof typeof data] !== undefined,
+      );
+      if (
+        changedFields.length !== 1 ||
+        changedFields[0] !== 'remainingEffortMinutes' ||
+        data.remainingEffortMinutes === null
+      ) {
+        throw new AppError(
+          409,
+          'UNIT_BLOCK_LOCKED',
+          'In-progress blocks only allow a remaining-effort update',
+        );
+      }
+      return tx.unitBlock.update({ where: { id }, data, include: blockInclude() });
+    }
+    if (block.status !== 'PLANNED')
+      throw new AppError(409, 'UNIT_BLOCK_LOCKED', 'Only active blocks can be updated');
+    if (data.remainingEffortMinutes !== undefined)
+      throw new AppError(
+        409,
+        'INVALID_REMAINING_EFFORT',
+        'Remaining effort can only be updated after a block starts',
+      );
     const from = data.blockedFrom ?? block.blockedFrom;
     const until = data.blockedUntil ?? block.blockedUntil;
     if (until <= from)
       throw new AppError(400, 'INVALID_BLOCK_PERIOD', 'blockedUntil must be after blockedFrom');
+    const capacityWindowId =
+      data.capacityWindowId === undefined ? block.capacityWindowId : data.capacityWindowId;
+    await assertCapacityWindowBranch(tx, capacityWindowId, block.unit.currentBranchId);
     await assertNoConflict(tx, block.unitId, from, until, block.id);
     return tx.unitBlock.update({ where: { id }, data, include: blockInclude() });
   }, transactionOptions);
@@ -206,7 +255,11 @@ export async function startUnitBlock(actor: AuthenticatedActor, id: string) {
     await tx.costumeUnit.update({ where: { id: block.unitId }, data: { operationalStatus } });
     const result = await tx.unitBlock.update({
       where: { id },
-      data: { status: 'IN_PROGRESS', startedAt: new Date() },
+      data: {
+        status: 'IN_PROGRESS',
+        startedAt: new Date(),
+        remainingEffortMinutes: block.estimatedEffortMinutes,
+      },
       include: blockInclude(),
     });
     await unitEvent(
@@ -243,6 +296,7 @@ export async function completeUnitBlock(
       where: { id },
       data: {
         status: 'COMPLETED',
+        remainingEffortMinutes: 0,
         finishedAt: new Date(),
         notes: input.notes ?? block.notes,
         costVnd: input.costVnd ?? block.costVnd,
@@ -274,6 +328,7 @@ export async function cancelUnitBlock(actor: AuthenticatedActor, id: string, rea
       where: { id },
       data: {
         status: 'CANCELLED',
+        remainingEffortMinutes: 0,
         notes: block.notes ? `${block.notes}\nCancelled: ${reason}` : `Cancelled: ${reason}`,
       },
       include: blockInclude(),
@@ -287,5 +342,114 @@ export async function cancelUnitBlock(actor: AuthenticatedActor, id: string, rea
       reason,
     );
     return result;
+  }, transactionOptions);
+}
+
+async function assertNoCapacityWindowOverlap(
+  tx: Prisma.TransactionClient,
+  branchId: string,
+  startsAt: Date,
+  endsAt: Date,
+  excludedId?: string,
+) {
+  const overlapping = await tx.branchCapacityWindow.findFirst({
+    where: {
+      branchId,
+      ...(excludedId ? { id: { not: excludedId } } : {}),
+      startsAt: { lt: endsAt },
+      endsAt: { gt: startsAt },
+    },
+    select: { id: true },
+  });
+  if (overlapping)
+    throw new AppError(
+      409,
+      'CAPACITY_WINDOW_CONFLICT',
+      'Capacity window overlaps another window for this branch',
+    );
+}
+
+async function lockCapacityWindow(tx: Prisma.TransactionClient, id: string) {
+  const rows = await tx.$queryRaw<
+    { id: string }[]
+  >`SELECT id FROM branch_capacity_windows WHERE id = ${id}::uuid FOR UPDATE`;
+  if (!rows.length)
+    throw new AppError(404, 'CAPACITY_WINDOW_NOT_FOUND', 'Capacity window not found');
+  return tx.branchCapacityWindow.findUniqueOrThrow({ where: { id } });
+}
+
+export async function listCapacityWindows(
+  actor: AuthenticatedActor,
+  query: ListCapacityWindowsInput,
+) {
+  requireActor(actor);
+  assertRead(actor, query.branchId);
+  const where: Prisma.BranchCapacityWindowWhereInput = {
+    branchId: query.branchId,
+    ...(query.from && query.to
+      ? { startsAt: { lt: query.to }, endsAt: { gt: query.from } }
+      : query.from
+        ? { endsAt: { gt: query.from } }
+        : query.to
+          ? { startsAt: { lt: query.to } }
+          : {}),
+  };
+  const [items, totalItems] = await prisma.$transaction([
+    prisma.branchCapacityWindow.findMany({
+      where,
+      orderBy: [{ startsAt: 'asc' }, { id: 'asc' }],
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    }),
+    prisma.branchCapacityWindow.count({ where }),
+  ]);
+  return pageResult(items, totalItems, { ...query, sortBy: 'startsAt', sortOrder: 'asc' });
+}
+
+export async function createCapacityWindow(
+  actor: AuthenticatedActor,
+  input: CreateCapacityWindowInput,
+) {
+  requireActor(actor);
+  assertManage(actor, input.branchId);
+  return prisma.$transaction(async (tx) => {
+    await lockActiveBranch(tx, input.branchId);
+    await assertNoCapacityWindowOverlap(tx, input.branchId, input.startsAt, input.endsAt);
+    return tx.branchCapacityWindow.create({
+      data: { ...input, notes: input.notes ?? null, createdBy: actor.id },
+    });
+  }, transactionOptions);
+}
+
+export async function updateCapacityWindow(
+  actor: AuthenticatedActor,
+  id: string,
+  input: UpdateCapacityWindowInput,
+) {
+  requireActor(actor);
+  return prisma.$transaction(async (tx) => {
+    const current = await lockCapacityWindow(tx, id);
+    assertManage(actor, current.branchId);
+    await lockActiveBranch(tx, current.branchId);
+    if (current.updatedAt.getTime() !== input.expectedUpdatedAt.getTime())
+      throw new AppError(409, 'CAPACITY_WINDOW_VERSION_CONFLICT', 'Capacity window changed');
+    const startsAt = input.startsAt ?? current.startsAt;
+    const endsAt = input.endsAt ?? current.endsAt;
+    if (endsAt <= startsAt)
+      throw new AppError(400, 'INVALID_CAPACITY_WINDOW', 'endsAt must be after startsAt');
+    await assertNoCapacityWindowOverlap(tx, current.branchId, startsAt, endsAt, id);
+    const { expectedUpdatedAt, ...data } = input;
+    void expectedUpdatedAt;
+    return tx.branchCapacityWindow.update({ where: { id }, data });
+  }, transactionOptions);
+}
+
+export async function deleteCapacityWindow(actor: AuthenticatedActor, id: string) {
+  requireActor(actor);
+  return prisma.$transaction(async (tx) => {
+    const current = await lockCapacityWindow(tx, id);
+    assertManage(actor, current.branchId);
+    await tx.branchCapacityWindow.delete({ where: { id } });
+    return { id };
   }, transactionOptions);
 }

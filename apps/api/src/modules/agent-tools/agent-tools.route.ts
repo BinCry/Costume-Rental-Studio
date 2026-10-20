@@ -32,6 +32,7 @@ function normalizedFailure(error: unknown, requestId: string) {
     'TRANSFER_NOT_FOUND',
     'REFUND_NOT_FOUND',
     'AGENT_CASE_RESOURCE_NOT_FOUND',
+    'CUSTOMER_INTERACTION_NOT_FOUND',
   ]);
   const versionConflictCodes = new Set([
     'ORDER_VERSION_CONFLICT',

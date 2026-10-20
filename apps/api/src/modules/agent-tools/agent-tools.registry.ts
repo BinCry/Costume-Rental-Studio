@@ -9,6 +9,7 @@ export interface AgentToolDefinition {
     | 'AGENT_READ_TOOLS_ENABLED'
     | 'AGENT_SCHEDULING_WRITE_ENABLED'
     | 'AGENT_RENTAL_WRITE_ENABLED'
+    | 'AGENT_CRM_WRITE_ENABLED'
     | 'AGENT_TRANSFER_WRITE_ENABLED'
     | 'AGENT_FINANCIAL_WRITE_ENABLED';
 }
@@ -29,6 +30,34 @@ export const agentToolRegistry: Readonly<Record<AgentToolName, AgentToolDefiniti
     name: 'check_availability',
     mode: 'read',
     requiredPermission: { module: 'rentals', action: 'read' },
+    retrySafe: true,
+    featureFlag: 'AGENT_READ_TOOLS_ENABLED',
+  },
+  get_rental_readiness_context: {
+    name: 'get_rental_readiness_context',
+    mode: 'read',
+    requiredPermission: { module: 'rentals', action: 'read' },
+    retrySafe: true,
+    featureFlag: 'AGENT_READ_TOOLS_ENABLED',
+  },
+  get_overdue_rental_context: {
+    name: 'get_overdue_rental_context',
+    mode: 'read',
+    requiredPermission: { module: 'rentals', action: 'read' },
+    retrySafe: true,
+    featureFlag: 'AGENT_READ_TOOLS_ENABLED',
+  },
+  get_customer_interaction_by_idempotency_key: {
+    name: 'get_customer_interaction_by_idempotency_key',
+    mode: 'read',
+    requiredPermission: { module: 'crm', action: 'read' },
+    retrySafe: true,
+    featureFlag: 'AGENT_READ_TOOLS_ENABLED',
+  },
+  get_operational_capacity_context: {
+    name: 'get_operational_capacity_context',
+    mode: 'read',
+    requiredPermission: { module: 'inventory', action: 'read' },
     retrySafe: true,
     featureFlag: 'AGENT_READ_TOOLS_ENABLED',
   },
@@ -129,6 +158,13 @@ export const agentToolRegistry: Readonly<Record<AgentToolName, AgentToolDefiniti
     requiredPermission: { module: 'rentals', action: 'manage' },
     retrySafe: false,
     featureFlag: 'AGENT_RENTAL_WRITE_ENABLED',
+  },
+  record_overdue_follow_up: {
+    name: 'record_overdue_follow_up',
+    mode: 'write',
+    requiredPermission: { module: 'crm', action: 'manage' },
+    retrySafe: false,
+    featureFlag: 'AGENT_CRM_WRITE_ENABLED',
   },
   create_stock_transfer: {
     name: 'create_stock_transfer',

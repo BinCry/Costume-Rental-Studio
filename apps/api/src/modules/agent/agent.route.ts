@@ -5,16 +5,33 @@ import { z } from 'zod';
 import { AppError } from '../../common/errors/app-error.js';
 import { sendError, sendSuccess } from '../../common/http/response.js';
 import { requireAuthentication } from '../auth/auth.middleware.js';
-import { requireActiveEmployee } from '../auth/authorization.js';
-import type { AuthenticatedActor } from '../auth/authorization.js';
-import { agentDecisionInputSchema, agentMessageInputSchema } from './agent.schema.js';
 import {
-  cancelAgentCase,
+  hasPermission,
+  requireActiveEmployee,
+  type AuthenticatedActor,
+} from '../auth/authorization.js';
+import {
+  agentCaseListQuerySchema,
+  agentCaseAnalysisInputSchema,
+  agentCaseVersionInputSchema,
+  agentDecisionInputSchema,
+  agentMessageInputSchema,
+  agentOverdueFollowUpConfirmationInputSchema,
+  agentReadinessConfirmationInputSchema,
+} from './agent.schema.js';
+import {
   approveAgentAction,
+  analyzeAgentCase,
+  cancelAgentCase,
+  claimAgentCase,
   confirmAgentCase,
   getAgentCase,
+  listAgentCases,
+  prepareOverdueFollowUpConfirmation,
+  prepareReadinessConfirmation,
   rejectAgentCaseConfirmation,
   rejectAgentAction,
+  releaseAgentCase,
   sendAgentMessage,
 } from './agent.service.js';
 
@@ -24,6 +41,21 @@ const requireOpsAgentAccess: RequestHandler = (_req, res, next) => {
   requireActiveEmployee(res.locals.actor as AuthenticatedActor | undefined);
   next();
 };
+
+function requireAgentPermission(actor: AuthenticatedActor, action: 'read' | 'manage') {
+  const allowed =
+    hasPermission(actor, { module: 'agents', action }) ||
+    actor.roleAssignments.some(
+      (assignment) =>
+        assignment.branchId &&
+        assignment.branch?.status === 'ACTIVE' &&
+        assignment.role.isActive &&
+        assignment.role.rolePermissions.some(
+          ({ permission }) => permission.module === 'agents' && permission.action === action,
+        ),
+    );
+  if (!allowed) throw new AppError(403, 'FORBIDDEN', `Permission denied for ${action} agents`);
+}
 
 const agentRateLimit = rateLimit({
   windowMs: 60_000,
@@ -57,21 +89,117 @@ agentRouter.post(
   },
 );
 
-agentRouter.get(
-  '/cases/:caseId',
+agentRouter.get('/cases', requireAuthentication, async (req, res) => {
+  const actor = res.locals.actor as AuthenticatedActor;
+  requireAgentPermission(actor, 'read');
+  const input = agentCaseListQuerySchema.safeParse(req.query);
+  if (!input.success) throw new AppError(400, 'VALIDATION_ERROR', 'Invalid agent case query');
+  const result = await listAgentCases(
+    input.data,
+    actor,
+    typeof req.id === 'string' ? req.id : undefined,
+  );
+  return sendSuccess(res, result, 'Agent case queue retrieved');
+});
+
+agentRouter.get('/cases/:caseId', requireAuthentication, requireOpsAgentAccess, async (req, res) => {
+  const caseId = z.uuid().safeParse(req.params.caseId);
+  if (!caseId.success) throw new AppError(400, 'VALIDATION_ERROR', 'Invalid agent case identifier');
+  const result = await getAgentCase(
+    caseId.data,
+    parseId(req.header('X-Branch-Id'), 'Invalid agent branch identifier'),
+    res.locals.actor as AuthenticatedActor,
+    typeof req.id === 'string' ? req.id : undefined,
+  );
+  return sendSuccess(res, result, 'Agent case retrieved');
+});
+
+agentRouter.post('/cases/:caseId/claim', requireAuthentication, async (req, res) => {
+  const actor = res.locals.actor as AuthenticatedActor;
+  requireAgentPermission(actor, 'manage');
+  const input = agentCaseVersionInputSchema.safeParse(req.body);
+  if (!input.success) throw new AppError(400, 'VALIDATION_ERROR', 'Invalid agent case version');
+  const result = await claimAgentCase(
+    parseId(req.params.caseId, 'Invalid agent case identifier'),
+    input.data.expectedVersion,
+    actor,
+    typeof req.id === 'string' ? req.id : undefined,
+  );
+  return sendSuccess(res, result, 'Agent case claimed');
+});
+
+agentRouter.post('/cases/:caseId/release', requireAuthentication, async (req, res) => {
+  const actor = res.locals.actor as AuthenticatedActor;
+  requireAgentPermission(actor, 'manage');
+  const input = agentCaseVersionInputSchema.safeParse(req.body);
+  if (!input.success) throw new AppError(400, 'VALIDATION_ERROR', 'Invalid agent case version');
+  const result = await releaseAgentCase(
+    parseId(req.params.caseId, 'Invalid agent case identifier'),
+    input.data.expectedVersion,
+    actor,
+    typeof req.id === 'string' ? req.id : undefined,
+  );
+  return sendSuccess(res, result, 'Agent case released');
+});
+
+agentRouter.post(
+  '/cases/:caseId/analyze',
   requireAuthentication,
-  requireOpsAgentAccess,
+  agentRateLimit,
   async (req, res) => {
-    const caseId = z.uuid().safeParse(req.params.caseId);
-    if (!caseId.success)
-      throw new AppError(400, 'VALIDATION_ERROR', 'Invalid agent case identifier');
-    const result = await getAgentCase(
-      caseId.data,
-      parseId(req.header('X-Branch-Id'), 'Invalid agent branch identifier'),
-      res.locals.actor as AuthenticatedActor,
+    const actor = res.locals.actor as AuthenticatedActor;
+    requireAgentPermission(actor, 'manage');
+    const input = agentCaseAnalysisInputSchema.safeParse(req.body);
+    if (!input.success)
+      throw new AppError(400, 'VALIDATION_ERROR', 'Invalid agent analysis request');
+    const result = await analyzeAgentCase(
+      parseId(req.params.caseId, 'Invalid agent case identifier'),
+      input.data.expectedVersion,
+      actor,
       typeof req.id === 'string' ? req.id : undefined,
     );
-    return sendSuccess(res, result, 'Agent case retrieved');
+    return sendSuccess(res, result, 'Agent case analysis completed');
+  },
+);
+
+agentRouter.post(
+  '/cases/:caseId/confirmations',
+  requireAuthentication,
+  agentRateLimit,
+  async (req, res) => {
+    const actor = res.locals.actor as AuthenticatedActor;
+    requireAgentPermission(actor, 'manage');
+    const input = agentReadinessConfirmationInputSchema.safeParse(req.body);
+    if (!input.success)
+      throw new AppError(400, 'VALIDATION_ERROR', 'Invalid readiness confirmation request');
+    const result = await prepareReadinessConfirmation(
+      parseId(req.params.caseId, 'Invalid agent case identifier'),
+      input.data.analysisId,
+      input.data.expectedVersion,
+      actor,
+      typeof req.id === 'string' ? req.id : undefined,
+    );
+    return sendSuccess(res, result, 'Agent confirmation prepared');
+  },
+);
+
+agentRouter.post(
+  '/cases/:caseId/overdue-follow-ups/confirmations',
+  requireAuthentication,
+  agentRateLimit,
+  async (req, res) => {
+    const actor = res.locals.actor as AuthenticatedActor;
+    requireAgentPermission(actor, 'manage');
+    const input = agentOverdueFollowUpConfirmationInputSchema.safeParse(req.body);
+    if (!input.success)
+      throw new AppError(400, 'VALIDATION_ERROR', 'Invalid overdue follow-up confirmation request');
+    const result = await prepareOverdueFollowUpConfirmation(
+      parseId(req.params.caseId, 'Invalid agent case identifier'),
+      input.data,
+      actor,
+      typeof req.id === 'string' ? req.id : undefined,
+    );
+    return sendSuccess(res, result, 'Overdue follow-up confirmation prepared');
   },
 );
 

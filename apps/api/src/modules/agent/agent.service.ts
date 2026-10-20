@@ -1,18 +1,22 @@
 import { AppError } from '../../common/errors/app-error.js';
 import { env } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
-import { assertPermission } from '../auth/authorization.js';
+import { assertPermission, hasPermission, type AuthenticatedActor } from '../auth/authorization.js';
 import {
+  knowledgeActorContext,
   opsAgentKnowledgeActorContext,
   type KnowledgeActorContext,
 } from '../knowledge/knowledge.service.js';
-import type { AuthenticatedActor } from '../auth/authorization.js';
 import {
+  aiAgentCaseListResponseSchema,
   aiAgentCaseResponseSchema,
   aiAgentResponseSchema,
+  type AgentCaseListData,
+  type AgentCaseListQuery,
   type AgentCaseResult,
   type AgentDecisionInput,
   type AgentMessageInput,
+  type AgentOverdueFollowUpConfirmationInput,
 } from './agent.schema.js';
 
 const MAX_AI_RESPONSE_BYTES = 1_000_000;
@@ -43,28 +47,120 @@ async function readBoundedBody(response: Response): Promise<string> {
   }
 }
 
-function upstreamError(status: number): AppError {
+async function upstreamError(response: Response): Promise<AppError> {
+  const status = response.status;
   if (status === 401) return new AppError(401, 'INVALID_ACCESS_TOKEN', 'Access token is invalid');
   if (status === 403) return new AppError(403, 'FORBIDDEN', 'Agent access is not permitted');
   if (status === 404) return new AppError(404, 'AGENT_CASE_NOT_FOUND', 'Agent case not found');
-  if (status === 409)
+  if (status === 400 || status === 422)
+    return new AppError(400, 'VALIDATION_ERROR', 'Agent request is invalid');
+  if (status === 409) {
+    const allowedCodes = new Set([
+      'AGENT_CASE_ALREADY_CLAIMED',
+      'AGENT_CASE_VERSION_CONFLICT',
+      'AGENT_CASE_NOT_OWNER',
+      'AGENT_CASE_RELEASE_FORBIDDEN',
+      'AGENT_CASE_CLAIM_FORBIDDEN',
+      'AGENT_CASE_NOT_CLAIMED',
+      'AGENT_CASE_BUSY',
+      'AGENT_ANALYSIS_NOT_SUPPORTED',
+      'AGENT_ANALYSIS_STALE',
+      'AGENT_FINDING_NOT_OPEN',
+      'AGENT_RECOMMENDATION_NOT_EXECUTABLE',
+    ]);
+    try {
+      const body = JSON.parse(await readBoundedBody(response)) as {
+        error?: { code?: unknown; message?: unknown; details?: unknown };
+      };
+      const code = typeof body.error?.code === 'string' ? body.error.code : '';
+      if (allowedCodes.has(code)) {
+        const message =
+          typeof body.error?.message === 'string'
+            ? body.error.message
+            : 'Agent case update conflicted';
+        const details =
+          body.error?.details && typeof body.error.details === 'object'
+            ? (body.error.details as Record<string, unknown>)
+            : undefined;
+        return new AppError(409, code, message, details);
+      }
+    } catch {
+      // Fall through to the stable generic conflict contract.
+    }
     return new AppError(409, 'AGENT_CASE_CONFLICT', 'Agent case cannot be resumed');
+  }
   if (status === 504) return new AppError(504, 'AI_SERVICE_TIMEOUT', 'Agent service timed out');
   if (status === 429) return new AppError(429, 'AI_RATE_LIMITED', 'Agent service is rate limited');
+  if (status === 503) {
+    try {
+      const body = JSON.parse(await readBoundedBody(response)) as {
+        error?: { code?: unknown; message?: unknown };
+      };
+      const code = body.error?.code;
+      if (
+        code === 'AGENT_READINESS_ANALYSIS_DISABLED' ||
+        code === 'AGENT_ANALYSIS_DEPENDENCY_FAILURE'
+      ) {
+        return new AppError(
+          503,
+          code,
+          typeof body.error?.message === 'string'
+            ? body.error.message
+            : 'Agent analysis is unavailable',
+        );
+      }
+    } catch {
+      // Preserve the generic unavailable contract below.
+    }
+  }
   return new AppError(503, 'AI_SERVICE_UNAVAILABLE', 'Agent service is unavailable');
 }
 
-function agentHeaders(actor: KnowledgeActorContext, branchId: string, requestId?: string): Headers {
+function branchIdsWithPermission(actor: AuthenticatedActor, action: 'read' | 'manage') {
+  return [
+    ...new Set(
+      actor.roleAssignments
+        .filter(
+          (assignment) =>
+            assignment.branchId &&
+            assignment.branch?.status === 'ACTIVE' &&
+            assignment.role.isActive &&
+            assignment.role.rolePermissions.some(
+              ({ permission }) =>
+                permission.module === 'agents' &&
+                permission.action === action &&
+                permission.scope === 'BRANCH',
+            ),
+        )
+        .map((assignment) => assignment.branchId!),
+    ),
+  ];
+}
+
+function agentHeaders(
+  actor: AuthenticatedActor,
+  knowledge: KnowledgeActorContext,
+  requestId?: string,
+  branchId?: string,
+): Headers {
   if (!env.AI_INTERNAL_API_KEY) {
     throw new AppError(503, 'AI_SERVICE_NOT_CONFIGURED', 'Agent service is not configured');
   }
+  const readBranchIds = branchIdsWithPermission(actor, 'read');
+  const manageBranchIds = branchIdsWithPermission(actor, 'manage');
+  const readAll = hasPermission(actor, { module: 'agents', action: 'read' });
+  const manageAll = hasPermission(actor, { module: 'agents', action: 'manage' });
   const headers = new Headers({
     'Content-Type': 'application/json',
     'X-AI-Service-Key': env.AI_INTERNAL_API_KEY,
-    'X-Actor-Id': actor.userId,
-    'X-Knowledge-Audiences': actor.audiences.join(','),
-    'X-Case-Branch-Id': branchId,
+    'X-Actor-Id': knowledge.userId,
+    'X-Knowledge-Audiences': knowledge.audiences.join(','),
+    'X-Agent-Read-Branch-Ids': readBranchIds.join(','),
+    'X-Agent-Manage-Branch-Ids': manageBranchIds.join(','),
+    'X-Agent-Read-All': String(readAll),
+    'X-Agent-Manage-All': String(manageAll),
   });
+  if (branchId) headers.set('X-Case-Branch-Id', branchId);
   if (requestId) headers.set('X-Request-Id', requestId);
   return headers;
 }
@@ -72,8 +168,8 @@ function agentHeaders(actor: KnowledgeActorContext, branchId: string, requestId?
 async function authorizeAgentBranch(
   actor: AuthenticatedActor,
   branchId: string,
+  agentPermission?: 'read' | 'manage',
 ): Promise<KnowledgeActorContext> {
-  const knowledgeActor = opsAgentKnowledgeActorContext(actor);
   const branch = await prisma.branch.findUnique({
     where: { id: branchId },
     select: { status: true },
@@ -81,6 +177,10 @@ async function authorizeAgentBranch(
   if (branch?.status !== 'ACTIVE') {
     throw new AppError(400, 'INVALID_AGENT_BRANCH', 'Selected branch is not active');
   }
+  if (agentPermission && hasPermission(actor, { module: 'agents', action: agentPermission, branchId })) {
+    return { userId: actor.id, audiences: ['staff_internal', 'shared'] };
+  }
+  const knowledgeActor = opsAgentKnowledgeActorContext(actor);
   assertPermission(actor, {
     module: 'knowledge',
     action: 'read',
@@ -93,26 +193,34 @@ async function authorizeAgentBranch(
 async function callAgent(
   path: string,
   init: RequestInit,
-  actor: KnowledgeActorContext,
-  branchId: string,
+  actor: AuthenticatedActor,
   requestId?: string,
   responseEnvelope: 'message' | 'case' = 'case',
+  scopeOnly = false,
+  branchId?: string,
+  knowledgeActor?: KnowledgeActorContext,
 ): Promise<AgentCaseResult> {
   if (!env.AI_SERVICE_URL) {
     throw new AppError(503, 'AI_SERVICE_NOT_CONFIGURED', 'Agent service is not configured');
   }
+  const knowledge =
+    knowledgeActor ??
+    (scopeOnly
+      ? { userId: actor.id, audiences: ['staff_internal', 'shared'] }
+      : knowledgeActorContext(actor));
+  const headers = agentHeaders(actor, knowledge, requestId, branchId);
   let response: Response;
   try {
     response = await fetch(new URL(path, env.AI_SERVICE_URL), {
       ...init,
-      headers: agentHeaders(actor, branchId, requestId),
+      headers,
       signal: AbortSignal.timeout(env.AI_SERVICE_TIMEOUT_MS),
     });
   } catch (error: unknown) {
     if (isTimeout(error)) throw new AppError(504, 'AI_SERVICE_TIMEOUT', 'Agent service timed out');
     throw new AppError(503, 'AI_SERVICE_UNAVAILABLE', 'Agent service is unavailable');
   }
-  if (!response.ok) throw upstreamError(response.status);
+  if (!response.ok) throw await upstreamError(response);
   let body: unknown;
   try {
     body = JSON.parse(await readBoundedBody(response)) as unknown;
@@ -139,10 +247,12 @@ export async function sendAgentMessage(
   return callAgent(
     '/api/v1/agent/messages',
     { method: 'POST', body: JSON.stringify(input) },
-    knowledgeActor,
-    input.branchId,
+    actor,
     requestId,
     'message',
+    input.caseId !== undefined,
+    input.branchId,
+    knowledgeActor,
   );
 }
 
@@ -155,25 +265,35 @@ export async function getAgentCase(
   return callAgent(
     `/api/v1/agent/cases/${encodeURIComponent(caseId)}`,
     { method: 'GET' },
-    await authorizeAgentBranch(actor, branchId),
-    branchId,
+    actor,
     requestId,
+    'case',
+    true,
+    branchId,
+    await authorizeAgentBranch(actor, branchId, 'read'),
   );
 }
 
 async function caseAction(
   path: string,
-  branchId: string,
   actor: AuthenticatedActor,
   requestId?: string,
-  input?: AgentDecisionInput,
+  input?: unknown,
+  scopeOnly = true,
+  branchId?: string,
 ): Promise<AgentCaseResult> {
+  const knowledgeActor = branchId
+    ? await authorizeAgentBranch(actor, branchId, 'manage')
+    : undefined;
   return callAgent(
     path,
     { method: 'POST', body: input ? JSON.stringify(input) : undefined },
-    await authorizeAgentBranch(actor, branchId),
-    branchId,
+    actor,
     requestId,
+    'case',
+    scopeOnly,
+    branchId,
+    knowledgeActor,
   );
 }
 
@@ -186,9 +306,11 @@ export async function confirmAgentCase(
 ): Promise<AgentCaseResult> {
   return caseAction(
     `/api/v1/agent/cases/${encodeURIComponent(caseId)}/confirmations/${encodeURIComponent(confirmationId)}/confirm`,
-    branchId,
     actor,
     requestId,
+    undefined,
+    true,
+    branchId,
   );
 }
 
@@ -201,9 +323,11 @@ export async function rejectAgentCaseConfirmation(
 ): Promise<AgentCaseResult> {
   return caseAction(
     `/api/v1/agent/cases/${encodeURIComponent(caseId)}/confirmations/${encodeURIComponent(confirmationId)}/reject`,
-    branchId,
     actor,
     requestId,
+    undefined,
+    true,
+    branchId,
   );
 }
 
@@ -215,9 +339,11 @@ export async function cancelAgentCase(
 ): Promise<AgentCaseResult> {
   return caseAction(
     `/api/v1/agent/cases/${encodeURIComponent(caseId)}/cancel`,
-    branchId,
     actor,
     requestId,
+    undefined,
+    true,
+    branchId,
   );
 }
 
@@ -230,10 +356,11 @@ export async function approveAgentAction(
 ): Promise<AgentCaseResult> {
   return caseAction(
     `/api/v1/agent/approvals/${encodeURIComponent(approvalId)}/approve`,
-    branchId,
     actor,
     requestId,
     input,
+    true,
+    branchId,
   );
 }
 
@@ -246,9 +373,149 @@ export async function rejectAgentAction(
 ): Promise<AgentCaseResult> {
   return caseAction(
     `/api/v1/agent/approvals/${encodeURIComponent(approvalId)}/reject`,
-    branchId,
     actor,
     requestId,
     input,
+    true,
+    branchId,
+  );
+}
+
+export async function listAgentCases(
+  input: AgentCaseListQuery,
+  actor: AuthenticatedActor,
+  requestId?: string,
+): Promise<AgentCaseListData> {
+  const query = new URLSearchParams({ ownership: input.ownership, limit: String(input.limit) });
+  if (input.branchId) query.set('branchId', input.branchId);
+  if (input.state) query.set('state', input.state);
+  if (input.cursor) query.set('cursor', input.cursor);
+  if (!env.AI_SERVICE_URL) {
+    throw new AppError(503, 'AI_SERVICE_NOT_CONFIGURED', 'Agent service is not configured');
+  }
+  const headers = agentHeaders(
+    actor,
+    { userId: actor.id, audiences: ['staff_internal', 'shared'] },
+    requestId,
+  );
+  let response: Response;
+  try {
+    response = await fetch(new URL(`/api/v1/agent/cases?${query}`, env.AI_SERVICE_URL), {
+      method: 'GET',
+      headers,
+      signal: AbortSignal.timeout(env.AI_SERVICE_TIMEOUT_MS),
+    });
+  } catch (error: unknown) {
+    if (isTimeout(error)) throw new AppError(504, 'AI_SERVICE_TIMEOUT', 'Agent service timed out');
+    throw new AppError(503, 'AI_SERVICE_UNAVAILABLE', 'Agent service is unavailable');
+  }
+  if (!response.ok) throw await upstreamError(response);
+  let body: unknown;
+  try {
+    body = JSON.parse(await readBoundedBody(response)) as unknown;
+  } catch (error: unknown) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(503, 'AI_SERVICE_INVALID_RESPONSE', 'Agent service returned invalid data');
+  }
+  const parsed = aiAgentCaseListResponseSchema.safeParse(body);
+  if (!parsed.success)
+    throw new AppError(503, 'AI_SERVICE_INVALID_RESPONSE', 'Agent service returned invalid data');
+  return parsed.data.data;
+}
+
+export async function claimAgentCase(
+  caseId: string,
+  expectedVersion: number,
+  actor: AuthenticatedActor,
+  requestId?: string,
+): Promise<AgentCaseResult> {
+  return caseAction(
+    `/api/v1/agent/cases/${encodeURIComponent(caseId)}/claim`,
+    actor,
+    requestId,
+    { expectedVersion },
+    true,
+  );
+}
+
+export async function releaseAgentCase(
+  caseId: string,
+  expectedVersion: number,
+  actor: AuthenticatedActor,
+  requestId?: string,
+): Promise<AgentCaseResult> {
+  return caseAction(
+    `/api/v1/agent/cases/${encodeURIComponent(caseId)}/release`,
+    actor,
+    requestId,
+    { expectedVersion },
+    true,
+  );
+}
+
+export async function analyzeAgentCase(
+  caseId: string,
+  expectedVersion: number,
+  actor: AuthenticatedActor,
+  requestId?: string,
+): Promise<AgentCaseResult> {
+  if (!env.AGENT_READINESS_ANALYSIS_ENABLED) {
+    throw new AppError(
+      503,
+      'AGENT_READINESS_ANALYSIS_DISABLED',
+      'Rental readiness analysis is disabled',
+    );
+  }
+  return caseAction(
+    `/api/v1/agent/cases/${encodeURIComponent(caseId)}/analyze`,
+    actor,
+    requestId,
+    { expectedVersion },
+    true,
+  );
+}
+
+export async function prepareReadinessConfirmation(
+  caseId: string,
+  analysisId: string,
+  expectedVersion: number,
+  actor: AuthenticatedActor,
+  requestId?: string,
+): Promise<AgentCaseResult> {
+  if (!env.AGENT_READINESS_EXECUTION_ENABLED) {
+    throw new AppError(
+      503,
+      'AGENT_READINESS_EXECUTION_DISABLED',
+      'Rental readiness execution is disabled',
+    );
+  }
+  return caseAction(
+    `/api/v1/agent/cases/${encodeURIComponent(caseId)}/confirmations`,
+    actor,
+    requestId,
+    { analysisId, expectedVersion },
+    true,
+  );
+}
+
+export async function prepareOverdueFollowUpConfirmation(
+  caseId: string,
+  input: AgentOverdueFollowUpConfirmationInput,
+  actor: AuthenticatedActor,
+  requestId?: string,
+): Promise<AgentCaseResult> {
+  if (!env.AGENT_CRM_WRITE_ENABLED) {
+    throw new AppError(
+      503,
+      'AGENT_CRM_WRITE_DISABLED',
+      'Agent CRM follow-up recording is disabled',
+    );
+  }
+  return caseAction(
+    `/api/v1/agent/cases/${encodeURIComponent(caseId)}/overdue-follow-ups/confirmations`,
+    actor,
+    requestId,
+    input,
+    true,
   );
 }

@@ -6,14 +6,21 @@ const branchFindUnique = vi.hoisted(() => vi.fn());
 vi.mock('../src/database/prisma.js', () => ({
   prisma: { branch: { findUnique: branchFindUnique } },
 }));
+process.env.AGENT_READINESS_ANALYSIS_ENABLED = 'true';
+process.env.AGENT_CRM_WRITE_ENABLED = 'true';
 
 const {
   approveAgentAction,
+  analyzeAgentCase,
   cancelAgentCase,
+  claimAgentCase,
   confirmAgentCase,
   getAgentCase,
+  listAgentCases,
+  prepareOverdueFollowUpConfirmation,
   rejectAgentAction,
   rejectAgentCaseConfirmation,
+  releaseAgentCase,
   sendAgentMessage,
 } = await import('../src/modules/agent/agent.service.js');
 
@@ -39,6 +46,74 @@ const actor = {
               module: 'knowledge',
               action: 'read',
               scope: 'BRANCH',
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as AuthenticatedActor;
+
+const branchActor = {
+  id: '10000000-0000-4000-8000-000000000006',
+  status: 'ACTIVE',
+  employee: { employmentStatus: 'ACTIVE' },
+  roleAssignments: [
+    {
+      branchId,
+      branch: { status: 'ACTIVE' },
+      role: {
+        actorGroup: 'STAFF',
+        isActive: true,
+        rolePermissions: [
+          {
+            permission: {
+              code: 'agents.read.branch',
+              module: 'agents',
+              action: 'read',
+              scope: 'BRANCH',
+            },
+          },
+          {
+            permission: {
+              code: 'agents.manage.branch',
+              module: 'agents',
+              action: 'manage',
+              scope: 'BRANCH',
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as AuthenticatedActor;
+
+const adminActor = {
+  id: '10000000-0000-4000-8000-000000000007',
+  status: 'ACTIVE',
+  employee: { employmentStatus: 'ACTIVE' },
+  roleAssignments: [
+    {
+      branchId: null,
+      branch: null,
+      role: {
+        actorGroup: 'STAFF',
+        isActive: true,
+        rolePermissions: [
+          {
+            permission: {
+              code: 'agents.read.all',
+              module: 'agents',
+              action: 'read',
+              scope: 'ALL',
+            },
+          },
+          {
+            permission: {
+              code: 'agents.manage.all',
+              module: 'agents',
+              action: 'manage',
+              scope: 'ALL',
             },
           },
         ],
@@ -88,6 +163,92 @@ afterEach(() => vi.unstubAllGlobals());
 beforeEach(() => branchFindUnique.mockResolvedValue({ status: 'ACTIVE' }));
 
 describe('agent service response contracts', () => {
+  it('proxies an overdue follow-up confirmation with the authenticated actor scope', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ success: true, data: result, message: 'Prepared' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const input = {
+      analysisId: '10000000-0000-4000-8000-000000000006',
+      expectedVersion: 3,
+      channel: 'PHONE' as const,
+      outcome: 'NO_ANSWER' as const,
+      occurredAt: new Date('2020-10-19T12:00:00.000Z'),
+      nextFollowUpAt: new Date('2026-10-20T09:00:00.000Z'),
+    };
+
+    await expect(
+      prepareOverdueFollowUpConfirmation(caseId, input, branchActor),
+    ).resolves.toMatchObject({ caseId });
+    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(url.pathname).toBe(`/api/v1/agent/cases/${caseId}/overdue-follow-ups/confirmations`);
+    expect(typeof init.body).toBe('string');
+    if (typeof init.body !== 'string') throw new Error('Expected serialized request body');
+    expect(JSON.parse(init.body) as unknown).toMatchObject({
+      analysisId: input.analysisId,
+      expectedVersion: 3,
+      outcome: 'NO_ANSWER',
+      occurredAt: '2020-10-19T12:00:00.000Z',
+    });
+  });
+
+  it('proxies readiness analysis with the claimed actor scope', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: { ...result, state: 'PLAN_READY' },
+          message: 'Analysis ready',
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(analyzeAgentCase(caseId, 3, branchActor)).resolves.toMatchObject({
+      state: 'PLAN_READY',
+    });
+    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(url.pathname).toBe(`/api/v1/agent/cases/${caseId}/analyze`);
+    expect(typeof init.body).toBe('string');
+    if (typeof init.body !== 'string') throw new Error('Expected a JSON request body');
+    expect(JSON.parse(init.body)).toEqual({ expectedVersion: 3 });
+  });
+  it('does not turn branch agent permission into internal knowledge access for a new case', async () => {
+    await expect(
+      sendAgentMessage({ message: 'Create a new case', branchId }, branchActor),
+    ).rejects.toMatchObject({ statusCode: 403, code: 'FORBIDDEN' });
+  });
+
+  it('preserves claim conflict codes returned by the AI service', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            success: false,
+            error: {
+              code: 'AGENT_CASE_ALREADY_CLAIMED',
+              message: 'Agent case is already claimed',
+            },
+          }),
+          { status: 409, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+
+    await expect(claimAgentCase(caseId, 3, branchActor)).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'AGENT_CASE_ALREADY_CLAIMED',
+    });
+  });
+
   it('parses the nested result envelope returned by the message endpoint', async () => {
     branchFindUnique.mockResolvedValue({ status: 'ACTIVE' });
     const fetchMock = vi
@@ -179,6 +340,108 @@ describe('agent service response contracts', () => {
 
     branchFindUnique.mockResolvedValue({ status: 'ACTIVE' });
     await expect(getAgentCase(caseId, branchId, actor)).resolves.toEqual(result);
+  });
+
+  it('allows branch agent staff to read a case without a separate knowledge grant', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ success: true, data: result, message: 'Agent case retrieved' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getAgentCase(caseId, branchId, branchActor)).resolves.toEqual(result);
+    const [, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    const headers = new Headers(init.headers);
+    expect(headers.get('X-Knowledge-Audiences')).toBe('staff_internal,shared');
+    expect(headers.get('X-Agent-Read-Branch-Ids')).toBe(branchId);
+  });
+
+  it('forwards branch agent scopes and parses the operational case queue', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: { items: [{ ...result, version: 3, branchId }], nextCursor: 'next-page' },
+          message: 'Agent case queue retrieved',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      listAgentCases(
+        { branchId, state: 'NEW', ownership: 'unassigned', cursor: 'cursor-1', limit: 10 },
+        branchActor,
+        'request-1',
+      ),
+    ).resolves.toMatchObject({ nextCursor: 'next-page' });
+
+    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(url.pathname).toBe('/api/v1/agent/cases');
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      ownership: 'unassigned',
+      limit: '10',
+      branchId,
+      state: 'NEW',
+      cursor: 'cursor-1',
+    });
+    const headers = new Headers(init.headers);
+    expect(headers.get('X-Agent-Read-Branch-Ids')).toBe(branchId);
+    expect(headers.get('X-Agent-Manage-Branch-Ids')).toBe(branchId);
+    expect(headers.get('X-Agent-Read-All')).toBe('false');
+    expect(headers.get('X-Agent-Manage-All')).toBe('false');
+    expect(headers.get('X-Request-Id')).toBe('request-1');
+  });
+
+  it('forwards global agent scopes without branch ids for an admin actor', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ success: true, data: result, message: 'Claimed' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await claimAgentCase(caseId, 3, adminActor);
+
+    const [, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    const headers = new Headers(init.headers);
+    expect(headers.get('X-Agent-Read-Branch-Ids')).toBe('');
+    expect(headers.get('X-Agent-Manage-Branch-Ids')).toBe('');
+    expect(headers.get('X-Agent-Read-All')).toBe('true');
+    expect(headers.get('X-Agent-Manage-All')).toBe('true');
+  });
+
+  it.each([
+    {
+      name: 'claim',
+      invoke: () => claimAgentCase(caseId, 3, branchActor),
+      path: `/api/v1/agent/cases/${caseId}/claim`,
+    },
+    {
+      name: 'release',
+      invoke: () => releaseAgentCase(caseId, 4, branchActor),
+      path: `/api/v1/agent/cases/${caseId}/release`,
+    },
+  ])('forwards expectedVersion for $name', async ({ invoke, path }) => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ success: true, data: result, message: 'Updated' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(invoke()).resolves.toEqual(result);
+    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(url.pathname).toBe(path);
+    expect(init.method).toBe('POST');
+    expect(init.body).toBe(JSON.stringify({ expectedVersion: path.endsWith('/claim') ? 3 : 4 }));
   });
 
   it.each([

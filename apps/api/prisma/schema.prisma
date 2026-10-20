@@ -239,6 +239,17 @@ enum InteractionChannel {
   @@map("interaction_channel")
 }
 
+enum OverdueFollowUpOutcome {
+  CONTACTED
+  PROMISED_RETURN
+  NO_ANSWER
+  REFUSED_RETURN
+  REQUESTED_EXTENSION
+  OTHER
+
+  @@map("overdue_follow_up_outcome")
+}
+
 enum CrmCaseEventType {
   CREATED
   STATUS_CHANGED
@@ -381,27 +392,28 @@ model Employee {
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  user                 User                  @relation("EmployeeUser", fields: [userId], references: [id], onDelete: Cascade)
-  creator              User                  @relation("EmployeeCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict)
-  unitEventsRecorded   UnitEvent[]
-  unitBlocksAssigned   UnitBlock[]           @relation("UnitBlockAssignee")
-  unitBlocksCreated    UnitBlock[]           @relation("UnitBlockCreator")
-  transfersRequested   StockTransfer[]       @relation("TransferRequester")
-  transfersApproved    StockTransfer[]       @relation("TransferApprover")
-  transfersShipped     StockTransfer[]       @relation("TransferShipper")
-  transfersReceived    StockTransfer[]       @relation("TransferReceiver")
-  transfersEnded       StockTransfer[]       @relation("TransferEnder")
-  pickupsProcessed     RentalOrder[]         @relation("RentalOrderPickupProcessor")
-  returnsProcessed     RentalOrder[]         @relation("RentalOrderReturnProcessor")
-  orderItemsAllocated  RentalOrderItem[]
-  paymentsRecorded     Payment[]
-  refundsApproved      Refund[]              @relation("RefundApprover")
-  customerInteractions CustomerInteraction[]
-  crmCasesOwned        CrmCase[]             @relation("CrmCaseOwner")
-  crmCasesCreated      CrmCase[]             @relation("CrmCaseCreator")
-  caseHistoryFromOwner CrmCaseHistory[]      @relation("CrmHistoryFromOwner")
-  caseHistoryToOwner   CrmCaseHistory[]      @relation("CrmHistoryToOwner")
-  caseHistoryActed     CrmCaseHistory[]      @relation("CrmHistoryActor")
+  user                   User                   @relation("EmployeeUser", fields: [userId], references: [id], onDelete: Cascade)
+  creator                User                   @relation("EmployeeCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict)
+  unitEventsRecorded     UnitEvent[]
+  unitBlocksAssigned     UnitBlock[]            @relation("UnitBlockAssignee")
+  unitBlocksCreated      UnitBlock[]            @relation("UnitBlockCreator")
+  capacityWindowsCreated BranchCapacityWindow[] @relation("CapacityWindowCreator")
+  transfersRequested     StockTransfer[]        @relation("TransferRequester")
+  transfersApproved      StockTransfer[]        @relation("TransferApprover")
+  transfersShipped       StockTransfer[]        @relation("TransferShipper")
+  transfersReceived      StockTransfer[]        @relation("TransferReceiver")
+  transfersEnded         StockTransfer[]        @relation("TransferEnder")
+  pickupsProcessed       RentalOrder[]          @relation("RentalOrderPickupProcessor")
+  returnsProcessed       RentalOrder[]          @relation("RentalOrderReturnProcessor")
+  orderItemsAllocated    RentalOrderItem[]
+  paymentsRecorded       Payment[]
+  refundsApproved        Refund[]               @relation("RefundApprover")
+  customerInteractions   CustomerInteraction[]
+  crmCasesOwned          CrmCase[]              @relation("CrmCaseOwner")
+  crmCasesCreated        CrmCase[]              @relation("CrmCaseCreator")
+  caseHistoryFromOwner   CrmCaseHistory[]       @relation("CrmHistoryFromOwner")
+  caseHistoryToOwner     CrmCaseHistory[]       @relation("CrmHistoryToOwner")
+  caseHistoryActed       CrmCaseHistory[]       @relation("CrmHistoryActor")
 
   @@map("employees")
 }
@@ -419,14 +431,15 @@ model Branch {
 
   roleAssignments    UserRoleAssignment[]
   costumeUnits       CostumeUnit[]
-  unitEventsFrom     UnitEvent[]           @relation("UnitEventFromBranch")
-  unitEventsTo       UnitEvent[]           @relation("UnitEventToBranch")
-  transfersFrom      StockTransfer[]       @relation("TransferFromBranch")
-  transfersTo        StockTransfer[]       @relation("TransferToBranch")
+  unitEventsFrom     UnitEvent[]            @relation("UnitEventFromBranch")
+  unitEventsTo       UnitEvent[]            @relation("UnitEventToBranch")
+  transfersFrom      StockTransfer[]        @relation("TransferFromBranch")
+  transfersTo        StockTransfer[]        @relation("TransferToBranch")
   rentalOrders       RentalOrder[]
   preferredCustomers Customer[]
   interactions       CustomerInteraction[]
   crmCases           CrmCase[]
+  capacityWindows    BranchCapacityWindow[]
 
   @@map("branches")
 }
@@ -623,28 +636,53 @@ model UnitEvent {
 }
 
 model UnitBlock {
-  id           String          @id @default(uuid()) @db.Uuid
-  unitId       String          @map("unit_id") @db.Uuid
-  blockType    UnitBlockType   @map("block_type")
-  status       UnitBlockStatus @default(PLANNED)
-  blockedFrom  DateTime        @map("blocked_from") @db.Timestamptz(6)
-  blockedUntil DateTime        @map("blocked_until") @db.Timestamptz(6)
-  assignedTo   String?         @map("assigned_to") @db.Uuid
-  costVnd      BigInt?         @map("cost_vnd")
-  reason       String          @db.Text
-  notes        String?         @db.Text
-  startedAt    DateTime?       @map("started_at") @db.Timestamptz(6)
-  finishedAt   DateTime?       @map("finished_at") @db.Timestamptz(6)
-  createdBy    String?         @map("created_by") @db.Uuid
-  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
-  unit         CostumeUnit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
-  assignee     Employee?       @relation("UnitBlockAssignee", fields: [assignedTo], references: [userId], onDelete: SetNull)
-  creator      Employee?       @relation("UnitBlockCreator", fields: [createdBy], references: [userId], onDelete: SetNull)
+  id                     String                @id @default(uuid()) @db.Uuid
+  unitId                 String                @map("unit_id") @db.Uuid
+  capacityWindowId       String?               @map("capacity_window_id") @db.Uuid
+  blockType              UnitBlockType         @map("block_type")
+  status                 UnitBlockStatus       @default(PLANNED)
+  blockedFrom            DateTime              @map("blocked_from") @db.Timestamptz(6)
+  blockedUntil           DateTime              @map("blocked_until") @db.Timestamptz(6)
+  assignedTo             String?               @map("assigned_to") @db.Uuid
+  estimatedEffortMinutes Int?                  @map("estimated_effort_minutes")
+  remainingEffortMinutes Int?                  @map("remaining_effort_minutes")
+  costVnd                BigInt?               @map("cost_vnd")
+  reason                 String                @db.Text
+  notes                  String?               @db.Text
+  startedAt              DateTime?             @map("started_at") @db.Timestamptz(6)
+  finishedAt             DateTime?             @map("finished_at") @db.Timestamptz(6)
+  createdBy              String?               @map("created_by") @db.Uuid
+  createdAt              DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  unit                   CostumeUnit           @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  capacityWindow         BranchCapacityWindow? @relation(fields: [capacityWindowId], references: [id], onDelete: SetNull)
+  assignee               Employee?             @relation("UnitBlockAssignee", fields: [assignedTo], references: [userId], onDelete: SetNull)
+  creator                Employee?             @relation("UnitBlockCreator", fields: [createdBy], references: [userId], onDelete: SetNull)
 
   @@index([unitId, blockedFrom, blockedUntil])
   @@index([assignedTo, status, blockedFrom])
+  @@index([capacityWindowId, status])
   @@map("unit_blocks")
+}
+
+model BranchCapacityWindow {
+  id               String   @id @default(uuid()) @db.Uuid
+  branchId         String   @map("branch_id") @db.Uuid
+  startsAt         DateTime @map("starts_at") @db.Timestamptz(6)
+  endsAt           DateTime @map("ends_at") @db.Timestamptz(6)
+  availableMinutes Int      @map("available_minutes")
+  notes            String?  @db.Text
+  createdBy        String   @map("created_by") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  branch         Branch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  creator        Employee    @relation("CapacityWindowCreator", fields: [createdBy], references: [userId], onDelete: Restrict)
+  workloadBlocks UnitBlock[]
+
+  @@unique([branchId, startsAt, endsAt])
+  @@index([startsAt, endsAt])
+  @@map("branch_capacity_windows")
 }
 
 model StockTransfer {
@@ -700,28 +738,28 @@ model StockTransferItem {
 }
 
 model RentalPolicyVersion {
-  id                    String         @id @default(uuid()) @db.Uuid
-  versionCode           String         @unique @map("version_code") @db.VarChar(50)
-  effectiveFrom         DateTime       @map("effective_from") @db.Timestamptz(6)
-  effectiveTo           DateTime?      @map("effective_to") @db.Timestamptz(6)
-  billingDayMode        BillingDayMode @map("billing_day_mode")
-  minRentalDays         Int            @default(1) @map("min_rental_days")
-  maxRentalDays         Int?           @map("max_rental_days")
-  quoteValidHours       Int            @map("quote_valid_hours")
-  noShowGraceMinutes    Int            @default(0) @map("no_show_grace_minutes")
-  lateGraceMinutes      Int            @default(0) @map("late_grace_minutes")
-  lateFeePercentPerDay  Decimal        @default(0) @map("late_fee_percent_per_day") @db.Decimal(5, 2)
-  lateFeeFormulaVersion Int            @default(1) @map("late_fee_formula_version")
+  id                           String         @id @default(uuid()) @db.Uuid
+  versionCode                  String         @unique @map("version_code") @db.VarChar(50)
+  effectiveFrom                DateTime       @map("effective_from") @db.Timestamptz(6)
+  effectiveTo                  DateTime?      @map("effective_to") @db.Timestamptz(6)
+  billingDayMode               BillingDayMode @map("billing_day_mode")
+  minRentalDays                Int            @default(1) @map("min_rental_days")
+  maxRentalDays                Int?           @map("max_rental_days")
+  quoteValidHours              Int            @map("quote_valid_hours")
+  noShowGraceMinutes           Int            @default(0) @map("no_show_grace_minutes")
+  lateGraceMinutes             Int            @default(0) @map("late_grace_minutes")
+  lateFeePercentPerDay         Decimal        @default(0) @map("late_fee_percent_per_day") @db.Decimal(5, 2)
+  lateFeeFormulaVersion        Int            @default(1) @map("late_fee_formula_version")
   lateReturnBufferMinutes      Int            @default(0) @map("late_return_buffer_minutes")
   defaultCleaningBufferMinutes Int            @default(0) @map("default_cleaning_buffer_minutes")
-  freeCancelBeforeHours Int            @default(0) @map("free_cancel_before_hours")
-  lateCancelFeePercent  Decimal        @default(0) @map("late_cancel_fee_percent") @db.Decimal(5, 2)
-  refundSlaBusinessDays Int?           @map("refund_sla_business_days")
-  createdBy             String?        @map("created_by") @db.Uuid
-  changeReason          String         @map("change_reason") @db.Text
-  createdAt             DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-  creator               User?          @relation(fields: [createdBy], references: [id], onDelete: SetNull)
-  orders                RentalOrder[]
+  freeCancelBeforeHours        Int            @default(0) @map("free_cancel_before_hours")
+  lateCancelFeePercent         Decimal        @default(0) @map("late_cancel_fee_percent") @db.Decimal(5, 2)
+  refundSlaBusinessDays        Int?           @map("refund_sla_business_days")
+  createdBy                    String?        @map("created_by") @db.Uuid
+  changeReason                 String         @map("change_reason") @db.Text
+  createdAt                    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  creator                      User?          @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  orders                       RentalOrder[]
 
   @@index([effectiveFrom, effectiveTo])
   @@map("rental_policy_versions")
@@ -751,50 +789,51 @@ model Promotion {
 }
 
 model RentalOrder {
-  id                   String                @id @default(uuid()) @db.Uuid
-  orderCode            String                @unique @map("order_code") @db.VarChar(50)
-  customerUserId       String                @map("customer_user_id") @db.Uuid
-  pickupBranchId       String                @map("pickup_branch_id") @db.Uuid
-  channel              String                @db.VarChar(30)
-  plannedStartAt       DateTime              @map("planned_start_at") @db.Timestamptz(6)
-  plannedDueAt         DateTime              @map("planned_due_at") @db.Timestamptz(6)
-  customerNote         String?               @map("customer_note") @db.Text
-  status               OrderStatus           @default(DRAFT)
-  policyVersionId      String                @map("policy_version_id") @db.Uuid
-  promotionId          String?               @map("promotion_id") @db.Uuid
-  promotionCode        String?               @map("promotion_code") @db.VarChar(100)
-  promotionDiscountVnd BigInt                @default(0) @map("promotion_discount_vnd")
-  quoteExpiresAt       DateTime?             @map("quote_expires_at") @db.Timestamptz(6)
-  createdBy            String                @map("created_by") @db.Uuid
-  pickupProcessedBy    String?               @map("pickup_processed_by") @db.Uuid
-  pickedUpAt           DateTime?             @map("picked_up_at") @db.Timestamptz(6)
-  returnProcessedBy    String?               @map("return_processed_by") @db.Uuid
-  returnedAt           DateTime?             @map("returned_at") @db.Timestamptz(6)
-  inspectionStatus     InspectionStatus?     @map("inspection_status")
-  returnNotes          String?               @map("return_notes") @db.Text
-  lateFeeVnd           BigInt                @default(0) @map("late_fee_vnd")
-  additionalRentalFeeVnd BigInt              @default(0) @map("additional_rental_fee_vnd")
-  otherFeeVnd          BigInt                @default(0) @map("other_fee_vnd")
-  depositDeductionVnd  BigInt                @default(0) @map("deposit_deduction_vnd")
-  settlementNote       String?               @map("settlement_note") @db.Text
-  financiallySettledAt DateTime?             @map("financially_settled_at") @db.Timestamptz(6)
-  version              Int                   @default(1)
-  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
-  customer             Customer              @relation(fields: [customerUserId], references: [userId], onDelete: Restrict)
-  pickupBranch         Branch                @relation(fields: [pickupBranchId], references: [id], onDelete: Restrict)
-  policyVersion        RentalPolicyVersion   @relation(fields: [policyVersionId], references: [id], onDelete: Restrict)
-  promotion            Promotion?            @relation(fields: [promotionId], references: [id], onDelete: Restrict)
-  creator              User                  @relation("RentalOrderCreator", fields: [createdBy], references: [id], onDelete: Restrict)
-  pickupProcessor      Employee?             @relation("RentalOrderPickupProcessor", fields: [pickupProcessedBy], references: [userId], onDelete: SetNull)
-  returnProcessor      Employee?             @relation("RentalOrderReturnProcessor", fields: [returnProcessedBy], references: [userId], onDelete: SetNull)
-  items                RentalOrderItem[]
-  payments             Payment[]
-  interactions         CustomerInteraction[]
-  crmCases             CrmCase[]
-  events               RentalOrderEvent[]
+  id                     String                @id @default(uuid()) @db.Uuid
+  orderCode              String                @unique @map("order_code") @db.VarChar(50)
+  customerUserId         String                @map("customer_user_id") @db.Uuid
+  pickupBranchId         String                @map("pickup_branch_id") @db.Uuid
+  channel                String                @db.VarChar(30)
+  plannedStartAt         DateTime              @map("planned_start_at") @db.Timestamptz(6)
+  plannedDueAt           DateTime              @map("planned_due_at") @db.Timestamptz(6)
+  customerNote           String?               @map("customer_note") @db.Text
+  status                 OrderStatus           @default(DRAFT)
+  policyVersionId        String                @map("policy_version_id") @db.Uuid
+  promotionId            String?               @map("promotion_id") @db.Uuid
+  promotionCode          String?               @map("promotion_code") @db.VarChar(100)
+  promotionDiscountVnd   BigInt                @default(0) @map("promotion_discount_vnd")
+  quoteExpiresAt         DateTime?             @map("quote_expires_at") @db.Timestamptz(6)
+  createdBy              String                @map("created_by") @db.Uuid
+  pickupProcessedBy      String?               @map("pickup_processed_by") @db.Uuid
+  pickedUpAt             DateTime?             @map("picked_up_at") @db.Timestamptz(6)
+  returnProcessedBy      String?               @map("return_processed_by") @db.Uuid
+  returnedAt             DateTime?             @map("returned_at") @db.Timestamptz(6)
+  inspectionStatus       InspectionStatus?     @map("inspection_status")
+  returnNotes            String?               @map("return_notes") @db.Text
+  lateFeeVnd             BigInt                @default(0) @map("late_fee_vnd")
+  additionalRentalFeeVnd BigInt                @default(0) @map("additional_rental_fee_vnd")
+  otherFeeVnd            BigInt                @default(0) @map("other_fee_vnd")
+  depositDeductionVnd    BigInt                @default(0) @map("deposit_deduction_vnd")
+  settlementNote         String?               @map("settlement_note") @db.Text
+  financiallySettledAt   DateTime?             @map("financially_settled_at") @db.Timestamptz(6)
+  version                Int                   @default(1)
+  createdAt              DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  customer               Customer              @relation(fields: [customerUserId], references: [userId], onDelete: Restrict)
+  pickupBranch           Branch                @relation(fields: [pickupBranchId], references: [id], onDelete: Restrict)
+  policyVersion          RentalPolicyVersion   @relation(fields: [policyVersionId], references: [id], onDelete: Restrict)
+  promotion              Promotion?            @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+  creator                User                  @relation("RentalOrderCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  pickupProcessor        Employee?             @relation("RentalOrderPickupProcessor", fields: [pickupProcessedBy], references: [userId], onDelete: SetNull)
+  returnProcessor        Employee?             @relation("RentalOrderReturnProcessor", fields: [returnProcessedBy], references: [userId], onDelete: SetNull)
+  items                  RentalOrderItem[]
+  payments               Payment[]
+  interactions           CustomerInteraction[]
+  crmCases               CrmCase[]
+  events                 RentalOrderEvent[]
 
   @@index([pickupBranchId, status, plannedStartAt])
+  @@index([status, plannedStartAt, id])
   @@index([customerUserId, createdAt])
   @@index([promotionId, status])
   @@index([status, quoteExpiresAt])
@@ -890,30 +929,30 @@ model RentalItemAccessory {
 }
 
 model Payment {
-  id                String                 @id @default(uuid()) @db.Uuid
-  orderId           String                 @map("order_id") @db.Uuid
-  purpose           PaymentPurpose
-  method            PaymentMethod
-  amountVnd         BigInt                 @map("amount_vnd")
-  status            PaymentStatus          @default(PENDING)
-  provider          String?                @db.VarChar(100)
-  providerPaymentId String?                @map("provider_payment_id") @db.VarChar(255)
-  providerOrderCode BigInt?                @map("provider_order_code")
-  providerStatus    String?                @map("provider_status") @db.VarChar(30)
-  transactionReference String?             @map("transaction_reference") @db.VarChar(255)
-  checkoutUrl       String?                @map("checkout_url") @db.VarChar(1000)
-  qrCode            String?                @map("qr_code") @db.Text
-  expiresAt         DateTime?              @map("expires_at") @db.Timestamptz(6)
-  idempotencyKey    String                 @unique @map("idempotency_key") @db.VarChar(255)
-  recordedBy        String?                @map("recorded_by") @db.Uuid
-  paidAt            DateTime?              @map("paid_at") @db.Timestamptz(6)
-  failureReason     String?                @map("failure_reason") @db.Text
-  createdAt         DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
-  order             RentalOrder            @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  recorder          Employee?              @relation(fields: [recordedBy], references: [userId], onDelete: Restrict)
-  refunds           Refund[]
-  webhookEvents     ProviderWebhookEvent[]
+  id                   String                 @id @default(uuid()) @db.Uuid
+  orderId              String                 @map("order_id") @db.Uuid
+  purpose              PaymentPurpose
+  method               PaymentMethod
+  amountVnd            BigInt                 @map("amount_vnd")
+  status               PaymentStatus          @default(PENDING)
+  provider             String?                @db.VarChar(100)
+  providerPaymentId    String?                @map("provider_payment_id") @db.VarChar(255)
+  providerOrderCode    BigInt?                @map("provider_order_code")
+  providerStatus       String?                @map("provider_status") @db.VarChar(30)
+  transactionReference String?                @map("transaction_reference") @db.VarChar(255)
+  checkoutUrl          String?                @map("checkout_url") @db.VarChar(1000)
+  qrCode               String?                @map("qr_code") @db.Text
+  expiresAt            DateTime?              @map("expires_at") @db.Timestamptz(6)
+  idempotencyKey       String                 @unique @map("idempotency_key") @db.VarChar(255)
+  recordedBy           String?                @map("recorded_by") @db.Uuid
+  paidAt               DateTime?              @map("paid_at") @db.Timestamptz(6)
+  failureReason        String?                @map("failure_reason") @db.Text
+  createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  order                RentalOrder            @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  recorder             Employee?              @relation(fields: [recordedBy], references: [userId], onDelete: Restrict)
+  refunds              Refund[]
+  webhookEvents        ProviderWebhookEvent[]
 
   @@unique([provider, providerPaymentId])
   @@unique([provider, providerOrderCode])
@@ -984,25 +1023,32 @@ model Customer {
 }
 
 model CustomerInteraction {
-  id              String                  @id @default(uuid()) @db.Uuid
-  customerUserId  String                  @map("customer_user_id") @db.Uuid
-  branchId        String?                 @map("branch_id") @db.Uuid
-  orderId         String?                 @map("order_id") @db.Uuid
-  caseId          String?                 @map("case_id") @db.Uuid
-  staffUserId     String?                 @map("staff_user_id") @db.Uuid
-  interactionType CustomerInteractionType @map("interaction_type")
-  channel         InteractionChannel
-  summary         String                  @db.Text
-  occurredAt      DateTime                @default(now()) @map("occurred_at") @db.Timestamptz(6)
-  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  customer        Customer                @relation(fields: [customerUserId], references: [userId], onDelete: Restrict)
-  branch          Branch?                 @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  order           RentalOrder?            @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  case            CrmCase?                @relation(fields: [caseId], references: [id], onDelete: SetNull)
-  staff           Employee?               @relation(fields: [staffUserId], references: [userId], onDelete: SetNull)
+  id               String                  @id @default(uuid()) @db.Uuid
+  customerUserId   String                  @map("customer_user_id") @db.Uuid
+  branchId         String?                 @map("branch_id") @db.Uuid
+  orderId          String?                 @map("order_id") @db.Uuid
+  caseId           String?                 @map("case_id") @db.Uuid
+  staffUserId      String?                 @map("staff_user_id") @db.Uuid
+  interactionType  CustomerInteractionType @map("interaction_type")
+  channel          InteractionChannel
+  outcome          OverdueFollowUpOutcome?
+  summary          String                  @db.Text
+  promisedReturnAt DateTime?               @map("promised_return_at") @db.Timestamptz(6)
+  nextFollowUpAt   DateTime?               @map("next_follow_up_at") @db.Timestamptz(6)
+  sourceReference  String?                 @map("source_reference") @db.VarChar(255)
+  idempotencyKey   String?                 @unique @map("idempotency_key") @db.VarChar(255)
+  occurredAt       DateTime                @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  createdAt        DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  customer         Customer                @relation(fields: [customerUserId], references: [userId], onDelete: Restrict)
+  branch           Branch?                 @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  order            RentalOrder?            @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  case             CrmCase?                @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  staff            Employee?               @relation(fields: [staffUserId], references: [userId], onDelete: SetNull)
 
   @@index([customerUserId, occurredAt])
   @@index([caseId, occurredAt])
+  @@index([orderId, occurredAt])
+  @@index([sourceReference])
   @@map("customer_interactions")
 }
 

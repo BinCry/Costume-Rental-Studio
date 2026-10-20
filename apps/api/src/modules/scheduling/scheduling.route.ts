@@ -5,11 +5,15 @@ import { sendSuccess } from '../../common/http/response.js';
 import { requireAuthentication } from '../auth/auth.middleware.js';
 import {
   blockIdSchema,
+  capacityWindowIdSchema,
   cancelSchema,
   completionSchema,
   createUnitBlockSchema,
+  createCapacityWindowSchema,
+  listCapacityWindowsSchema,
   listUnitBlocksSchema,
   updateUnitBlockSchema,
+  updateCapacityWindowSchema,
 } from './scheduling.schema.js';
 import * as service from './scheduling.service.js';
 
@@ -21,6 +25,10 @@ function parse<T>(result: { success: boolean; data?: T }, message: string): T {
 }
 function blockId(params: unknown) {
   return parse(blockIdSchema.safeParse(params), 'Invalid unit block id').blockId;
+}
+function capacityWindowId(params: unknown) {
+  return parse(capacityWindowIdSchema.safeParse(params), 'Invalid capacity window id')
+    .capacityWindowId;
 }
 schedulingRouter.get('/unit-blocks', async (req, res) =>
   sendSuccess(
@@ -91,5 +99,44 @@ schedulingRouter.post('/unit-blocks/:blockId/cancel', async (req, res) =>
       parse(cancelSchema.safeParse(req.body), 'Invalid unit block cancellation').reason,
     ),
     'Unit block cancelled',
+  ),
+);
+schedulingRouter.get('/capacity-windows', async (req, res) =>
+  sendSuccess(
+    res,
+    await service.listCapacityWindows(
+      res.locals.actor,
+      parse(listCapacityWindowsSchema.safeParse(req.query), 'Invalid capacity window query'),
+    ),
+    'Capacity windows loaded',
+  ),
+);
+schedulingRouter.post('/capacity-windows', async (req, res) =>
+  sendSuccess(
+    res,
+    await service.createCapacityWindow(
+      res.locals.actor,
+      parse(createCapacityWindowSchema.safeParse(req.body), 'Invalid capacity window'),
+    ),
+    'Capacity window created',
+    201,
+  ),
+);
+schedulingRouter.patch('/capacity-windows/:capacityWindowId', async (req, res) =>
+  sendSuccess(
+    res,
+    await service.updateCapacityWindow(
+      res.locals.actor,
+      capacityWindowId(req.params),
+      parse(updateCapacityWindowSchema.safeParse(req.body), 'Invalid capacity window update'),
+    ),
+    'Capacity window updated',
+  ),
+);
+schedulingRouter.delete('/capacity-windows/:capacityWindowId', async (req, res) =>
+  sendSuccess(
+    res,
+    await service.deleteCapacityWindow(res.locals.actor, capacityWindowId(req.params)),
+    'Capacity window deleted',
   ),
 );

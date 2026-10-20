@@ -7,9 +7,13 @@ import {
   requireActor,
   type AuthenticatedActor,
 } from '../auth/authorization.js';
+import * as crmService from '../crm/crm.service.js';
 import * as paymentService from '../payments/payment.service.js';
 import * as rentalService from '../rentals/rental.service.js';
+import * as rentalOverdueService from '../rentals/rental-overdue.service.js';
+import * as rentalReadinessService from '../rentals/rental-readiness.service.js';
 import * as schedulingService from '../scheduling/scheduling.service.js';
+import * as operationalCapacityService from '../scheduling/operational-capacity.service.js';
 import * as transferService from '../transfers/transfer.service.js';
 import type {
   AgentApprovalAuthorizationInput,
@@ -236,6 +240,24 @@ function safeCaseTransferView(transfer: Transfer, caseBranchId: string) {
   };
 }
 
+function safeCustomerInteractionView(
+  interaction: Awaited<ReturnType<typeof crmService.getCustomerInteractionByIdempotencyKey>>,
+) {
+  return {
+    id: interaction.id,
+    branchId: interaction.branchId,
+    orderId: interaction.orderId,
+    interactionType: interaction.interactionType,
+    channel: interaction.channel,
+    outcome: interaction.outcome,
+    promisedReturnAt: interaction.promisedReturnAt,
+    nextFollowUpAt: interaction.nextFollowUpAt,
+    sourceReference: interaction.sourceReference,
+    idempotencyKey: interaction.idempotencyKey,
+    occurredAt: interaction.occurredAt,
+  };
+}
+
 export async function executeAgentTool(
   actor: AuthenticatedActor,
   input: AgentToolExecutionInput,
@@ -283,6 +305,45 @@ export async function executeAgentTool(
       assertCaseBranch(input.arguments.pickupBranchId, caseBranchId);
       const availability = await rentalService.checkAvailability(actor, input.arguments);
       return observedResult(availability, requestId, definition.requiredPermission);
+    }
+    case 'get_rental_readiness_context': {
+      const context = await rentalReadinessService.getRentalReadinessContext(
+        actor,
+        input.arguments,
+      );
+      return observedResult(
+        context,
+        requestId,
+        definition.requiredPermission,
+        context.primaryOrder.version,
+      );
+    }
+    case 'get_overdue_rental_context': {
+      const context = await rentalOverdueService.getOverdueRentalContext(actor, input.arguments);
+      return observedResult(
+        context,
+        requestId,
+        definition.requiredPermission,
+        context.primaryOrder.version,
+      );
+    }
+    case 'get_customer_interaction_by_idempotency_key': {
+      const interaction = await crmService.getCustomerInteractionByIdempotencyKey(
+        actor,
+        input.arguments.idempotencyKey,
+      );
+      return observedResult(
+        safeCustomerInteractionView(interaction),
+        requestId,
+        definition.requiredPermission,
+      );
+    }
+    case 'get_operational_capacity_context': {
+      const context = await operationalCapacityService.getOperationalCapacityContext(
+        actor,
+        input.arguments,
+      );
+      return observedResult(context, requestId, definition.requiredPermission);
     }
     case 'get_payment_summary': {
       const order = await rentalService.getOrder(actor, input.arguments.orderId);
@@ -427,6 +488,18 @@ export async function executeAgentTool(
         requestId,
         definition.requiredPermission,
         order.version,
+      );
+    }
+    case 'record_overdue_follow_up': {
+      const interaction = await crmService.recordOverdueFollowUp(actor, {
+        ...input.arguments,
+        sourceReference: `agent-case:${input.caseId}`,
+        idempotencyKey: input.idempotencyKey,
+      });
+      return observedResult(
+        safeCustomerInteractionView(interaction),
+        requestId,
+        definition.requiredPermission,
       );
     }
     case 'create_stock_transfer': {

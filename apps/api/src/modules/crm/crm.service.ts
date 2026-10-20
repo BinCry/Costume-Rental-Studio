@@ -3,7 +3,12 @@ import { randomUUID } from 'node:crypto';
 import { AppError } from '../../common/errors/app-error.js';
 import { pageResult, pagination } from '../../common/http/query.js';
 import { prisma } from '../../database/prisma.js';
-import type { CrmCaseStatus, Prisma } from '../../generated/prisma/client.js';
+import type {
+  CrmCaseStatus,
+  InteractionChannel,
+  OverdueFollowUpOutcome,
+  Prisma,
+} from '../../generated/prisma/client.js';
 import { hasPermission, requireActor, type AuthenticatedActor } from '../auth/authorization.js';
 import { lockActiveBranch } from '../branches/branch.service.js';
 import type {
@@ -17,6 +22,17 @@ import type {
 } from './crm.schema.js';
 
 const transactionOptions = { maxWait: 10_000, timeout: 20_000 } as const;
+
+export interface RecordOverdueFollowUpInput {
+  orderId: string;
+  channel: InteractionChannel;
+  outcome: OverdueFollowUpOutcome;
+  occurredAt: Date;
+  promisedReturnAt?: Date;
+  nextFollowUpAt?: Date;
+  sourceReference: string;
+  idempotencyKey: string;
+}
 
 const caseInclude = {
   customer: {
@@ -423,4 +439,167 @@ export async function createInteraction(
       data: { ...input, customerUserId, staffUserId: actor.id },
     });
   }, transactionOptions);
+}
+
+const overdueFollowUpSummaries: Record<OverdueFollowUpOutcome, string> = {
+  CONTACTED: 'Customer was contacted about the overdue rental return.',
+  PROMISED_RETURN: 'Customer promised to return the overdue rental.',
+  NO_ANSWER: 'Customer did not answer the overdue rental follow-up.',
+  REFUSED_RETURN: 'Customer refused the overdue rental return request.',
+  REQUESTED_EXTENSION: 'Customer requested an extension for the overdue rental.',
+  OTHER: 'An overdue rental follow-up was recorded.',
+};
+
+function sameInstant(left: Date | null, right: Date | undefined) {
+  return left?.getTime() === right?.getTime();
+}
+
+function assertSameOverdueFollowUp(
+  interaction: {
+    orderId: string | null;
+    branchId: string | null;
+    customerUserId: string;
+    staffUserId: string | null;
+    interactionType: string;
+    channel: string;
+    outcome: string | null;
+    promisedReturnAt: Date | null;
+    nextFollowUpAt: Date | null;
+    sourceReference: string | null;
+    occurredAt: Date;
+  },
+  actorId: string,
+  order: { id: string; customerUserId: string; pickupBranchId: string },
+  input: RecordOverdueFollowUpInput,
+) {
+  if (
+    interaction.orderId !== order.id ||
+    interaction.branchId !== order.pickupBranchId ||
+    interaction.customerUserId !== order.customerUserId ||
+    interaction.staffUserId !== actorId ||
+    interaction.interactionType !== 'FOLLOW_UP' ||
+    interaction.channel !== input.channel ||
+    interaction.outcome !== input.outcome ||
+    !sameInstant(interaction.promisedReturnAt, input.promisedReturnAt) ||
+    !sameInstant(interaction.nextFollowUpAt, input.nextFollowUpAt) ||
+    interaction.sourceReference !== input.sourceReference ||
+    interaction.occurredAt.getTime() !== input.occurredAt.getTime()
+  ) {
+    throw new AppError(
+      409,
+      'IDEMPOTENCY_CONFLICT',
+      'Idempotency key belongs to a different request',
+    );
+  }
+}
+
+function isUniqueConstraint(error: unknown) {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
+}
+
+export async function getCustomerInteractionByIdempotencyKey(
+  actor: AuthenticatedActor,
+  idempotencyKey: string,
+) {
+  const interaction = await prisma.customerInteraction.findUnique({ where: { idempotencyKey } });
+  if (!interaction)
+    throw new AppError(404, 'CUSTOMER_INTERACTION_NOT_FOUND', 'Customer interaction not found');
+  if (!interaction.branchId)
+    throw new AppError(403, 'FORBIDDEN', 'Branch-scoped CRM interaction is required');
+  assertBranchPermission(actor, 'read', interaction.branchId);
+  return interaction;
+}
+
+export async function recordOverdueFollowUp(
+  actor: AuthenticatedActor,
+  input: RecordOverdueFollowUpInput,
+) {
+  if (input.occurredAt > new Date())
+    throw new AppError(400, 'INVALID_FOLLOW_UP_TIME', 'Contact time cannot be in the future');
+  if (input.outcome === 'PROMISED_RETURN' && !input.promisedReturnAt)
+    throw new AppError(
+      400,
+      'INVALID_FOLLOW_UP_TIME',
+      'Promised return time is required for this outcome',
+    );
+  if (input.outcome !== 'PROMISED_RETURN' && input.promisedReturnAt)
+    throw new AppError(
+      400,
+      'INVALID_FOLLOW_UP_TIME',
+      'Promised return time is only allowed for a promised return',
+    );
+  if (input.promisedReturnAt && input.promisedReturnAt <= input.occurredAt)
+    throw new AppError(400, 'INVALID_FOLLOW_UP_TIME', 'Promised return must be after contact time');
+  if (input.nextFollowUpAt && input.nextFollowUpAt <= input.occurredAt)
+    throw new AppError(400, 'INVALID_FOLLOW_UP_TIME', 'Next follow-up must be after contact time');
+  if (
+    ['NO_ANSWER', 'REQUESTED_EXTENSION', 'REFUSED_RETURN'].includes(input.outcome) &&
+    !input.nextFollowUpAt
+  )
+    throw new AppError(
+      400,
+      'INVALID_FOLLOW_UP_TIME',
+      'Next follow-up time is required for this outcome',
+    );
+  const order = await prisma.rentalOrder.findUnique({
+    where: { id: input.orderId },
+    select: { id: true, customerUserId: true, pickupBranchId: true },
+  });
+  if (!order) throw new AppError(404, 'RENTAL_ORDER_NOT_FOUND', 'Rental order not found');
+  assertBranchPermission(actor, 'manage', order.pickupBranchId);
+
+  const existing = await prisma.customerInteraction.findUnique({
+    where: { idempotencyKey: input.idempotencyKey },
+  });
+  if (existing) {
+    assertSameOverdueFollowUp(existing, actor.id, order, input);
+    return existing;
+  }
+
+  try {
+    return await prisma.$transaction(async (tx) => {
+      await lockActiveBranch(tx, order.pickupBranchId);
+      const liveOrder = await tx.rentalOrder.findUnique({
+        where: { id: order.id },
+        select: { status: true, customerUserId: true, pickupBranchId: true },
+      });
+      if (!liveOrder) throw new AppError(404, 'RENTAL_ORDER_NOT_FOUND', 'Rental order not found');
+      if (liveOrder.status !== 'ACTIVE')
+        throw new AppError(
+          409,
+          'OVERDUE_FOLLOW_UP_NOT_ALLOWED',
+          'Only an active rental can receive an overdue follow-up',
+        );
+      if (
+        liveOrder.customerUserId !== order.customerUserId ||
+        liveOrder.pickupBranchId !== order.pickupBranchId
+      )
+        throw new AppError(409, 'RENTAL_ORDER_CHANGED', 'Rental order identity changed');
+      return tx.customerInteraction.create({
+        data: {
+          customerUserId: order.customerUserId,
+          branchId: order.pickupBranchId,
+          orderId: order.id,
+          staffUserId: actor.id,
+          interactionType: 'FOLLOW_UP',
+          channel: input.channel,
+          outcome: input.outcome,
+          summary: overdueFollowUpSummaries[input.outcome],
+          promisedReturnAt: input.promisedReturnAt,
+          nextFollowUpAt: input.nextFollowUpAt,
+          sourceReference: input.sourceReference,
+          idempotencyKey: input.idempotencyKey,
+          occurredAt: input.occurredAt,
+        },
+      });
+    }, transactionOptions);
+  } catch (error) {
+    if (!isUniqueConstraint(error)) throw error;
+    const duplicate = await prisma.customerInteraction.findUnique({
+      where: { idempotencyKey: input.idempotencyKey },
+    });
+    if (!duplicate) throw error;
+    assertSameOverdueFollowUp(duplicate, actor.id, order, input);
+    return duplicate;
+  }
 }

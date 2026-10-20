@@ -5,17 +5,29 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 process.env.JWT_ACCESS_SECRET = 'agent-route-test-secret-at-least-32-bytes';
 
 const mocks = vi.hoisted(() => ({
+  analyzeCase: vi.fn(),
   approveAction: vi.fn(),
+  claimCase: vi.fn(),
   findUser: vi.fn(),
   getCase: vi.fn(),
+  listCases: vi.fn(),
+  prepareConfirmation: vi.fn(),
+  prepareOverdueFollowUp: vi.fn(),
+  releaseCase: vi.fn(),
   sendMessage: vi.fn(),
 }));
 
 vi.mock('../src/modules/agent/agent.service.js', () => ({
+  analyzeAgentCase: mocks.analyzeCase,
   approveAgentAction: mocks.approveAction,
   cancelAgentCase: vi.fn(),
+  claimAgentCase: mocks.claimCase,
   confirmAgentCase: vi.fn(),
   getAgentCase: mocks.getCase,
+  listAgentCases: mocks.listCases,
+  prepareReadinessConfirmation: mocks.prepareConfirmation,
+  prepareOverdueFollowUpConfirmation: mocks.prepareOverdueFollowUp,
+  releaseAgentCase: mocks.releaseCase,
   sendAgentMessage: mocks.sendMessage,
   rejectAgentAction: vi.fn(),
   rejectAgentCaseConfirmation: vi.fn(),
@@ -65,6 +77,19 @@ beforeEach(() => {
   mocks.sendMessage.mockResolvedValue(result);
   mocks.getCase.mockResolvedValue(result);
   mocks.approveAction.mockResolvedValue(result);
+  mocks.claimCase.mockResolvedValue({ ...result, version: 4, branchId });
+  mocks.listCases.mockResolvedValue({
+    items: [{ ...result, version: 3, branchId }],
+    nextCursor: null,
+  });
+  mocks.releaseCase.mockResolvedValue({ ...result, version: 5, branchId });
+  mocks.analyzeCase.mockResolvedValue({ ...result, state: 'PLAN_READY', version: 6, branchId });
+  mocks.prepareOverdueFollowUp.mockResolvedValue({
+    ...result,
+    state: 'WAITING_CONFIRMATION',
+    version: 7,
+    branchId,
+  });
   mocks.findUser.mockResolvedValue({
     id: userId,
     email: 'staff@example.com',
@@ -88,6 +113,48 @@ beforeEach(() => {
     ],
   });
 });
+
+function staffActor() {
+  return {
+    id: userId,
+    email: 'staff@example.com',
+    phone: null,
+    displayName: 'Staff',
+    status: 'ACTIVE',
+    avatarUrl: null,
+    employee: { employmentStatus: 'ACTIVE' },
+    roleAssignments: [
+      {
+        branchId,
+        branch: { status: 'ACTIVE' },
+        role: {
+          roleCode: 'SALES_STAFF',
+          name: 'Sales staff',
+          actorGroup: 'STAFF',
+          isActive: true,
+          rolePermissions: [
+            {
+              permission: {
+                code: 'agents.read.branch',
+                module: 'agents',
+                action: 'read',
+                scope: 'BRANCH',
+              },
+            },
+            {
+              permission: {
+                code: 'agents.manage.branch',
+                module: 'agents',
+                action: 'manage',
+                scope: 'BRANCH',
+              },
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
 
 describe('Agent public API', () => {
   it('requires an authenticated actor before sending an agent message', async () => {
@@ -197,6 +264,176 @@ describe('Agent public API', () => {
       .expect(400);
 
     expect(mocks.getCase).not.toHaveBeenCalled();
+  });
+
+  it('lists branch cases with validated filters for authorized staff', async () => {
+    mocks.findUser.mockResolvedValueOnce(staffActor());
+    const token = await accessToken();
+    const response = await request(createApp())
+      .get(`/api/v1/agent/cases?branchId=${branchId}&state=NEW&ownership=unassigned&limit=15`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect((response.body as { data: { items: unknown[] } }).data.items).toHaveLength(1);
+    expect(mocks.listCases).toHaveBeenCalledWith(
+      { branchId, state: 'NEW', ownership: 'unassigned', limit: 15 },
+      expect.objectContaining({ id: userId }),
+      expect.any(String),
+    );
+  });
+
+  it('rejects operational queue access without agent read permission', async () => {
+    const token = await accessToken();
+    await request(createApp())
+      .get('/api/v1/agent/cases')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(403);
+
+    expect(mocks.listCases).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { action: 'claim', expectedVersion: 3, mock: mocks.claimCase },
+    { action: 'release', expectedVersion: 4, mock: mocks.releaseCase },
+  ])(
+    'proxies $action with a validated expected version',
+    async ({ action, expectedVersion, mock }) => {
+      mocks.findUser.mockResolvedValueOnce(staffActor());
+      const token = await accessToken();
+      await request(createApp())
+        .post(`/api/v1/agent/cases/${caseId}/${action}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ expectedVersion })
+        .expect(200);
+
+      expect(mock).toHaveBeenCalledWith(
+        caseId,
+        expectedVersion,
+        expect.objectContaining({ id: userId }),
+        expect.any(String),
+      );
+    },
+  );
+
+  it('starts read-only readiness analysis only for authorized staff with a version', async () => {
+    mocks.findUser.mockResolvedValueOnce(staffActor());
+    const token = await accessToken();
+    await request(createApp())
+      .post(`/api/v1/agent/cases/${caseId}/analyze`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ expectedVersion: 5 })
+      .expect(200);
+
+    expect(mocks.analyzeCase).toHaveBeenCalledWith(
+      caseId,
+      5,
+      expect.objectContaining({ id: userId }),
+      expect.any(String),
+    );
+  });
+
+  it('prepares readiness confirmation with only analysis ID and case version', async () => {
+    mocks.findUser.mockResolvedValueOnce(staffActor());
+    mocks.prepareConfirmation.mockResolvedValue({
+      ...result,
+      state: 'WAITING_CONFIRMATION',
+      version: 7,
+      branchId,
+    });
+    const token = await accessToken();
+    const analysisId = '10000000-0000-4000-8000-000000000004';
+    await request(createApp())
+      .post(`/api/v1/agent/cases/${caseId}/confirmations`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ analysisId, expectedVersion: 6 })
+      .expect(200);
+
+    expect(mocks.prepareConfirmation).toHaveBeenCalledWith(
+      caseId,
+      analysisId,
+      6,
+      expect.objectContaining({ id: userId }),
+      expect.any(String),
+    );
+  });
+
+  it('validates and proxies an overdue follow-up confirmation', async () => {
+    mocks.findUser.mockResolvedValueOnce(staffActor());
+    const token = await accessToken();
+    const analysisId = '10000000-0000-4000-8000-000000000004';
+    await request(createApp())
+      .post(`/api/v1/agent/cases/${caseId}/overdue-follow-ups/confirmations`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        analysisId,
+        expectedVersion: 6,
+        channel: 'PHONE',
+        outcome: 'NO_ANSWER',
+        occurredAt: '2020-10-19T12:00:00.000Z',
+        nextFollowUpAt: '2026-10-20T09:00:00.000Z',
+      })
+      .expect(200);
+
+    expect(mocks.prepareOverdueFollowUp).toHaveBeenCalledWith(
+      caseId,
+      expect.objectContaining({
+        analysisId,
+        expectedVersion: 6,
+        outcome: 'NO_ANSWER',
+        occurredAt: new Date('2020-10-19T12:00:00.000Z'),
+      }),
+      expect.objectContaining({ id: userId }),
+      expect.any(String),
+    );
+  });
+
+  it('rejects an overdue outcome without its required next follow-up', async () => {
+    mocks.findUser.mockResolvedValueOnce(staffActor());
+    const token = await accessToken();
+    await request(createApp())
+      .post(`/api/v1/agent/cases/${caseId}/overdue-follow-ups/confirmations`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        analysisId: '10000000-0000-4000-8000-000000000004',
+        expectedVersion: 6,
+        channel: 'PHONE',
+        outcome: 'NO_ANSWER',
+        occurredAt: '2020-10-19T12:00:00.000Z',
+      })
+      .expect(400);
+
+    expect(mocks.prepareOverdueFollowUp).not.toHaveBeenCalled();
+  });
+
+  it('rejects an overdue promised-return time that is no longer in the future', async () => {
+    mocks.findUser.mockResolvedValueOnce(staffActor());
+    const token = await accessToken();
+    await request(createApp())
+      .post(`/api/v1/agent/cases/${caseId}/overdue-follow-ups/confirmations`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        analysisId: '10000000-0000-4000-8000-000000000004',
+        expectedVersion: 6,
+        channel: 'PHONE',
+        outcome: 'PROMISED_RETURN',
+        occurredAt: '2020-10-19T12:00:00.000Z',
+        promisedReturnAt: new Date(Date.now() - 60_000).toISOString(),
+      })
+      .expect(400);
+
+    expect(mocks.prepareOverdueFollowUp).not.toHaveBeenCalled();
+  });
+
+  it('validates ownership mutation bodies before proxying', async () => {
+    mocks.findUser.mockResolvedValueOnce(staffActor());
+    const token = await accessToken();
+    await request(createApp())
+      .post(`/api/v1/agent/cases/${caseId}/claim`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ expectedVersion: 0 })
+      .expect(400);
+
+    expect(mocks.claimCase).not.toHaveBeenCalled();
   });
 
   it('proxies an approval decision with the authenticated approver', async () => {
