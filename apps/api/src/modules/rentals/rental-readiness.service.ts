@@ -16,15 +16,25 @@ import {
 const PREVIOUS_RENTAL_RULE = 'PREVIOUS_RENTAL_NOT_RETURNED' as const;
 const UNIT_NOT_READY_RULE = 'ALLOCATED_UNIT_NOT_READY' as const;
 const PREPARATION_DELAY_RULE = 'ORDER_PREPARATION_DELAYED' as const;
+const UNIT_SCHEDULE_CONFLICT_RULE = 'UNIT_SCHEDULE_CONFLICT' as const;
 const READINESS_RULES = [
   PREVIOUS_RENTAL_RULE,
   UNIT_NOT_READY_RULE,
   PREPARATION_DELAY_RULE,
+  UNIT_SCHEDULE_CONFLICT_RULE,
 ] as const;
 const RULE_VERSION = 'v1' as const;
 const ELIGIBLE_NEXT_ORDER_STATES = ['CONFIRMED', 'PREPARING', 'READY_FOR_PICKUP'] as const;
 const PREPARATION_DELAY_STATES = ['CONFIRMED', 'PREPARING'] as const;
 const PREPARATION_DELAY_WINDOW_MINUTES = 120;
+const SCHEDULE_CONFLICT_ORDER_STATES = [
+  'CONFIRMED',
+  'PREPARING',
+  'READY_FOR_PICKUP',
+  'ACTIVE',
+  'RETURN_INSPECTION',
+] as const;
+const SCHEDULE_CONFLICT_ALLOCATION_STATUSES = ['CONFIRMED', 'ACTIVE'] as const;
 
 const defaultAgentClient = {
   listOpen: (ruleCode: RentalReadinessRuleCode, cursor?: string, limit = 100) =>
@@ -204,10 +214,117 @@ const unitSelect = {
   },
 } satisfies Prisma.CostumeUnitSelect;
 
-type CandidateOrder = PreviousRentalRiskParts['orderB'] & {
+type CandidateOrder = Omit<PreviousRentalRiskParts['orderB'], 'items'> & {
   plannedDueAt: Date;
   version: number;
+  items: (PreviousRentalRiskParts['orderB']['items'][number] & {
+    occupiedFrom: Date;
+    occupiedUntil: Date;
+  })[];
 };
+
+export interface UnitScheduleConflictParts {
+  orderA: CandidateOrder;
+  orderB: CandidateOrder;
+  unitId: string;
+}
+
+function isScheduleConflictOrder(order: CandidateOrder) {
+  return SCHEDULE_CONFLICT_ORDER_STATES.includes(
+    order.status as (typeof SCHEDULE_CONFLICT_ORDER_STATES)[number],
+  );
+}
+
+function scheduleConflictItem(order: CandidateOrder, unitId: string) {
+  return order.items.find(
+    (item) =>
+      item.unitId === unitId &&
+      SCHEDULE_CONFLICT_ALLOCATION_STATUSES.includes(
+        item.allocationStatus as (typeof SCHEDULE_CONFLICT_ALLOCATION_STATUSES)[number],
+      ),
+  );
+}
+
+/**
+ * Detect a persisted invariant violation. Normal rental APIs prevent this
+ * synchronously; the worker covers legacy/imported records and rare races.
+ */
+export function buildUnitScheduleConflictRisk(parts: UnitScheduleConflictParts, observedAt: Date) {
+  if (
+    parts.orderA.id === parts.orderB.id ||
+    !isScheduleConflictOrder(parts.orderA) ||
+    !isScheduleConflictOrder(parts.orderB)
+  ) {
+    return null;
+  }
+  const itemA = scheduleConflictItem(parts.orderA, parts.unitId);
+  const itemB = scheduleConflictItem(parts.orderB, parts.unitId);
+  if (
+    !itemA ||
+    !itemB ||
+    !itemA.occupiedFrom ||
+    !itemA.occupiedUntil ||
+    !itemB.occupiedFrom ||
+    !itemB.occupiedUntil
+  )
+    return null;
+  const overlapStart = new Date(
+    Math.max(itemA.occupiedFrom.getTime(), itemB.occupiedFrom.getTime()),
+  );
+  const overlapEnd = new Date(
+    Math.min(itemA.occupiedUntil.getTime(), itemB.occupiedUntil.getTime()),
+  );
+  if (overlapStart >= overlapEnd) return null;
+  const [primaryOrder, primaryItem, affectedOrder, affectedItem] =
+    parts.orderA.plannedStartAt > parts.orderB.plannedStartAt ||
+    (parts.orderA.plannedStartAt.getTime() === parts.orderB.plannedStartAt.getTime() &&
+      parts.orderA.id > parts.orderB.id)
+      ? [parts.orderA, itemA, parts.orderB, itemB]
+      : [parts.orderB, itemB, parts.orderA, itemA];
+  return {
+    ruleCode: UNIT_SCHEDULE_CONFLICT_RULE,
+    ruleVersion: RULE_VERSION,
+    dedupeKey: [
+      UNIT_SCHEDULE_CONFLICT_RULE,
+      RULE_VERSION,
+      primaryOrder.id,
+      affectedOrder.id,
+      parts.unitId,
+      overlapStart.toISOString(),
+      overlapEnd.toISOString(),
+    ].join(':'),
+    branchId: primaryOrder.pickupBranchId,
+    primaryEntityId: primaryOrder.id,
+    affectedEntityId: affectedOrder.id,
+    unitId: parts.unitId,
+    windowStart: overlapStart.toISOString(),
+    windowEnd: overlapEnd.toISOString(),
+    severity: severity(primaryOrder.plannedStartAt, observedAt),
+    deadlineAt: primaryOrder.plannedStartAt.toISOString(),
+    evidence: {
+      primaryEntityType: 'RENTAL_ORDER',
+      affectedEntityType: 'RENTAL_ORDER',
+      unitId: parts.unitId,
+      primaryOrderId: primaryOrder.id,
+      primaryOrderItemId: primaryItem.id,
+      primaryOrderStatus: primaryOrder.status,
+      primaryAllocationStatus: primaryItem.allocationStatus,
+      primaryOccupiedFrom: primaryItem.occupiedFrom.toISOString(),
+      primaryOccupiedUntil: primaryItem.occupiedUntil.toISOString(),
+      affectedOrderId: affectedOrder.id,
+      affectedOrderItemId: affectedItem.id,
+      affectedOrderStatus: affectedOrder.status,
+      affectedAllocationStatus: affectedItem.allocationStatus,
+      affectedOccupiedFrom: affectedItem.occupiedFrom.toISOString(),
+      affectedOccupiedUntil: affectedItem.occupiedUntil.toISOString(),
+      overlapStart: overlapStart.toISOString(),
+      overlapEnd: overlapEnd.toISOString(),
+      reasonCodes: ['UNIT_SCHEDULE_OVERLAP'],
+      observedAt: observedAt.toISOString(),
+    },
+    observedAt: observedAt.toISOString(),
+  } satisfies AgentFindingUpsertInput;
+}
 
 function buildAllocatedUnitRisk(
   orderB: CandidateOrder,
@@ -404,6 +521,8 @@ const orderSelect = {
       variantId: true,
       unitId: true,
       allocationStatus: true,
+      occupiedFrom: true,
+      occupiedUntil: true,
       variant: { select: { cleaningBufferMinutes: true } },
     },
   },
@@ -524,10 +643,18 @@ export async function getRentalReadinessContext(
   assertPermission(actor, { module: 'rentals', action: 'read', branchId: primary.pickupBranchId });
 
   const primaryItem = primary.items.find(
-    (item) => item.unitId === input.unitId && item.allocationStatus === 'CONFIRMED',
+    (item) =>
+      item.unitId === input.unitId &&
+      SCHEDULE_CONFLICT_ALLOCATION_STATUSES.includes(
+        item.allocationStatus as (typeof SCHEDULE_CONFLICT_ALLOCATION_STATUSES)[number],
+      ),
   );
   const affectedItem = affected?.items.find(
-    (item) => item.unitId === input.unitId && item.allocationStatus === 'ACTIVE',
+    (item) =>
+      item.unitId === input.unitId &&
+      SCHEDULE_CONFLICT_ALLOCATION_STATUSES.includes(
+        item.allocationStatus as (typeof SCHEDULE_CONFLICT_ALLOCATION_STATUSES)[number],
+      ),
   );
   const observedAt = new Date();
   if (!primaryItem) {
@@ -567,20 +694,30 @@ export async function getRentalReadinessContext(
             observedAt,
             env.AGENT_READINESS_LOOKAHEAD_MINUTES,
           )
-        : null;
-  const availability = risk
-    ? await rentalService.checkAvailability(actor, {
-        variantId: primaryItem.variantId,
-        pickupBranchId: primary.pickupBranchId,
-        plannedStartAt: primary.plannedStartAt,
-        plannedDueAt: primary.plannedDueAt,
-      })
-    : { units: [] };
+        : input.ruleCode === UNIT_SCHEDULE_CONFLICT_RULE && affected && affectedItem
+          ? buildUnitScheduleConflictRisk(
+              { orderA: primary, orderB: affected, unitId: input.unitId },
+              observedAt,
+            )
+          : null;
+  const currentRisk =
+    risk?.ruleCode === UNIT_SCHEDULE_CONFLICT_RULE && risk.primaryEntityId !== primary.id
+      ? null
+      : risk;
+  const availability =
+    currentRisk && primaryItem.allocationStatus === 'CONFIRMED'
+      ? await rentalService.checkAvailability(actor, {
+          variantId: primaryItem.variantId,
+          pickupBranchId: primary.pickupBranchId,
+          plannedStartAt: primary.plannedStartAt,
+          plannedDueAt: primary.plannedDueAt,
+        })
+      : { units: [] };
 
   return {
     ruleCode: input.ruleCode,
     observedAt: observedAt.toISOString(),
-    riskStillPresent: risk !== null,
+    riskStillPresent: currentRisk !== null,
     primaryOrder: {
       id: primary.id,
       status: primary.status,
@@ -610,14 +747,20 @@ export async function getRentalReadinessContext(
         }
       : { id: input.unitId },
     cleaningBufferMinutes:
-      risk?.ruleCode === PREVIOUS_RENTAL_RULE ? risk.evidence.cleaningBufferMinutes : null,
+      currentRisk?.ruleCode === PREVIOUS_RENTAL_RULE
+        ? currentRisk.evidence.cleaningBufferMinutes
+        : null,
     earliestReadyAt:
-      risk?.ruleCode === PREVIOUS_RENTAL_RULE
-        ? risk.evidence.earliestReadyAt
-        : risk?.ruleCode === UNIT_NOT_READY_RULE
-          ? risk.evidence.scheduledReadyAt
+      currentRisk?.ruleCode === PREVIOUS_RENTAL_RULE
+        ? currentRisk.evidence.earliestReadyAt
+        : currentRisk?.ruleCode === UNIT_NOT_READY_RULE
+          ? currentRisk.evidence.scheduledReadyAt
           : null,
-    reasonCodes: risk?.ruleCode === UNIT_NOT_READY_RULE ? risk.evidence.reasonCodes : [],
+    reasonCodes:
+      currentRisk?.ruleCode === UNIT_NOT_READY_RULE ||
+      currentRisk?.ruleCode === UNIT_SCHEDULE_CONFLICT_RULE
+        ? currentRisk.evidence.reasonCodes
+        : [],
     replacementUnits: availability.units
       .filter((unit) => unit.id !== input.unitId)
       .map((unit) => ({
@@ -646,7 +789,8 @@ export async function processRentalReadiness(
     ...new Set(
       openFindings
         .flatMap((finding) =>
-          finding.ruleCode === PREVIOUS_RENTAL_RULE
+          finding.ruleCode === PREVIOUS_RENTAL_RULE ||
+          finding.ruleCode === UNIT_SCHEDULE_CONFLICT_RULE
             ? [finding.primaryEntityId, finding.affectedEntityId]
             : [finding.primaryEntityId],
         )
@@ -656,7 +800,11 @@ export async function processRentalReadiness(
   const referencedUnitIds = [
     ...new Set(
       openFindings
-        .filter((finding) => finding.ruleCode === UNIT_NOT_READY_RULE)
+        .filter(
+          (finding) =>
+            finding.ruleCode === UNIT_NOT_READY_RULE ||
+            finding.ruleCode === UNIT_SCHEDULE_CONFLICT_RULE,
+        )
         .map((finding) => finding.unitId)
         .filter((value): value is string => Boolean(value)),
     ),
@@ -731,15 +879,28 @@ export async function processRentalReadiness(
               observedAt,
               lookaheadMinutes,
             )
-          : finding.ruleCode === PREPARATION_DELAY_RULE &&
-              orderB?.pickupBranchId === finding.branchId
-            ? buildPreparationDelayRisk(
-                orderB,
-                referencedUnitsById,
-                referencedActiveUnitIds,
-                observedAt,
-              )
-            : null;
+          : finding.ruleCode === UNIT_SCHEDULE_CONFLICT_RULE &&
+              orderB?.pickupBranchId === finding.branchId &&
+              finding.affectedEntityId &&
+              finding.unitId
+            ? (() => {
+                const orderA = referencedById.get(finding.affectedEntityId);
+                return orderA
+                  ? buildUnitScheduleConflictRisk(
+                      { orderA, orderB, unitId: finding.unitId },
+                      observedAt,
+                    )
+                  : null;
+              })()
+            : finding.ruleCode === PREPARATION_DELAY_RULE &&
+                orderB?.pickupBranchId === finding.branchId
+              ? buildPreparationDelayRisk(
+                  orderB,
+                  referencedUnitsById,
+                  referencedActiveUnitIds,
+                  observedAt,
+                )
+              : null;
     if (risk?.dedupeKey === finding.dedupeKey) {
       await client.upsert(risk);
       activeDedupeKeys.add(risk.dedupeKey);
@@ -867,6 +1028,48 @@ export async function processRentalReadiness(
     const lastCandidate = candidatePage.at(-1)!;
     candidateCursor = { plannedStartAt: lastCandidate.plannedStartAt, id: lastCandidate.id };
     if (candidatePage.length < batchSize) break;
+  }
+
+  // This is deliberately separate from the forward-looking readiness query:
+  // it verifies persisted reservation intervals rather than inferred unit
+  // readiness, including conflicts introduced by legacy imports.
+  const scheduleItems =
+    (await prisma.rentalOrderItem.findMany({
+      where: {
+        unitId: { not: null },
+        allocationStatus: { in: [...SCHEDULE_CONFLICT_ALLOCATION_STATUSES] },
+        occupiedFrom: { lte: horizon },
+        occupiedUntil: { gt: observedAt },
+        order: { status: { in: [...SCHEDULE_CONFLICT_ORDER_STATES] } },
+      },
+      select: {
+        unitId: true,
+        order: { select: orderSelect },
+      },
+      orderBy: [{ unitId: 'asc' }, { occupiedFrom: 'asc' }, { id: 'asc' }],
+    })) ?? [];
+  candidates += scheduleItems.length;
+  const scheduleOrdersByUnit = new Map<string, CandidateOrder[]>();
+  for (const item of scheduleItems) {
+    if (!item.unitId) continue;
+    const orders = scheduleOrdersByUnit.get(item.unitId) ?? [];
+    if (!orders.some((order) => order.id === item.order.id)) orders.push(item.order);
+    scheduleOrdersByUnit.set(item.unitId, orders);
+  }
+  for (const [unitId, orders] of scheduleOrdersByUnit) {
+    for (let firstIndex = 0; firstIndex < orders.length; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < orders.length; secondIndex += 1) {
+        const risk = buildUnitScheduleConflictRisk(
+          { orderA: orders[firstIndex]!, orderB: orders[secondIndex]!, unitId },
+          observedAt,
+        );
+        if (!risk) continue;
+        risks += 1;
+        if (activeDedupeKeys.has(risk.dedupeKey)) continue;
+        await client.upsert(risk);
+        upserted += 1;
+      }
+    }
   }
 
   const nextFindingCursors = Object.fromEntries(

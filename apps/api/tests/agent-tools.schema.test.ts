@@ -25,6 +25,15 @@ const executions = [
     'get_rental_readiness_context',
     { ruleCode: 'ORDER_PREPARATION_DELAYED', primaryOrderId: id(3) },
   ],
+  [
+    'get_rental_readiness_context',
+    {
+      ruleCode: 'UNIT_SCHEDULE_CONFLICT',
+      primaryOrderId: id(3),
+      affectedOrderId: id(4),
+      unitId: id(6),
+    },
+  ],
   ['get_overdue_rental_context', { orderId: id(3) }],
   ['get_customer_interaction_by_idempotency_key', { idempotencyKey: 'follow-up:test' }],
   [
@@ -152,6 +161,20 @@ describe('agent tool contract', () => {
       ...base,
       toolName: 'get_rental_readiness_context',
       arguments: { ruleCode: 'ALLOCATED_UNIT_NOT_READY', primaryOrderId: id(3) },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('requires the other order for a Case 6 unit schedule conflict', () => {
+    const result = agentToolExecutionSchema.safeParse({
+      ...base,
+      toolName: 'get_rental_readiness_context',
+      arguments: {
+        ruleCode: 'UNIT_SCHEDULE_CONFLICT',
+        primaryOrderId: id(3),
+        unitId: id(6),
+      },
     });
 
     expect(result.success).toBe(false);

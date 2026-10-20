@@ -357,13 +357,14 @@ Notification phải gửi đúng role và branch, có severity, deadline, liên 
 
 Worker chạy hoàn toàn deterministic trong Studio API, không gọi LLM, và quét các đơn `CONFIRMED`, `PREPARING` hoặc `READY_FOR_PICKUP` sắp nhận trong cửa sổ cấu hình.
 
-Năm rule đang được hỗ trợ; ba rule đầu bảo vệ readiness của đơn sắp nhận, rule thứ tư theo dõi đơn đang thuê quá hạn và rule thứ năm theo dõi năng lực xử lý đã khai báo của chi nhánh:
+Sáu rule đang được hỗ trợ; ba rule đầu bảo vệ readiness của đơn sắp nhận, rule thứ tư theo dõi đơn đang thuê quá hạn, rule thứ năm theo dõi năng lực xử lý đã khai báo của chi nhánh và rule thứ sáu phát hiện dữ liệu lịch dùng chung một unit bị chồng lấp:
 
 - `PREVIOUS_RENTAL_NOT_RETURNED/v1`: order khác vẫn giữ allocation `ACTIVE` và thời gian hiện tại cộng cleaning buffer đã vượt quá giờ nhận của đơn kế tiếp.
 - `ALLOCATED_UNIT_NOT_READY/v1`: unit đã gán cho đơn sắp nhận đang sai chi nhánh, có transfer đang hoạt động, có block kéo dài qua giờ nhận, hoặc không có lịch xác định để chuyển từ trạng thái `CLEANING/REPAIR/...` về `READY` trước giờ nhận.
 - `ORDER_PREPARATION_DELAYED/v1`: đơn còn `CONFIRMED/PREPARING` trong hai giờ trước giờ nhận dù mọi item đã được phân bổ và mọi unit đều `READY` tại đúng chi nhánh, không có active rental, block hoặc transfer.
 - `RENTAL_RETURN_OVERDUE/v1`: đơn `ACTIVE` đã qua `plannedDueAt + lateGraceMinutes` và vẫn còn ít nhất một allocation `ACTIVE`.
 - `OPERATIONAL_CAPACITY_SHORTFALL/v1`: tổng effort còn lại của các unit block được gán vào một capacity window lớn hơn số phút công còn lại của window tại thời điểm quan sát.
+- `UNIT_SCHEDULE_CONFLICT/v1`: hai order chưa kết thúc cùng giữ một physical unit với các khoảng `occupiedFrom`–`occupiedUntil` giao nhau. Unit này là rule phòng vệ cho dữ liệu legacy/import hoặc race condition; API confirm/reallocate/extend vẫn là guard đồng bộ chính. Đơn bắt đầu sau được đề xuất đổi sang unit cùng variant sau confirmation; không có phương án thì handoff thủ công.
 
 `ORDER_PREPARATION_DELAYED` loại trừ hai rule unit-level. Nếu khách trước còn giữ bất kỳ unit nào thì `PREVIOUS_RENTAL_NOT_RETURNED` được ưu tiên; nếu unit sai chi nhánh hoặc chưa sẵn sàng thì `ALLOCATED_UNIT_NOT_READY` được ưu tiên. Một preparation-delay finding đang mở sẽ được resolve khi một trong hai rủi ro unit-level xuất hiện, nên nhân viên không phải xử lý hai case cùng nguyên nhân.
 
@@ -460,7 +461,7 @@ Trong lúc case đang `MONITORING`, mỗi scheduler tick hoặc domain event có
 | Write tools và read-back | Đã có nền tảng | Phụ thuộc feature flag, quyền và API đích |
 | Agent Case state | Đã có nền tảng | Có state cho analyzing, approval, executing, monitoring và terminal |
 | Job nền tự phát hiện | Đã có bản deterministic đầu tiên | Polling theo lookahead, reconcile finding mở và retry ở tick sau khi dependency lỗi |
-| Risk detection tổng hợp | Đã có năm rule | `PREVIOUS_RENTAL_NOT_RETURNED/v1`, `ALLOCATED_UNIT_NOT_READY/v1`, `ORDER_PREPARATION_DELAYED/v1`, `RENTAL_RETURN_OVERDUE/v1` và `OPERATIONAL_CAPACITY_SHORTFALL/v1` |
+| Risk detection tổng hợp | Đã có sáu rule | `PREVIOUS_RENTAL_NOT_RETURNED/v1`, `ALLOCATED_UNIT_NOT_READY/v1`, `ORDER_PREPARATION_DELAYED/v1`, `RENTAL_RETURN_OVERDUE/v1`, `OPERATIONAL_CAPACITY_SHORTFALL/v1` và `UNIT_SCHEDULE_CONFLICT/v1` |
 | Risk score/dự đoán | Chưa hoàn chỉnh | MVP nên bắt đầu bằng rule-based score |
 | Simulation engine | Chưa hoàn chỉnh | Cần snapshot và evaluator không ghi dữ liệu thật |
 | Recommendation ranking | Chưa hoàn chỉnh | Cần constraint filter và scoring config |

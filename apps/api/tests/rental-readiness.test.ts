@@ -30,8 +30,12 @@ vi.mock('../src/database/prisma.js', () => ({
   },
 }));
 
-const { getRentalReadinessContext, processRentalReadiness, startRentalReadinessDetection } =
-  await import('../src/modules/rentals/rental-readiness.service.js');
+const {
+  buildUnitScheduleConflictRisk,
+  getRentalReadinessContext,
+  processRentalReadiness,
+  startRentalReadinessDetection,
+} = await import('../src/modules/rentals/rental-readiness.service.js');
 const checkAvailability = vi.spyOn(rentalService, 'checkAvailability');
 const {
   listOpenRentalReadinessFindings,
@@ -128,6 +132,7 @@ function orderA(allocationStatus = 'ACTIVE') {
     items: [
       {
         id: itemAId,
+        variantId,
         unitId,
         allocationStatus,
         variant: { cleaningBufferMinutes: 120 },
@@ -149,7 +154,9 @@ function client(
             ? unitOpenItems
             : ruleCode === 'ORDER_PREPARATION_DELAYED'
               ? preparationOpenItems
-              : openItems,
+              : ruleCode === 'UNIT_SCHEDULE_CONFLICT'
+                ? []
+                : openItems,
         nextCursor: null,
       }),
     ),
@@ -192,6 +199,123 @@ afterEach(() => {
 });
 
 describe('rental readiness detection', () => {
+  it('builds one canonical Case 6 finding for overlapping persisted unit intervals', () => {
+    const earlier = {
+      ...orderA('CONFIRMED'),
+      version: 4,
+      status: 'CONFIRMED',
+      items: [
+        {
+          ...orderA('CONFIRMED').items[0]!,
+          allocationStatus: 'CONFIRMED',
+          occupiedFrom: new Date('2026-10-17T09:00:00.000Z'),
+          occupiedUntil: new Date('2026-10-17T13:00:00.000Z'),
+        },
+      ],
+    };
+    const later = {
+      ...orderB(),
+      items: [
+        {
+          ...orderB().items[0]!,
+          occupiedFrom: new Date('2026-10-17T11:00:00.000Z'),
+          occupiedUntil: new Date('2026-10-17T15:00:00.000Z'),
+        },
+      ],
+    };
+
+    const risk = buildUnitScheduleConflictRisk(
+      { orderA: later, orderB: earlier, unitId },
+      observedAt,
+    );
+
+    expect(risk).toMatchObject({
+      ruleCode: 'UNIT_SCHEDULE_CONFLICT',
+      primaryEntityId: orderBId,
+      affectedEntityId: orderAId,
+      unitId,
+      windowStart: '2026-10-17T11:00:00.000Z',
+      windowEnd: '2026-10-17T13:00:00.000Z',
+      evidence: { reasonCodes: ['UNIT_SCHEDULE_OVERLAP'] },
+    });
+  });
+
+  it('does not create Case 6 for adjacent persisted unit intervals', () => {
+    const first = {
+      ...orderA('CONFIRMED'),
+      version: 4,
+      status: 'CONFIRMED',
+      items: [
+        {
+          ...orderA('CONFIRMED').items[0]!,
+          allocationStatus: 'CONFIRMED',
+          occupiedFrom: new Date('2026-10-17T09:00:00.000Z'),
+          occupiedUntil: new Date('2026-10-17T11:00:00.000Z'),
+        },
+      ],
+    };
+    const second = {
+      ...orderB(),
+      items: [
+        {
+          ...orderB().items[0]!,
+          occupiedFrom: new Date('2026-10-17T11:00:00.000Z'),
+          occupiedUntil: new Date('2026-10-17T15:00:00.000Z'),
+        },
+      ],
+    };
+
+    expect(
+      buildUnitScheduleConflictRisk({ orderA: first, orderB: second, unitId }, observedAt),
+    ).toBeNull();
+  });
+
+  it('detects and upserts a Case 6 conflict from persisted unit allocations', async () => {
+    const earlier = {
+      ...orderA('CONFIRMED'),
+      version: 4,
+      status: 'CONFIRMED',
+      items: [
+        {
+          ...orderA('CONFIRMED').items[0]!,
+          allocationStatus: 'CONFIRMED',
+          occupiedFrom: new Date('2026-10-17T09:00:00.000Z'),
+          occupiedUntil: new Date('2026-10-17T13:00:00.000Z'),
+        },
+      ],
+    };
+    const later = {
+      ...orderB(),
+      items: [
+        {
+          ...orderB().items[0]!,
+          occupiedFrom: new Date('2026-10-17T11:00:00.000Z'),
+          occupiedUntil: new Date('2026-10-17T15:00:00.000Z'),
+        },
+      ],
+    };
+    mocks.orderFindMany.mockResolvedValueOnce([]);
+    mocks.itemFindMany.mockResolvedValueOnce([
+      { unitId, order: earlier },
+      { unitId, order: later },
+    ]);
+    const agent = client();
+
+    await expect(processRentalReadiness(observedAt, 1440, 100, agent)).resolves.toMatchObject({
+      risks: 1,
+      upserted: 1,
+    });
+
+    expect(agent.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ruleCode: 'UNIT_SCHEDULE_CONFLICT',
+        primaryEntityId: orderBId,
+        affectedEntityId: orderAId,
+        unitId,
+      }),
+    );
+  });
+
   it('returns an order-level preparation context without customer PII or a unit identity', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(observedAt);
@@ -649,7 +773,7 @@ describe('rental readiness detection', () => {
     expect(second.nextFindingCursors).toEqual({});
     expect(agent.listOpen).toHaveBeenNthCalledWith(1, 'PREVIOUS_RENTAL_NOT_RETURNED', undefined, 2);
     expect(agent.listOpen).toHaveBeenNthCalledWith(
-      4,
+      5,
       'PREVIOUS_RENTAL_NOT_RETURNED',
       'finding-page-2',
       2,
@@ -683,13 +807,11 @@ describe('internal readiness agent client', () => {
   it('rejects malformed AI responses', async () => {
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValue(
-          new Response(JSON.stringify({ success: true, data: { items: 'invalid' } }), {
-            status: 200,
-          }),
-        ),
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ success: true, data: { items: 'invalid' } }), {
+          status: 200,
+        }),
+      ),
     );
 
     await expect(listOpenRentalReadinessFindings()).rejects.toMatchObject({

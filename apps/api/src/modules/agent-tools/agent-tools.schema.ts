@@ -50,6 +50,7 @@ export const agentToolExecutionSchema = z.discriminatedUnion('toolName', [
           'PREVIOUS_RENTAL_NOT_RETURNED',
           'ALLOCATED_UNIT_NOT_READY',
           'ORDER_PREPARATION_DELAYED',
+          'UNIT_SCHEDULE_CONFLICT',
         ]),
         primaryOrderId: z.uuid(),
         affectedOrderId: z.uuid().optional(),
@@ -64,11 +65,14 @@ export const agentToolExecutionSchema = z.discriminatedUnion('toolName', [
             message: 'unitId is required for unit-level readiness rules',
           });
         }
-        if (value.ruleCode === 'PREVIOUS_RENTAL_NOT_RETURNED' && !value.affectedOrderId) {
+        if (
+          ['PREVIOUS_RENTAL_NOT_RETURNED', 'UNIT_SCHEDULE_CONFLICT'].includes(value.ruleCode) &&
+          !value.affectedOrderId
+        ) {
           context.addIssue({
             code: 'custom',
             path: ['affectedOrderId'],
-            message: 'affectedOrderId is required for the previous-rental rule',
+            message: 'affectedOrderId is required for two-order readiness rules',
           });
         }
       }),
