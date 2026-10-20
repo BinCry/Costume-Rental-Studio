@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { KeyboardEvent, FormEvent, ReactNode } from 'react';
 import type { Navigate } from '../app/routes';
 import {
@@ -31,7 +40,12 @@ import {
   type OpsKnowledgeAnswer,
 } from '../api/client';
 
-type AgentTab = 'overview' | 'queue' | 'workflows' | 'knowledge' | 'activity' | 'chat' | 'case';
+const OpsAgentCasesPanel = lazy(() =>
+  import('./OpsAgentCasesPanel').then((module) => ({ default: module.OpsAgentCasesPanel })),
+);
+
+type AgentTab =
+  'overview' | 'queue' | 'workflows' | 'knowledge' | 'activity' | 'chat' | 'case' | 'cases';
 type QueueFilter = 'all' | QueueTask['kind'];
 type AgentCaseAction = 'confirm' | 'reject-confirmation' | 'approve' | 'reject-approval' | 'cancel';
 interface ChatMessage {
@@ -58,7 +72,10 @@ const tabs: { id: AgentTab; label: string }[] = [
   { id: 'case', label: 'Hồ sơ Agent' },
 ];
 
-const apiTabs: { id: AgentTab; label: string }[] = [{ id: 'chat', label: 'Hỗ trợ vận hành' }];
+const apiTabs: { id: AgentTab; label: string }[] = [
+  { id: 'cases', label: 'Cảnh báo' },
+  { id: 'chat', label: 'Trợ lý chat' },
+];
 
 function initialChatMessages(useAgentApi: boolean, isNewConversation = false): ChatMessage[] {
   if (useAgentApi) return [];
@@ -428,11 +445,13 @@ function TabPanel({
   children,
   labelledBy,
   hasTabs = true,
+  tabsToRender,
 }: {
   tab: AgentTab;
   children: ReactNode;
   labelledBy?: string;
   hasTabs?: boolean;
+  tabsToRender?: { id: AgentTab; label: string }[];
 }) {
   return (
     <>
@@ -446,7 +465,7 @@ function TabPanel({
         {children}
       </section>
       {hasTabs &&
-        tabs
+        (tabsToRender ?? tabs)
           .filter((item) => item.id !== tab)
           .map((item) => (
             <section
@@ -538,7 +557,7 @@ export function OpsAgentPage({
     Boolean(uncertainInitialSendSessionKey) &&
     typeof window !== 'undefined' &&
     window.sessionStorage.getItem(uncertainInitialSendSessionKey!) === '1';
-  const [tab, setTab] = useState<AgentTab>(useAgentApi ? 'chat' : 'overview');
+  const [tab, setTab] = useState<AgentTab>(useAgentApi ? 'cases' : 'overview');
   const [queueFilter, setQueueFilter] = useState<QueueFilter>('all');
   const [queueSearch, setQueueSearch] = useState('');
   const [knowledgeSearch, setKnowledgeSearch] = useState('');
@@ -1281,31 +1300,29 @@ export function OpsAgentPage({
         </div>
       )}
 
-      {!useAgentApi && (
-        <div className="ops-tabs-wrap">
-          <div className="ops-agent-tabs" role="tablist" aria-label="Các khu vực Ops Agent">
-            {availableTabs.map((item, index) => (
-              <button
-                key={item.id}
-                ref={(element) => {
-                  tabRefs.current[index] = element;
-                }}
-                id={'ops-agent-tab-' + item.id}
-                type="button"
-                role="tab"
-                aria-selected={visibleTab === item.id}
-                aria-controls={'ops-agent-panel-' + item.id}
-                tabIndex={visibleTab === item.id ? 0 : -1}
-                className={visibleTab === item.id ? 'ops-agent-tab active' : 'ops-agent-tab'}
-                onClick={() => setTab(item.id)}
-                onKeyDown={(event) => handleTabKeyDown(event, item.id)}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
+      <div className="ops-tabs-wrap">
+        <div className="ops-agent-tabs" role="tablist" aria-label="Các khu vực Ops Agent">
+          {availableTabs.map((item, index) => (
+            <button
+              key={item.id}
+              ref={(element) => {
+                tabRefs.current[index] = element;
+              }}
+              id={'ops-agent-tab-' + item.id}
+              type="button"
+              role="tab"
+              aria-selected={visibleTab === item.id}
+              aria-controls={'ops-agent-panel-' + item.id}
+              tabIndex={visibleTab === item.id ? 0 : -1}
+              className={visibleTab === item.id ? 'ops-agent-tab active' : 'ops-agent-tab'}
+              onClick={() => setTab(item.id)}
+              onKeyDown={(event) => handleTabKeyDown(event, item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
-      )}
+      </div>
 
       {!useAgentApi && scenario === 'conflict' && !conflictCleared && (
         <Feedback
@@ -1342,9 +1359,21 @@ export function OpsAgentPage({
 
       <TabPanel
         tab={visibleTab}
-        labelledBy={useAgentApi ? 'ops-agent-support-title' : undefined}
-        hasTabs={!useAgentApi}
+        labelledBy={useAgentApi ? 'ops-agent-tab-' + visibleTab : undefined}
+        hasTabs
+        tabsToRender={availableTabs}
       >
+        {useAgentApi && visibleTab === 'cases' && (
+          <Suspense
+            fallback={
+              <div className="ops-alert-loading" role="status">
+                Đang tải màn cảnh báo…
+              </div>
+            }
+          >
+            <OpsAgentCasesPanel branchId={branchId} />
+          </Suspense>
+        )}
         {visibleTab === 'overview' &&
           (useAgentApi ? (
             <div className="ops-live-home">

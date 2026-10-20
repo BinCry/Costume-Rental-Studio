@@ -11,8 +11,9 @@ import {
   aiAgentCaseListResponseSchema,
   aiAgentCaseResponseSchema,
   aiAgentResponseSchema,
-  type AgentCaseListData,
   type AgentCaseListQuery,
+  type AgentCaseBrowserListData,
+  type AgentCaseBrowserResult,
   type AgentCaseResult,
   type AgentDecisionInput,
   type AgentMessageInput,
@@ -20,6 +21,14 @@ import {
 } from './agent.schema.js';
 
 const MAX_AI_RESPONSE_BYTES = 1_000_000;
+const OPERATIONAL_CASE_RULES = new Set([
+  'PREVIOUS_RENTAL_NOT_RETURNED',
+  'ALLOCATED_UNIT_NOT_READY',
+  'ORDER_PREPARATION_DELAYED',
+  'RENTAL_RETURN_OVERDUE',
+  'OPERATIONAL_CAPACITY_SHORTFALL',
+  'UNIT_SCHEDULE_CONFLICT',
+]);
 
 function isTimeout(error: unknown): boolean {
   return error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name);
@@ -177,7 +186,10 @@ async function authorizeAgentBranch(
   if (branch?.status !== 'ACTIVE') {
     throw new AppError(400, 'INVALID_AGENT_BRANCH', 'Selected branch is not active');
   }
-  if (agentPermission && hasPermission(actor, { module: 'agents', action: agentPermission, branchId })) {
+  if (
+    agentPermission &&
+    hasPermission(actor, { module: 'agents', action: agentPermission, branchId })
+  ) {
     return { userId: actor.id, audiences: ['staff_internal', 'shared'] };
   }
   const knowledgeActor = opsAgentKnowledgeActorContext(actor);
@@ -242,9 +254,9 @@ export async function sendAgentMessage(
   input: AgentMessageInput,
   actor: AuthenticatedActor,
   requestId?: string,
-): Promise<AgentCaseResult> {
+): Promise<AgentCaseBrowserResult> {
   const knowledgeActor = await authorizeAgentBranch(actor, input.branchId);
-  return callAgent(
+  const result = await callAgent(
     '/api/v1/agent/messages',
     { method: 'POST', body: JSON.stringify(input) },
     actor,
@@ -254,6 +266,7 @@ export async function sendAgentMessage(
     input.branchId,
     knowledgeActor,
   );
+  return (await enrichAgentCases([result], input.branchId, actor))[0]!;
 }
 
 export async function getAgentCase(
@@ -261,8 +274,8 @@ export async function getAgentCase(
   branchId: string,
   actor: AuthenticatedActor,
   requestId?: string,
-): Promise<AgentCaseResult> {
-  return callAgent(
+): Promise<AgentCaseBrowserResult> {
+  const result = await callAgent(
     `/api/v1/agent/cases/${encodeURIComponent(caseId)}`,
     { method: 'GET' },
     actor,
@@ -272,6 +285,7 @@ export async function getAgentCase(
     branchId,
     await authorizeAgentBranch(actor, branchId, 'read'),
   );
+  return (await enrichAgentCases([result], branchId, actor))[0]!;
 }
 
 async function caseAction(
@@ -281,11 +295,11 @@ async function caseAction(
   input?: unknown,
   scopeOnly = true,
   branchId?: string,
-): Promise<AgentCaseResult> {
+): Promise<AgentCaseBrowserResult> {
   const knowledgeActor = branchId
     ? await authorizeAgentBranch(actor, branchId, 'manage')
     : undefined;
-  return callAgent(
+  const result = await callAgent(
     path,
     { method: 'POST', body: input ? JSON.stringify(input) : undefined },
     actor,
@@ -295,6 +309,15 @@ async function caseAction(
     branchId,
     knowledgeActor,
   );
+  const resultBranchId = branchId ?? result.branchId ?? undefined;
+  if (!resultBranchId) {
+    const { ownerActorId, ...safeResult } = result;
+    return {
+      ...safeResult,
+      ownership: ownerActorId ? (ownerActorId === actor.id ? 'MINE' : 'OTHER') : 'UNCLAIMED',
+    };
+  }
+  return (await enrichAgentCases([result], resultBranchId, actor))[0]!;
 }
 
 export async function confirmAgentCase(
@@ -385,7 +408,7 @@ export async function listAgentCases(
   input: AgentCaseListQuery,
   actor: AuthenticatedActor,
   requestId?: string,
-): Promise<AgentCaseListData> {
+): Promise<AgentCaseBrowserListData> {
   const query = new URLSearchParams({ ownership: input.ownership, limit: String(input.limit) });
   if (input.branchId) query.set('branchId', input.branchId);
   if (input.state) query.set('state', input.state);
@@ -420,7 +443,126 @@ export async function listAgentCases(
   const parsed = aiAgentCaseListResponseSchema.safeParse(body);
   if (!parsed.success)
     throw new AppError(503, 'AI_SERVICE_INVALID_RESPONSE', 'Agent service returned invalid data');
-  return parsed.data.data;
+  const scopedCases = parsed.data.data.items.filter(
+    (item) =>
+      item.branchId === input.branchId &&
+      Boolean(item.finding && OPERATIONAL_CASE_RULES.has(item.finding.ruleCode)),
+  );
+  return {
+    ...parsed.data.data,
+    items: await enrichAgentCases(scopedCases, input.branchId, actor),
+  };
+}
+
+function evidenceUnitIds(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(evidenceUnitIds);
+  if (!value || typeof value !== 'object') return [];
+  return Object.entries(value).flatMap(([key, nested]) => {
+    if (/^unitIds?$/i.test(key)) {
+      const candidates = Array.isArray(nested) ? nested : [nested];
+      return candidates.filter(
+        (candidate): candidate is string =>
+          typeof candidate === 'string' &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(candidate),
+      );
+    }
+    return evidenceUnitIds(nested);
+  });
+}
+
+async function enrichAgentCases(
+  cases: AgentCaseResult[],
+  branchId: string,
+  actor: AuthenticatedActor,
+): Promise<AgentCaseBrowserResult[]> {
+  const entityIds = [
+    ...new Set(
+      cases.flatMap((item) =>
+        [item.finding?.primaryEntityId, item.finding?.affectedEntityId].filter((id): id is string =>
+          Boolean(id),
+        ),
+      ),
+    ),
+  ];
+  const unitIds = [
+    ...new Set(
+      cases.flatMap((item) =>
+        [item.finding?.unitId, ...evidenceUnitIds(item.finding?.evidence)].filter(
+          (id): id is string => Boolean(id),
+        ),
+      ),
+    ),
+  ];
+  const [orders, units] = await Promise.all([
+    entityIds.length &&
+    hasPermission(actor, {
+      module: 'rentals',
+      action: 'read',
+      scope: 'BRANCH',
+      branchId,
+    })
+      ? prisma.rentalOrder.findMany({
+          where: { id: { in: entityIds }, pickupBranchId: branchId },
+          select: {
+            id: true,
+            orderCode: true,
+            status: true,
+            plannedStartAt: true,
+            plannedDueAt: true,
+          },
+        })
+      : Promise.resolve([]),
+    unitIds.length &&
+    hasPermission(actor, {
+      module: 'inventory',
+      action: 'read',
+      scope: 'BRANCH',
+      branchId,
+    })
+      ? prisma.costumeUnit.findMany({
+          where: { id: { in: unitIds }, currentBranchId: branchId },
+          select: {
+            id: true,
+            unitCode: true,
+            operationalStatus: true,
+            conditionGrade: true,
+          },
+        })
+      : Promise.resolve([]),
+  ]);
+  const ordersById = new Map(orders.map((item) => [item.id, item]));
+  const unitsById = new Map(units.map((item) => [item.id, item]));
+  return cases.map((item) => {
+    const { ownerActorId, finding, ...safeCase } = item;
+    const orderIds = [finding?.primaryEntityId, finding?.affectedEntityId].filter(
+      (id): id is string => Boolean(id),
+    );
+    const relatedOrders = [...new Set(orderIds)]
+      .map((id) => ordersById.get(id))
+      .filter((order): order is NonNullable<typeof order> => Boolean(order))
+      .map(({ orderCode, status, plannedStartAt, plannedDueAt }) => ({
+        orderCode,
+        status,
+        plannedStartAt: plannedStartAt.toISOString(),
+        plannedDueAt: plannedDueAt.toISOString(),
+      }));
+    const relatedUnits = [...new Set([finding?.unitId, ...evidenceUnitIds(finding?.evidence)])]
+      .filter((id): id is string => Boolean(id))
+      .map((id) => unitsById.get(id))
+      .filter((unit): unit is NonNullable<typeof unit> => Boolean(unit))
+      .map(({ unitCode, operationalStatus, conditionGrade }) => ({
+        unitCode,
+        operationalStatus,
+        conditionGrade,
+      }));
+    return {
+      ...safeCase,
+      ...(finding ? { finding } : {}),
+      ownership: ownerActorId ? (ownerActorId === actor.id ? 'MINE' : 'OTHER') : 'UNCLAIMED',
+      ...(relatedOrders.length ? { relatedOrders } : {}),
+      ...(relatedUnits.length ? { relatedUnits } : {}),
+    };
+  });
 }
 
 export async function claimAgentCase(

@@ -3,8 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthenticatedActor } from '../src/modules/auth/authorization.js';
 
 const branchFindUnique = vi.hoisted(() => vi.fn());
+const rentalOrderFindMany = vi.hoisted(() => vi.fn());
+const costumeUnitFindMany = vi.hoisted(() => vi.fn());
 vi.mock('../src/database/prisma.js', () => ({
-  prisma: { branch: { findUnique: branchFindUnique } },
+  prisma: {
+    branch: { findUnique: branchFindUnique },
+    rentalOrder: { findMany: rentalOrderFindMany },
+    costumeUnit: { findMany: costumeUnitFindMany },
+  },
 }));
 process.env.AGENT_READINESS_ANALYSIS_ENABLED = 'true';
 process.env.AGENT_CRM_WRITE_ENABLED = 'true';
@@ -28,6 +34,9 @@ const caseId = '10000000-0000-4000-8000-000000000002';
 const confirmationId = '10000000-0000-4000-8000-000000000003';
 const approvalId = '10000000-0000-4000-8000-000000000004';
 const branchId = '10000000-0000-4000-8000-000000000005';
+const primaryOrderId = '20000000-0000-4000-8000-000000000001';
+const affectedOrderId = '20000000-0000-4000-8000-000000000002';
+const unitId = '20000000-0000-4000-8000-000000000003';
 const actor = {
   id: '10000000-0000-4000-8000-000000000001',
   status: 'ACTIVE',
@@ -125,6 +134,7 @@ const adminActor = {
 const result = {
   caseId,
   state: 'INSUFFICIENT_DATA',
+  ownership: 'UNCLAIMED',
   message: 'Please provide more information.',
   evidence: [],
   goal: { summary: 'Rental assistance', status: 'WAITING_FOR_INPUT' },
@@ -161,6 +171,10 @@ const upstreamResult = {
 
 afterEach(() => vi.unstubAllGlobals());
 beforeEach(() => branchFindUnique.mockResolvedValue({ status: 'ACTIVE' }));
+beforeEach(() => {
+  rentalOrderFindMany.mockResolvedValue([]);
+  costumeUnitFindMany.mockResolvedValue([]);
+});
 
 describe('agent service response contracts', () => {
   it('proxies an overdue follow-up confirmation with the authenticated actor scope', async () => {
@@ -396,6 +410,113 @@ describe('agent service response contracts', () => {
     expect(headers.get('X-Agent-Read-All')).toBe('false');
     expect(headers.get('X-Agent-Manage-All')).toBe('false');
     expect(headers.get('X-Request-Id')).toBe('request-1');
+  });
+
+  it('returns a branch-scoped, PII-minimized operational case projection', async () => {
+    const actorWithBusinessRead = {
+      ...branchActor,
+      roleAssignments: [
+        {
+          ...branchActor.roleAssignments[0],
+          role: {
+            ...branchActor.roleAssignments[0]!.role,
+            rolePermissions: [
+              ...branchActor.roleAssignments[0]!.role.rolePermissions,
+              {
+                permission: {
+                  code: 'rentals.read.branch',
+                  module: 'rentals',
+                  action: 'read',
+                  scope: 'BRANCH',
+                },
+              },
+              {
+                permission: {
+                  code: 'inventory.read.branch',
+                  module: 'inventory',
+                  action: 'read',
+                  scope: 'BRANCH',
+                },
+              },
+            ],
+          },
+        },
+      ],
+    } as unknown as AuthenticatedActor;
+    const caseWithFinding = {
+      ...result,
+      branchId,
+      ownerActorId: actorWithBusinessRead.id,
+      version: 2,
+      finding: {
+        findingId: caseId,
+        ruleCode: 'PREVIOUS_RENTAL_NOT_RETURNED',
+        ruleVersion: 'v1',
+        dedupeKey: 'opaque-key',
+        primaryEntityId: primaryOrderId,
+        affectedEntityId: affectedOrderId,
+        unitId,
+        windowStart: '2026-10-20T10:00:00.000Z',
+        windowEnd: '2026-10-20T11:00:00.000Z',
+        severity: 'HIGH',
+        status: 'OPEN',
+        evidence: { unitId, privateActorId: actorWithBusinessRead.id },
+        firstDetectedAt: '2026-10-20T09:00:00.000Z',
+        lastDetectedAt: '2026-10-20T09:30:00.000Z',
+        resolvedAt: null,
+      },
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: { items: [caseWithFinding], nextCursor: null },
+          message: 'Agent case queue retrieved',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    rentalOrderFindMany.mockResolvedValue([
+      {
+        id: primaryOrderId,
+        orderCode: 'RT-PRIMARY',
+        status: 'CONFIRMED',
+        plannedStartAt: new Date('2026-10-20T10:00:00.000Z'),
+        plannedDueAt: new Date('2026-10-21T10:00:00.000Z'),
+      },
+      {
+        id: affectedOrderId,
+        orderCode: 'RT-AFFECTED',
+        status: 'ACTIVE',
+        plannedStartAt: new Date('2026-10-19T10:00:00.000Z'),
+        plannedDueAt: new Date('2026-10-20T10:00:00.000Z'),
+      },
+    ]);
+    costumeUnitFindMany.mockResolvedValue([
+      {
+        id: unitId,
+        unitCode: 'UNIT-007',
+        operationalStatus: 'RENTED',
+        conditionGrade: 'GOOD',
+      },
+    ]);
+
+    const response = await listAgentCases(
+      { branchId, ownership: 'all', limit: 20 },
+      actorWithBusinessRead,
+    );
+    expect(response.items).toHaveLength(1);
+    expect(response.items[0]).toMatchObject({
+      ownership: 'MINE',
+      relatedOrders: [
+        expect.objectContaining({ orderCode: 'RT-PRIMARY' }),
+        expect.objectContaining({ orderCode: 'RT-AFFECTED' }),
+      ],
+      relatedUnits: [{ unitCode: 'UNIT-007', operationalStatus: 'RENTED' }],
+    });
+    expect(response.items[0]).not.toHaveProperty('ownerActorId');
+    expect(rentalOrderFindMany).toHaveBeenCalledOnce();
   });
 
   it('forwards global agent scopes without branch ids for an admin actor', async () => {

@@ -459,7 +459,7 @@ function apiErrorMessage(status: number, code: string) {
       'Bạn đã gửi quá nhiều câu hỏi Ops Agent trong thời gian ngắn. Hãy đợi rồi gửi lại.',
     AGENT_CASE_NOT_FOUND: 'Không tìm thấy hồ sơ Agent này hoặc hồ sơ không còn truy cập được.',
     AGENT_CASE_CONFLICT:
-      'Hồ sơ Agent đã thay đổi hoặc không thể tiếp tục. Hãy tải lại trạng thái trước khi thao tác.',
+      'Dữ liệu của tình huống vừa thay đổi. Kế hoạch cũ đã mất hiệu lực; hãy tải lại và phân tích lại trước khi xác nhận.',
 
     IDEMPOTENCY_CONFLICT:
       'Yêu cầu đã thay đổi so với lần gửi trước. Hãy tải lại đơn và kiểm tra giao dịch.',
@@ -2862,12 +2862,100 @@ export interface OpsAgentEvidence {
   observedAt?: string | null;
 }
 
+export interface OpsAgentFinding {
+  findingId: string;
+  ruleCode: string;
+  ruleVersion?: string | null;
+  primaryEntityId?: string | null;
+  affectedEntityId?: string | null;
+  unitId?: string | null;
+  windowStart?: string | null;
+  windowEnd?: string | null;
+  severity: string;
+  status: string;
+  evidence: Record<string, unknown>;
+  firstDetectedAt?: string | null;
+  lastDetectedAt?: string | null;
+  sourceObservedAt?: string | null;
+  resolvedAt?: string | null;
+}
+
+export interface OpsAgentOption {
+  optionId: string;
+  optionType?: string;
+  feasible?: boolean;
+  executable?: boolean;
+  rank?: number;
+  reasonCodes?: string[];
+  targetUnit?: Record<string, unknown> | null;
+  actionPreview?: Record<string, unknown> | null;
+  estimatedMinutes?: number | null;
+  estimatedDurationMinutes?: number | null;
+  estimatedCostVnd?: number | null;
+  estimatedCost?: number | null;
+  riskLevel?: string | null;
+  riskScore?: number | null;
+  riskSummary?: string | null;
+  risks?: (string | Record<string, unknown>)[];
+}
+
+export interface OpsAgentAnalysis {
+  analysisId: string;
+  status: 'ACTIVE' | 'STALE';
+  outcome: 'READY' | 'NO_FEASIBLE_OPTION';
+  observedAt?: string | null;
+  sourceObservedAt?: string | null;
+  simulatorVersion?: string | null;
+  rankingPolicyVersion?: string | null;
+  before?: Record<string, unknown>;
+  options: OpsAgentOption[];
+  recommendedOptionId?: string | null;
+  narrative?: {
+    summary?: string;
+    rationale?: string[];
+    risks?: string[];
+    nextStep?: string | null;
+    fallback?: boolean;
+  };
+}
+
+export interface OpsAgentFindingCase {
+  finding?: OpsAgentFinding | null;
+  analysis?: OpsAgentAnalysis | null;
+  branchId?: string | null;
+  caseType?: string | null;
+  origin?: string | null;
+  ownership?: 'UNCLAIMED' | 'MINE' | 'OTHER';
+  claimedAt?: string | null;
+  deadlineAt?: string | null;
+  version?: number;
+  relatedOrders?: {
+    orderCode: string;
+    status: string;
+    plannedStartAt: string;
+    plannedDueAt: string;
+  }[];
+  relatedUnits?: { unitCode: string; operationalStatus: string; conditionGrade: string }[];
+}
+
 export interface OpsAgentMessageResult {
   caseId: string;
   state: string;
   message: string;
   evidence: OpsAgentEvidence[];
-  pendingConfirmation?: { confirmationId: string; summary: string; expiresAt: string } | null;
+  pendingConfirmation?: {
+    confirmationId: string;
+    summary: string;
+    expiresAt: string;
+    analysisId?: string | null;
+    optionId?: string | null;
+    action?: {
+      toolName: string;
+      arguments: Record<string, unknown>;
+      expectedVersion: number;
+      payloadHash: string;
+    } | null;
+  } | null;
   pendingApproval?: {
     approvalId: string;
     summary: string;
@@ -2877,32 +2965,27 @@ export interface OpsAgentMessageResult {
   completed: boolean;
 }
 
-export type OpsAgentCaseResult = OpsAgentMessageResult & {
-  runStatus?: string | null;
-  goal?: {
-    summary: string;
-    status: string;
-    goalType?: string | null;
-    skillName?: string | null;
-    constraints?: Record<string, unknown>;
-    plan?: Record<string, unknown>[];
-    successCriteria?: string[];
-  } | null;
-  stepsUsed?: number;
-  tokensUsed?: number;
-  terminationReason?: string | null;
-  pendingInput?: string | null;
-  handoff?: {
-    reason: string;
-    goal?: string | null;
-    attemptedTools: string[];
-    successfulTools: string[];
-    failedTools: string[];
-    evidenceCount: number;
-    nextAction: string;
-    sideEffects: string;
-  } | null;
-};
+export type OpsAgentCaseResult = OpsAgentMessageResult &
+  OpsAgentFindingCase & {
+    runStatus?: string | null;
+    goal?: {
+      summary: string;
+      status: string;
+      goalType?: string | null;
+      skillName?: string | null;
+      constraints?: Record<string, unknown>;
+      plan?: Record<string, unknown>[];
+      successCriteria?: string[];
+    } | null;
+    stepsUsed?: number;
+    tokensUsed?: number;
+    terminationReason?: string | null;
+    pendingInput?: string | null;
+    handoff?: {
+      nextAction: string;
+      sideEffects: string;
+    } | null;
+  };
 
 export interface OpsKnowledgeAnswer {
   outcome: 'answered' | 'insufficient_context';
@@ -2929,6 +3012,96 @@ export async function getOpsAgentCase(caseId: string, branchId: string) {
   return request<OpsAgentCaseResult>(`/api/v1/agent/cases/${encodeURIComponent(caseId)}`, {
     headers: { 'X-Branch-Id': branchId },
   });
+}
+
+export async function listOpsAgentCases(
+  branchId: string,
+  options: {
+    state?: string;
+    ownership?: 'unassigned' | 'mine' | 'all';
+    cursor?: string;
+    limit?: number;
+  } = {},
+) {
+  const query = new URLSearchParams({ branchId, limit: String(options.limit ?? 50) });
+  if (options.state) query.set('state', options.state);
+  if (options.ownership) query.set('ownership', options.ownership);
+  if (options.cursor) query.set('cursor', options.cursor);
+  return request<{ items: OpsAgentCaseResult[]; nextCursor: string | null }>(
+    `/api/v1/agent/cases?${query.toString()}`,
+    { headers: { 'X-Branch-Id': branchId } },
+  );
+}
+
+export async function claimOpsAgentCase(caseId: string, branchId: string, expectedVersion: number) {
+  return request<OpsAgentCaseResult>(`/api/v1/agent/cases/${encodeURIComponent(caseId)}/claim`, {
+    method: 'POST',
+    headers: { 'X-Branch-Id': branchId },
+    body: JSON.stringify({ expectedVersion }),
+  });
+}
+
+export async function releaseOpsAgentCase(
+  caseId: string,
+  branchId: string,
+  expectedVersion: number,
+) {
+  return request<OpsAgentCaseResult>(`/api/v1/agent/cases/${encodeURIComponent(caseId)}/release`, {
+    method: 'POST',
+    headers: { 'X-Branch-Id': branchId },
+    body: JSON.stringify({ expectedVersion }),
+  });
+}
+
+export async function analyzeOpsAgentCase(
+  caseId: string,
+  branchId: string,
+  expectedVersion: number,
+) {
+  return request<OpsAgentCaseResult>(`/api/v1/agent/cases/${encodeURIComponent(caseId)}/analyze`, {
+    method: 'POST',
+    headers: { 'X-Branch-Id': branchId },
+    body: JSON.stringify({ expectedVersion }),
+  });
+}
+
+export async function prepareOpsAgentConfirmation(
+  caseId: string,
+  branchId: string,
+  input: { analysisId: string; expectedVersion: number },
+) {
+  return request<OpsAgentCaseResult>(
+    `/api/v1/agent/cases/${encodeURIComponent(caseId)}/confirmations`,
+    { method: 'POST', headers: { 'X-Branch-Id': branchId }, body: JSON.stringify(input) },
+  );
+}
+
+export type OpsAgentFollowUpChannel = 'IN_PERSON' | 'PHONE' | 'EMAIL' | 'CHAT' | 'SOCIAL';
+export type OpsAgentFollowUpOutcome =
+  | 'PROMISED_RETURN'
+  | 'NO_ANSWER'
+  | 'REQUESTED_EXTENSION'
+  | 'REFUSED_RETURN'
+  | 'CONTACTED'
+  | 'OTHER';
+
+export async function prepareOpsAgentOverdueFollowUp(
+  caseId: string,
+  branchId: string,
+  input: {
+    analysisId: string;
+    expectedVersion: number;
+    channel: OpsAgentFollowUpChannel;
+    outcome: OpsAgentFollowUpOutcome;
+    occurredAt: string;
+    promisedReturnAt?: string;
+    nextFollowUpAt?: string;
+  },
+) {
+  return request<OpsAgentCaseResult>(
+    `/api/v1/agent/cases/${encodeURIComponent(caseId)}/overdue-follow-ups/confirmations`,
+    { method: 'POST', headers: { 'X-Branch-Id': branchId }, body: JSON.stringify(input) },
+  );
 }
 
 export async function confirmOpsAgentCase(

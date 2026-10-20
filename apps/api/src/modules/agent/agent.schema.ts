@@ -89,7 +89,7 @@ export const agentOverdueFollowUpConfirmationInputSchema = agentCaseVersionInput
 
 export const agentCaseListQuerySchema = z
   .object({
-    branchId: z.uuid().optional(),
+    branchId: z.uuid(),
     state: z
       .enum([
         'NEW',
@@ -253,3 +253,16 @@ export type AgentOverdueFollowUpConfirmationInput = z.infer<
 export type AgentCaseListQuery = z.infer<typeof agentCaseListQuerySchema>;
 export type AgentCaseListData = z.infer<typeof agentCaseListDataSchema>;
 export type AgentCaseResult = z.infer<typeof agentCaseResultSchema>;
+export type AgentCaseBrowserResult = Omit<AgentCaseResult, 'ownerActorId'> & {
+  ownership: 'UNCLAIMED' | 'MINE' | 'OTHER';
+  relatedOrders?: {
+    orderCode: string;
+    status: string;
+    plannedStartAt: string;
+    plannedDueAt: string;
+  }[];
+  relatedUnits?: { unitCode: string; operationalStatus: string; conditionGrade: string }[];
+};
+export type AgentCaseBrowserListData = Omit<AgentCaseListData, 'items'> & {
+  items: AgentCaseBrowserResult[];
+};

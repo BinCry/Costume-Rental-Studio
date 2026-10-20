@@ -552,7 +552,12 @@ export const openApiDocument = {
         security: [{ bearerAuth: [] }],
         summary: 'List branch-scoped operational Agent Cases',
         parameters: [
-          { name: 'branchId', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          {
+            name: 'branchId',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
           { name: 'state', in: 'query', schema: { type: 'string' } },
           {
             name: 'ownership',
