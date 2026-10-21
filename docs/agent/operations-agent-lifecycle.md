@@ -418,6 +418,12 @@ AGENT_CAPACITY_BATCH_SIZE=100
 
 Feature flag mặc định tắt để deploy migration và internal API trước khi kích hoạt worker. Detection không gọi LLM; analysis chỉ chạy khi nhân viên đã claim case và chủ động gọi Analyze. Notification và domain-event trigger vẫn chưa được triển khai.
 
+### Khắc phục lỗi không phân tích được case
+
+Nếu API trả `AGENT_READINESS_ANALYSIS_DISABLED` (HTTP 503), yêu cầu Analyze đã bị từ chối trước khi gọi dịch vụ AI và chưa tạo phân tích. Bật `AGENT_READINESS_ANALYSIS_ENABLED=true` trên **dịch vụ Studio API trong Coolify**, sau đó khởi động lại/redeploy API. Không bật `AGENT_READINESS_EXECUTION_ENABLED` chỉ để cho phép Analyze; hai cờ này điều khiển hai bước khác nhau. Khi bật cờ phân tích, API cũng cần `AI_SERVICE_URL` và `AI_INTERNAL_API_KEY` hợp lệ.
+
+Giao diện cần phân biệt lỗi cờ tính năng (yêu cầu chưa chạy, có thể thử lại sau khi cấu hình) với lỗi mất kết nối hoặc timeout (kết quả chưa xác định, phải đọc lại trạng thái case trước khi gửi lại). Không được thông báo “mất kết nối” cho một phản hồi 503 có mã `AGENT_READINESS_ANALYSIS_DISABLED`.
+
 Khi `BACKGROUND_WORKER_ENABLED=true`, API process khởi động cả năm detector; deployment có worker riêng phải đặt cờ này thành `false` trên API process và chạy `start:worker` để tránh nhân đôi scheduler.
 
 ## 8. Ví dụ end-to-end

@@ -1,6 +1,6 @@
 const { describe, expect, it } = globalThis;
 
-const { ApiClientError } = await import('../src/api/client.ts');
+const { ApiClientError, opsAgentActionOutcomeUnknown } = await import('../src/api/client.ts');
 const {
   canContinueOpsAgentCase,
   isOpsAgentCaseTerminal,
@@ -185,6 +185,33 @@ describe('Ops Agent safe state and recovery behavior', () => {
       conflict: true,
     });
     expect(rateLimit.outcomeUnknown).toBe(false);
+  });
+
+  it('does not mark a rejected feature-flag action as having an unknown outcome', () => {
+    expect(
+      opsAgentActionOutcomeUnknown(new ApiClientError(0, 'API_NOT_CONFIGURED', 'Missing API URL')),
+    ).toBe(false);
+    expect(
+      opsAgentActionOutcomeUnknown(
+        new ApiClientError(503, 'AGENT_READINESS_ANALYSIS_DISABLED', 'Feature disabled'),
+      ),
+    ).toBe(false);
+    expect(
+      opsAgentActionOutcomeUnknown(
+        new ApiClientError(503, 'AGENT_READINESS_EXECUTION_DISABLED', 'Feature disabled'),
+      ),
+    ).toBe(false);
+    expect(
+      opsAgentActionOutcomeUnknown(new ApiClientError(503, 'AI_SERVICE_NOT_CONFIGURED', 'Missing')),
+    ).toBe(false);
+    expect(
+      opsAgentActionOutcomeUnknown(
+        new ApiClientError(503, 'AI_SERVICE_UNAVAILABLE', 'Unavailable'),
+      ),
+    ).toBe(true);
+    expect(
+      opsAgentActionOutcomeUnknown(new ApiClientError(504, 'AI_SERVICE_TIMEOUT', 'Timeout')),
+    ).toBe(true);
   });
 
   it('shows actionable, localized recovery guidance and safe fallbacks for missing content', () => {

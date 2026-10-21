@@ -391,6 +391,26 @@ export class ApiClientError extends Error {
     this.details = details;
   }
 }
+
+const rejectedAgentActionCodes = new Set([
+  'API_NOT_CONFIGURED',
+  'AGENT_READINESS_ANALYSIS_DISABLED',
+  'AGENT_READINESS_EXECUTION_DISABLED',
+  'AGENT_CRM_WRITE_DISABLED',
+  'AGENT_RENTAL_WRITE_DISABLED',
+  'AGENT_SCHEDULING_WRITE_DISABLED',
+  'AGENT_TRANSFER_WRITE_DISABLED',
+  'AGENT_FINANCIAL_WRITE_DISABLED',
+  'AI_SERVICE_NOT_CONFIGURED',
+]);
+
+export function opsAgentActionOutcomeUnknown(error: unknown) {
+  if (!(error instanceof ApiClientError)) return false;
+  if (rejectedAgentActionCodes.has(error.code)) return false;
+  if (error.status === 0) return true;
+  return error.status >= 500;
+}
+
 function token() {
   return window.sessionStorage.getItem(accessTokenKey);
 }
@@ -448,6 +468,20 @@ function apiErrorMessage(status: number, code: string) {
 
     AI_SERVICE_NOT_CONFIGURED:
       'Ops Agent chưa được cấu hình dịch vụ AI. Hãy giữ nguyên câu hỏi và kiểm tra cấu hình máy chủ.',
+    AGENT_READINESS_ANALYSIS_DISABLED:
+      'Tính năng phân tích tình huống đang tắt trên hệ thống. Chưa có phân tích nào được tạo; quản trị viên cần bật tính năng này trong cấu hình máy chủ.',
+    AGENT_READINESS_EXECUTION_DISABLED:
+      'Tính năng thực thi phương án đang tắt trên hệ thống. Chưa có thay đổi nghiệp vụ nào được áp dụng.',
+    AGENT_CRM_WRITE_DISABLED:
+      'Tính năng ghi nhận liên hệ khách hàng đang tắt trên hệ thống. Chưa có thông tin nào được lưu.',
+    AGENT_RENTAL_WRITE_DISABLED:
+      'Tính năng cập nhật đơn thuê đang tắt trên hệ thống. Chưa có thay đổi nào được áp dụng.',
+    AGENT_SCHEDULING_WRITE_DISABLED:
+      'Tính năng cập nhật lịch đang tắt trên hệ thống. Chưa có thay đổi nào được áp dụng.',
+    AGENT_TRANSFER_WRITE_DISABLED:
+      'Tính năng điều chuyển đang tắt trên hệ thống. Chưa có thay đổi nào được áp dụng.',
+    AGENT_FINANCIAL_WRITE_DISABLED:
+      'Tính năng cập nhật tài chính đang tắt trên hệ thống. Chưa có thay đổi nào được áp dụng.',
     AI_SERVICE_UNAVAILABLE:
       'Chưa kết nối được dịch vụ Ops Agent. Câu hỏi vẫn được giữ để bạn thử lại sau khi kiểm tra trạng thái máy chủ.',
     AI_SERVICE_TIMEOUT:

@@ -7,6 +7,7 @@ import {
   confirmOpsAgentCase,
   getOpsAgentCase,
   listOpsAgentCases,
+  opsAgentActionOutcomeUnknown,
   prepareOpsAgentConfirmation,
   prepareOpsAgentOverdueFollowUp,
   rejectOpsAgentAction,
@@ -672,13 +673,10 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
         ) {
           await loadSelected(current.caseId);
           await reloadList(true);
-        } else if (
-          actionFailure instanceof ApiClientError &&
-          (actionFailure.status === 0 || actionFailure.status >= 500)
-        ) {
+        } else if (opsAgentActionOutcomeUnknown(actionFailure)) {
           setActionOutcomeUnknown(true);
           setNotice(
-            'Chưa xác nhận được kết quả thao tác do mất kết nối dịch vụ. Hãy cập nhật trạng thái trước khi thử lại.',
+            'Máy chủ chưa xác nhận kết quả thao tác. Tải lại trạng thái trước khi thử tiếp để tránh tạo thao tác trùng.',
           );
         }
       } finally {

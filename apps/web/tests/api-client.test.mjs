@@ -290,6 +290,20 @@ describe('web API client session and error handling', () => {
     });
   });
 
+  it('explains when Ops Agent case analysis is disabled instead of showing a generic server error', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      error(503, 'AGENT_READINESS_ANALYSIS_DISABLED', 'Rental readiness analysis is disabled'),
+    );
+    const { listOpsAgentCases } = await import('../src/api/client.ts');
+
+    await expect(listOpsAgentCases('20000000-0000-4000-8000-000000000001')).rejects.toMatchObject({
+      status: 503,
+      code: 'AGENT_READINESS_ANALYSIS_DISABLED',
+      message:
+        'Tính năng phân tích tình huống đang tắt trên hệ thống. Chưa có phân tích nào được tạo; quản trị viên cần bật tính năng này trong cấu hình máy chủ.',
+    });
+  });
+
   it('explains why an existing account cannot be linked to a staff profile', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       error(409, 'STAFF_CONFLICT', 'Account is not eligible for staff linking'),
