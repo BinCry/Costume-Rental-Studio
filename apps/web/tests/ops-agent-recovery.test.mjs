@@ -142,7 +142,7 @@ describe('Ops Agent safe state and recovery behavior', () => {
     ).toContain('trạng thái');
     expect(
       opsAgentErrorMessage(new ApiClientError(409, 'AGENT_CASE_CONFLICT', 'Conflict'), 'Fallback'),
-    ).toContain('cập nhật trạng thái');
+    ).toContain('tải lại yêu cầu');
     expect(
       opsAgentEvidenceLabel({ sourceType: 'knowledge', sourceId: 'doc-1', citation: '  ' }),
     ).toBe('Tài liệu được truy xuất');
