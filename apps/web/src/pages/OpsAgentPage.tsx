@@ -272,7 +272,7 @@ export function opsAgentErrorMessage(error: unknown, fallback: string) {
   if (error instanceof ApiClientError) {
     const messages: Record<string, string> = {
       AGENT_CASE_CONFLICT:
-        'Yêu cầu đã thay đổi hoặc không còn ở trạng thái này. Hãy cập nhật trạng thái trước khi tiếp tục.',
+        'Yêu cầu đã thay đổi hoặc không còn ở trạng thái này. Hãy tải lại yêu cầu trước khi tiếp tục.',
       AI_SERVICE_NOT_CONFIGURED: 'Dịch vụ trợ lý chưa được cấu hình. Hãy liên hệ người phụ trách.',
       AI_SERVICE_UNAVAILABLE: 'Chưa kết nối được dịch vụ trợ lý. Bạn có thể thử lại sau.',
       AI_SERVICE_TIMEOUT:
@@ -287,16 +287,15 @@ export function opsAgentErrorMessage(error: unknown, fallback: string) {
     const knownMessage = messages[error.code];
     if (knownMessage) return knownMessage;
     if (error.status === 0) return 'Chưa nhận được phản hồi từ trợ lý.';
-    if (error.status === 409)
-      return 'Yêu cầu đã thay đổi. Hãy cập nhật trạng thái mới nhất trước khi tiếp tục.';
+    if (error.status === 409) return 'Yêu cầu đã thay đổi. Hãy tải lại yêu cầu trước khi tiếp tục.';
     if (error.status === 408 || error.status === 504)
-      return 'Yêu cầu phản hồi quá thời gian. Hãy cập nhật trạng thái trước khi thử lại.';
+      return 'Yêu cầu phản hồi quá thời gian. Hãy tải lại yêu cầu trước khi thử lại.';
     if (error.status === 429)
       return 'Dịch vụ đang nhận nhiều yêu cầu. Hãy đợi một lúc rồi thử lại.';
     if (error.status === 401 || error.status === 403)
       return 'Phiên đăng nhập hoặc quyền truy cập không còn hợp lệ. Hãy đăng nhập lại hoặc liên hệ quản trị viên.';
     if (error.status >= 500)
-      return 'Dịch vụ trợ lý đang gặp sự cố. Hãy cập nhật trạng thái trước khi gửi lại.';
+      return 'Dịch vụ trợ lý đang gặp sự cố. Hãy tải lại yêu cầu trước khi gửi lại.';
   }
   return error instanceof Error ? error.message : fallback;
 }
@@ -1231,8 +1230,25 @@ export function OpsAgentPage({
     useAgentApi && !hasUserMessages && !agentCaseId && !sendOutcomeUnknown && !sendingMessage;
 
   return (
-    <div className="page staff-page ops-agent-page">
-      <div className="staff-page-heading ops-agent-heading">
+    <div
+      className={[
+        'page',
+        'staff-page',
+        'ops-agent-page',
+        useAgentApi && visibleTab === 'chat' && 'ops-agent-page-chat',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      <div
+        className={[
+          'staff-page-heading',
+          'ops-agent-heading',
+          useAgentApi && visibleTab === 'chat' && 'ops-agent-heading-chat',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      >
         <div>
           <p className="eyebrow">{useAgentApi ? 'KHU VẬN HÀNH' : 'HỖ TRỢ VẬN HÀNH'}</p>
           <h1>{useAgentApi ? 'Trợ lý vận hành' : 'Ops Agent'}</h1>
@@ -1260,7 +1276,7 @@ export function OpsAgentPage({
               newConversationDisabled
                 ? sendOutcomeUnknown
                   ? 'Hãy đối soát kết quả gửi chưa rõ trước khi bắt đầu cuộc trò chuyện mới.'
-                  : 'Hãy cập nhật trạng thái yêu cầu hiện tại trước khi bắt đầu cuộc trò chuyện mới.'
+                  : 'Hãy tải lại yêu cầu hiện tại trước khi bắt đầu cuộc trò chuyện mới.'
                 : undefined
             }
           >
@@ -1479,7 +1495,7 @@ export function OpsAgentPage({
                       title="Yêu cầu đang được tải"
                       action={
                         <Button variant="secondary" onClick={() => void reloadAgentCase()}>
-                          Tải lại trạng thái
+                          Tải lại yêu cầu
                         </Button>
                       }
                     >
@@ -1499,7 +1515,7 @@ export function OpsAgentPage({
                       onClick={() => void reloadAgentCase()}
                       loading={caseLoading}
                     >
-                      Cập nhật trạng thái
+                      Tải lại yêu cầu
                     </Button>
                   }
                 >
@@ -2272,11 +2288,11 @@ export function OpsAgentPage({
                       onClick={() => void reloadAgentCase()}
                       loading={caseLoading}
                     >
-                      Tải lại trạng thái
+                      Tải lại yêu cầu
                     </Button>
                   }
                 >
-                  {caseError} Hãy cập nhật trạng thái trước khi gửi tiếp để tránh tạo yêu cầu trùng.
+                  {caseError} Hãy tải lại yêu cầu trước khi gửi tiếp để tránh tạo yêu cầu trùng.
                 </Feedback>
               )}
               {useAgentApi &&
@@ -2325,8 +2341,8 @@ export function OpsAgentPage({
                       </Button>
                     }
                   >
-                    Hãy chờ trợ lý xử lý hoặc cập nhật trạng thái. Tin nhắn mới sẽ không được gửi
-                    vào lúc này.
+                    Hãy chờ trợ lý xử lý hoặc tải lại yêu cầu. Tin nhắn mới sẽ không được gửi vào
+                    lúc này.
                   </Feedback>
                 )}
               {currentCaseStateUnknown && (
@@ -2339,8 +2355,8 @@ export function OpsAgentPage({
                     </Button>
                   }
                 >
-                  Hãy cập nhật trạng thái trước khi gửi tiếp. Trạng thái lạ hoặc dữ liệu chờ không
-                  khớp không được xem là đã hoàn tất.
+                  Hãy tải lại yêu cầu trước khi gửi tiếp. Trạng thái lạ hoặc dữ liệu chờ không khớp
+                  không được xem là đã hoàn tất.
                 </Feedback>
               )}
               <div
@@ -2793,7 +2809,7 @@ export function OpsAgentPage({
                   </Feedback>
                 ) : !agentResult ? (
                   <EmptyState
-                    title="Cần cập nhật trạng thái yêu cầu"
+                    title="Cần tải lại yêu cầu"
                     action={
                       <Button
                         variant="secondary"
@@ -2802,7 +2818,7 @@ export function OpsAgentPage({
                         }}
                         loading={caseLoading}
                       >
-                        Cập nhật trạng thái
+                        Tải lại yêu cầu
                       </Button>
                     }
                   >
@@ -2822,12 +2838,12 @@ export function OpsAgentPage({
                             loading={caseLoading}
                             disabled={caseActionLoading}
                           >
-                            Cập nhật trạng thái
+                            Tải lại yêu cầu
                           </Button>
                         }
                       >
                         Không xác nhận, duyệt, hủy hoặc gửi tiếp khi trạng thái lạ hay dữ liệu đang
-                        chờ không khớp. Hãy cập nhật trạng thái; nếu vẫn còn, chuyển người phụ trách
+                        chờ không khớp. Hãy tải lại yêu cầu; nếu vẫn còn, chuyển người phụ trách
                         kiểm tra.
                       </Feedback>
                     )}
@@ -2848,7 +2864,7 @@ export function OpsAgentPage({
                               }}
                               loading={caseLoading}
                             >
-                              Cập nhật trạng thái
+                              Tải lại yêu cầu
                             </Button>
                           }
                         >
@@ -2996,39 +3012,44 @@ export function OpsAgentPage({
                           {agentResult.handoff.nextAction} {agentResult.handoff.sideEffects}
                         </Feedback>
                       )}
-                      <div className="ops-agent-case-footer">
-                        <p>
-                          Yêu cầu này thuộc phiên làm việc hiện tại. Thao tác cần quyền sẽ được kiểm
-                          tra trước khi thực hiện.
-                        </p>
-                        <div>
-                          {!isOpsAgentCaseTerminal(agentResult) && !currentCaseStateUnknown && (
-                            <Button
-                              variant="danger"
-                              onClick={() => setCaseDialogAction('cancel')}
-                              disabled={
-                                caseActionLoading ||
-                                !branchId ||
-                                caseLoading ||
-                                caseNeedsReconciliation ||
-                                currentCaseStateUnknown
-                              }
-                            >
-                              Hủy yêu cầu
-                            </Button>
-                          )}
-                          <Button
-                            variant="secondary"
-                            onClick={() => {
-                              void reloadAgentCase();
-                            }}
-                            loading={caseLoading}
-                            disabled={caseActionLoading || !branchId}
-                          >
-                            Cập nhật trạng thái
-                          </Button>
+                      {(!isOpsAgentCaseTerminal(agentResult) ||
+                        currentCaseStateUnknown ||
+                        caseNeedsReconciliation ||
+                        sendOutcomeUnknown) && (
+                        <div className="ops-agent-case-footer">
+                          <div>
+                            {!isOpsAgentCaseTerminal(agentResult) && !currentCaseStateUnknown && (
+                              <Button
+                                variant="danger"
+                                onClick={() => setCaseDialogAction('cancel')}
+                                disabled={
+                                  caseActionLoading ||
+                                  !branchId ||
+                                  caseLoading ||
+                                  caseNeedsReconciliation ||
+                                  currentCaseStateUnknown
+                                }
+                              >
+                                Hủy yêu cầu
+                              </Button>
+                            )}
+                            {(currentCaseStateUnknown ||
+                              caseNeedsReconciliation ||
+                              sendOutcomeUnknown) && (
+                              <Button
+                                variant="secondary"
+                                onClick={() => {
+                                  void reloadAgentCase();
+                                }}
+                                loading={caseLoading}
+                                disabled={caseActionLoading || !branchId}
+                              >
+                                Tải lại yêu cầu
+                              </Button>
+                            )}
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </section>
                   </>
                 )}
