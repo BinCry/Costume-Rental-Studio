@@ -36,8 +36,22 @@ const findingLabels: Record<string, string> = {
   ALLOCATED_UNIT_NOT_READY: 'Bộ chưa sẵn sàng',
   ORDER_PREPARATION_DELAYED: 'Chuẩn bị có nguy cơ trễ',
   RENTAL_RETURN_OVERDUE: 'Đơn thuê quá hạn',
-  OPERATIONAL_CAPACITY_SHORTFALL: 'Thiếu khả năng đáp ứng',
+  OPERATIONAL_CAPACITY_SHORTFALL: 'Thiếu năng lực xử lý',
   UNIT_SCHEDULE_CONFLICT: 'Trùng lịch bộ trang phục',
+};
+
+const findingGuidance: Record<string, string> = {
+  PREVIOUS_RENTAL_NOT_RETURNED:
+    'Đơn trước vẫn giữ bộ hoặc khoảng dự phòng trả trễ và vệ sinh không còn đủ trước giờ nhận kế tiếp.',
+  ALLOCATED_UNIT_NOT_READY:
+    'Bộ đã gán đang sai chi nhánh, còn lịch vệ sinh/sửa chữa/chuyển kho hoặc chưa có thời điểm sẵn sàng đáng tin cậy.',
+  ORDER_PREPARATION_DELAYED:
+    'Đơn sắp đến giờ nhận nhưng khâu chuẩn bị chưa hoàn tất theo trạng thái hệ thống.',
+  RENTAL_RETURN_OVERDUE: 'Đơn đã qua hạn trả và vẫn còn bộ đang được ghi nhận là khách giữ.',
+  OPERATIONAL_CAPACITY_SHORTFALL:
+    'Đây là thiếu phút công so với khung năng lực xử lý đã khai báo. Hệ thống chưa đọc ca làm hoặc kỹ năng từng nhân viên nên chưa thể kết luận thiếu nhân sự.',
+  UNIT_SCHEDULE_CONFLICT:
+    'Hai đơn đang cùng giữ một bộ trong các khoảng thời gian bảo vệ bị chồng lấn.',
 };
 
 const statusLabels: Record<string, string> = {
@@ -76,6 +90,159 @@ const stateFilters: { value: StateFilter; label: string }[] = [
 function labelForFinding(ruleCode?: string) {
   if (!ruleCode) return 'Cảnh báo vận hành';
   return findingLabels[ruleCode] ?? ruleCode.replaceAll('_', ' ').toLocaleLowerCase('vi');
+}
+
+type WorkflowStepState = 'complete' | 'current' | 'waiting' | 'replan' | 'blocked';
+interface OpsWorkflowStep {
+  id: 'detect' | 'predict' | 'simulate' | 'recommend' | 'execute' | 'monitor';
+  label: string;
+  state: WorkflowStepState;
+  detail: string;
+}
+
+// Exported pure mapping keeps the progress UI aligned with the server state machine.
+// eslint-disable-next-line react-refresh/only-export-components
+export function opsAgentWorkflowSteps(result?: OpsAgentCaseResult): OpsWorkflowStep[] {
+  const state = result?.state?.toUpperCase();
+  const analysis = result?.analysis;
+  const stale = analysis?.status === 'STALE' || state === 'FAILED';
+  const hasAnalysis = Boolean(analysis && !stale);
+  const hasRecommendation = Boolean(
+    hasAnalysis &&
+    analysis?.recommendedOptionId &&
+    analysis.options.some((option) => option.optionId === analysis.recommendedOptionId),
+  );
+  const hasExecuted = ['EXECUTING', 'MONITORING', 'SUCCEEDED'].includes(state ?? '');
+
+  return [
+    {
+      id: 'detect',
+      label: 'Phát hiện',
+      state: result?.finding ? 'complete' : 'waiting',
+      detail: result?.finding ? labelForFinding(result.finding.ruleCode) : 'Chưa có cảnh báo',
+    },
+    {
+      id: 'predict',
+      label: 'Đánh giá rủi ro',
+      state: stale
+        ? 'replan'
+        : hasAnalysis
+          ? 'complete'
+          : state === 'ANALYZING'
+            ? 'current'
+            : 'waiting',
+      detail: stale
+        ? 'Dữ liệu đổi; cần đánh giá lại'
+        : analysis?.riskLevel
+          ? `Mức ${formatRiskLevel(analysis.riskLevel)}`
+          : hasAnalysis
+            ? 'Đã đọc dữ liệu hiện tại'
+            : state === 'ANALYZING'
+              ? 'Đang phân tích'
+              : 'Chờ nhận xử lý và phân tích',
+    },
+    {
+      id: 'simulate',
+      label: 'Giả lập',
+      state: stale
+        ? 'replan'
+        : hasAnalysis && analysis?.options.length
+          ? 'complete'
+          : hasAnalysis && analysis?.outcome === 'NO_FEASIBLE_OPTION'
+            ? 'blocked'
+            : state === 'ANALYZING'
+              ? 'current'
+              : 'waiting',
+      detail: stale
+        ? 'Kết quả cũ không dùng được'
+        : analysis?.options.length
+          ? `${analysis.options.length} phương án được đánh giá`
+          : analysis?.outcome === 'NO_FEASIBLE_OPTION'
+            ? 'Không có phương án khả thi'
+            : 'Chưa có kết quả giả lập',
+    },
+    {
+      id: 'recommend',
+      label: 'Đề xuất',
+      state: stale
+        ? 'replan'
+        : hasRecommendation
+          ? 'complete'
+          : analysis?.outcome === 'NO_FEASIBLE_OPTION'
+            ? 'blocked'
+            : state === 'ANALYZING'
+              ? 'current'
+              : 'waiting',
+      detail: stale
+        ? 'Phân tích lại trước khi dùng'
+        : hasRecommendation
+          ? 'Đã xếp hạng phương án'
+          : analysis?.outcome === 'NO_FEASIBLE_OPTION'
+            ? 'Cần nhân viên quyết định hoặc bàn giao'
+            : 'Chưa có đề xuất',
+    },
+    {
+      id: 'execute',
+      label: 'Xác nhận & thực thi',
+      state: stale
+        ? 'replan'
+        : result?.pendingApproval || result?.pendingConfirmation || state === 'EXECUTING'
+          ? 'current'
+          : hasExecuted
+            ? 'complete'
+            : hasRecommendation
+              ? 'current'
+              : 'waiting',
+      detail: result?.pendingApproval
+        ? 'Đang chờ người có quyền duyệt'
+        : result?.pendingConfirmation
+          ? 'Đang chờ bạn xác nhận'
+          : state === 'EXECUTING'
+            ? 'Đang gửi thao tác đã duyệt'
+            : hasExecuted
+              ? 'Đã gửi thao tác'
+              : hasRecommendation
+                ? 'Chờ nhân viên xác nhận phương án'
+                : 'Chưa sẵn sàng thực thi',
+    },
+    {
+      id: 'monitor',
+      label: 'Theo dõi kết quả',
+      state: stale
+        ? 'replan'
+        : state === 'SUCCEEDED'
+          ? 'complete'
+          : state === 'MONITORING'
+            ? 'current'
+            : ['HANDED_OFF', 'INSUFFICIENT_DATA', 'CANCELLED'].includes(state ?? '')
+              ? 'blocked'
+              : 'waiting',
+      detail: stale
+        ? 'Cần đọc lại dữ liệu và lập kế hoạch mới'
+        : state === 'SUCCEEDED'
+          ? 'Đã xác minh đạt kết quả'
+          : state === 'MONITORING'
+            ? 'Đang kiểm tra lại trạng thái API'
+            : state === 'HANDED_OFF'
+              ? 'Đã chuyển người phụ trách'
+              : state === 'INSUFFICIENT_DATA'
+                ? 'Thiếu dữ liệu để xác minh'
+                : state === 'CANCELLED'
+                  ? 'Tình huống đã được hủy'
+                  : 'Bắt đầu sau khi thực thi',
+    },
+  ];
+}
+
+function formatRiskScore(value?: number | null) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? `${Math.round(value)}/100`
+    : undefined;
+}
+
+function formatRiskLevel(value?: string | null) {
+  if (!value) return undefined;
+  return severityLabels[value] ?? (value === 'UNKNOWN' ? 'Chưa xác định' : value);
 }
 
 function labelForState(state: string) {
@@ -200,6 +367,7 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [lastCheckedAt, setLastCheckedAt] = useState<string>();
   const [confirmingExecution, setConfirmingExecution] = useState(false);
   const [actionOutcomeUnknown, setActionOutcomeUnknown] = useState(false);
   const defaultFollowUp = {
@@ -238,6 +406,7 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
       if (!preserveSelected) {
         setCases([]);
         setNextCursor(null);
+        setLastCheckedAt(undefined);
         selectedIdRef.current = '';
         setSelectedId('');
         setSelectedCase(undefined);
@@ -302,22 +471,25 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
   }, [reloadList]);
 
   const loadSelected = useCallback(
-    async (caseId: string) => {
+    async (caseId: string, options: { silent?: boolean } = {}) => {
       if (!branchId || !caseId) return;
       const revision = ++detailRevision.current;
-      setDetailLoading(true);
-      setNotice('');
+      if (!options.silent) {
+        setDetailLoading(true);
+        setNotice('');
+      }
       try {
         const detail = await getOpsAgentCase(caseId, branchId);
         if (revision !== detailRevision.current || selectedIdRef.current !== caseId) return;
         setSelectedCase(detail);
+        setLastCheckedAt(new Date().toISOString());
         setActionOutcomeUnknown(false);
         setNotice('');
         setCases((current) => replaceCase(current, detail));
       } catch (loadError) {
         if (revision === detailRevision.current) setNotice(actionError(loadError));
       } finally {
-        if (revision === detailRevision.current) setDetailLoading(false);
+        if (revision === detailRevision.current && !options.silent) setDetailLoading(false);
       }
     },
     [branchId],
@@ -376,6 +548,23 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
   );
   const requiresReplan = Boolean(analysis?.status === 'STALE' || current?.state === 'FAILED');
   const isTerminal = ['SUCCEEDED', 'CANCELLED', 'HANDED_OFF'].includes(current?.state ?? '');
+
+  useEffect(() => {
+    if (!branchId || !selectedId || current?.state !== 'MONITORING') return;
+    let active = true;
+    let timer = 0;
+    const poll = async () => {
+      if (!active) return;
+      if (document.visibilityState === 'visible') await loadSelected(selectedId, { silent: true });
+      if (active) timer = window.setTimeout(() => void poll(), 30_000);
+    };
+    timer = window.setTimeout(() => void poll(), 30_000);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [branchId, current?.state, loadSelected, selectedId]);
+
   const evidence = current ? evidenceRows(current) : [];
   const isOverdueFollowUp = finding?.ruleCode === 'RENTAL_RETURN_OVERDUE';
   const occurredAt = followUp.occurredAt ? new Date(followUp.occurredAt) : undefined;
@@ -470,6 +659,7 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
           updated = await rejectOpsAgentAction(current.pendingApproval.approvalId, branchId);
         }
         setSelectedCase(updated);
+        setLastCheckedAt(new Date().toISOString());
         setCases((existing) => replaceCase(existing, updated));
         setNotice('');
         setConfirmingExecution(false);
@@ -547,6 +737,11 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
           Tải lại danh sách
         </Button>
       </header>
+
+      <p className="ops-alert-api-scope">
+        Hàng đợi và trạng thái lấy từ API theo chi nhánh. Phân tích hiển thị các phương án Agent trả
+        về; hệ thống chỉ thực thi phương án API cho phép sau bước xác nhận hoặc duyệt.
+      </p>
 
       {!branchId && (
         <Feedback tone="warning" title="Chưa chọn được chi nhánh">
@@ -648,6 +843,7 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
                   selectedIdRef.current = item.caseId;
                   setSelectedId(item.caseId);
                   setSelectedCase(item);
+                  setLastCheckedAt(undefined);
                   void loadSelected(item.caseId);
                 }}
               >
@@ -707,6 +903,11 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
                     ) : (
                       <p>Ops Agent phát hiện một tình huống cần đối chiếu.</p>
                     )}
+                    {finding?.ruleCode && findingGuidance[finding.ruleCode] && (
+                      <p className="ops-alert-finding-guidance">
+                        {findingGuidance[finding.ruleCode]}
+                      </p>
+                    )}
                   </div>
                   <div className="ops-alert-deadline">
                     <span>Hạn xử lý</span>
@@ -751,6 +952,36 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
                     </strong>
                   </div>
                 </div>
+
+                <section className="ops-alert-lifecycle" aria-label="Tiến độ xử lý tình huống">
+                  <div className="ops-alert-lifecycle-head">
+                    <h4>Tiến độ xử lý</h4>
+                    {current.state === 'MONITORING' && (
+                      <span>
+                        {lastCheckedAt
+                          ? `Kiểm tra gần nhất ${formatDate(lastCheckedAt)}`
+                          : 'Tự kiểm tra trạng thái mỗi 30 giây khi đang mở'}
+                      </span>
+                    )}
+                  </div>
+                  <ol className="ops-alert-lifecycle-steps">
+                    {opsAgentWorkflowSteps(current).map((step, index) => (
+                      <li
+                        className={`is-${step.state}`}
+                        key={step.id}
+                        aria-current={step.state === 'current' ? 'step' : undefined}
+                      >
+                        <span className="ops-alert-step-index" aria-hidden="true">
+                          {index + 1}
+                        </span>
+                        <span className="ops-alert-step-copy">
+                          <strong>{step.label}</strong>
+                          <small>{step.detail}</small>
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                </section>
 
                 <section className="ops-alert-section">
                   <h4>Nguyên nhân và bằng chứng</h4>
@@ -813,6 +1044,44 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
                       {analysis.narrative?.summary && (
                         <p className="ops-alert-analysis-summary">{analysis.narrative.summary}</p>
                       )}
+                      {(typeof analysis.riskLevel === 'string' ||
+                        typeof analysis.riskScore === 'number' ||
+                        typeof analysis.estimatedDelayMinutes === 'number') && (
+                        <div className="ops-alert-forecast" aria-label="Đánh giá nguy cơ">
+                          {analysis.riskLevel && (
+                            <div>
+                              <span>Mức rủi ro</span>
+                              <strong>{formatRiskLevel(analysis.riskLevel)}</strong>
+                            </div>
+                          )}
+                          {typeof analysis.riskScore === 'number' && (
+                            <div>
+                              <span>Điểm rủi ro</span>
+                              <strong>{formatRiskScore(analysis.riskScore)}</strong>
+                            </div>
+                          )}
+                          {typeof analysis.estimatedDelayMinutes === 'number' && (
+                            <div>
+                              <span>Trễ ước tính</span>
+                              <strong>{formatDuration(analysis.estimatedDelayMinutes)}</strong>
+                            </div>
+                          )}
+                          {analysis.evaluatedAt && (
+                            <small>Đánh giá lúc {formatDate(analysis.evaluatedAt)}</small>
+                          )}
+                        </div>
+                      )}
+                      <p className="ops-alert-data-note">
+                        Mức/điểm rủi ro là đánh giá theo dữ liệu hiện tại, không phải xác suất đã
+                        hiệu chuẩn. Chỉ số nào API không trả về sẽ không được tự suy ra.
+                      </p>
+                      {analysis.reasons?.length ? (
+                        <ul className="ops-alert-forecast-reasons">
+                          {analysis.reasons.map((reason, index) => (
+                            <li key={`${reason}-${index}`}>{reason}</li>
+                          ))}
+                        </ul>
+                      ) : null}
                       {analysis.outcome === 'NO_FEASIBLE_OPTION' ? (
                         <Feedback tone="warning" title="Chưa có phương án khả thi">
                           Hãy kiểm tra nguyên nhân và chuyển giao cho người có thẩm quyền nếu cần.
@@ -894,6 +1163,16 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
                           </ul>
                         </div>
                       ) : null}
+                      {analysis.narrative?.rationale?.length ? (
+                        <div className="ops-alert-risk-note">
+                          <strong>Vì sao Agent xếp phương án này lên đầu</strong>
+                          <ul>
+                            {analysis.narrative.rationale.map((reason, index) => (
+                              <li key={`${reason}-${index}`}>{reason}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
                       {analysis.narrative?.fallback && (
                         <p className="ops-alert-muted">
                           Không có phương án tự động khả thi.{' '}
@@ -914,6 +1193,11 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
                       phương án đó.
                     </p>
                   ) : null}
+                  <p className="ops-alert-api-limit">
+                    Việc giả lập chỉ đọc dữ liệu và không giữ bộ hay chuyển kho. Bản API hiện chỉ
+                    cho thực thi các thao tác đã được phát hành; tạo tác vụ, giữ bộ và chuyển kho
+                    chưa được bật qua luồng Agent.
+                  </p>
                 </section>
 
                 {isOverdueFollowUp &&

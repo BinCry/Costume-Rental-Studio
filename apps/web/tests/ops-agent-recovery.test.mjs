@@ -14,6 +14,7 @@ const {
   opsKnowledgeAnswerText,
   requiresOpsAgentStateReview,
 } = await import('../src/pages/OpsAgentPage.tsx');
+const { opsAgentWorkflowSteps } = await import('../src/pages/OpsAgentCasesPanel.tsx');
 
 const baseCase = (state, overrides = {}) => ({
   caseId: 'case-1',
@@ -25,6 +26,62 @@ const baseCase = (state, overrides = {}) => ({
 });
 
 describe('Ops Agent safe state and recovery behavior', () => {
+  it('maps server case states to the six visible workflow stages', () => {
+    const activePlan = baseCase('WAITING_APPROVAL', {
+      finding: { ruleCode: 'UNIT_SCHEDULE_CONFLICT' },
+      analysis: {
+        analysisId: 'analysis-1',
+        status: 'ACTIVE',
+        outcome: 'READY',
+        options: [{ optionId: 'option-1', feasible: true }],
+        recommendedOptionId: 'option-1',
+      },
+      pendingApproval: { approvalId: 'approval-1' },
+    });
+    const stages = opsAgentWorkflowSteps(activePlan);
+
+    expect(stages.map(({ id }) => id)).toEqual([
+      'detect',
+      'predict',
+      'simulate',
+      'recommend',
+      'execute',
+      'monitor',
+    ]);
+    expect(stages.map(({ state }) => state)).toEqual([
+      'complete',
+      'complete',
+      'complete',
+      'complete',
+      'current',
+      'waiting',
+    ]);
+    expect(stages[4].detail).toContain('duyệt');
+  });
+
+  it('marks monitoring complete only after the server reports success and asks for replan on failure', () => {
+    const finding = { ruleCode: 'PREVIOUS_RENTAL_NOT_RETURNED' };
+    const analysis = {
+      analysisId: 'analysis-1',
+      status: 'ACTIVE',
+      outcome: 'READY',
+      options: [{ optionId: 'option-1', feasible: true }],
+      recommendedOptionId: 'option-1',
+    };
+
+    expect(opsAgentWorkflowSteps(baseCase('MONITORING', { finding, analysis }))[5].state).toBe(
+      'current',
+    );
+    expect(opsAgentWorkflowSteps(baseCase('SUCCEEDED', { finding, analysis }))[5].state).toBe(
+      'complete',
+    );
+    expect(
+      opsAgentWorkflowSteps(
+        baseCase('FAILED', { finding, analysis: { ...analysis, status: 'STALE' } }),
+      )[5].state,
+    ).toBe('replan');
+  });
+
   it('keeps saved cases isolated by actor and branch', () => {
     const staffBranchOne = opsAgentCaseStorageKey('staff-1', 'Quận 1 / Đông');
     const staffBranchTwo = opsAgentCaseStorageKey('staff-1', 'Quận 2');

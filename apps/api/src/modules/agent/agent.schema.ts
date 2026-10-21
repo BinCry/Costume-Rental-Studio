@@ -148,6 +148,14 @@ const agentReadinessAnalysisSchema = z.object({
   sourceObservedAt: z.string(),
   simulatorVersion: z.string(),
   rankingPolicyVersion: z.string(),
+  // Optional, explicitly bounded forecast metrics for the staff UI. These are
+  // risk estimates, not calibrated probabilities unless a future contract says so.
+  riskLevel: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL', 'UNKNOWN']).nullable().optional(),
+  riskScore: z.number().finite().min(0).max(100).nullable().optional(),
+  estimatedDelayMinutes: z.number().int().nonnegative().nullable().optional(),
+  reasons: z.array(z.string().trim().min(1).max(500)).max(20).nullable().optional(),
+  ruleVersion: z.string().trim().min(1).max(120).nullable().optional(),
+  evaluatedAt: z.string().datetime({ offset: true }).nullable().optional(),
   before: z.record(z.string(), z.unknown()),
   options: z.array(z.record(z.string(), z.unknown())),
   recommendedOptionId: z.string().nullable(),

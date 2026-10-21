@@ -2907,6 +2907,12 @@ export interface OpsAgentAnalysis {
   sourceObservedAt?: string | null;
   simulatorVersion?: string | null;
   rankingPolicyVersion?: string | null;
+  riskLevel?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | 'UNKNOWN' | null;
+  riskScore?: number | null;
+  estimatedDelayMinutes?: number | null;
+  reasons?: string[] | null;
+  ruleVersion?: string | null;
+  evaluatedAt?: string | null;
   before?: Record<string, unknown>;
   options: OpsAgentOption[];
   recommendedOptionId?: string | null;
