@@ -32,7 +32,7 @@ Màn Cảnh báo cung cấp:
 | `POST /api/v1/agent/approvals/{approvalId}/approve` / `reject` | Duyệt hoặc từ chối yêu cầu cần quyền cao. |
 | `POST /api/v1/agent/messages` | Gửi tin nhắn trong tab Trợ lý chat. |
 
-Route case yêu cầu nhân viên đang làm việc và quyền `agents.read` hoặc `agents.manage` ở chi nhánh tương ứng; quyền toàn hệ thống chỉ có hiệu lực khi role được cấp `ALL`. Chat yêu cầu quyền tri thức nội bộ. Studio API và Agent cùng kiểm tra quyền; FE chỉ phản ánh quyền qua response.
+Danh sách case yêu cầu quyền `agents.read` ở phạm vi chi nhánh hoặc toàn hệ thống; thao tác thay đổi yêu cầu `agents.manage`. Migration `20261021100000_ops_agent_role_permissions` cấp quyền `ALL` cho role `ADMIN`, quyền theo chi nhánh cho `SALES_STAFF` và `INVENTORY_STAFF`, kể cả database đã tồn tại trước khi Ops Agent được thêm. API container chạy `prisma migrate deploy` trước khi khởi động. Chi tiết case và chat còn yêu cầu tài khoản nhân viên đang hoạt động cùng quyền chi nhánh phù hợp. Studio API và Agent cùng kiểm tra quyền; FE chỉ phản ánh quyền qua response.
 
 ## Sáu loại cảnh báo
 

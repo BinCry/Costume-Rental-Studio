@@ -156,6 +156,48 @@ function staffActor() {
   };
 }
 
+function globalAdminActor() {
+  return {
+    id: userId,
+    email: 'admin@example.com',
+    phone: null,
+    displayName: 'Admin',
+    status: 'ACTIVE',
+    avatarUrl: null,
+    employee: { employmentStatus: 'ACTIVE' },
+    roleAssignments: [
+      {
+        branchId: null,
+        branch: null,
+        role: {
+          roleCode: 'ADMIN',
+          name: 'Quản trị viên',
+          actorGroup: 'ADMIN',
+          isActive: true,
+          rolePermissions: [
+            {
+              permission: {
+                code: 'agents.read.all',
+                module: 'agents',
+                action: 'read',
+                scope: 'ALL',
+              },
+            },
+            {
+              permission: {
+                code: 'agents.manage.all',
+                module: 'agents',
+                action: 'manage',
+                scope: 'ALL',
+              },
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
+
 describe('Agent public API', () => {
   it('requires an authenticated actor before sending an agent message', async () => {
     await request(createApp())
@@ -277,6 +319,22 @@ describe('Agent public API', () => {
     expect((response.body as { data: { items: unknown[] } }).data.items).toHaveLength(1);
     expect(mocks.listCases).toHaveBeenCalledWith(
       { branchId, state: 'NEW', ownership: 'unassigned', limit: 15 },
+      expect.objectContaining({ id: userId }),
+      expect.any(String),
+    );
+  });
+
+  it('allows a global administrator with ALL permission to list cases by branch', async () => {
+    mocks.findUser.mockResolvedValueOnce(globalAdminActor());
+    const token = await accessToken();
+    const response = await request(createApp())
+      .get(`/api/v1/agent/cases?branchId=${branchId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect((response.body as { data: { items: unknown[] } }).data.items).toHaveLength(1);
+    expect(mocks.listCases).toHaveBeenCalledWith(
+      { branchId, limit: 30, ownership: 'all' },
       expect.objectContaining({ id: userId }),
       expect.any(String),
     );
