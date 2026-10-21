@@ -33,12 +33,12 @@ type StateFilter =
   | 'HANDED_OFF';
 
 const findingLabels: Record<string, string> = {
-  PREVIOUS_RENTAL_NOT_RETURNED: 'Đơn trước chưa trả',
-  ALLOCATED_UNIT_NOT_READY: 'Bộ chưa sẵn sàng',
-  ORDER_PREPARATION_DELAYED: 'Chuẩn bị có nguy cơ trễ',
-  RENTAL_RETURN_OVERDUE: 'Đơn thuê quá hạn',
-  OPERATIONAL_CAPACITY_SHORTFALL: 'Thiếu năng lực xử lý',
-  UNIT_SCHEDULE_CONFLICT: 'Trùng lịch bộ trang phục',
+  PREVIOUS_RENTAL_NOT_RETURNED: 'Trang phục chưa được trả, có nguy cơ trễ đơn kế tiếp',
+  ALLOCATED_UNIT_NOT_READY: 'Trang phục đã phân bổ chưa sẵn sàng',
+  ORDER_PREPARATION_DELAYED: 'Đơn chưa chuẩn bị kịp giờ nhận',
+  RENTAL_RETURN_OVERDUE: 'Đơn thuê quá hạn trả',
+  OPERATIONAL_CAPACITY_SHORTFALL: 'Thiếu năng lực xử lý trước hạn',
+  UNIT_SCHEDULE_CONFLICT: 'Trùng lịch sử dụng trang phục',
 };
 
 const findingGuidance: Record<string, string> = {
@@ -277,8 +277,48 @@ function evidenceRows(caseData: OpsAgentCaseResult) {
   return evidence ? flatten(evidence) : [];
 }
 
+const evidenceLabels: Record<string, string> = {
+  order_code: 'Mã đơn',
+  orderCode: 'Mã đơn',
+  unit_code: 'Mã bộ',
+  unitCode: 'Mã bộ',
+  planned_start_at: 'Thời điểm nhận dự kiến',
+  planned_due_at: 'Thời điểm trả dự kiến',
+  remaining_minutes: 'Thời gian còn lại',
+  required_minutes: 'Khối lượng cần xử lý',
+  available_minutes: 'Năng lực còn lại',
+  shortfall_minutes: 'Phần thiếu',
+};
+
+function evidenceLabel(key: string) {
+  const leaf = key.split('.').at(-1) ?? key;
+  return evidenceLabels[leaf] ?? leaf.replaceAll('_', ' ');
+}
+
 function ownershipFor(caseData: OpsAgentCaseResult) {
   return caseData.ownership ?? 'UNCLAIMED';
+}
+
+function caseQuestion(caseData: OpsAgentCaseResult) {
+  const rule = labelForFinding(caseData.finding?.ruleCode);
+  const orders = (caseData.relatedOrders ?? []).map((item) => item.orderCode).filter(Boolean);
+  const units = (caseData.relatedUnits ?? []).map((item) => item.unitCode).filter(Boolean);
+  const targets = [...orders, ...units].join(', ');
+  return `Tôi cần hỗ trợ xử lý tình huống “${rule}”${targets ? ` liên quan ${targets}` : ''}. Hãy giải thích nguyên nhân, việc thủ công cần làm tiếp theo và căn cứ; không thay đổi dữ liệu.`;
+}
+
+function nextActionCopy(caseData: OpsAgentCaseResult) {
+  if (caseData.pendingConfirmation) return 'Kiểm tra thay đổi và xác nhận nếu đúng.';
+  if (caseData.pendingApproval) return 'Đang chờ người có thẩm quyền duyệt.';
+  if (caseData.handoff?.nextAction) return caseData.handoff.nextAction;
+  if (caseData.state === 'SUCCEEDED') return 'Đã xác minh kết quả. Bạn có thể hỏi thêm nếu cần.';
+  if (caseData.state === 'MONITORING' || caseData.state === 'EXECUTING')
+    return 'Hệ thống đang kiểm tra lại trạng thái. Cập nhật khi cần.';
+  if (caseData.finding?.ruleCode === 'ORDER_PREPARATION_DELAYED')
+    return 'Mở đơn và hoàn tất các bước chuẩn bị thực tế trước giờ nhận.';
+  if (caseData.finding?.ruleCode === 'OPERATIONAL_CAPACITY_SHORTFALL')
+    return 'Điều phối hoặc bàn giao thực tế theo khối lượng và hạn xử lý hiển thị.';
+  return 'Hỏi Trợ lý để xem căn cứ và phương án phù hợp trước khi quyết định.';
 }
 
 function formatDate(value?: string | null, fallback = 'Chưa có dữ liệu') {
@@ -353,7 +393,13 @@ function replaceCase(cases: OpsAgentCaseResult[], updated: OpsAgentCaseResult) {
   return cases.map((item) => (item.caseId === updated.caseId ? updated : item));
 }
 
-export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
+export function OpsAgentCasesPanel({
+  branchId,
+  onAskAssistant,
+}: {
+  branchId?: string;
+  onAskAssistant?: (question: string) => void;
+}) {
   const [cases, setCases] = useState<OpsAgentCaseResult[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [selectedCase, setSelectedCase] = useState<OpsAgentCaseResult>();
@@ -704,15 +750,6 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
     !actionLoading &&
     !actionOutcomeUnknown,
   );
-  const canClaim = Boolean(
-    branchId &&
-    !isTerminal &&
-    current &&
-    ownershipFor(current) === 'UNCLAIMED' &&
-    current.version &&
-    !actionLoading &&
-    !actionOutcomeUnknown,
-  );
   const canReviewApproval = Boolean(
     branchId && !isTerminal && !actionLoading && !actionOutcomeUnknown,
   );
@@ -722,9 +759,12 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
     <section className="ops-alert-workspace" aria-label="Cảnh báo Ops Agent">
       <header className="ops-alert-heading">
         <div>
-          <p className="eyebrow">XỬ LÝ THEO CHI NHÁNH</p>
-          <h2>Cảnh báo vận hành</h2>
-          <p>Ưu tiên tình huống theo mức độ và hạn xử lý; mở một mục để xem căn cứ và phương án.</p>
+          <p className="eyebrow">NGỮ CẢNH CUỘC TRAO ĐỔI</p>
+          <h2>Yêu cầu hiện tại</h2>
+          <p>
+            Mở một tình huống để xem dữ kiện và bước tiếp theo. Trợ lý chat là nơi hỏi đáp và lập
+            phương án.
+          </p>
         </div>
         <Button
           variant="secondary"
@@ -737,8 +777,8 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
       </header>
 
       <p className="ops-alert-api-scope">
-        Hàng đợi và trạng thái lấy từ API theo chi nhánh. Phân tích hiển thị các phương án Agent trả
-        về; hệ thống chỉ thực thi phương án API cho phép sau bước xác nhận hoặc duyệt.
+        Đây là thông tin hỗ trợ cho cuộc trao đổi, không thay thế quyết định của nhân viên. Chỉ thao
+        tác đã được hệ thống chuẩn bị và yêu cầu xác nhận mới có thể làm thay đổi dữ liệu.
       </p>
 
       {!branchId && (
@@ -853,6 +893,14 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
                 <strong>{labelForFinding(item.finding?.ruleCode)}</strong>
                 <span className="ops-alert-row-meta">
                   <span>{labelForState(item.state)}</span>
+                  {item.relatedOrders?.length || item.relatedUnits?.length ? (
+                    <span>
+                      {[
+                        ...(item.relatedOrders ?? []).map((order) => order.orderCode),
+                        ...(item.relatedUnits ?? []).map((unit) => unit.unitCode),
+                      ].join(' · ')}
+                    </span>
+                  ) : null}
                   <time dateTime={item.deadlineAt ?? undefined}>
                     Hạn: {formatDate(item.deadlineAt, 'Chưa đặt hạn')}
                   </time>
@@ -951,34 +999,18 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
                   </div>
                 </div>
 
-                <section className="ops-alert-lifecycle" aria-label="Tiến độ xử lý tình huống">
-                  <div className="ops-alert-lifecycle-head">
-                    <h4>Tiến độ xử lý</h4>
-                    {current.state === 'MONITORING' && (
-                      <span>
-                        {lastCheckedAt
-                          ? `Kiểm tra gần nhất ${formatDate(lastCheckedAt)}`
-                          : 'Tự kiểm tra trạng thái mỗi 30 giây khi đang mở'}
-                      </span>
-                    )}
+                <section className="ops-alert-next-action" aria-label="Việc cần làm tiếp theo">
+                  <div>
+                    <p className="eyebrow">VIỆC CẦN LÀM TIẾP THEO</p>
+                    <h4>{nextActionCopy(current)}</h4>
+                    {lastCheckedAt && <p>Cập nhật gần nhất: {formatDate(lastCheckedAt)}</p>}
                   </div>
-                  <ol className="ops-alert-lifecycle-steps">
-                    {opsAgentWorkflowSteps(current).map((step, index) => (
-                      <li
-                        className={`is-${step.state}`}
-                        key={step.id}
-                        aria-current={step.state === 'current' ? 'step' : undefined}
-                      >
-                        <span className="ops-alert-step-index" aria-hidden="true">
-                          {index + 1}
-                        </span>
-                        <span className="ops-alert-step-copy">
-                          <strong>{step.label}</strong>
-                          <small>{step.detail}</small>
-                        </span>
-                      </li>
-                    ))}
-                  </ol>
+                  <Button
+                    variant="secondary"
+                    onClick={() => onAskAssistant?.(caseQuestion(current))}
+                  >
+                    Hỏi Trợ lý về tình huống này
+                  </Button>
                 </section>
 
                 <section className="ops-alert-section">
@@ -987,7 +1019,7 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
                     <dl className="ops-alert-evidence">
                       {evidence.map((item, index) => (
                         <div key={`${item.key}-${index}`}>
-                          <dt>{item.key.replaceAll('_', ' ')}</dt>
+                          <dt>{evidenceLabel(item.key)}</dt>
                           <dd>{item.value}</dd>
                         </div>
                       ))}
@@ -1370,34 +1402,6 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
                 )}
 
                 <footer className="ops-alert-actions ops-alert-detail-actions">
-                  {ownershipFor(current) === 'UNCLAIMED' && !isTerminal && (
-                    <Button
-                      onClick={() => void runAction('claim')}
-                      loading={actionLoading}
-                      disabled={!canClaim}
-                    >
-                      Nhận xử lý
-                    </Button>
-                  )}
-                  {ownershipFor(current) === 'MINE' && !isTerminal && (
-                    <Button
-                      variant="secondary"
-                      onClick={() => void runAction('release')}
-                      loading={actionLoading}
-                      disabled={!canManage}
-                    >
-                      Trả lại hàng đợi
-                    </Button>
-                  )}
-                  {ownershipFor(current) === 'MINE' && !isTerminal && (
-                    <Button
-                      onClick={() => void runAction('analyze')}
-                      loading={actionLoading}
-                      disabled={!canManage || !branchId || detailLoading}
-                    >
-                      Phân tích{requiresReplan ? ' lại' : ''}
-                    </Button>
-                  )}
                   {ownershipFor(current) === 'MINE' &&
                     canExecuteRecommended &&
                     !current.pendingConfirmation &&
@@ -1408,7 +1412,7 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
                         loading={actionLoading}
                         disabled={!canManage || !current.version}
                       >
-                        Chuẩn bị xác nhận thực thi
+                        Xem thay đổi để xác nhận
                       </Button>
                     )}
                   {ownershipFor(current) === 'OTHER' && (
@@ -1428,6 +1432,9 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
                     disabled={actionLoading}
                   >
                     Cập nhật trạng thái
+                  </Button>
+                  <Button variant="quiet" onClick={() => onAskAssistant?.(caseQuestion(current))}>
+                    Hỏi tiếp
                   </Button>
                 </footer>
               </>
