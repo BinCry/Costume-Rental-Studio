@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   findBranch: vi.fn(),
   findOrderBranch: vi.fn(),
+  findUnit: vi.fn(),
+  findUnitRentals: vi.fn(),
   listOrders: vi.fn(),
   getUnitBlock: vi.fn(),
   listUnitBlocks: vi.fn(),
@@ -30,6 +32,8 @@ vi.mock('../src/database/prisma.js', () => ({
   prisma: {
     branch: { findUnique: mocks.findBranch },
     rentalOrder: { findUnique: mocks.findOrderBranch },
+    costumeUnit: { findUnique: mocks.findUnit },
+    rentalOrderItem: { findMany: mocks.findUnitRentals },
   },
 }));
 vi.mock('../src/modules/rentals/rental.service.js', () => ({
@@ -402,6 +406,22 @@ describe('Ops Agent read projections', () => {
   });
 
   it('projects every item in a schedule list through the same safe view', async () => {
+    mocks.findUnit.mockResolvedValueOnce({
+      currentBranchId: '10000000-0000-4000-8000-000000000033',
+    });
+    mocks.findUnitRentals.mockResolvedValueOnce([
+      {
+        occupiedFrom: new Date('2026-10-22T08:00:00Z'),
+        occupiedUntil: new Date('2026-10-24T08:00:00Z'),
+        allocationStatus: 'CONFIRMED',
+        order: {
+          orderCode: 'ORD-001',
+          status: 'CONFIRMED',
+          pickupBranchId: '10000000-0000-4000-8000-000000000033',
+          customerUserId: 'private@example.com',
+        },
+      },
+    ]);
     mocks.listUnitBlocks.mockResolvedValueOnce({
       items: [block],
       pagination: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 },
@@ -421,8 +441,30 @@ describe('Ops Agent read projections', () => {
 
     expect(result.data).toMatchObject({
       items: [{ id: block.id, unit: { unitCode: 'UNIT-031' } }],
+      rentals: [{ orderCode: 'ORD-001', orderStatus: 'CONFIRMED' }],
     });
     expect(serializeToolData(result.data)).not.toContain('private@example.com');
+  });
+
+  it('does not reveal another branch unit schedule', async () => {
+    mocks.findUnit.mockResolvedValueOnce({
+      currentBranchId: '10000000-0000-4000-8000-000000000099',
+    });
+    await expect(
+      executeAgentTool(
+        actor,
+        {
+          caseId: '10000000-0000-4000-8000-000000000040',
+          toolCallId: '10000000-0000-4000-8000-000000000043',
+          idempotencyKey: 'case:call:foreign-schedule',
+          toolName: 'get_unit_schedule',
+          arguments: { unitId: block.unitId },
+        } as never,
+        '10000000-0000-4000-8000-000000000044',
+        '10000000-0000-4000-8000-000000000033',
+      ),
+    ).rejects.toMatchObject({ statusCode: 404, code: 'UNIT_NOT_FOUND' });
+    expect(mocks.findUnitRentals).not.toHaveBeenCalled();
   });
 
   it('limits transfer reads to an endpoint branch and returns a minimal projection', async () => {

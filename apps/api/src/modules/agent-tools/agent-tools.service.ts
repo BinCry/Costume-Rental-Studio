@@ -442,6 +442,13 @@ export async function executeAgentTool(
       );
     }
     case 'get_unit_schedule': {
+      const unit = await prisma.costumeUnit.findUnique({
+        where: { id: input.arguments.unitId },
+        select: { currentBranchId: true },
+      });
+      if (unit?.currentBranchId !== caseBranchId) {
+        throw new AppError(404, 'UNIT_NOT_FOUND', 'Unit not found');
+      }
       const blocks = await schedulingService.listUnitBlocks(actor, {
         unitId: input.arguments.unitId,
         branchId: caseBranchId,
@@ -450,8 +457,38 @@ export async function executeAgentTool(
         page: 1,
         pageSize: 20,
       });
+      const rentals = await prisma.rentalOrderItem.findMany({
+        where: {
+          unitId: input.arguments.unitId,
+          order: {
+            status: {
+              in: ['CONFIRMED', 'PREPARING', 'READY_FOR_PICKUP', 'ACTIVE', 'RETURN_INSPECTION'],
+            },
+          },
+          ...(input.arguments.from ? { occupiedUntil: { gt: input.arguments.from } } : {}),
+          ...(input.arguments.to ? { occupiedFrom: { lt: input.arguments.to } } : {}),
+        },
+        orderBy: { occupiedFrom: 'asc' },
+        take: 20,
+        select: {
+          occupiedFrom: true,
+          occupiedUntil: true,
+          allocationStatus: true,
+          order: { select: { orderCode: true, status: true, pickupBranchId: true } },
+        },
+      });
       return observedResult(
-        { ...blocks, items: blocks.items.map(safeUnitBlockView) },
+        {
+          ...blocks,
+          items: blocks.items.map(safeUnitBlockView),
+          rentals: rentals.map((rental) => ({
+            orderCode: rental.order.pickupBranchId === caseBranchId ? rental.order.orderCode : null,
+            orderStatus: rental.order.status,
+            allocationStatus: rental.allocationStatus,
+            occupiedFrom: rental.occupiedFrom,
+            occupiedUntil: rental.occupiedUntil,
+          })),
+        },
         requestId,
         definition.requiredPermission,
       );
