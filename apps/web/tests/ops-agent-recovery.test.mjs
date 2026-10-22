@@ -106,12 +106,16 @@ describe('Ops Agent safe state and recovery behavior', () => {
     expect(opsAgentActionFocusTarget('failure', resultHeading, errorPanel)).toBe(errorPanel);
   });
 
-  it('fails closed for unknown states, even when the response claims completion', () => {
-    const result = baseCase('HANDED_OFF', { completed: true });
-
-    expect(requiresOpsAgentStateReview(result)).toBe(true);
-    expect(isOpsAgentCaseTerminal(result)).toBe(false);
-    expect(canContinueOpsAgentCase(result)).toBe(false);
+  it('recognizes terminal handoff and insufficient data while rejecting unknown states', () => {
+    for (const state of ['HANDED_OFF', 'INSUFFICIENT_DATA']) {
+      const result = baseCase(state, { completed: true });
+      expect(requiresOpsAgentStateReview(result)).toBe(false);
+      expect(isOpsAgentCaseTerminal(result)).toBe(true);
+      expect(canContinueOpsAgentCase(result)).toBe(false);
+    }
+    const unknown = baseCase('UNKNOWN_SERVER_STATE', { completed: true });
+    expect(requiresOpsAgentStateReview(unknown)).toBe(true);
+    expect(isOpsAgentCaseTerminal(unknown)).toBe(false);
   });
 
   it('requires review when a known state conflicts with completion or pending work', () => {
@@ -139,7 +143,7 @@ describe('Ops Agent safe state and recovery behavior', () => {
   });
 
   it('allows only a coherent input request to continue and treats a clean terminal state as done', () => {
-    const waitingForInput = baseCase('NEEDS_INPUT', { pendingInput: 'Cho biết mã đơn.' });
+    const waitingForInput = baseCase('WAITING_INPUT', { pendingInput: 'Cho biết mã đơn.' });
     const completed = baseCase('SUCCEEDED', { completed: true });
 
     expect(canContinueOpsAgentCase(waitingForInput)).toBe(true);

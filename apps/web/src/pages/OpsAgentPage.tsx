@@ -141,13 +141,29 @@ const agentStateLabels: Record<string, string> = {
   PENDING_APPROVAL: 'Chờ duyệt',
   AWAITING_APPROVAL: 'Chờ duyệt',
   NEEDS_INPUT: 'Chờ bổ sung thông tin',
+  WAITING_INPUT: 'Chờ bổ sung thông tin',
   WAITING_FOR_INPUT: 'Chờ bổ sung thông tin',
   NEEDS_MORE_INFO: 'Chờ bổ sung thông tin',
+  NEW: 'Mới tạo',
+  ANALYZING: 'Đang phân tích',
+  PLAN_READY: 'Đã có phương án',
+  EXECUTING: 'Đang thực hiện',
+  MONITORING: 'Đang theo dõi',
+  INSUFFICIENT_DATA: 'Thiếu dữ liệu',
+  HANDED_OFF: 'Cần nhân viên xử lý',
   RUNNING: 'Đang xử lý',
   IN_PROGRESS: 'Đang xử lý',
   TIMED_OUT: 'Quá thời gian',
 };
-const terminalAgentStates = ['SUCCEEDED', 'COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT'];
+const terminalAgentStates = [
+  'SUCCEEDED',
+  'COMPLETED',
+  'FAILED',
+  'CANCELLED',
+  'TIMED_OUT',
+  'INSUFFICIENT_DATA',
+  'HANDED_OFF',
+];
 const decisionAgentStates = [
   'WAITING_CONFIRMATION',
   'PENDING_CONFIRMATION',
@@ -156,7 +172,7 @@ const decisionAgentStates = [
   'PENDING_APPROVAL',
   'AWAITING_APPROVAL',
 ];
-const inputAgentStates = ['NEEDS_INPUT', 'WAITING_FOR_INPUT', 'NEEDS_MORE_INFO'];
+const inputAgentStates = ['NEEDS_INPUT', 'WAITING_INPUT', 'WAITING_FOR_INPUT', 'NEEDS_MORE_INFO'];
 
 function isKnownOpsAgentState(state: string) {
   return Object.prototype.hasOwnProperty.call(agentStateLabels, state.toUpperCase());
@@ -241,13 +257,20 @@ function agentStateTone(
   if (needsReview || !isKnownOpsAgentState(normalized)) return 'warning';
   if (['SUCCEEDED', 'COMPLETED'].includes(normalized)) return 'success';
   if (
-    [...decisionAgentStates, 'NEEDS_INPUT', 'WAITING_FOR_INPUT', 'NEEDS_MORE_INFO'].includes(
-      normalized,
-    )
+    [
+      ...decisionAgentStates,
+      'NEEDS_INPUT',
+      'WAITING_INPUT',
+      'WAITING_FOR_INPUT',
+      'NEEDS_MORE_INFO',
+      'INSUFFICIENT_DATA',
+      'HANDED_OFF',
+    ].includes(normalized)
   )
     return 'warning';
   if (['FAILED', 'CANCELLED', 'TIMED_OUT'].includes(normalized)) return 'danger';
-  if (['RUNNING', 'IN_PROGRESS'].includes(normalized)) return 'info';
+  if (['RUNNING', 'IN_PROGRESS', 'ANALYZING', 'EXECUTING', 'MONITORING'].includes(normalized))
+    return 'info';
   return 'neutral';
 }
 
