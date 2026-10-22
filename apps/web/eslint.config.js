@@ -6,7 +6,7 @@ import { defineConfig, globalIgnores } from 'eslint/config';
 import { baseTypeScriptConfig, prettierCompatibilityConfig } from '../../eslint.config.js';
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['dist', 'test-results', 'playwright-report']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

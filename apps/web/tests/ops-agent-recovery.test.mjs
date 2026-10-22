@@ -15,6 +15,7 @@ const {
   requiresOpsAgentStateReview,
 } = await import('../src/pages/OpsAgentPage.tsx');
 const { opsAgentWorkflowSteps } = await import('../src/pages/OpsAgentCasesPanel.tsx');
+const { opsAgentPanelActions } = await import('../src/pages/opsAgentPanelActions.ts');
 
 const baseCase = (state, overrides = {}) => ({
   caseId: 'case-1',
@@ -26,6 +27,60 @@ const baseCase = (state, overrides = {}) => ({
 });
 
 describe('Ops Agent safe state and recovery behavior', () => {
+  it('exposes only the action allowed by ownership and persisted case state', () => {
+    const unclaimed = baseCase('NEW', { version: 1, ownership: 'UNCLAIMED' });
+    const claimed = baseCase('NEW', { version: 2, ownership: 'MINE' });
+    const ownedByOther = baseCase('NEW', { version: 1, ownership: 'OTHER' });
+
+    expect(opsAgentPanelActions(unclaimed)).toEqual(['claim', 'refresh']);
+    expect(opsAgentPanelActions(claimed)).toEqual(['analyze', 'release', 'refresh']);
+    expect(opsAgentPanelActions(ownedByOther)).toEqual(['refresh']);
+  });
+
+  it('allows confirmation only for an executable recommended plan', () => {
+    const analysis = {
+      analysisId: 'analysis-1',
+      status: 'ACTIVE',
+      outcome: 'READY',
+      recommendedOptionId: 'option-1',
+      options: [{ optionId: 'option-1', feasible: true, executable: true }],
+    };
+    const executable = baseCase('PLAN_READY', {
+      version: 3,
+      ownership: 'MINE',
+      finding: { ruleCode: 'UNIT_SCHEDULE_CONFLICT' },
+      analysis,
+    });
+    const manual = {
+      ...executable,
+      finding: { ruleCode: 'CLEANING_REQUIRED' },
+      analysis: {
+        ...analysis,
+        options: [{ optionId: 'option-1', feasible: true, executable: false }],
+      },
+    };
+    const overdue = {
+      ...executable,
+      finding: { ruleCode: 'RENTAL_RETURN_OVERDUE' },
+    };
+
+    expect(opsAgentPanelActions(executable)).toEqual(['prepare', 'release', 'refresh']);
+    expect(opsAgentPanelActions(manual)).toEqual(['release', 'refresh']);
+    expect(opsAgentPanelActions(overdue)).toEqual(['release', 'refresh']);
+    expect(
+      opsAgentPanelActions(
+        baseCase('MONITORING', {
+          version: 4,
+          ownership: 'MINE',
+          analysis,
+        }),
+      ),
+    ).toEqual(['release', 'refresh']);
+    expect(opsAgentPanelActions(baseCase('SUCCEEDED', { version: 4, ownership: 'MINE' }))).toEqual([
+      'refresh',
+    ]);
+  });
+
   it('maps server case states to the six visible workflow stages', () => {
     const activePlan = baseCase('WAITING_APPROVAL', {
       finding: { ruleCode: 'UNIT_SCHEDULE_CONFLICT' },
@@ -80,6 +135,23 @@ describe('Ops Agent safe state and recovery behavior', () => {
         baseCase('FAILED', { finding, analysis: { ...analysis, status: 'STALE' } }),
       )[5].state,
     ).toBe('replan');
+  });
+
+  it('labels a no-feasible-option plan as manual handling instead of execution', () => {
+    const stages = opsAgentWorkflowSteps(
+      baseCase('PLAN_READY', {
+        finding: { ruleCode: 'OPERATIONAL_CAPACITY_SHORTFALL' },
+        analysis: {
+          analysisId: 'analysis-1',
+          status: 'ACTIVE',
+          outcome: 'NO_FEASIBLE_OPTION',
+          options: [],
+        },
+      }),
+    );
+
+    expect(stages[4].label).toBe('Xử lý thủ công');
+    expect(stages[4].detail).toContain('ngoài Agent');
   });
 
   it('keeps saved cases isolated by actor and branch', () => {

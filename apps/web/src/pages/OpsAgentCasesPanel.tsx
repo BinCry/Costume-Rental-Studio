@@ -20,6 +20,7 @@ import {
 } from '../api/client';
 import { AssistantMarkdown } from '../components/AssistantMarkdown';
 import { Button, ConfirmDialog, EmptyState, Feedback } from '../components/ui';
+import { opsAgentPanelActions } from './opsAgentPanelActions';
 
 type SeverityFilter = 'all' | 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
 type OwnershipFilter = 'all' | 'unassigned' | 'mine';
@@ -113,6 +114,14 @@ export function opsAgentWorkflowSteps(result?: OpsAgentCaseResult): OpsWorkflowS
     analysis?.recommendedOptionId &&
     analysis.options.some((option) => option.optionId === analysis.recommendedOptionId),
   );
+  const recommended = analysis?.options.find(
+    (option) => option.optionId === analysis.recommendedOptionId,
+  );
+  const manualOnly = Boolean(
+    hasAnalysis &&
+    (analysis?.outcome === 'NO_FEASIBLE_OPTION' ||
+      (hasRecommendation && recommended?.executable !== true)),
+  );
   const hasExecuted = ['EXECUTING', 'MONITORING', 'SUCCEEDED'].includes(state ?? '');
 
   return [
@@ -184,7 +193,7 @@ export function opsAgentWorkflowSteps(result?: OpsAgentCaseResult): OpsWorkflowS
     },
     {
       id: 'execute',
-      label: 'Xác nhận & thực thi',
+      label: manualOnly ? 'Xử lý thủ công' : 'Xác nhận & thực thi',
       state: stale
         ? 'replan'
         : result?.pendingApproval || result?.pendingConfirmation || state === 'EXECUTING'
@@ -200,11 +209,13 @@ export function opsAgentWorkflowSteps(result?: OpsAgentCaseResult): OpsWorkflowS
           ? 'Đang chờ bạn xác nhận'
           : state === 'EXECUTING'
             ? 'Đang gửi thao tác đã duyệt'
-            : hasExecuted
-              ? 'Đã gửi thao tác'
-              : hasRecommendation
-                ? 'Chờ nhân viên xác nhận phương án'
-                : 'Chưa sẵn sàng thực thi',
+            : manualOnly
+              ? 'Thực hiện nghiệp vụ ngoài Agent theo hướng dẫn'
+              : hasExecuted
+                ? 'Đã gửi thao tác'
+                : hasRecommendation
+                  ? 'Chờ nhân viên xác nhận phương án'
+                  : 'Chưa sẵn sàng thực thi',
     },
     {
       id: 'monitor',
@@ -299,26 +310,34 @@ function ownershipFor(caseData: OpsAgentCaseResult) {
   return caseData.ownership ?? 'UNCLAIMED';
 }
 
-function caseQuestion(caseData: OpsAgentCaseResult) {
-  const rule = labelForFinding(caseData.finding?.ruleCode);
-  const orders = (caseData.relatedOrders ?? []).map((item) => item.orderCode).filter(Boolean);
-  const units = (caseData.relatedUnits ?? []).map((item) => item.unitCode).filter(Boolean);
-  const targets = [...orders, ...units].join(', ');
-  return `Tôi cần hỗ trợ xử lý tình huống “${rule}”${targets ? ` liên quan ${targets}` : ''}. Hãy giải thích nguyên nhân, việc thủ công cần làm tiếp theo và căn cứ; không thay đổi dữ liệu.`;
-}
-
 function nextActionCopy(caseData: OpsAgentCaseResult) {
   if (caseData.pendingConfirmation) return 'Kiểm tra thay đổi và xác nhận nếu đúng.';
   if (caseData.pendingApproval) return 'Đang chờ người có thẩm quyền duyệt.';
   if (caseData.handoff?.nextAction) return caseData.handoff.nextAction;
-  if (caseData.state === 'SUCCEEDED') return 'Đã xác minh kết quả. Bạn có thể hỏi thêm nếu cần.';
-  if (caseData.state === 'MONITORING' || caseData.state === 'EXECUTING')
-    return 'Hệ thống đang kiểm tra lại trạng thái. Cập nhật khi cần.';
+  if (ownershipFor(caseData) === 'UNCLAIMED')
+    return 'Nhận xử lý tình huống để bắt đầu phân tích trên dữ liệu mới nhất.';
+  if (ownershipFor(caseData) === 'OTHER') return 'Tình huống đang do nhân viên khác xử lý.';
+  if (caseData.state === 'NEW')
+    return 'Chạy phân tích để đánh giá rủi ro, giả lập và xếp hạng phương án.';
+  if (caseData.state === 'ANALYZING') return 'Agent đang phân tích và lập phương án.';
+  if (caseData.state === 'WAITING_INPUT')
+    return 'Bổ sung dữ liệu còn thiếu trước khi phân tích tiếp.';
+  if (caseData.state === 'EXECUTING') return 'Đang thực thi phương án đã xác nhận.';
+  if (caseData.state === 'SUCCEEDED') return 'Đã đọc lại dữ liệu và xác minh kết quả thành công.';
+  if (caseData.state === 'MONITORING') return 'Cập nhật để kiểm tra trạng thái nghiệp vụ mới nhất.';
+  if (caseData.analysis?.status === 'STALE')
+    return 'Dữ liệu nguồn đã thay đổi; cần phân tích lại trước khi dùng phương án.';
+  if (caseData.state === 'PLAN_READY' && caseData.analysis?.outcome === 'NO_FEASIBLE_OPTION')
+    return 'Không có phương án tự động khả thi; cần xử lý hoặc bàn giao thủ công.';
   if (caseData.finding?.ruleCode === 'ORDER_PREPARATION_DELAYED')
     return 'Mở đơn và hoàn tất các bước chuẩn bị thực tế trước giờ nhận.';
   if (caseData.finding?.ruleCode === 'OPERATIONAL_CAPACITY_SHORTFALL')
     return 'Điều phối hoặc bàn giao thực tế theo khối lượng và hạn xử lý hiển thị.';
-  return 'Hỏi Trợ lý để xem căn cứ và phương án phù hợp trước khi quyết định.';
+  if (caseData.finding?.ruleCode === 'RENTAL_RETURN_OVERDUE')
+    return 'Liên hệ khách thực tế, sau đó ghi nhận kết quả để xác nhận.';
+  if (caseData.state === 'PLAN_READY')
+    return 'Xem phương án Agent đề xuất và chuẩn bị thay đổi để xác nhận.';
+  return 'Cập nhật trạng thái để tiếp tục xử lý.';
 }
 
 function formatDate(value?: string | null, fallback = 'Chưa có dữ liệu') {
@@ -393,13 +412,7 @@ function replaceCase(cases: OpsAgentCaseResult[], updated: OpsAgentCaseResult) {
   return cases.map((item) => (item.caseId === updated.caseId ? updated : item));
 }
 
-export function OpsAgentCasesPanel({
-  branchId,
-  onAskAssistant,
-}: {
-  branchId?: string;
-  onAskAssistant?: (question: string) => void;
-}) {
+export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
   const [cases, setCases] = useState<OpsAgentCaseResult[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [selectedCase, setSelectedCase] = useState<OpsAgentCaseResult>();
@@ -584,17 +597,18 @@ export function OpsAgentCasesPanel({
     : undefined;
   const finding = current?.finding;
   const analysis = current?.analysis;
-  const recommended = analysis?.options.find(
-    (option) => option.optionId === analysis.recommendedOptionId,
-  );
-  const canExecuteRecommended = Boolean(
-    analysis?.status === 'ACTIVE' &&
-    analysis.outcome === 'READY' &&
-    recommended?.feasible === true &&
-    recommended.executable === true,
-  );
   const requiresReplan = Boolean(analysis?.status === 'STALE' || current?.state === 'FAILED');
-  const isTerminal = ['SUCCEEDED', 'CANCELLED', 'HANDED_OFF'].includes(current?.state ?? '');
+  const isTerminal = [
+    'SUCCEEDED',
+    'INSUFFICIENT_DATA',
+    'CANCELLED',
+    'HANDED_OFF',
+    'FAILED',
+  ].includes(current?.state ?? '');
+  const availableActions = opsAgentPanelActions(current);
+  const primaryAction = availableActions.find((action) =>
+    ['claim', 'analyze', 'prepare'].includes(action),
+  );
 
   useEffect(() => {
     if (!branchId || !selectedId || current?.state !== 'MONITORING') return;
@@ -750,6 +764,13 @@ export function OpsAgentCasesPanel({
     !actionLoading &&
     !actionOutcomeUnknown,
   );
+  const canClaim = Boolean(
+    branchId &&
+    current?.version &&
+    ownershipFor(current) === 'UNCLAIMED' &&
+    !actionLoading &&
+    !actionOutcomeUnknown,
+  );
   const canReviewApproval = Boolean(
     branchId && !isTerminal && !actionLoading && !actionOutcomeUnknown,
   );
@@ -759,11 +780,11 @@ export function OpsAgentCasesPanel({
     <section className="ops-alert-workspace" aria-label="Cảnh báo Ops Agent">
       <header className="ops-alert-heading">
         <div>
-          <p className="eyebrow">NGỮ CẢNH CUỘC TRAO ĐỔI</p>
-          <h2>Yêu cầu hiện tại</h2>
+          <p className="eyebrow">XỬ LÝ THEO CHI NHÁNH</p>
+          <h2>Cảnh báo vận hành</h2>
           <p>
-            Mở một tình huống để xem dữ kiện và bước tiếp theo. Trợ lý chat là nơi hỏi đáp và lập
-            phương án.
+            Job nền phát hiện tình huống; nhân viên nhận xử lý, yêu cầu Agent phân tích, xem đề xuất
+            rồi xác nhận trước khi thực thi.
           </p>
         </div>
         <Button
@@ -777,8 +798,8 @@ export function OpsAgentCasesPanel({
       </header>
 
       <p className="ops-alert-api-scope">
-        Đây là thông tin hỗ trợ cho cuộc trao đổi, không thay thế quyết định của nhân viên. Chỉ thao
-        tác đã được hệ thống chuẩn bị và yêu cầu xác nhận mới có thể làm thay đổi dữ liệu.
+        Job chỉ đọc dữ liệu để phát hiện và lập cảnh báo. Mọi thay đổi nghiệp vụ đều cần nhân viên
+        nhận xử lý và xác nhận hoặc phê duyệt phương án do Agent chuẩn bị.
       </p>
 
       {!branchId && (
@@ -999,18 +1020,57 @@ export function OpsAgentCasesPanel({
                   </div>
                 </div>
 
+                <section className="ops-alert-lifecycle" aria-label="Tiến độ xử lý tình huống">
+                  <div className="ops-alert-lifecycle-head">
+                    <h4>Tiến độ xử lý</h4>
+                    <span>{labelForState(current.state)}</span>
+                  </div>
+                  <ol>
+                    {opsAgentWorkflowSteps(current).map((step, index) => (
+                      <li key={step.id} className={`is-${step.state}`}>
+                        <span className="ops-alert-step-index">{index + 1}</span>
+                        <div>
+                          <strong>{step.label}</strong>
+                          <small>{step.detail}</small>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </section>
+
                 <section className="ops-alert-next-action" aria-label="Việc cần làm tiếp theo">
                   <div>
                     <p className="eyebrow">VIỆC CẦN LÀM TIẾP THEO</p>
                     <h4>{nextActionCopy(current)}</h4>
                     {lastCheckedAt && <p>Cập nhật gần nhất: {formatDate(lastCheckedAt)}</p>}
                   </div>
-                  <Button
-                    variant="secondary"
-                    onClick={() => onAskAssistant?.(caseQuestion(current))}
-                  >
-                    Hỏi Trợ lý về tình huống này
-                  </Button>
+                  {primaryAction === 'claim' && (
+                    <Button
+                      onClick={() => void runAction('claim')}
+                      loading={actionLoading}
+                      disabled={!canClaim}
+                    >
+                      Nhận xử lý
+                    </Button>
+                  )}
+                  {primaryAction === 'analyze' && (
+                    <Button
+                      onClick={() => void runAction('analyze')}
+                      loading={actionLoading}
+                      disabled={!canManage || detailLoading}
+                    >
+                      {requiresReplan ? 'Phân tích lại' : 'Phân tích và lập phương án'}
+                    </Button>
+                  )}
+                  {primaryAction === 'prepare' && !current.pendingConfirmation && (
+                    <Button
+                      onClick={() => void runAction('prepare')}
+                      loading={actionLoading}
+                      disabled={!canManage}
+                    >
+                      Xem thay đổi để xác nhận
+                    </Button>
+                  )}
                 </section>
 
                 <section className="ops-alert-section">
@@ -1232,6 +1292,8 @@ export function OpsAgentCasesPanel({
 
                 {isOverdueFollowUp &&
                   analysis?.status === 'ACTIVE' &&
+                  current.state === 'PLAN_READY' &&
+                  ownershipFor(current) === 'MINE' &&
                   !current.pendingConfirmation && (
                     <section className="ops-alert-follow-up">
                       <div>
@@ -1402,19 +1464,16 @@ export function OpsAgentCasesPanel({
                 )}
 
                 <footer className="ops-alert-actions ops-alert-detail-actions">
-                  {ownershipFor(current) === 'MINE' &&
-                    canExecuteRecommended &&
-                    !current.pendingConfirmation &&
-                    !isOverdueFollowUp && (
-                      <Button
-                        variant="secondary"
-                        onClick={() => void runAction('prepare')}
-                        loading={actionLoading}
-                        disabled={!canManage || !current.version}
-                      >
-                        Xem thay đổi để xác nhận
-                      </Button>
-                    )}
+                  {availableActions.includes('release') && (
+                    <Button
+                      variant="secondary"
+                      onClick={() => void runAction('release')}
+                      loading={actionLoading}
+                      disabled={!canManage}
+                    >
+                      Trả lại hàng đợi
+                    </Button>
+                  )}
                   {ownershipFor(current) === 'OTHER' && (
                     <span className="ops-alert-owner-note">
                       Tình huống đã được nhân viên khác nhận.
@@ -1432,9 +1491,6 @@ export function OpsAgentCasesPanel({
                     disabled={actionLoading}
                   >
                     Cập nhật trạng thái
-                  </Button>
-                  <Button variant="quiet" onClick={() => onAskAssistant?.(caseQuestion(current))}>
-                    Hỏi tiếp
                   </Button>
                 </footer>
               </>

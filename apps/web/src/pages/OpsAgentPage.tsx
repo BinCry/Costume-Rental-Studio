@@ -73,8 +73,8 @@ const tabs: { id: AgentTab; label: string }[] = [
 ];
 
 const apiTabs: { id: AgentTab; label: string }[] = [
+  { id: 'cases', label: 'Cảnh báo' },
   { id: 'chat', label: 'Trợ lý chat' },
-  { id: 'cases', label: 'Yêu cầu hiện tại' },
 ];
 
 function initialChatMessages(useAgentApi: boolean, isNewConversation = false): ChatMessage[] {
@@ -579,7 +579,7 @@ export function OpsAgentPage({
     Boolean(uncertainInitialSendSessionKey) &&
     typeof window !== 'undefined' &&
     window.sessionStorage.getItem(uncertainInitialSendSessionKey!) === '1';
-  const [tab, setTab] = useState<AgentTab>(useAgentApi ? 'chat' : 'overview');
+  const [tab, setTab] = useState<AgentTab>(useAgentApi ? 'cases' : 'overview');
   const [queueFilter, setQueueFilter] = useState<QueueFilter>('all');
   const [queueSearch, setQueueSearch] = useState('');
   const [knowledgeSearch, setKnowledgeSearch] = useState('');
@@ -1410,18 +1410,7 @@ export function OpsAgentPage({
               </div>
             }
           >
-            <OpsAgentCasesPanel
-              branchId={branchId}
-              onAskAssistant={(question) => {
-                setChatDraft(question);
-                setTab('chat');
-                window.requestAnimationFrame(() => {
-                  chatInputContainerRef.current
-                    ?.querySelector<HTMLTextAreaElement>('textarea')
-                    ?.focus();
-                });
-              }}
-            />
+            <OpsAgentCasesPanel branchId={branchId} />
           </Suspense>
         )}
         {visibleTab === 'overview' &&
