@@ -44,16 +44,15 @@ const findingLabels: Record<string, string> = {
 
 const findingGuidance: Record<string, string> = {
   PREVIOUS_RENTAL_NOT_RETURNED:
-    'Đơn trước vẫn giữ bộ hoặc khoảng dự phòng trả trễ và vệ sinh không còn đủ trước giờ nhận kế tiếp.',
+    'Bộ của đơn trước chưa trả hoặc không còn đủ thời gian vệ sinh trước lượt kế tiếp.',
   ALLOCATED_UNIT_NOT_READY:
-    'Bộ đã gán đang sai chi nhánh, còn lịch vệ sinh/sửa chữa/chuyển kho hoặc chưa có thời điểm sẵn sàng đáng tin cậy.',
-  ORDER_PREPARATION_DELAYED:
-    'Đơn sắp đến giờ nhận nhưng khâu chuẩn bị chưa hoàn tất theo trạng thái hệ thống.',
-  RENTAL_RETURN_OVERDUE: 'Đơn đã qua hạn trả và vẫn còn bộ đang được ghi nhận là khách giữ.',
+    'Bộ được gán còn đang dùng, ở chi nhánh khác hoặc cần vệ sinh, sửa chữa.',
+  ORDER_PREPARATION_DELAYED: 'Đơn gần đến giờ nhận nhưng hệ thống chưa ghi nhận đã chuẩn bị xong.',
+  RENTAL_RETURN_OVERDUE: 'Đơn đã quá hạn trả và bộ chưa được ghi nhận là đã nhận lại.',
   OPERATIONAL_CAPACITY_SHORTFALL:
-    'Đây là thiếu phút công so với khung năng lực xử lý đã khai báo. Hệ thống chưa đọc ca làm hoặc kỹ năng từng nhân viên nên chưa thể kết luận thiếu nhân sự.',
+    'Khối lượng xử lý còn lại vượt thời gian và năng lực đã khai báo.',
   UNIT_SCHEDULE_CONFLICT:
-    'Hai đơn đang cùng giữ một bộ trong các khoảng thời gian bảo vệ bị chồng lấn.',
+    'Một bộ đang được xếp vào nhiều đơn trong các khoảng thời gian chồng lấn.',
 };
 
 const statusLabels: Record<string, string> = {
@@ -269,6 +268,35 @@ function safeText(value: unknown): string | undefined {
   return text.length > 240 ? `${text.slice(0, 237)}…` : text;
 }
 
+function normalizedEvidenceKey(key: string) {
+  const leaf = key.split('.').at(-1) ?? key;
+  return leaf
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replaceAll('-', '_')
+    .toLocaleLowerCase('vi');
+}
+
+function evidenceValue(key: string, value: string) {
+  const normalizedKey = normalizedEvidenceKey(key);
+  if (normalizedKey.endsWith('_at') || normalizedKey === 'grace_deadline')
+    return formatDate(value, value);
+  if (normalizedKey.endsWith('_minutes')) {
+    const minutes = Number(value);
+    if (Number.isFinite(minutes)) return formatDuration(minutes);
+  }
+  if (normalizedKey === 'order_status') {
+    const statusLabels: Record<string, string> = {
+      ACTIVE: 'Đang thuê',
+      DRAFT: 'Bản nháp',
+      PENDING: 'Chờ xác nhận',
+      COMPLETED: 'Đã hoàn tất',
+      CANCELLED: 'Đã hủy',
+    };
+    return statusLabels[value.toUpperCase()] ?? value;
+  }
+  return value;
+}
+
 function evidenceRows(caseData: OpsAgentCaseResult) {
   const evidence = caseData.finding?.evidence;
   const flatten = (
@@ -277,10 +305,15 @@ function evidenceRows(caseData: OpsAgentCaseResult) {
     depth = 0,
   ): { key: string; value: string }[] =>
     Object.entries(record).flatMap(([key, value]) => {
-      if (/(^id$|_id$|uuid|email|phone|customer|actor|token|secret|password)/i.test(key)) return [];
+      if (
+        /(^id$|_id$|uuid|email|phone|customer|actor|token|secret|password|^order_?version$|^primary_?entity_?type$|^observed_?at$)/i.test(
+          key,
+        )
+      )
+        return [];
       const label = prefix ? `${prefix}.${key}` : key;
       const text = safeText(value);
-      if (text) return [{ key: label, value: text }];
+      if (text) return [{ key: label, value: evidenceValue(label, text) }];
       if (depth < 2 && value && typeof value === 'object' && !Array.isArray(value))
         return flatten(value as Record<string, unknown>, label, depth + 1);
       return [];
@@ -290,11 +323,13 @@ function evidenceRows(caseData: OpsAgentCaseResult) {
 
 const evidenceLabels: Record<string, string> = {
   order_code: 'Mã đơn',
-  orderCode: 'Mã đơn',
   unit_code: 'Mã bộ',
-  unitCode: 'Mã bộ',
-  planned_start_at: 'Thời điểm nhận dự kiến',
-  planned_due_at: 'Thời điểm trả dự kiến',
+  order_status: 'Trạng thái đơn',
+  planned_due_at: 'Hạn trả dự kiến',
+  planned_start_at: 'Giờ nhận dự kiến',
+  grace_deadline: 'Hạn trả sau thời gian chờ',
+  overdue_minutes: 'Đã quá hạn',
+  late_grace_minutes: 'Thời gian chờ trả',
   remaining_minutes: 'Thời gian còn lại',
   required_minutes: 'Khối lượng cần xử lý',
   available_minutes: 'Năng lực còn lại',
@@ -302,8 +337,19 @@ const evidenceLabels: Record<string, string> = {
 };
 
 function evidenceLabel(key: string) {
-  const leaf = key.split('.').at(-1) ?? key;
-  return evidenceLabels[leaf] ?? leaf.replaceAll('_', ' ');
+  const normalizedKey = normalizedEvidenceKey(key);
+  return evidenceLabels[normalizedKey] ?? normalizedKey.replaceAll('_', ' ');
+}
+
+function relatedEntitySummary(item: OpsAgentCaseResult) {
+  const references = [
+    ...(item.relatedOrders ?? []).map((order) => order.orderCode),
+    ...(item.relatedUnits ?? []).map((unit) => unit.unitCode),
+  ];
+  const visibleReferences = references.slice(0, 2);
+  if (references.length > visibleReferences.length)
+    visibleReferences.push(`+${references.length - visibleReferences.length} liên quan`);
+  return visibleReferences.join(' · ');
 }
 
 function ownershipFor(caseData: OpsAgentCaseResult) {
@@ -356,6 +402,18 @@ function formatDate(value?: string | null, fallback = 'Chưa có dữ liệu') {
 function formatDuration(value?: number | null) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return 'Chưa có dữ liệu';
   if (value < 60) return `${Math.round(value)} phút`;
+  if (value >= 24 * 60) {
+    const days = Math.floor(value / (24 * 60));
+    const remainingHours = Math.floor((value % (24 * 60)) / 60);
+    const remainingMinutes = Math.round(value % 60);
+    const remainder = [
+      remainingHours ? `${remainingHours} giờ` : '',
+      remainingMinutes ? `${remainingMinutes} phút` : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+    return remainder ? `${days} ngày ${remainder}` : `${days} ngày`;
+  }
   const hours = Math.floor(value / 60);
   const minutes = Math.round(value % 60);
   return minutes ? `${hours} giờ ${minutes} phút` : `${hours} giờ`;
@@ -798,8 +856,7 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
       </header>
 
       <p className="ops-alert-api-scope">
-        Job chỉ đọc dữ liệu để phát hiện và lập cảnh báo. Mọi thay đổi nghiệp vụ đều cần nhân viên
-        nhận xử lý và xác nhận hoặc phê duyệt phương án do Agent chuẩn bị.
+        Cảnh báo chỉ đọc dữ liệu. Phương án chỉ chạy sau khi được xác nhận hoặc phê duyệt.
       </p>
 
       {!branchId && (
@@ -906,24 +963,21 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
                   void loadSelected(item.caseId);
                 }}
               >
-                <span
-                  className={`ops-alert-severity severity-${(item.finding?.severity ?? 'medium').toLocaleLowerCase()}`}
-                >
-                  {severityLabels[item.finding?.severity ?? ''] ?? 'Chưa phân loại'}
+                <span className="ops-alert-row-top">
+                  <span
+                    className={`ops-alert-severity severity-${(item.finding?.severity ?? 'medium').toLocaleLowerCase()}`}
+                  >
+                    {severityLabels[item.finding?.severity ?? ''] ?? 'Chưa phân loại'}
+                  </span>
+                  <strong>{labelForFinding(item.finding?.ruleCode)}</strong>
                 </span>
-                <strong>{labelForFinding(item.finding?.ruleCode)}</strong>
                 <span className="ops-alert-row-meta">
-                  <span>{labelForState(item.state)}</span>
-                  {item.relatedOrders?.length || item.relatedUnits?.length ? (
-                    <span>
-                      {[
-                        ...(item.relatedOrders ?? []).map((order) => order.orderCode),
-                        ...(item.relatedUnits ?? []).map((unit) => unit.unitCode),
-                      ].join(' · ')}
-                    </span>
-                  ) : null}
+                  <span className="ops-alert-row-state">{labelForState(item.state)}</span>
+                  {relatedEntitySummary(item) && (
+                    <span className="ops-alert-row-entities">{relatedEntitySummary(item)}</span>
+                  )}
                   <time dateTime={item.deadlineAt ?? undefined}>
-                    Hạn: {formatDate(item.deadlineAt, 'Chưa đặt hạn')}
+                    Hạn xử lý · {formatDate(item.deadlineAt, 'Chưa đặt hạn')}
                   </time>
                 </span>
               </button>
@@ -971,9 +1025,10 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
                       <p>Ops Agent phát hiện một tình huống cần đối chiếu.</p>
                     )}
                     {finding?.ruleCode && findingGuidance[finding.ruleCode] && (
-                      <p className="ops-alert-finding-guidance">
-                        {findingGuidance[finding.ruleCode]}
-                      </p>
+                      <details className="ops-alert-finding-guidance">
+                        <summary>Vì sao có cảnh báo?</summary>
+                        <p>{findingGuidance[finding.ruleCode]}</p>
+                      </details>
                     )}
                   </div>
                   <div className="ops-alert-deadline">
@@ -989,8 +1044,8 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
                 )}
                 {requiresReplan && (
                   <Feedback tone="warning" title="Kế hoạch cần được lập lại">
-                    Dữ liệu nguồn đã thay đổi hoặc phương án trước không thành công. Hãy phân tích
-                    lại; mọi xác nhận cũ không được dùng tiếp.
+                    Dữ liệu đã đổi hoặc phương án cũ thất bại. Phân tích lại trước khi xác nhận; xác
+                    nhận trước không còn hiệu lực.
                   </Feedback>
                 )}
                 {detailLoading && (
@@ -1005,7 +1060,7 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
                     <strong>{formatDate(finding?.firstDetectedAt)}</strong>
                   </div>
                   <div>
-                    <span>Cập nhật dữ liệu</span>
+                    <span>Dữ liệu cập nhật</span>
                     <strong>{formatDate(latestObservedAt)}</strong>
                   </div>
                   <div>
@@ -1025,11 +1080,11 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
                     <h4>Tiến độ xử lý</h4>
                     <span>{labelForState(current.state)}</span>
                   </div>
-                  <ol>
+                  <ol className="ops-alert-lifecycle-steps">
                     {opsAgentWorkflowSteps(current).map((step, index) => (
                       <li key={step.id} className={`is-${step.state}`}>
                         <span className="ops-alert-step-index">{index + 1}</span>
-                        <div>
+                        <div className="ops-alert-step-copy">
                           <strong>{step.label}</strong>
                           <small>{step.detail}</small>
                         </div>
