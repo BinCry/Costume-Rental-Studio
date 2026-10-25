@@ -42,17 +42,13 @@ const findingLabels: Record<string, string> = {
   UNIT_SCHEDULE_CONFLICT: 'Trùng lịch sử dụng trang phục',
 };
 
-const findingGuidance: Record<string, string> = {
-  PREVIOUS_RENTAL_NOT_RETURNED:
-    'Bộ của đơn trước chưa trả hoặc không còn đủ thời gian vệ sinh trước lượt kế tiếp.',
-  ALLOCATED_UNIT_NOT_READY:
-    'Bộ được gán còn đang dùng, ở chi nhánh khác hoặc cần vệ sinh, sửa chữa.',
-  ORDER_PREPARATION_DELAYED: 'Đơn gần đến giờ nhận nhưng hệ thống chưa ghi nhận đã chuẩn bị xong.',
-  RENTAL_RETURN_OVERDUE: 'Đơn đã quá hạn trả và bộ chưa được ghi nhận là đã nhận lại.',
-  OPERATIONAL_CAPACITY_SHORTFALL:
-    'Khối lượng xử lý còn lại vượt thời gian và năng lực đã khai báo.',
-  UNIT_SCHEDULE_CONFLICT:
-    'Một bộ đang được xếp vào nhiều đơn trong các khoảng thời gian chồng lấn.',
+const findingSummaries: Record<string, string> = {
+  PREVIOUS_RENTAL_NOT_RETURNED: 'Đơn trước chưa trả, có thể làm chậm đơn thuê kế tiếp.',
+  ALLOCATED_UNIT_NOT_READY: 'Bộ đã được phân cho đơn nhưng chưa sẵn sàng để giao.',
+  ORDER_PREPARATION_DELAYED: 'Khâu chuẩn bị có nguy cơ trễ so với giờ nhận đồ.',
+  RENTAL_RETURN_OVERDUE: 'Đơn đã quá hạn trả. Cần kiểm tra với khách và cập nhật tình trạng.',
+  OPERATIONAL_CAPACITY_SHORTFALL: 'Nhân lực hiện tại có thể không xử lý kịp trước hạn.',
+  UNIT_SCHEDULE_CONFLICT: 'Một bộ đang bị xếp lịch trùng giữa các đơn.',
 };
 
 const statusLabels: Record<string, string> = {
@@ -1019,15 +1015,14 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
                       <span className="ops-alert-status">{labelForState(current.state)}</span>
                     </div>
                     <h3>{labelForFinding(finding?.ruleCode)}</h3>
-                    {current.message ? (
-                      <AssistantMarkdown content={current.message} />
-                    ) : (
-                      <p>Ops Agent phát hiện một tình huống cần đối chiếu.</p>
-                    )}
-                    {finding?.ruleCode && findingGuidance[finding.ruleCode] && (
+                    <p className="ops-alert-message-summary">
+                      {findingSummaries[finding?.ruleCode ?? ''] ??
+                        'Ops Agent phát hiện một tình huống cần đối chiếu.'}
+                    </p>
+                    {current.message && (
                       <details className="ops-alert-finding-guidance">
-                        <summary>Vì sao có cảnh báo?</summary>
-                        <p>{findingGuidance[finding.ruleCode]}</p>
+                        <summary>Xem giải thích chi tiết</summary>
+                        <AssistantMarkdown content={current.message} />
                       </details>
                     )}
                   </div>

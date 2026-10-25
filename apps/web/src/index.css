@@ -4327,6 +4327,7 @@ small {
 .app-staff .section-nav > nav {
   display: grid;
   flex: 1 1 auto;
+  width: 100%;
   gap: 4px;
   align-content: start;
   min-height: 0;
