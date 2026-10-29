@@ -22,6 +22,7 @@ export type Screen =
   | 'roles'
   | 'branches'
   | 'policies'
+  | 'promotions'
   | 'reports'
   | 'staffReports'
   | 'notFound';
@@ -56,6 +57,7 @@ export const paths: Record<Screen, string> = {
   roles: '/quan-tri/vai-tro',
   branches: '/quan-tri/chi-nhanh',
   policies: '/quan-tri/chinh-sach',
+  promotions: '/quan-tri/uu-dai',
   reports: '/quan-tri/bao-cao',
   staffReports: '/van-hanh/bao-cao',
   notFound: '/khong-tim-thay-trang',
@@ -85,7 +87,11 @@ export function portalAreaForScreen(screen: Screen): PortalArea {
   if (['login', 'register', 'forgotPassword'].includes(screen)) return 'AUTH';
   if (['catalog', 'detail', 'booking', 'myRentals', 'myRentalDetail', 'account'].includes(screen))
     return 'CUSTOMER';
-  if (['adminCatalog', 'employees', 'roles', 'branches', 'policies', 'reports'].includes(screen))
+  if (
+    ['adminCatalog', 'employees', 'roles', 'branches', 'policies', 'promotions', 'reports'].includes(
+      screen,
+    )
+  )
     return 'ADMIN';
   if (screen === 'notFound') return 'PUBLIC';
   return 'STAFF';

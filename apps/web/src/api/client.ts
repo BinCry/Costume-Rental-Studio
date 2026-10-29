@@ -93,7 +93,7 @@ interface ApiQuote {
     rentalAmountVnd: string | number | bigint;
     availableUnits: number;
   }[];
-  promotion?: { discountVnd: string | number | bigint } | null;
+  promotion?: { id?: string; code?: string; discountVnd: string | number | bigint } | null;
   subtotalVnd: string | number | bigint;
   discountVnd: string | number | bigint;
   rentalAmountVnd: string | number | bigint;
@@ -266,6 +266,48 @@ interface ApiPolicy {
   defaultCleaningBufferMinutes?: number;
   lateFeeFormulaVersion?: number;
   changeReason: string;
+}
+interface ApiPromotion {
+  id: string;
+  code: string;
+  name: string;
+  discountType: 'PERCENT' | 'FIXED_AMOUNT';
+  discountValue: string | number | bigint;
+  maxDiscountVnd?: string | number | bigint | null;
+  minOrderAmountVnd: string | number | bigint;
+  startAt: string;
+  endAt: string;
+  totalUsageLimit?: number | null;
+  perCustomerLimit: number;
+  isActive: boolean;
+  createdAt?: string;
+}
+export interface PromotionRecord {
+  id: string;
+  code: string;
+  name: string;
+  discountType: 'PERCENT' | 'FIXED_AMOUNT';
+  discountValue: number;
+  maxDiscountVnd: number | null;
+  minOrderAmountVnd: number;
+  startAt: string;
+  endAt: string;
+  totalUsageLimit: number | null;
+  perCustomerLimit: number;
+  isActive: boolean;
+  createdAt?: string;
+}
+export interface PromotionMutation {
+  code: string;
+  name: string;
+  discountType: 'PERCENT' | 'FIXED_AMOUNT';
+  discountValue: string;
+  maxDiscountVnd: string | null;
+  minOrderAmountVnd: string;
+  startAt: string;
+  endAt: string;
+  totalUsageLimit: number | null;
+  perCustomerLimit: number;
 }
 interface ApiOverviewReport {
   from: string;
@@ -454,6 +496,13 @@ function apiErrorMessage(status: number, code: string) {
     PAYMENT_AMOUNT_EXCEEDS_BALANCE: 'Số tiền vượt quá khoản còn phải thu. Hãy tải lại quyết toán.',
     PAYMENT_RECONCILIATION_REQUIRED:
       'Giao dịch đang cần đối soát. Không tạo khoản thu mới trước khi kiểm tra.',
+    PROMOTION_INVALID:
+      'Mã ưu đãi không hợp lệ, chưa đến hạn, đã hết hạn hoặc đơn chưa đạt mức tối thiểu.',
+    PROMOTION_LIMIT_REACHED: 'Mã ưu đãi đã hết lượt sử dụng cho bạn hoặc toàn hệ thống.',
+    PROMOTION_CODE_CONFLICT: 'Mã ưu đãi này đã được sử dụng. Hãy chọn mã khác.',
+    PROMOTION_EXPIRED: 'Mã ưu đãi đã hết hạn nên không thể bật lại.',
+    PROMOTION_IMMUTABLE:
+      'Mã đã được dùng trên đơn thuê; không thể thay đổi mã hoặc điều kiện giảm giá đã chốt.',
     ASSESSMENT_REQUIRED:
       'Cần lưu kết quả kiểm tra toàn bộ trang phục và phụ kiện trước khi quyết toán.',
     ASSESSMENT_LOCKED:
@@ -610,6 +659,7 @@ const quoteRefs = new Map<
     branchId: string;
     customerUserId: string;
     channel: string;
+    promotionCode?: string;
   }
 >();
 const roleRefs = new Map<string, string>();
@@ -1349,7 +1399,7 @@ export async function getOrder(orderId: string) {
 }
 export async function getQuote(
   draft: BookingDraft,
-  options: { customerCode?: string; channel?: string } = {},
+  options: { customerCode?: string; channel?: string; promotionCode?: string } = {},
 ): Promise<QuoteSnapshot> {
   if (!branchIds.has(draft.branch)) await listBranches();
   const branchId = branchIds.get(draft.branch);
@@ -1374,6 +1424,7 @@ export async function getQuote(
       'Hãy tải lại danh sách và chọn hồ sơ khách hợp lệ.',
     );
   const channel = options.channel ?? 'ONLINE';
+  const promotionCode = options.promotionCode?.trim().toUpperCase();
   const response = await request<ApiQuote>('/api/v1/rentals/quotes', {
     method: 'POST',
     body: JSON.stringify({
@@ -1382,6 +1433,7 @@ export async function getQuote(
       channel,
       plannedStartAt: new Date(draft.pickup).toISOString(),
       plannedDueAt: new Date(draft.returnAt).toISOString(),
+      ...(promotionCode ? { promotionCode } : {}),
       items: Array.from({ length: draft.quantity }, () => ({
         variantId: variant.id,
         accessories: [],
@@ -1394,7 +1446,13 @@ export async function getQuote(
   );
   const billingMode =
     response.policy.billingDayMode === 'ROLLING_24_HOURS' ? 'chu kỳ 24 giờ' : 'ngày lịch';
-  quoteRefs.set(quoteId, { variantId: variant.id, branchId, customerUserId, channel });
+  quoteRefs.set(quoteId, {
+    variantId: variant.id,
+    branchId,
+    customerUserId,
+    channel,
+    promotionCode: response.promotion?.code,
+  });
   return {
     id: quoteId,
     expiresAt: formatDate(response.quoteExpiresAt),
@@ -1404,6 +1462,7 @@ export async function getQuote(
     rental: numberValue(response.rentalAmountVnd),
     deposit: numberValue(response.depositVnd),
     discount: numberValue(response.discountVnd),
+    promotionCode: response.promotion?.code,
     amountDueAtPickup: numberValue(response.totalDueVnd),
     policy: 'Chính sách ' + (response.policy.versionCode ?? 'hiện hành') + ' · do máy chủ tính',
     lateGraceMinutes: response.policy.lateGraceMinutes ?? 0,
@@ -1435,6 +1494,7 @@ export async function createOrder(
       plannedStartAt: new Date(draft.pickup).toISOString(),
       plannedDueAt: new Date(draft.returnAt).toISOString(),
       customerNote: draft.note || undefined,
+      promotionCode: reference.promotionCode,
       items: Array.from({ length: draft.quantity }, () => ({ variantId, accessories: [] })),
     }),
   });
@@ -2394,6 +2454,61 @@ export async function savePolicy(policy: Policy): Promise<Policy> {
     }),
   });
   return policyFromApi(created);
+}
+function promotionFromApi(promotion: ApiPromotion): PromotionRecord {
+  return {
+    id: promotion.id,
+    code: promotion.code,
+    name: promotion.name,
+    discountType: promotion.discountType,
+    discountValue: numberValue(promotion.discountValue),
+    maxDiscountVnd:
+      promotion.maxDiscountVnd === null || promotion.maxDiscountVnd === undefined
+        ? null
+        : numberValue(promotion.maxDiscountVnd),
+    minOrderAmountVnd: numberValue(promotion.minOrderAmountVnd),
+    startAt: promotion.startAt,
+    endAt: promotion.endAt,
+    totalUsageLimit: promotion.totalUsageLimit ?? null,
+    perCustomerLimit: promotion.perCustomerLimit,
+    isActive: promotion.isActive,
+    createdAt: promotion.createdAt,
+  };
+}
+export async function listPromotions(search = ''): Promise<PromotionRecord[]> {
+  const query = new URLSearchParams();
+  if (search.trim()) query.set('search', search.trim());
+  const queryString = query.toString();
+  const suffix = queryString ? `?${queryString}` : '';
+  const items = await requestAllPages<ApiPromotion>('/api/v1/promotions' + suffix);
+  return items.map(promotionFromApi);
+}
+export async function createPromotion(input: PromotionMutation): Promise<PromotionRecord> {
+  const item = await request<ApiPromotion>('/api/v1/promotions', {
+    method: 'POST',
+    body: JSON.stringify({ ...input, code: input.code.trim().toUpperCase() }),
+  });
+  return promotionFromApi(item);
+}
+export async function updatePromotion(
+  id: string,
+  input: Partial<PromotionMutation>,
+): Promise<PromotionRecord> {
+  const item = await request<ApiPromotion>(`/api/v1/promotions/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      ...input,
+      ...(input.code === undefined ? {} : { code: input.code.trim().toUpperCase() }),
+    }),
+  });
+  return promotionFromApi(item);
+}
+export async function setPromotionActive(id: string, active: boolean): Promise<PromotionRecord> {
+  const item = await request<ApiPromotion>(
+    `/api/v1/promotions/${encodeURIComponent(id)}/${active ? 'activate' : 'deactivate'}`,
+    { method: 'POST' },
+  );
+  return promotionFromApi(item);
 }
 export async function listReports(
   branchName?: string,

@@ -30,6 +30,7 @@ import {
   ReportsPage,
   RolesPage,
 } from '../pages/AdminFeatures';
+import { PromotionsPage } from '../pages/PromotionsPage';
 import {
   actorGroupFromRoleCode,
   actorGroupFromRoles,
@@ -84,6 +85,7 @@ const adminNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
   { screen: 'roles', label: 'Vai trò', roles: ['ADMIN'] },
   { screen: 'branches', label: 'Chi nhánh', roles: ['ADMIN'] },
   { screen: 'policies', label: 'Chính sách', roles: ['ADMIN'] },
+  { screen: 'promotions', label: 'Ưu đãi', roles: ['ADMIN'] },
 ];
 const staffNavGroups: { id: string; label: string; screens: Screen[] }[] = [
   { id: 'overview', label: 'Tổng quan', screens: ['dashboard'] },
@@ -96,7 +98,7 @@ const adminNavGroups: { id: string; label: string; screens: Screen[] }[] = [
   { id: 'overview', label: 'Tổng quan', screens: ['reports'] },
   { id: 'catalog', label: 'Danh mục', screens: ['adminCatalog'] },
   { id: 'organization', label: 'Tổ chức', screens: ['employees', 'roles', 'branches'] },
-  { id: 'policies', label: 'Chính sách', screens: ['policies'] },
+  { id: 'policies', label: 'Chính sách & ưu đãi', screens: ['policies', 'promotions'] },
 ];
 const isStaff = (screen: Screen) =>
   ![
@@ -143,6 +145,7 @@ const requiredPermissions: Partial<Record<Screen, string[]>> = {
   roles: ['rbac.read.all', 'rbac.manage.all'],
   branches: ['branches.read.all', 'branches.manage.all'],
   policies: ['policies.read.all', 'policies.manage.all'],
+  promotions: ['promotions.read.all'],
   reports: ['reports.read.all', 'reports.read.branch'],
   staffReports: ['reports.read.all', 'reports.read.branch'],
 };
@@ -1265,6 +1268,11 @@ export default function StudioApp() {
               <PoliciesPage
                 scenario={scenario}
                 canManage={!apiIdentity || effectivePermissions.includes('policies.manage.all')}
+              />
+            )}
+            {route.screen === 'promotions' && (
+              <PromotionsPage
+                canManage={!apiIdentity || effectivePermissions.includes('promotions.manage.all')}
               />
             )}
             {(route.screen === 'reports' || route.screen === 'staffReports') && (

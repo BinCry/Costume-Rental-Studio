@@ -144,6 +144,7 @@ export interface QuoteSnapshot {
   rental: number;
   deposit: number;
   discount: number;
+  promotionCode?: string;
   amountDueAtPickup: number;
   policy: string;
   lateGraceMinutes?: number;

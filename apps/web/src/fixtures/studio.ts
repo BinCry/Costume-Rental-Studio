@@ -517,6 +517,14 @@ const employees: Employee[] = [
   },
 ];
 export const permissions: Permission[] = [
+  ['promotions.read.all', 'Quản trị', 'Xem mã ưu đãi', 'Xem và tìm kiếm mã ưu đãi', 'ALL'],
+  [
+    'promotions.manage.all',
+    'Quản trị',
+    'Quản lý mã ưu đãi',
+    'Tạo, sửa, bật và tắt mã ưu đãi',
+    'ALL',
+  ],
   ['branches.manage.all', 'Quản trị', 'Quản lý chi nhánh', 'Tạo và cập nhật chi nhánh', 'ALL'],
   ['staff.manage.all', 'Quản trị', 'Quản lý nhân viên', 'Tạo và phân công nhân viên', 'ALL'],
   ['rbac.manage.all', 'Quản trị', 'Cấu hình vai trò', 'Tick quyền của role', 'ALL'],

@@ -139,6 +139,9 @@ export function BookingPage({
     initialDraft(costumeId, initialContext),
   );
   const [quote, setQuote] = useState<QuoteSnapshot>();
+  const [promotionCode, setPromotionCode] = useState('');
+  const [appliedPromotionCode, setAppliedPromotionCode] = useState('');
+  const [promotionIssue, setPromotionIssue] = useState('');
   const [issue, setIssue] = useState('');
   const [busy, setBusy] = useState(false);
   const [submittedId, setSubmittedId] = useState('');
@@ -241,6 +244,8 @@ export function BookingPage({
     }
     if (step === 1 || step === 2) {
       if (!quote) return 'Cần tải báo giá còn hiệu lực để tiếp tục.';
+      if (promotionCode.trim().toUpperCase() !== appliedPromotionCode)
+        return 'Hãy áp dụng hoặc bỏ mã ưu đãi để cập nhật báo giá trước khi tiếp tục.';
       if (!draft.name.trim() || !/^0[0-9 ]{8,12}$/.test(draft.phone.trim()))
         return 'Nhập tên và số điện thoại liên hệ hợp lệ.';
     }
@@ -260,18 +265,37 @@ export function BookingPage({
     }
     setStep((current) => Math.min(current + 1, 5));
   };
-  const loadQuote = async () => {
+  const loadQuote = async (requestedPromotionCode = appliedPromotionCode) => {
     const requestId = ++quoteRequestRef.current;
+    const normalizedCode = requestedPromotionCode.trim().toUpperCase();
     setBusy(true);
     setIssue('');
+    setPromotionIssue('');
+    setQuote(undefined);
     try {
-      const result = await fixtureAdapter.getQuote(draft, scenario);
-      if (requestId === quoteRequestRef.current) setQuote(result);
+      const result = await fixtureAdapter.getQuote(draft, scenario, {
+        promotionCode: normalizedCode || undefined,
+      });
+      if (requestId === quoteRequestRef.current) {
+        setQuote(result);
+        setAppliedPromotionCode(result.promotionCode ?? '');
+        setPromotionCode(result.promotionCode ?? '');
+        if (normalizedCode && !result.promotionCode) {
+          setPromotionIssue('Mã ưu đãi chưa được áp dụng vào báo giá này.');
+          return false;
+        }
+        return true;
+      }
+      return false;
     } catch (caught) {
       if (requestId === quoteRequestRef.current) {
+        const message = caught instanceof Error ? caught.message : 'Chưa tải được báo giá.';
         setQuote(undefined);
-        setIssue(caught instanceof Error ? caught.message : 'Chưa tải được báo giá.');
+        setAppliedPromotionCode('');
+        if (normalizedCode) setPromotionIssue(message);
+        else setIssue(message);
       }
+      return false;
     } finally {
       if (requestId === quoteRequestRef.current) setBusy(false);
     }
@@ -560,6 +584,66 @@ export function BookingPage({
                     <Icon name="refresh" size={18} />{' '}
                     {quote ? 'Cập nhật báo giá' : apiMode ? 'Tải báo giá' : 'Tải báo giá xem thử'}
                   </Button>
+                  {apiMode ? (
+                    <div className="promotion-entry">
+                      <div className="promotion-entry__field">
+                        <Field
+                          label="Mã ưu đãi"
+                          autoCapitalize="characters"
+                          maxLength={100}
+                          placeholder="Nhập mã ưu đãi nếu có"
+                          value={promotionCode}
+                          hint="Mã được xác minh trên máy chủ và tính vào báo giá."
+                          onChange={(event) => {
+                            setPromotionCode(event.target.value.toUpperCase());
+                            setPromotionIssue('');
+                          }}
+                        />
+                        {promotionIssue && (
+                          <p className="field-error" role="alert">{promotionIssue}</p>
+                        )}
+                        {quote?.promotionCode && appliedPromotionCode === promotionCode.trim().toUpperCase() && (
+                          <Feedback tone="success" title={`Đã áp dụng ${quote.promotionCode}`}>
+                            Đã giảm {money(quote.discount)} trên tiền thuê.
+                          </Feedback>
+                        )}
+                        {promotionCode.trim() &&
+                          promotionCode.trim().toUpperCase() !== appliedPromotionCode && (
+                            <p className="field-hint" role="status">
+                              Áp dụng mã để lấy lại báo giá. Bạn chưa bị tính mức giảm cho đến khi máy chủ xác nhận.
+                            </p>
+                          )}
+                      </div>
+                      <Button
+                        variant="secondary"
+                        type="button"
+                        loading={busy}
+                        disabled={
+                          busy ||
+                          (promotionCode.trim().toUpperCase() === appliedPromotionCode &&
+                            Boolean(quote) &&
+                            !promotionIssue) ||
+                          (!promotionCode.trim() &&
+                            !appliedPromotionCode &&
+                            Boolean(quote) &&
+                            !promotionIssue)
+                        }
+                        onClick={() => void loadQuote(promotionCode.trim().toUpperCase())}
+                      >
+                        {!promotionCode.trim() && appliedPromotionCode
+                          ? 'Bỏ mã'
+                          : promotionCode.trim().toUpperCase() === appliedPromotionCode && quote
+                            ? 'Đã cập nhật'
+                            : promotionCode.trim()
+                              ? 'Áp dụng mã'
+                              : 'Tính lại báo giá'}
+                      </Button>
+                    </div>
+                  ) : (
+                    <Feedback tone="info" title="Mã ưu đãi được kiểm tra trực tiếp">
+                      Bản xem thử không xác minh voucher. Hãy đăng nhập để lấy báo giá thật và áp dụng mã.
+                    </Feedback>
+                  )}
                   {quote && (
                     <div className="quote-card">
                       <div>
@@ -580,6 +664,12 @@ export function BookingPage({
                         <span>Tiền cọc</span>
                         <strong>{money(quote.deposit)}</strong>
                       </div>
+                      {quote.promotionCode && (
+                        <div>
+                          <span>Mã ưu đãi</span>
+                          <strong>{quote.promotionCode}</strong>
+                        </div>
+                      )}
                       <div>
                         <span>Giảm giá</span>
                         <strong>{money(quote.discount)}</strong>
@@ -706,6 +796,12 @@ export function BookingPage({
                       {money(quote?.rental ?? 0)} / {money(quote?.deposit ?? 0)}
                     </strong>
                   </div>
+                  {quote?.promotionCode && (
+                    <div>
+                      <span>Mã ưu đãi / tiền giảm</span>
+                      <strong>{quote.promotionCode} · {money(quote.discount)}</strong>
+                    </div>
+                  )}
                   <div>
                     <span>Tổng dự kiến khi nhận đồ</span>
                     <strong>{money(quote?.amountDueAtPickup ?? 0)}</strong>
@@ -825,6 +921,12 @@ function BookingSummaryContent({
             <span>Tiền cọc</span>
             <strong>{money(quote.deposit)}</strong>
           </div>
+          {quote.promotionCode && (
+            <div className="sidebar-money">
+              <span>Giảm giá · {quote.promotionCode}</span>
+              <strong>−{money(quote.discount)}</strong>
+            </div>
+          )}
           <div className="sidebar-money">
             <span>Dự kiến thu khi nhận</span>
             <strong>{money(quote.amountDueAtPickup)}</strong>

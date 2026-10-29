@@ -403,7 +403,7 @@ export const fixtureAdapter = {
   async getQuote(
     draft: BookingDraft,
     scenario: DemoScenario,
-    options: { customerCode?: string; channel?: string } = {},
+    options: { customerCode?: string; channel?: string; promotionCode?: string } = {},
   ): Promise<QuoteSnapshot> {
     if (apiEnabled && (hasAccessToken() || !import.meta.env.DEV)) {
       if (!hasAccessToken())
