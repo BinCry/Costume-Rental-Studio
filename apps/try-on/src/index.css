@@ -1229,30 +1229,6 @@ body {
   z-index: 20;
 }
 
-/* The parent Studio page provides the customer navigation and page heading.
-   In embedded mode keep only the camera, try-on stage and garment controls. */
-.studio-embedded .app {
-  min-height: 100dvh;
-}
-
-.studio-embedded .layout {
-  height: 100dvh;
-  max-height: 100dvh;
-  min-height: 0;
-  padding-block: 12px;
-}
-
-.studio-embedded .studio-product-context {
-  margin: 0 0 10px;
-  color: #6b5961;
-  font-size: 0.84rem;
-  line-height: 1.45;
-}
-
-.studio-embedded .studio-product-context strong {
-  color: var(--studio-ink);
-}
-
 .studio-brand {
   display: flex;
   align-items: center;
@@ -1335,8 +1311,8 @@ body {
   grid-template-columns: 1fr 320px;
   gap: 16px;
   align-items: stretch;
-  height: 100dvh;
-  max-height: 100dvh;
+  height: calc(100vh - 66px);
+  max-height: calc(100vh - 66px);
   min-height: 420px;
   box-sizing: border-box;
   overflow: hidden;
@@ -2071,22 +2047,6 @@ main {
     gap: 14px !important;
     width: 100% !important;
     box-sizing: border-box !important;
-  }
-  .studio-embedded .controls-bar {
-    flex-direction: row !important;
-  }
-  .studio-embedded .controls-group-left {
-    display: flex !important;
-    width: auto !important;
-  }
-  .studio-embedded .live-pill {
-    width: auto !important;
-    flex: 0 0 auto !important;
-  }
-  .studio-embedded .layout {
-    min-height: 100dvh;
-    height: auto;
-    max-height: none;
   }
   .main-column {
     width: 100% !important;

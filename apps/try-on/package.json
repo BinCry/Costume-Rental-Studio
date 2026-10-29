@@ -10,7 +10,7 @@
     "typecheck": "pnpm --filter thin-plate-spline build && pnpm --filter litert-react build && pnpm --filter @practics/tryon-core build && tsc --noEmit"
   },
   "dependencies": {
-    "@litertjs/core": "^2.5.2",
+    "@litertjs/core": "2.5.2",
     "@mcp-b/global": "^5.0.1",
     "@mcp-b/react-webmcp": "^5.0.1",
     "@practics/tryon-core": "workspace:*",

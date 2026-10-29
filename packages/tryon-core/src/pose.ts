@@ -72,12 +72,9 @@ export class PoseEstimator {
       // Output is [1,1,17,3] = (y, x, score), coords normalized to the
       // (letterboxed) model input. Un-letterbox back to source pixels.
       return KEYPOINT_NAMES.map((name, i) => {
-        // LiteRT's generic tensor data type also includes bigint-backed
-        // arrays, even though create() rejects non-float32 model outputs.
-        // Normalize at the boundary so the pose contract remains numeric.
-        const y = Number(data[i * 3]) * this.inputH;
-        const x = Number(data[i * 3 + 1]) * this.inputW;
-        const score = Number(data[i * 3 + 2]);
+        const y = data[i * 3] * this.inputH;
+        const x = data[i * 3 + 1] * this.inputW;
+        const score = data[i * 3 + 2];
         const p = unletterboxPoint(x, y, lb);
         return {
           name,

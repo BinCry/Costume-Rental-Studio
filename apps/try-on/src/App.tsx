@@ -9,7 +9,6 @@ import { PerfStats } from './components/PerfStats';
 import { ReactionBar } from './components/ReactionBar';
 import { snapshotCanvas } from './components/snapshotCanvas';
 import { config } from './config';
-import { takeStudioTryOnContext, type StudioTryOnContext } from './studioBridge';
 import {
   isTwoPieceLehenga,
   type Garment,
@@ -85,10 +84,6 @@ type TopSlotGarment = SinglePieceGarment | LehengaCholiGarment | SingleImageLehe
 export default function App() {
   // The customer-facing experience is camera-first; photo try-on is not exposed.
   const [mode] = useState<Mode>('live');
-  const [studioContext, setStudioContext] = useState<StudioTryOnContext | null>(null);
-  const [studioProductFile, setStudioProductFile] = useState<File | null>(null);
-  const [studioImageStatus, setStudioImageStatus] = useState<'idle' | 'loading' | 'error'>('idle');
-  const [studioImageError, setStudioImageError] = useState<string | null>(null);
   const [accelerator, setAccelerator] = useState<Accelerator>('webgpu');
   const pipeline = usePipeline(accelerator);
   const catalog = useGarmentCatalog();
@@ -126,54 +121,6 @@ export default function App() {
   const resultRef = useRef<PipelineResult | null>(null);
   const garmentImagesRef = useRef<LoadedGarmentImages | null>(null);
   const bottomImageRef = useRef<ImageBitmap | null>(null);
-
-  useEffect(() => {
-    const contextId = new URLSearchParams(window.location.search).get('studioContext');
-    setStudioContext(takeStudioTryOnContext(contextId));
-  }, []);
-
-  useEffect(() => {
-    if (!studioContext?.imageUrl) return;
-    const controller = new AbortController();
-    setStudioImageStatus('loading');
-    setStudioImageError(null);
-    void (async () => {
-      try {
-        const imageUrl = new URL(studioContext.imageUrl!, window.location.origin);
-        if (
-          imageUrl.username ||
-          imageUrl.password ||
-          (imageUrl.protocol !== 'https:' && imageUrl.origin !== window.location.origin)
-        )
-          throw new Error('Liên kết ảnh không an toàn.');
-        const response = await fetch(imageUrl, {
-          credentials: 'omit',
-          mode: 'cors',
-          referrerPolicy: 'no-referrer',
-          signal: controller.signal,
-        });
-        if (!response.ok) throw new Error('Ảnh sản phẩm hiện không tải được.');
-        const contentType = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase();
-        const declaredSize = Number(response.headers.get('content-length') ?? 0);
-        if (!contentType?.startsWith('image/')) throw new Error('Tệp sản phẩm không phải ảnh.');
-        if (declaredSize > 15 * 1024 * 1024) throw new Error('Ảnh sản phẩm vượt quá 15 MB.');
-        const blob = await response.blob();
-        if (blob.size > 15 * 1024 * 1024) throw new Error('Ảnh sản phẩm vượt quá 15 MB.');
-        const extension = contentType.split('/')[1].replace(/[^a-z0-9]/g, '') || 'jpg';
-        const file = new File([blob], `studio-${studioContext.productId}.${extension}`, {
-          type: contentType,
-          lastModified: Date.now(),
-        });
-        setStudioProductFile(file);
-        setStudioImageStatus('idle');
-      } catch (error) {
-        if (controller.signal.aborted) return;
-        setStudioImageStatus('error');
-        setStudioImageError(error instanceof Error ? error.message : 'Không tải được ảnh mẫu.');
-      }
-    })();
-    return () => controller.abort();
-  }, [studioContext]);
 
   /**
    * Applies the slot rules for picking a garment: pants fill the bottom
@@ -465,11 +412,11 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, pipeline.status, run]);
 
-  // Do not request camera access merely by opening the try-on page. The user
-  // explicitly starts it from the camera control after seeing the privacy notice.
+  // Start/stop the camera as the mode toggles.
   useEffect(() => {
     setTryOnStatus(null);
-    if (mode !== 'live') webcam.stop();
+    if (mode === 'live') void webcam.start();
+    else webcam.stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
@@ -1017,13 +964,34 @@ export default function App() {
     () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('present'),
     [],
   );
-  const studioEmbedded = useMemo(
-    () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('embed') === 'studio',
-    [],
-  );
 
   return (
-    <div className={'app' + (presenting ? ' presenting' : '') + (studioEmbedded ? ' studio-embedded' : '')}>
+    <div className={'app' + (presenting ? ' presenting' : '')}>
+      <header className="studio-nav">
+        <div className="studio-brand">
+          <div className="studio-mark" aria-hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+              <path d="M12 3c1.7 0 3 1.3 3 3s-1.3 3-3 3-3-1.3-3-3 1.3-3 3-3Z" />
+              <path d="M8.2 21c.5-4.7 1.7-8 3.8-8s3.3 3.3 3.8 8M7 21h10M9.5 12l-2.2 4.1M14.5 12l2.2 4.1" />
+            </svg>
+          </div>
+          <div>
+            <p className="studio-kicker">STUDIO</p>
+            <h1>Phòng thử trang phục</h1>
+          </div>
+        </div>
+        <nav className="studio-links" aria-label="Điều hướng Studio">
+          <span>Khám phá</span>
+          <span className="active">Thử trực tuyến</span>
+          <span>Đặt thuê</span>
+          <span>Đơn của tôi</span>
+          <span>Tài khoản</span>
+        </nav>
+        <div className="studio-account" aria-label="Khu vực tài khoản">
+          <span>Khách hàng</span>
+          <button type="button">Đăng xuất</button>
+        </div>
+      </header>
       {/* Kept hidden for screen-readers & internal status logic */}
       <div className="top-bar-hidden" style={{ display: 'none' }}>
         <header>
@@ -1088,48 +1056,44 @@ export default function App() {
                 <span className="live-pill-full">{webcam.status === 'ready' ? 'Camera trực tiếp' : 'Mở camera'}</span>
                 <span className="live-pill-short">{webcam.status === 'ready' ? 'Camera' : 'Mở cam'}</span>
               </button>
-              {!studioEmbedded && (
-                <div className="filter-chips">
-                  <label className="filter-chip">
-                    <input type="checkbox" checked={showMask} onChange={(e) => setShowMask(e.target.checked)} />
-                    <span>Mặt nạ</span>
-                  </label>
-                  <label className="filter-chip">
-                    <input
-                      type="checkbox"
-                      checked={showSkeleton}
-                      onChange={(e) => setShowSkeleton(e.target.checked)}
-                    />
-                    <span className="chip-label-full">Lưới xương</span>
-                    <span className="chip-label-short">Xương</span>
-                  </label>
-                  <label className="filter-chip" title="Cân bằng ánh sáng và màu sắc trang phục theo cảnh">
-                    <input
-                      type="checkbox"
-                      checked={showHarmonize}
-                      onChange={(e) => setShowHarmonize(e.target.checked)}
-                    />
-                    <span>Cân màu</span>
-                  </label>
-                </div>
-              )}
+              <div className="filter-chips">
+                <label className="filter-chip">
+                  <input type="checkbox" checked={showMask} onChange={(e) => setShowMask(e.target.checked)} />
+                  <span>Mặt nạ</span>
+                </label>
+                <label className="filter-chip">
+                  <input
+                    type="checkbox"
+                    checked={showSkeleton}
+                    onChange={(e) => setShowSkeleton(e.target.checked)}
+                  />
+                  <span className="chip-label-full">Lưới xương</span>
+                  <span className="chip-label-short">Xương</span>
+                </label>
+                <label className="filter-chip" title="Cân bằng ánh sáng và màu sắc trang phục theo cảnh">
+                  <input
+                    type="checkbox"
+                    checked={showHarmonize}
+                    onChange={(e) => setShowHarmonize(e.target.checked)}
+                  />
+                  <span>Cân màu</span>
+                </label>
+              </div>
             </div>
 
-            {!studioEmbedded && (
-              <div className="controls-group-right">
-                <PerfStats
-                  accelerator={accelerator}
-                  onAcceleratorChange={setAccelerator}
-                  backend={pipeline.backend}
-                  fps={mode === 'live' && live.latest ? live.fps : null}
-                  timings={
-                    mode === 'photo'
-                      ? (result?.timings ?? null)
-                      : (live.latest?.result.timings ?? null)
-                  }
-                />
-              </div>
-            )}
+            <div className="controls-group-right">
+              <PerfStats
+                accelerator={accelerator}
+                onAcceleratorChange={setAccelerator}
+                backend={pipeline.backend}
+                fps={mode === 'live' && live.latest ? live.fps : null}
+                timings={
+                  mode === 'photo'
+                    ? (result?.timings ?? null)
+                    : (live.latest?.result.timings ?? null)
+                }
+              />
+            </div>
           </div>
 
 
@@ -1278,14 +1242,6 @@ export default function App() {
 
         <aside className="garment-sidebar">
           <div className="sidebar-upload-wrap">
-            {studioImageStatus === 'loading' && (
-              <p className="hint" role="status">Đang tải ảnh mẫu từ Studio…</p>
-            )}
-            {studioImageError && (
-              <p className="error" role="alert">
-                {studioImageError} Bạn vẫn có thể tải ảnh trang phục rõ mặt trước để thử.
-              </p>
-            )}
             <GarmentUpload
               onGarmentAdded={async (stored) => {
                 const garment = await userGarments.addGarment(stored);
@@ -1293,13 +1249,11 @@ export default function App() {
               }}
               previewImage={mode === 'photo' ? image : null}
               previewResult={mode === 'photo' ? photoResult : null}
-              initialFile={studioProductFile}
-              initialCategory={studioContext?.category}
             />
           </div>
 
           <div className="garment-sidebar-list">
-              <div className="garment-list-header">
+            <div className="garment-list-header">
               <div className="garment-list-title-row">
                 <h3 className="garment-list-title">Trang phục</h3>
                 {allGarments.length > 0 && (
@@ -1307,11 +1261,6 @@ export default function App() {
                 )}
               </div>
             </div>
-            {studioContext && (
-              <p className="studio-product-context" title={studioContext.name}>
-                Đang thử: <strong>{studioContext.name}</strong>
-              </p>
-            )}
 
             {catalog.status === 'loading' && <span className="hint">Đang tải bộ sưu tập…</span>}
             {catalog.status === 'error' && <span className="error">Lỗi bộ sưu tập: {catalog.error}</span>}

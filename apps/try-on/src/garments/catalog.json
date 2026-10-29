@@ -1,1 +1,149 @@
-[]
+[
+  {
+    "id": "women-pink-kitten-tshirt",
+    "category": "tshirt",
+    "image": "/garments/women-pink-kitten-tshirt.png",
+    "anchors": {
+      "shoulderL": [222, 185],
+      "shoulderR": [924, 185],
+      "waistL": [264, 715],
+      "waistR": [884, 715],
+      "hemL": [178, 1248],
+      "hemR": [968, 1248]
+    },
+    "meta": {
+      "sleeves": "half",
+      "length": "hip",
+      "name": "Women's Pink Kitten T-shirt",
+      "price": 390,
+      "color": "pink",
+      "occasion": ["casual", "daytime"]
+    }
+  },
+  {
+    "id": "women-coral-daisy-dress",
+    "category": "dress",
+    "image": "/garments/women-coral-daisy-dress.png",
+    "anchors": {
+      "shoulderL": [310, 104],
+      "shoulderR": [712, 104],
+      "waistL": [330, 480],
+      "waistR": [694, 480],
+      "hemL": [76, 1430],
+      "hemR": [948, 1430]
+    },
+    "meta": {
+      "sleeves": "sleeveless",
+      "length": "ankle",
+      "name": "Women's Coral Daisy Dress",
+      "price": 890,
+      "color": "coral",
+      "occasion": ["daytime", "brunch", "party"]
+    }
+  },
+  {
+    "id": "women-blush-wrap-dress",
+    "category": "dress",
+    "image": "/garments/women-blush-wrap-dress.png",
+    "anchors": {
+      "shoulderL": [182, 177],
+      "shoulderR": [842, 177],
+      "waistL": [310, 620],
+      "waistR": [714, 620],
+      "hemL": [112, 1370],
+      "hemR": [900, 1370]
+    },
+    "meta": {
+      "sleeves": "half",
+      "length": "knee",
+      "name": "Women's Blush Floral Wrap Dress",
+      "price": 950,
+      "color": "pink",
+      "occasion": ["brunch", "date-night", "party"]
+    }
+  },
+  {
+    "id": "men-olive-grow-wild-tshirt",
+    "category": "tshirt",
+    "image": "/garments/men-olive-grow-wild-tshirt.png",
+    "anchors": {
+      "shoulderL": [208, 155],
+      "shoulderR": [965, 155],
+      "waistL": [285, 690],
+      "waistR": [887, 690],
+      "hemL": [202, 1260],
+      "hemR": [970, 1260]
+    },
+    "meta": {
+      "sleeves": "half",
+      "length": "hip",
+      "name": "Men's Olive Grow Wild T-shirt",
+      "price": 420,
+      "color": "olive",
+      "occasion": ["casual", "daytime"]
+    }
+  },
+  {
+    "id": "men-burgundy-brush-polo",
+    "category": "shirt",
+    "image": "/garments/men-burgundy-brush-polo.png",
+    "anchors": {
+      "shoulderL": [168, 146],
+      "shoulderR": [914, 146],
+      "waistL": [250, 735],
+      "waistR": [834, 735],
+      "hemL": [176, 1378],
+      "hemR": [905, 1378]
+    },
+    "meta": {
+      "sleeves": "half",
+      "length": "hip",
+      "name": "Men's Burgundy Brush Polo",
+      "price": 490,
+      "color": "burgundy",
+      "occasion": ["casual", "office"]
+    }
+  },
+  {
+    "id": "men-navy-sunrise-tshirt",
+    "category": "tshirt",
+    "image": "/garments/men-navy-sunrise-tshirt.png",
+    "anchors": {
+      "shoulderL": [188, 265],
+      "shoulderR": [842, 265],
+      "waistL": [240, 775],
+      "waistR": [785, 775],
+      "hemL": [188, 1320],
+      "hemR": [842, 1320]
+    },
+    "meta": {
+      "sleeves": "half",
+      "length": "hip",
+      "name": "Men's Navy Sunrise T-shirt",
+      "price": 440,
+      "color": "navy",
+      "occasion": ["casual", "daytime"]
+    }
+  },
+  {
+    "id": "men-charcoal-camping-tshirt",
+    "category": "tshirt",
+    "image": "/garments/men-charcoal-camping-tshirt.png",
+    "anchors": {
+      "shoulderL": [188, 275],
+      "shoulderR": [842, 275],
+      "waistL": [242, 785],
+      "waistR": [782, 785],
+      "hemL": [186, 1325],
+      "hemR": [842, 1325]
+    },
+    "meta": {
+      "sleeves": "half",
+      "length": "hip",
+      "name": "Men's Charcoal Camping T-shirt",
+      "price": 440,
+      "color": "charcoal",
+      "occasion": ["casual", "outdoor"]
+    }
+  }
+]

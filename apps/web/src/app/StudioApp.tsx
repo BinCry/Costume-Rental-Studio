@@ -31,7 +31,6 @@ import {
   RolesPage,
 } from '../pages/AdminFeatures';
 import { PromotionsPage } from '../pages/PromotionsPage';
-import { VirtualTryOnPage } from '../pages/VirtualTryOnPage';
 import {
   actorGroupFromRoleCode,
   actorGroupFromRoles,
@@ -105,7 +104,6 @@ const isStaff = (screen: Screen) =>
   ![
     'catalog',
     'detail',
-    'virtualTryOn',
     'booking',
     'myRentals',
     'myRentalDetail',
@@ -648,6 +646,7 @@ export default function StudioApp() {
                   {item.label}
                 </a>
               ))}
+              <a href="/try-on/">Thử đồ ảo</a>
               {!authScreen && !apiIdentity && (
                 <>
                   <a
@@ -1076,14 +1075,6 @@ export default function StudioApp() {
                 scenario={scenario}
                 go={go}
                 initialContext={p}
-              />
-            )}
-            {route.screen === 'virtualTryOn' && (
-              <VirtualTryOnPage
-                contextId={p.get('context') ?? undefined}
-                productId={p.get('product') ?? undefined}
-                productName={p.get('name') ?? undefined}
-                go={go}
               />
             )}
             {route.screen === 'booking' && (
