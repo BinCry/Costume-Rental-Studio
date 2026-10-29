@@ -137,23 +137,6 @@ small {
   color: var(--brand-primary);
   margin: 0 0 8px;
 }
-.demo-banner {
-  min-height: 28px;
-  padding: 4px 16px;
-  text-align: center;
-  background: #171717;
-  color: #fff;
-  font-size: 12px;
-  line-height: 20px;
-}
-.demo-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #fb7185;
-  margin-right: 7px;
-}
 .site-header {
   background: #fff;
   border-bottom: 1px solid var(--border);
@@ -181,13 +164,10 @@ small {
 .brand-mark {
   width: 34px;
   height: 34px;
-  display: grid;
-  place-items: center;
+  display: block;
+  flex: 0 0 auto;
   border-radius: 10px;
-  background: var(--brand-primary);
-  color: #fff;
-  font-size: 20px;
-  font-weight: 700;
+  object-fit: cover;
 }
 .brand-period {
   color: var(--brand-primary);
@@ -428,15 +408,12 @@ small {
   text-decoration: none;
 }
 .site-footer-logo-mark {
-  display: grid;
+  display: block;
   width: 40px;
   height: 40px;
-  place-items: center;
+  flex: 0 0 40px;
   border-radius: 11px;
-  background: var(--brand-primary);
-  color: #fff;
-  font-size: 22px;
-  font-weight: 700;
+  object-fit: cover;
 }
 .site-footer-logo > span:last-child {
   display: grid;
@@ -3279,7 +3256,7 @@ small {
 .account-entry .brand-mark {
   width: 54px;
   height: 54px;
-  font-size: 30px;
+  border-radius: 15px;
   margin-bottom: 18px;
 }
 .account-entry h2 {
@@ -4431,16 +4408,12 @@ small {
 .app-staff {
   display: grid;
   grid-template-columns: 256px minmax(0, 1fr);
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
-}
-.app-staff > .demo-banner {
-  grid-column: 1 / -1;
-  grid-row: 1;
 }
 .app-staff > .site-header {
   grid-column: 1 / -1;
-  grid-row: 2;
+  grid-row: 1;
 }
 .app-staff .header-inner {
   width: calc(100% - 48px);
@@ -4478,7 +4451,7 @@ small {
 }
 .app-staff > .section-nav {
   grid-column: 1;
-  grid-row: 3;
+  grid-row: 2;
   align-self: stretch;
   min-width: 0;
   height: calc(100vh - 104px);
@@ -4575,12 +4548,12 @@ small {
 }
 .app-staff > .main-content {
   grid-column: 2;
-  grid-row: 3;
+  grid-row: 2;
   min-width: 0;
 }
 .app-staff > .site-footer {
   grid-column: 1 / -1;
-  grid-row: 4;
+  grid-row: 3;
 }
 .staff-nav-backdrop {
   display: none;
@@ -4606,15 +4579,7 @@ small {
 @media (max-width: 1199px) {
   .app-staff {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
-  }
-  .app-staff > .demo-banner {
-    grid-column: 1;
-    grid-row: 1;
-  }
-  .app-staff > .site-header {
-    grid-column: 1;
-    grid-row: 2;
+    grid-template-rows: auto minmax(0, 1fr) auto;
   }
   .app-staff .header-branch {
     display: none;
@@ -4660,11 +4625,11 @@ small {
   }
   .app-staff > .main-content {
     grid-column: 1;
-    grid-row: 3;
+    grid-row: 2;
   }
   .app-staff > .site-footer {
     grid-column: 1;
-    grid-row: 4;
+    grid-row: 3;
   }
   .app-staff .mobile-menu {
     display: inline-grid !important;
@@ -7209,12 +7174,12 @@ small {
 /* The operations menu expands inside the page grid and never covers content. */
 .app-staff {
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 .app-staff > .section-nav {
   position: static;
   grid-column: 1;
-  grid-row: 3;
+  grid-row: 2;
   width: auto;
   height: auto;
   max-height: none;
@@ -7292,7 +7257,7 @@ small {
 }
 .app-staff > .main-content {
   grid-column: 1;
-  grid-row: 3;
+  grid-row: 2;
 }
 .app-staff.nav-open > .main-content {
   grid-column: 2;
@@ -7494,7 +7459,7 @@ small {
 @media (max-width: 1199px) {
   .app-staff {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr) auto;
   }
   .app-staff.nav-open {
     grid-template-columns: minmax(0, 1fr);
@@ -7532,11 +7497,11 @@ small {
   .app-staff > .main-content,
   .app-staff.nav-open > .main-content {
     grid-column: 1;
-    grid-row: 3;
+    grid-row: 2;
   }
   .app-staff > .site-footer {
     grid-column: 1;
-    grid-row: 4;
+    grid-row: 3;
   }
   .report-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -7730,7 +7695,7 @@ small {
 @media (min-width: 1200px) {
   .app-staff {
     grid-template-columns: 256px minmax(0, 1fr);
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr) auto;
   }
 
   .app-staff > .section-nav,
@@ -7741,7 +7706,7 @@ small {
     inset: auto;
     top: 0;
     grid-column: 1;
-    grid-row: 3;
+    grid-row: 2;
     align-self: stretch;
     width: auto;
     min-width: 0;
@@ -7769,7 +7734,7 @@ small {
   .app-staff > .main-content,
   .app-staff.nav-open > .main-content {
     grid-column: 2;
-    grid-row: 3;
+    grid-row: 2;
   }
 
   .staff-menu-toggle,

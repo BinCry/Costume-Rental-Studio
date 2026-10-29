@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Icon } from '../components/ui';
+import { BrandLogoMark } from '../components/BrandLogoMark';
 import { SiteFooter, type SiteBranchContact } from '../components/SiteFooter';
 import {
   apiEnabled,
@@ -578,18 +579,6 @@ export default function StudioApp() {
       <a className="skip-link" href="#main-content">
         Bỏ qua điều hướng
       </a>
-      <div className="demo-banner">
-        <span className="demo-dot" />{' '}
-        {import.meta.env.DEV
-          ? apiIdentity
-            ? 'Môi trường phát triển · Đang kết nối API'
-            : apiEnabled
-              ? 'Bản demo local · Đang dùng fixture khi chưa đăng nhập API'
-              : 'Bản demo giao diện · Dữ liệu fixture, thao tác không lưu lên máy chủ'
-          : apiIdentity
-            ? `Không gian ${actorLabel.toLowerCase()} · Phiên đăng nhập được xác minh`
-            : 'Danh mục công khai · Đăng nhập để đặt thuê hoặc vào đúng khu vực tài khoản'}
-      </div>
       <header
         className={`site-header ${authScreen ? 'site-header-auth' : ''} ${!apiIdentity ? 'site-header-signed-out' : ''}`}
         inert={mobileDrawerOpen}
@@ -604,7 +593,7 @@ export default function StudioApp() {
             }}
             aria-label={`Studio Trang Phục, về ${actorLabel.toLowerCase()}`}
           >
-            <span className="brand-mark">S</span>
+            <BrandLogoMark className="brand-mark" />
             <span>
               STUDIO<span className="brand-period">.</span>
               <small>TRANG PHỤC</small>

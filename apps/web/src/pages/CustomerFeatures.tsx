@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { Navigate } from '../App';
 import { ImageWithFallback } from '../components/ImageWithFallback';
+import { BrandLogoMark } from '../components/BrandLogoMark';
 import {
   Button,
   ConfirmDialog,
@@ -801,7 +802,7 @@ export function AccountPage({
               </>
             ) : (
               <div className="account-entry">
-                <span className="brand-mark">S</span>
+                <BrandLogoMark className="brand-mark" />
                 <h2>Đăng nhập vào tài khoản</h2>
                 <p>
                   Đăng nhập để theo dõi đơn thuê, cập nhật thông tin và tiếp tục đặt trang phục.
@@ -842,7 +843,7 @@ export function AccountPage({
       <div className="feature-two-column">
         <Panel title="Truy cập Studio">
           <div className="account-entry">
-            <span className="brand-mark">S</span>
+            <BrandLogoMark className="brand-mark" />
             <h2>Rất vui được gặp bạn</h2>
             <p>
               Đăng nhập để theo dõi đơn thuê và hồ sơ. Đây là trạng thái mô phỏng, không tạo phiên
