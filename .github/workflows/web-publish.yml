@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - 'apps/web/**'
+      - 'apps/try-on/**'
+      - 'packages/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
