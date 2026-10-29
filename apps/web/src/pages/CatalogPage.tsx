@@ -463,10 +463,6 @@ export function CatalogPage({
             <br />
             <em>Khoảnh khắc của bạn.</em>
           </h1>
-          <p>
-            Chọn mẫu yêu thích, xem giá tham khảo và gửi yêu cầu thuê. Studio sẽ kiểm tra lịch và
-            xác nhận từng bộ cho bạn.
-          </p>
           <a className="button button-primary" href="#bo-suu-tap">
             Khám phá bộ sưu tập <Icon name="arrow" size={18} />
           </a>

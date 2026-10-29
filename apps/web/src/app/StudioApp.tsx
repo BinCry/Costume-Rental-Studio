@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Icon } from '../components/ui';
+import { SiteFooter, type SiteBranchContact } from '../components/SiteFooter';
 import {
   apiEnabled,
   currentUser,
@@ -13,7 +14,6 @@ import { fixtureCustomers, fixtureEmployees, fixtureRoles } from '../fixtures/st
 import { CatalogPage } from '../pages/CatalogPage';
 import { BookingPage } from '../pages/BookingPage';
 import { DashboardPage } from '../pages/DashboardPage';
-import { OpsAgentPage } from '../pages/OpsAgentPage';
 import { OrdersPage } from '../pages/OrdersPage';
 import { OrderDetailShell } from '../pages/OrderDetailShell';
 import { AccountPage, CostumeDetailPage, MyRentalsPage } from '../pages/CustomerFeatures';
@@ -68,11 +68,6 @@ const customerNav: { screen: Screen; label: string }[] = [
 ];
 const staffNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
   { screen: 'dashboard', label: 'Bảng việc', roles: ['SALES_STAFF', 'INVENTORY_STAFF'] },
-  {
-    screen: 'opsAgent',
-    label: 'Trợ lý vận hành',
-    roles: ['SALES_STAFF', 'INVENTORY_STAFF'],
-  },
   { screen: 'orders', label: 'Đơn thuê', roles: ['SALES_STAFF', 'INVENTORY_STAFF'] },
   { screen: 'counter', label: 'Tạo tại quầy', roles: ['SALES_STAFF'] },
   { screen: 'active', label: 'Đang thuê', roles: ['SALES_STAFF', 'INVENTORY_STAFF'] },
@@ -82,7 +77,6 @@ const staffNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
   { screen: 'staffReports', label: 'Báo cáo', roles: ['SALES_STAFF'] },
 ];
 const adminNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
-  { screen: 'opsAgent', label: 'Trợ lý vận hành', roles: ['ADMIN'] },
   { screen: 'reports', label: 'Tổng quan', roles: ['ADMIN'] },
   { screen: 'adminCatalog', label: 'Danh mục', roles: ['ADMIN'] },
   { screen: 'employees', label: 'Nhân viên', roles: ['ADMIN'] },
@@ -150,7 +144,6 @@ const requiredPermissions: Partial<Record<Screen, string[]>> = {
   policies: ['policies.read.all', 'policies.manage.all'],
   reports: ['reports.read.all', 'reports.read.branch'],
   staffReports: ['reports.read.all', 'reports.read.branch'],
-  opsAgent: ['knowledge.read.branch', 'knowledge.read.all'],
 };
 
 export default function StudioApp() {
@@ -160,6 +153,7 @@ export default function StudioApp() {
   const [apiIdentity, setApiIdentity] = useState<ApiIdentity>();
   const [apiSessionReady, setApiSessionReady] = useState(!apiEnabled || import.meta.env.DEV);
   const [apiBranchIds, setApiBranchIds] = useState<Record<string, string>>({});
+  const [publicBranchContacts, setPublicBranchContacts] = useState<SiteBranchContact[]>([]);
   const [apiBranchesReady, setApiBranchesReady] = useState(!apiEnabled || import.meta.env.DEV);
   const [apiBranchesFailed, setApiBranchesFailed] = useState(false);
   const [branchRetryRevision, setBranchRetryRevision] = useState(0);
@@ -220,7 +214,14 @@ export default function StudioApp() {
       setApiBranchIds({});
       try {
         const items = await listBranches();
-        if (active) setApiBranchIds(Object.fromEntries(items.map((item) => [item.name, item.id])));
+        if (active) {
+          setApiBranchIds(Object.fromEntries(items.map((item) => [item.name, item.id])));
+          setPublicBranchContacts(
+            items
+              .filter((item) => item.status !== 'INACTIVE')
+              .map(({ name, address, phone }) => ({ name, address: address ?? '', phone })),
+          );
+        }
       } catch {
         if (active) setApiBranchesFailed(true);
       } finally {
@@ -261,9 +262,7 @@ export default function StudioApp() {
   }, [route.screen, role, branch, apiIdentity, apiBranchIds]);
   useEffect(() => {
     if (!menuOpen || !isStaff(route.screen)) return;
-    sectionNavRef.current
-      ?.querySelector<HTMLElement>('.staff-nav-agent-link, .staff-nav-heading')
-      ?.focus();
+    sectionNavRef.current?.querySelector<HTMLElement>('.staff-nav-heading')?.focus();
   }, [menuOpen, route.screen]);
   const go: Navigate = (screen, params) => {
     window.history.pushState(null, '', pathFor(screen, params));
@@ -522,7 +521,6 @@ export default function StudioApp() {
     if (screen === 'policies') return activeRole === 'ADMIN';
     const item = [...staffNav, ...adminNav].find((value) => value.screen === screen);
     if (!item?.roles.includes(activeRole)) return false;
-    if (screen === 'opsAgent') return true;
     const permissions = requiredPermissions[screen];
     return (
       !permissions || permissions.some((permission) => effectivePermissions.includes(permission))
@@ -783,23 +781,6 @@ export default function StudioApp() {
             }}
           >
             <nav aria-label={actorGroup === 'ADMIN' ? 'Chức năng quản trị' : 'Chức năng vận hành'}>
-              {(actorGroup === 'STAFF' || actorGroup === 'ADMIN') &&
-                nav
-                  .filter((item) => item.screen === 'opsAgent')
-                  .map((item) => (
-                    <a
-                      key={item.screen}
-                      href={pathFor(item.screen)}
-                      className={`staff-nav-agent-link ${route.screen === item.screen ? 'active' : ''}`}
-                      aria-current={route.screen === item.screen ? 'page' : undefined}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        go(item.screen);
-                      }}
-                    >
-                      {item.label}
-                    </a>
-                  ))}
               {navGroups.map((group) => {
                 const groupItems = group.screens.flatMap((screen) => {
                   const item = nav.find((entry) => entry.screen === screen);
@@ -1149,18 +1130,6 @@ export default function StudioApp() {
             {route.screen === 'dashboard' && (
               <DashboardPage scenario={scenario} go={go} initialBranch={activeBranch} />
             )}
-            {route.screen === 'opsAgent' && (
-              <OpsAgentPage
-                key={`${apiIdentity?.id ?? 'anonymous-ops-agent'}:${
-                  activeBranchId ?? encodeURIComponent(activeBranch)
-                }`}
-                scenario={scenario}
-                branch={activeBranch}
-                branchId={activeBranchId}
-                actorId={apiIdentity?.id}
-                go={go}
-              />
-            )}
             {route.screen === 'orders' && (
               <OrdersPage
                 scenario={scenario}
@@ -1315,20 +1284,7 @@ export default function StudioApp() {
           </>
         )}
       </main>
-      <footer className="site-footer">
-        <span>Studio Trang Phục</span>
-        <span>
-          {route.screen === 'opsAgent'
-            ? import.meta.env.VITE_OPS_AGENT_MODE === 'api'
-              ? 'Trợ lý vận hành · Tra cứu hướng dẫn · Hỗ trợ xử lý yêu cầu'
-              : 'Ops Agent · Fixture demo · Không lưu dữ liệu'
-            : import.meta.env.DEV
-              ? apiIdentity
-                ? 'Khu vận hành · Chi nhánh hiện tại'
-                : 'Bản xem trước · Dữ liệu minh họa'
-              : 'Studio Trang Phục · Quản lý theo chi nhánh'}
-        </span>
-      </footer>
+      <SiteFooter branchContacts={publicBranchContacts} compact={staff} />
     </div>
   );
 }

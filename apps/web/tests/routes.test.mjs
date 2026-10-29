@@ -84,14 +84,18 @@ describe('role-specific portal routing', () => {
     expect(portalAreaForPath('/don-cua-toi/RT-2026-001')).toBe('CUSTOMER');
   });
 
-  it('allows active staff and admins to enter Ops Agent while keeping customers out', () => {
-    expect(pathFor('opsAgent')).toBe('/van-hanh/ops-agent');
-    expect(canActorUsePath('STAFF', '/van-hanh/ops-agent')).toBe(true);
-    expect(canActorUsePath('ADMIN', '/van-hanh/ops-agent')).toBe(true);
-    expect(canActorUsePath('ADMIN', '/van-hanh/ops-agent/')).toBe(true);
+  it('shows the disabled Ops Agent URL as a public not-found page for every account type', () => {
+    vi.stubGlobal('window', {
+      location: { pathname: '/van-hanh/ops-agent', search: '' },
+    });
+
+    expect(readRoute().screen).toBe('notFound');
+    expect(portalAreaForPath('/van-hanh/ops-agent')).toBe('PUBLIC');
+    expect(canActorUsePath('STAFF', '/van-hanh/ops-agent')).toBe(false);
+    expect(canActorUsePath('ADMIN', '/van-hanh/ops-agent')).toBe(false);
     expect(canActorUsePath('CUSTOMER', '/van-hanh/ops-agent')).toBe(false);
-    expect(canActorAccessScreen('STAFF', 'opsAgent')).toBe(true);
-    expect(canActorAccessScreen('ADMIN', 'opsAgent')).toBe(true);
-    expect(canActorAccessScreen('CUSTOMER', 'opsAgent')).toBe(false);
+    expect(canActorAccessScreen('STAFF', 'notFound')).toBe(true);
+    expect(canActorAccessScreen('ADMIN', 'notFound')).toBe(true);
+    expect(canActorAccessScreen('CUSTOMER', 'notFound')).toBe(true);
   });
 });

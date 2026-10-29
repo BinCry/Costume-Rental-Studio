@@ -85,7 +85,10 @@ jobs:
           push: true
           build-args: |
             VITE_API_URL=https://studio.api.bincrydev.id.vn
-            VITE_OPS_AGENT_MODE=api
+            VITE_SOCIAL_FACEBOOK_URL=${{ vars.SOCIAL_FACEBOOK_URL }}
+            VITE_SOCIAL_INSTAGRAM_URL=${{ vars.SOCIAL_INSTAGRAM_URL }}
+            VITE_SOCIAL_TIKTOK_URL=${{ vars.SOCIAL_TIKTOK_URL }}
+            VITE_SOCIAL_ZALO_URL=${{ vars.SOCIAL_ZALO_URL }}
           tags: |
             ${{ env.IMAGE_NAME }}:${{ env.STAGING_TAG }}
             ${{ env.IMAGE_NAME }}:staging-${{ steps.meta.outputs.short_sha }}

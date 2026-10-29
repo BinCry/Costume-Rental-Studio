@@ -395,6 +395,116 @@ small {
   font-size: 12px;
   color: var(--text-secondary);
 }
+.site-footer-public {
+  display: grid;
+  gap: 28px;
+  padding: clamp(28px, 5vw, 48px) max(24px, calc((100vw - 1440px) / 2)) 20px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+.site-footer-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(150px, 0.7fr);
+  gap: clamp(20px, 4vw, 56px);
+}
+.site-footer-brand,
+.site-footer-contact,
+.site-footer-social {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+}
+.site-footer-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.site-footer-logo-mark {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--brand-primary);
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+}
+.site-footer-logo > span:last-child {
+  display: grid;
+  gap: 1px;
+}
+.site-footer-logo strong {
+  font-size: 19px;
+  line-height: 1.1;
+}
+.site-footer-logo small {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+}
+.site-footer-brand > p,
+.site-footer-contact > p {
+  max-width: 34ch;
+  margin: 0;
+  line-height: 1.6;
+}
+.site-footer-public h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.site-footer-contact ul,
+.site-footer-social ul {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.site-footer-contact li {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  line-height: 1.5;
+}
+.site-footer-contact li > strong {
+  color: var(--text-primary);
+}
+.site-footer-contact address {
+  font-style: normal;
+}
+.site-footer-contact a,
+.site-footer-social a {
+  color: var(--brand-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+.site-footer-contact a:hover,
+.site-footer-social a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.site-footer-social-pending {
+  color: var(--text-tertiary, var(--text-secondary));
+}
+.site-footer-bottom {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.site-footer-compact {
+  min-height: 64px;
+  padding: 20px max(24px, calc((100vw - 1440px) / 2));
+}
 .button {
   min-height: 44px;
   border: 1px solid transparent;
@@ -4383,8 +4493,7 @@ small {
 .staff-nav-heading[aria-expanded='true'] .staff-nav-chevron {
   transform: rotate(0deg);
 }
-.app-staff .section-nav .staff-nav-group a,
-.app-staff .section-nav .staff-nav-agent-link {
+.app-staff .section-nav .staff-nav-group a {
   display: flex;
   align-items: center;
   width: 100%;
@@ -4395,12 +4504,10 @@ small {
   font-size: 14px;
   font-weight: 600;
 }
-.app-staff .section-nav .staff-nav-group a:hover,
-.app-staff .section-nav .staff-nav-agent-link:hover {
+.app-staff .section-nav .staff-nav-group a:hover {
   background: var(--surface-hover);
 }
-.app-staff .section-nav .staff-nav-group a.active,
-.app-staff .section-nav .staff-nav-agent-link.active {
+.app-staff .section-nav .staff-nav-group a.active {
   background: var(--brand-tint);
   color: var(--brand-primary);
 }
@@ -7453,8 +7560,7 @@ small {
     gap: 4px;
   }
 
-  .app-staff .section-nav .staff-nav-group a,
-  .app-staff .section-nav .staff-nav-agent-link {
+  .app-staff .section-nav .staff-nav-group a {
     min-height: 44px;
     padding: 8px 10px;
     font-size: 13px;
@@ -7542,8 +7648,7 @@ small {
     min-height: 38px;
   }
 
-  .app-staff .section-nav .staff-nav-group a,
-  .app-staff .section-nav .staff-nav-agent-link {
+  .app-staff .section-nav .staff-nav-group a {
     min-height: 38px;
   }
 
@@ -8353,6 +8458,21 @@ small {
 /* Keep the conversation as the primary workspace in live Ops Agent mode. */
 .ops-agent-page-chat {
   padding-bottom: 24px;
+}
+
+@media (max-width: 760px) {
+  .site-footer-public {
+    padding: 28px 16px 18px;
+  }
+
+  .site-footer-main {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+
+  .site-footer-bottom {
+    flex-direction: column;
+  }
 }
 .ops-agent-heading-chat {
   align-items: center;

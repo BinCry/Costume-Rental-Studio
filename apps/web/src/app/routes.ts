@@ -24,7 +24,6 @@ export type Screen =
   | 'policies'
   | 'reports'
   | 'staffReports'
-  | 'opsAgent'
   | 'notFound';
 export type ActorGroup = 'ADMIN' | 'STAFF' | 'CUSTOMER' | 'UNASSIGNED';
 export type PortalArea = 'ADMIN' | 'STAFF' | 'CUSTOMER' | 'AUTH' | 'PUBLIC';
@@ -59,7 +58,6 @@ export const paths: Record<Screen, string> = {
   policies: '/quan-tri/chinh-sach',
   reports: '/quan-tri/bao-cao',
   staffReports: '/van-hanh/bao-cao',
-  opsAgent: '/van-hanh/ops-agent',
   notFound: '/khong-tim-thay-trang',
 };
 
@@ -95,6 +93,7 @@ export function portalAreaForScreen(screen: Screen): PortalArea {
 
 export function portalAreaForPath(pathname: string): PortalArea | undefined {
   const path = pathname.replace(/\/$/, '') || '/';
+  if (path === '/van-hanh/ops-agent' || path.startsWith('/van-hanh/ops-agent/')) return 'PUBLIC';
   if (
     path === '/' ||
     path.startsWith('/trang-phuc/') ||
@@ -111,16 +110,14 @@ export function portalAreaForPath(pathname: string): PortalArea | undefined {
 
 export function canActorUsePath(actorGroup: ActorGroup, pathname: string) {
   const path = pathname.replace(/\/+$/, '') || '/';
-  if (path === paths.opsAgent) return actorGroup === 'ADMIN' || actorGroup === 'STAFF';
   const area = portalAreaForPath(path);
   if (actorGroup === 'UNASSIGNED') return area === 'CUSTOMER' && pathname === paths.account;
   return area === actorGroup;
 }
 
 export function canActorAccessScreen(actorGroup: ActorGroup, screen: Screen) {
-  if (screen === 'opsAgent') return actorGroup === 'ADMIN' || actorGroup === 'STAFF';
   const area = portalAreaForScreen(screen);
-  if (screen === 'notFound') return actorGroup === 'CUSTOMER';
+  if (screen === 'notFound') return true;
   if (actorGroup === 'UNASSIGNED') return screen === 'account';
   return area === actorGroup;
 }
