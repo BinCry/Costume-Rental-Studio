@@ -399,6 +399,7 @@ small {
   width: 100%;
   align-self: stretch;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 28px;
   padding: clamp(28px, 5vw, 48px) max(24px, calc((100vw - 1440px) / 2)) 20px;
   color: var(--text-secondary);
