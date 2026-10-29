@@ -46,6 +46,41 @@ function formatPhone(value: string) {
   return value;
 }
 
+function SocialIcon({ network }: { network: SocialNetwork }) {
+  if (network === 'Facebook') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M13.7 21v-8.2h2.8l.4-3.2h-3.2V7.5c0-.9.3-1.6 1.6-1.6H17V3.1c-.3 0-1.4-.1-2.7-.1-2.7 0-4.6 1.7-4.6 4.8v1.8H7v3.2h2.7V21h4Z" />
+      </svg>
+    );
+  }
+
+  if (network === 'Instagram') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="3.5" y="3.5" width="17" height="17" rx="5" />
+        <circle cx="12" cy="12" r="4" />
+        <circle cx="17.7" cy="6.5" r=".9" fill="currentColor" stroke="none" />
+      </svg>
+    );
+  }
+
+  if (network === 'TikTok') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M15.2 3h-3.4v11.4a2.5 2.5 0 1 1-2.5-2.5c.3 0 .6 0 .9.1V8.6a6.4 6.4 0 1 0 5 6.2V9.1a8.2 8.2 0 0 0 4.6 1.4V7.1A4.8 4.8 0 0 1 15.2 3Z" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M20 4H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2l-1 3 5-3h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Z" />
+      <path d="M7.5 8h9l-7 5h7" />
+    </svg>
+  );
+}
+
 export function SiteFooter({ branchContacts, compact = false }: SiteFooterProps) {
   if (compact) {
     return (
@@ -101,11 +136,26 @@ export function SiteFooter({ branchContacts, compact = false }: SiteFooterProps)
               return (
                 <li key={name}>
                   {safeUrl ? (
-                    <a href={safeUrl} target="_blank" rel="noopener noreferrer">
+                    <a
+                      className={`site-footer-social-link site-footer-social-link-${name.toLowerCase()}`}
+                      href={safeUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <span className="site-footer-social-icon" aria-hidden="true">
+                        <SocialIcon network={name} />
+                      </span>
                       {name}
                     </a>
                   ) : (
-                    <a className="site-footer-social-pending" aria-disabled="true" tabIndex={-1}>
+                    <a
+                      className={`site-footer-social-link site-footer-social-link-${name.toLowerCase()} site-footer-social-pending`}
+                      aria-disabled="true"
+                      tabIndex={-1}
+                    >
+                      <span className="site-footer-social-icon" aria-hidden="true">
+                        <SocialIcon network={name} />
+                      </span>
                       {name}
                     </a>
                   )}

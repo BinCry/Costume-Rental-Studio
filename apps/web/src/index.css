@@ -396,6 +396,8 @@ small {
   color: var(--text-secondary);
 }
 .site-footer-public {
+  width: 100%;
+  align-self: stretch;
   display: grid;
   gap: 28px;
   padding: clamp(28px, 5vw, 48px) max(24px, calc((100vw - 1440px) / 2)) 20px;
@@ -403,8 +405,9 @@ small {
   font-size: 14px;
 }
 .site-footer-main {
+  width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(150px, 0.7fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: clamp(20px, 4vw, 56px);
 }
 .site-footer-brand,
@@ -467,6 +470,9 @@ small {
   padding: 0;
   list-style: none;
 }
+.site-footer-social ul {
+  gap: 8px;
+}
 .site-footer-contact li {
   display: grid;
   justify-items: start;
@@ -485,15 +491,70 @@ small {
   font-weight: 600;
   text-decoration: none;
 }
+.site-footer-social-link {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 36px;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 10px 3px 3px;
+  border-radius: var(--radius-pill);
+  transition: background-color 140ms ease;
+}
+.site-footer-social-link:hover:not([aria-disabled='true']) {
+  background: var(--surface-selected);
+  text-decoration: none;
+}
+.site-footer-social-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--brand-primary);
+  color: #fff;
+}
+.site-footer-social-icon svg {
+  width: 17px;
+  height: 17px;
+  fill: currentColor;
+}
+.site-footer-social-icon svg[fill='none'] {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+.site-footer-social-link-facebook .site-footer-social-icon {
+  background: #1877f2;
+}
+.site-footer-social-link-instagram .site-footer-social-icon {
+  background: linear-gradient(145deg, #7c3aed, #d62976 58%, #f59e0b);
+}
+.site-footer-social-link-tiktok .site-footer-social-icon {
+  background: #111827;
+}
+.site-footer-social-link-zalo .site-footer-social-icon {
+  background: #0068ff;
+}
 .site-footer-contact a:hover,
 .site-footer-social a:hover {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 .site-footer-social-pending {
-  color: var(--text-tertiary, var(--text-secondary));
+  color: var(--brand-primary);
+  cursor: default;
+  opacity: 0.88;
+}
+.site-footer-social-pending:hover {
+  text-decoration: none;
 }
 .site-footer-bottom {
+  width: 100%;
+  min-width: 0;
   display: flex;
   justify-content: space-between;
   gap: 12px 24px;
