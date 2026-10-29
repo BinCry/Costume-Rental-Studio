@@ -40,6 +40,21 @@ import {
 } from '../api/client';
 import { useBranchOptions } from '../components/useBranchOptions';
 
+const virtualTryOnContextPrefix = 'studio-virtual-try-on:';
+
+function virtualTryOnCategory(category: string, name: string) {
+  const normalized = `${category} ${name}`
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/đ/g, 'd');
+  if (/ao dai|saree|lehenga/.test(normalized)) return 'saree';
+  if (/dam|vay|dress|gown/.test(normalized)) return 'dress';
+  if (/so mi|vest|suit|polo/.test(normalized)) return 'shirt';
+  if (/thun|t-shirt|tshirt/.test(normalized)) return 'tshirt';
+  return 'top';
+}
+
 const loadCostumeDetails =
   (id: string) =>
   async (scenario: DemoScenario): Promise<CostumeDetail[]> => {
@@ -189,6 +204,25 @@ export function CostumeDetailPage({
         if (!variant) return <EmptyState title="Mẫu này chưa có biến thể để đặt thuê" />;
         const gallery = variant.images?.length ? variant.images : (item.images ?? []);
         const activeImage = gallery[photo];
+        const startVirtualTryOn = () => {
+          const contextId = crypto.randomUUID();
+          const context = {
+            productId: item.id,
+            name: item.name,
+            category: virtualTryOnCategory(item.category, item.name),
+            imageUrl: activeImage?.url ?? item.imageUrl ?? null,
+            imageAlt: activeImage?.alt ?? item.imageAlt ?? item.name,
+          };
+          try {
+            window.sessionStorage.setItem(
+              `${virtualTryOnContextPrefix}${contextId}`,
+              JSON.stringify(context),
+            );
+          } catch {
+            // The try-on page remains usable through its manual garment upload flow.
+          }
+          go('virtualTryOn', { context: contextId, product: item.id, name: item.name });
+        };
         const fixtureKnown =
           branch === 'Chi nhánh Quận 1' &&
           pickup === fixturePeriod.pickup &&
@@ -340,6 +374,9 @@ export function CostumeDetailPage({
                   </Feedback>
                 </Panel>
                 <div className="feature-actions">
+                  <Button variant="secondary" onClick={startVirtualTryOn}>
+                    Thử với camera
+                  </Button>
                   <Button
                     onClick={() =>
                       go('booking', {
@@ -472,8 +509,7 @@ export function MyRentalsPage({
                           value:
                             selected.items
                               ?.map((item) => `${item.costume} · ${item.variant}`)
-                              .join(' / ') ??
-                            `${selected.costume} · ${selected.variant}`,
+                              .join(' / ') ?? `${selected.costume} · ${selected.variant}`,
                         },
                         { label: 'Chi nhánh nhận và trả', value: selected.branch },
                         { label: 'Nhận', value: selected.pickup },

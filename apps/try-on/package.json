@@ -1,0 +1,29 @@
+{
+  "name": "@costume/try-on",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5174 --strictPort",
+    "preassets": "node tools/copy-litert-wasm.mjs && node tools/fetch-models.mjs",
+    "assets": "pnpm --filter thin-plate-spline build && pnpm --filter litert-react build && pnpm --filter @practics/tryon-core build && tsc --noEmit && vite build",
+    "typecheck": "pnpm --filter thin-plate-spline build && pnpm --filter litert-react build && pnpm --filter @practics/tryon-core build && tsc --noEmit"
+  },
+  "dependencies": {
+    "@litertjs/core": "^2.5.2",
+    "@mcp-b/global": "^5.0.1",
+    "@mcp-b/react-webmcp": "^5.0.1",
+    "@practics/tryon-core": "workspace:*",
+    "litert-react": "workspace:*",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "@webgpu/types": "^0.1.71",
+    "typescript": "6.0.3",
+    "vite": "^8.3.0"
+  }
+}

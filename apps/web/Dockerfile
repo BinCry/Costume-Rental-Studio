@@ -6,10 +6,18 @@ RUN corepack enable && corepack prepare pnpm@11.1.2 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web/package.json apps/web/package.json
+COPY apps/try-on/package.json apps/try-on/package.json
+COPY packages/tryon-core/package.json packages/tryon-core/package.json
+COPY packages/thin-plate-spline/package.json packages/thin-plate-spline/package.json
+COPY packages/litert-react/package.json packages/litert-react/package.json
 
 RUN pnpm install --frozen-lockfile
 
 COPY apps/web apps/web
+COPY apps/try-on apps/try-on
+COPY packages/tryon-core packages/tryon-core
+COPY packages/thin-plate-spline packages/thin-plate-spline
+COPY packages/litert-react packages/litert-react
 
 ARG VITE_API_URL=https://studio.api.bincrydev.id.vn
 ENV VITE_API_URL=$VITE_API_URL

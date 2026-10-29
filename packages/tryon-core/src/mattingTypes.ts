@@ -1,0 +1,72 @@
+/**
+ * Worker protocol for the garment-upload matting worker. Framework-free,
+ * like depthTypes.ts — importing this file never pulls transformers.js
+ * into a consuming app's main bundle. Only matting.worker.ts imports the
+ * library itself.
+ */
+import type { GarmentExtractOptions, GarmentTarget } from './garmentExtract.js';
+
+export type MattingAccelerator = 'webgpu' | 'wasm';
+
+export interface MattingInitRequest {
+  type: 'init';
+  device: MattingAccelerator;
+  /** Overrides DEFAULT_GARMENT_EXTRACT_CONFIG (see config.ts) for this session. */
+  garmentExtractConfig?: GarmentExtractOptions;
+}
+
+export interface MattingProcessRequest {
+  type: 'process';
+  /** Transferred, not cloned. The worker consumes (closes) it. */
+  bitmap: ImageBitmap;
+  seq: number;
+  /**
+   * 'garment' (default): the upload flow — matting plus clothes-parsing
+   * extraction, so a photo of someone WEARING the garment returns just the
+   * garment. 'person': plain MODNet matting only — the result's alpha is a
+   * high-quality PERSON matte, used to refine the low-res segmenter mask
+   * for photo-mode compositing. Extraction must not run there: it would
+   * strip the very person the mask is for.
+   */
+  mode?: 'garment' | 'person';
+  /**
+   * Which half of a worn outfit to extract (see garmentExtract.ts
+   * GarmentTarget) — 'lower' for pants/shorts, else 'upper'. Ignored in
+   * 'person' mode. Defaults to 'upper'.
+   */
+  target?: GarmentTarget;
+}
+
+export type MattingWorkerRequest = MattingInitRequest | MattingProcessRequest;
+
+export interface MattingProgressResponse {
+  type: 'progress';
+  loaded: number;
+  total: number;
+}
+
+export interface MattingReadyResponse {
+  type: 'ready';
+  device: MattingAccelerator;
+  initMs: number;
+}
+
+export interface MattingResultResponse {
+  type: 'result';
+  seq: number;
+  /** Background-removed RGBA image, same pixel dimensions as the input bitmap. */
+  mattedBitmap: ImageBitmap;
+  ms: number;
+}
+
+export interface MattingErrorResponse {
+  type: 'error';
+  seq?: number;
+  message: string;
+}
+
+export type MattingWorkerResponse =
+  | MattingProgressResponse
+  | MattingReadyResponse
+  | MattingResultResponse
+  | MattingErrorResponse;

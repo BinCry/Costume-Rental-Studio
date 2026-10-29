@@ -1,0 +1,43 @@
+{
+  "name": "litert-react",
+  "version": "0.1.0",
+  "private": true,
+  "description": "React hooks for LiteRT.js and worker-based on-device inference.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./worker": {
+      "types": "./dist/worker.d.ts",
+      "import": "./dist/worker.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "@litertjs/core": ">=2.0.0",
+    "react": ">=18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@litertjs/core": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@litertjs/core": "^2.5.2",
+    "@types/react": "^19.2.18",
+    "typescript": "6.0.3",
+    "react": "^19.2.8"
+  }
+}

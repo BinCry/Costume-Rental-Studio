@@ -2,6 +2,10 @@ node_modules/
 .pnpm-store/
 dist/
 .next/
+apps/try-on/public/models/
+apps/try-on/public/litert-wasm/
+apps/try-on/node_modules/
+apps/web/public/try-on/
 .env
 .env.local
 *.log

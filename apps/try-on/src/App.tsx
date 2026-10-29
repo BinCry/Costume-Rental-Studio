@@ -1,0 +1,1459 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { assetUrl } from './assetUrl';
+import { BitmapCanvas } from './components/BitmapCanvas';
+import { DebugCanvas, type GarmentOverlay } from './components/DebugCanvas';
+import { GarmentPicker } from './components/GarmentPicker';
+import { GarmentUpload } from './components/GarmentUpload';
+import { LooksPanel } from './components/LooksPanel';
+import { PerfStats } from './components/PerfStats';
+import { ReactionBar } from './components/ReactionBar';
+import { snapshotCanvas } from './components/snapshotCanvas';
+import { config } from './config';
+import { takeStudioTryOnContext, type StudioTryOnContext } from './studioBridge';
+import {
+  isTwoPieceLehenga,
+  type Garment,
+  type LehengaCholiGarment,
+  type PantsGarment,
+  type SingleImageLehengaGarment,
+  type SinglePieceGarment,
+} from './garments/schema';
+import { useAdvancedMode } from './hooks/useAdvancedMode';
+import { useGarmentCatalog } from './hooks/useGarmentCatalog';
+import { useLooks, type SavedLook } from './hooks/useLooks';
+import { useReaction } from './hooks/useReaction';
+import { useGestureSwipe } from './hooks/useGestureSwipe';
+import { useLiveDepth } from './hooks/useLiveDepth';
+import { useMatting } from './hooks/useMatting';
+import { useLiveTryOn } from './hooks/useLiveTryOn';
+import { usePipeline } from './hooks/usePipeline';
+import { useTorsoOrientation } from './hooks/useTorsoOrientation';
+import { useUserGarments } from './hooks/useUserGarments';
+import { useWebcam } from './hooks/useWebcam';
+import { useStylistTools } from './webmcp/useStylistTools';
+import { mirrorAnchorsLR } from '@practics/tryon-core';
+import type { TryOnStatus } from '@practics/tryon-core';
+import type { SwipeDirection } from '@practics/tryon-core';
+import { depthToNormalMap } from '@practics/tryon-core';
+import { foreshortenFactor, selectGarmentView } from '@practics/tryon-core';
+import type { Accelerator, PipelineResult } from '@practics/tryon-core';
+
+/** The advanced-mode normal map(s) for the currently-selected garment
+ * (Phase A3) — mirrors LoadedGarmentImages' single/lehenga-choli shape,
+ * since a lehenga-choli's two pieces each need their own normal map. A
+ * single-piece garment's optional back photo (Phase A4) gets its own
+ * normal map too, used when the live-mode back view is active (Phase A5). */
+type GarmentNormals =
+  | { kind: 'single'; normal: OffscreenCanvas; backNormal: OffscreenCanvas | null }
+  | { kind: 'lehenga-choli'; choliNormal: OffscreenCanvas; lehengaNormal: OffscreenCanvas };
+
+/** The loaded ImageBitmap(s) for the currently-selected garment — one for a
+ * single-piece garment (plus its optional back photo), two for a
+ * lehenga-choli (choli + lehenga skirt). */
+type LoadedGarmentImages =
+  | { kind: 'single'; image: ImageBitmap; backImage: ImageBitmap | null }
+  | { kind: 'lehenga-choli'; choliImage: ImageBitmap; lehengaImage: ImageBitmap };
+
+async function fetchBitmap(path: string): Promise<ImageBitmap> {
+  const res = await fetch(assetUrl(path));
+  if (!res.ok) throw new Error(`fetch ${path} failed: ${res.status}`);
+  return createImageBitmap(await res.blob());
+}
+
+function closeGarmentImages(images: LoadedGarmentImages | null): void {
+  if (!images) return;
+  if (images.kind === 'single') {
+    images.image.close();
+    images.backImage?.close();
+  } else {
+    images.choliImage.close();
+    images.lehengaImage.close();
+  }
+}
+
+type Mode = 'photo' | 'live';
+
+/**
+ * What the TOP outfit slot can hold. A lehenga-choli is a complete two-piece
+ * outfit and occupies both slots at once — selecting it clears the bottom
+ * slot, and selecting pants clears it (see selectGarment's slot rules).
+ * Everything else top-like (tshirt/shirt/top/kurti/dress) coexists with
+ * pants in the bottom slot — kurti-over-jeans being the classic combo.
+ */
+type TopSlotGarment = SinglePieceGarment | LehengaCholiGarment | SingleImageLehengaGarment;
+
+export default function App() {
+  // The customer-facing experience is camera-first; photo try-on is not exposed.
+  const [mode] = useState<Mode>('live');
+  const [studioContext, setStudioContext] = useState<StudioTryOnContext | null>(null);
+  const [studioProductFile, setStudioProductFile] = useState<File | null>(null);
+  const [studioImageStatus, setStudioImageStatus] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [studioImageError, setStudioImageError] = useState<string | null>(null);
+  const [accelerator, setAccelerator] = useState<Accelerator>('webgpu');
+  const pipeline = usePipeline(accelerator);
+  const catalog = useGarmentCatalog();
+  const userGarments = useUserGarments();
+  const looks = useLooks();
+  const reaction = useReaction();
+  const webcam = useWebcam();
+  const live = useLiveTryOn(pipeline, webcam.videoEl, mode === 'live');
+  const [image, setImage] = useState<ImageBitmap | null>(null);
+  const [result, setResult] = useState<PipelineResult | null>(null);
+  const [processing, setProcessing] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
+  const [showMask, setShowMask] = useState(false);
+  const [showSkeleton, setShowSkeleton] = useState(false);
+  /** Color harmonization toggle ("match colors") — on by default, the checkbox is the A/B demo. */
+  const [showHarmonize, setShowHarmonize] = useState(true);
+  const [selectedTop, setSelectedTop] = useState<TopSlotGarment | null>(null);
+  const [selectedBottom, setSelectedBottom] = useState<PantsGarment | null>(null);
+  const [garmentImages, setGarmentImages] = useState<LoadedGarmentImages | null>(null);
+  const [bottomImage, setBottomImage] = useState<ImageBitmap | null>(null);
+  const [garmentError, setGarmentError] = useState<string | null>(null);
+  const [tryOnStatus, setTryOnStatus] = useState<TryOnStatus | null>(null);
+  /** Transient notice from a save-look attempt (e.g. "nothing rendered yet"). */
+  const [lookNotice, setLookNotice] = useState<string | null>(null);
+  /**
+   * Set (with a fresh `key`) whenever the WebMCP agent applies a try-on, so
+   * the preview visibly announces it — a manual picker tap doesn't fire this.
+   * Cleared a few seconds later by the effect below.
+   */
+  const [agentApply, setAgentApply] = useState<{ name: string; key: number } | null>(null);
+  const agentApplyKeyRef = useRef(0);
+  /** The photo-mode composited canvas — snapshotted by `save_look`. */
+  const photoCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const imageRef = useRef<ImageBitmap | null>(null);
+  const resultRef = useRef<PipelineResult | null>(null);
+  const garmentImagesRef = useRef<LoadedGarmentImages | null>(null);
+  const bottomImageRef = useRef<ImageBitmap | null>(null);
+
+  useEffect(() => {
+    const contextId = new URLSearchParams(window.location.search).get('studioContext');
+    setStudioContext(takeStudioTryOnContext(contextId));
+  }, []);
+
+  useEffect(() => {
+    if (!studioContext?.imageUrl) return;
+    const controller = new AbortController();
+    setStudioImageStatus('loading');
+    setStudioImageError(null);
+    void (async () => {
+      try {
+        const imageUrl = new URL(studioContext.imageUrl!, window.location.origin);
+        if (
+          imageUrl.username ||
+          imageUrl.password ||
+          (imageUrl.protocol !== 'https:' && imageUrl.origin !== window.location.origin)
+        )
+          throw new Error('Liên kết ảnh không an toàn.');
+        const response = await fetch(imageUrl, {
+          credentials: 'omit',
+          mode: 'cors',
+          referrerPolicy: 'no-referrer',
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('Ảnh sản phẩm hiện không tải được.');
+        const contentType = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase();
+        const declaredSize = Number(response.headers.get('content-length') ?? 0);
+        if (!contentType?.startsWith('image/')) throw new Error('Tệp sản phẩm không phải ảnh.');
+        if (declaredSize > 15 * 1024 * 1024) throw new Error('Ảnh sản phẩm vượt quá 15 MB.');
+        const blob = await response.blob();
+        if (blob.size > 15 * 1024 * 1024) throw new Error('Ảnh sản phẩm vượt quá 15 MB.');
+        const extension = contentType.split('/')[1].replace(/[^a-z0-9]/g, '') || 'jpg';
+        const file = new File([blob], `studio-${studioContext.productId}.${extension}`, {
+          type: contentType,
+          lastModified: Date.now(),
+        });
+        setStudioProductFile(file);
+        setStudioImageStatus('idle');
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setStudioImageStatus('error');
+        setStudioImageError(error instanceof Error ? error.message : 'Không tải được ảnh mẫu.');
+      }
+    })();
+    return () => controller.abort();
+  }, [studioContext]);
+
+  /**
+   * Applies the slot rules for picking a garment: pants fill the bottom
+   * slot, anything top-like fills the top slot, a lehenga-choli is
+   * exclusive (fills top, clears bottom — and pants selection clears IT).
+   * `toggle` (default true, the picker's behavior) makes tapping the
+   * already-worn garment remove it from its slot; gesture cycling passes
+   * false so wrapping around the list onto a worn garment keeps it worn.
+   */
+  const selectGarment = useCallback((g: Garment | null, opts?: { toggle?: boolean }) => {
+    const toggle = opts?.toggle ?? true;
+    if (!g) {
+      setSelectedTop(null);
+      setSelectedBottom(null);
+      return;
+    }
+    if (g.category === 'pants') {
+      setSelectedBottom((prev) => (toggle && prev?.id === g.id ? null : g));
+      setSelectedTop((prev) => (prev?.category === 'lehenga-choli' ? null : prev));
+    } else if (g.category === 'lehenga-choli') {
+      setSelectedTop((prev) => (toggle && prev?.id === g.id ? null : g));
+      setSelectedBottom(null);
+    } else {
+      setSelectedTop((prev) => (toggle && prev?.id === g.id ? null : g));
+    }
+  }, []);
+
+  // Advanced mode (Phase A1, see docs/plan-3d-garment-assets.md): the depth
+  // worker + its ~50MB model only exist once the user opts in via the
+  // "Enhance (3D)" button below.
+  const advanced = useAdvancedMode();
+  const [showDepth] = useState(false);
+  const [showShading] = useState(true);
+  const [photoDepth, setPhotoDepth] = useState<ImageBitmap | null>(null);
+  const [garmentDepth, setGarmentDepth] = useState<ImageBitmap | null>(null);
+  const [garmentNormals, setGarmentNormals] = useState<GarmentNormals | null>(null);
+  const photoDepthRef = useRef<ImageBitmap | null>(null);
+  const garmentDepthRef = useRef<ImageBitmap | null>(null);
+
+  // Photo-mode person matting (see docs/production-gaps.md): a MODNet matte
+  // replaces the low-res segmenter mask for crisp clip edges in stills —
+  // most visible around hair. Rides the advanced-mode opt-in so its worker
+  // (and one-time model download) only exists once "Enhance (3D)" is on.
+  // Deliberately a separate useMatting instance from GarmentUpload's: that
+  // one's lifecycle is tied to the upload dialog being open, and tearing it
+  // down on dialog close must not kill photo matting (the browser cache
+  // dedupes the model download between them).
+  const photoMatting = useMatting();
+  const advancedReady = advanced.status === 'ready';
+  const setPhotoMattingEnabled = photoMatting.setEnabled;
+  useEffect(() => {
+    setPhotoMattingEnabled(advancedReady);
+  }, [advancedReady, setPhotoMattingEnabled]);
+
+  const [personMatte, setPersonMatte] = useState<ImageBitmap | null>(null);
+  const personMatteRef = useRef<ImageBitmap | null>(null);
+  useEffect(() => {
+    if (mode !== 'photo' || !image || photoMatting.status !== 'ready') {
+      personMatteRef.current?.close();
+      personMatteRef.current = null;
+      setPersonMatte(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        // Downscale before matting (config.photoMatting.maxDim): MODNet's
+        // useful edge detail tops out well below photo resolution, and the
+        // matte gets upscaled + feathered at composite time regardless.
+        const scale = Math.min(1, config.photoMatting.maxDim / Math.max(image.width, image.height));
+        const copy = await createImageBitmap(image, {
+          resizeWidth: Math.max(1, Math.round(image.width * scale)),
+          resizeHeight: Math.max(1, Math.round(image.height * scale)),
+        });
+        const matte = await photoMatting.mattePerson(copy);
+        if (cancelled) {
+          matte.close();
+          return;
+        }
+        personMatteRef.current?.close();
+        personMatteRef.current = matte;
+        setPersonMatte(matte);
+      } catch {
+        // Best-effort refinement — the segmenter mask still composites fine.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, image, photoMatting.status, photoMatting.mattePerson]);
+
+  // Live-mode orientation (Phase A5, see docs/plan-3d-garment-assets.md
+  // §5.4.3) and throttled depth (§5.5) — both meaningful only while
+  // actually live; each hook no-ops (null) outside of live mode.
+  const liveOrientation = useTorsoOrientation(
+    live.latest?.result.keypoints ?? null,
+    mode === 'live',
+    config.orientation,
+  );
+  const liveDepth = useLiveDepth(advanced, live.latest?.frame ?? null, mode === 'live');
+
+  // Fullscreen live view: a button-triggered overlay (cam feed + garment
+  // strip + close), only meaningful in live mode. `isFullscreen` is the
+  // source of truth for our own overlay visibility; it's kept in sync with
+  // the REAL browser fullscreen state (so ESC / the browser's own UI also
+  // exits correctly) via the fullscreenchange listener below, but doesn't
+  // strictly require requestFullscreen to have succeeded — if the
+  // Fullscreen API is unavailable or denied, the overlay still covers the
+  // viewport via fixed positioning, just without hiding browser chrome.
+  const fullscreenRef = useRef<HTMLDivElement | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement) setIsFullscreen(false);
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    if (mode !== 'live' && isFullscreen) {
+      if (document.fullscreenElement) void document.exitFullscreen();
+      setIsFullscreen(false);
+    }
+  }, [mode, isFullscreen]);
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Escape already exits real browser fullscreen on its own; this only
+      // does the extra work of also closing our overlay in the CSS-only
+      // fallback path, where there's no native fullscreen to exit.
+      if (e.key === 'Escape' && !document.fullscreenElement) setIsFullscreen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isFullscreen]);
+
+  const enterFullscreen = () => {
+    setIsFullscreen(true);
+    fullscreenRef.current?.requestFullscreen?.().catch(() => {
+      // Fallback: the CSS-only overlay above still works without native fullscreen.
+    });
+  };
+
+  const exitFullscreenMode = () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    setIsFullscreen(false);
+  };
+
+  // Gesture hint: shown for a few seconds after entering fullscreen live
+  // view, then fades — enough for a first-time user to read it once
+  // without cluttering the screen for repeat visits.
+  const [showGestureHint, setShowGestureHint] = useState(false);
+  useEffect(() => {
+    if (!isFullscreen) return;
+    setShowGestureHint(true);
+    const t = setTimeout(() => setShowGestureHint(false), 6000);
+    return () => clearTimeout(t);
+  }, [isFullscreen]);
+
+  // On-demand gesture help (the "?" button) — a persistent way to re-read
+  // the same instructions the auto-fading hint above only shows once per
+  // session. Reset on every fullscreen exit so it never silently reopens
+  // pinned on the next entry.
+  const [showGestureHelp, setShowGestureHelp] = useState(false);
+  useEffect(() => {
+    if (!isFullscreen) setShowGestureHelp(false);
+  }, [isFullscreen]);
+
+  // Photo capture (gesture: swipe up, or the on-screen button): a 5s
+  // countdown, then a snapshot of the composited fullscreen canvas, then a
+  // review screen (retake / download / share). The captured Blob's object
+  // URL is revoked wherever the review state is left (retake or a fresh
+  // capture), never left to leak.
+  type CaptureState =
+    | { kind: 'idle' }
+    | { kind: 'countdown'; secondsLeft: number }
+    | { kind: 'review'; photoUrl: string; blob: Blob };
+  const [captureState, setCaptureState] = useState<CaptureState>({ kind: 'idle' });
+  const fullscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [shareUnsupported, setShareUnsupported] = useState(false);
+
+  const startCountdown = useCallback(() => {
+    setCaptureState((s) => (s.kind === 'idle' ? { kind: 'countdown', secondsLeft: 5 } : s));
+  }, []);
+
+  const discardPhoto = useCallback(() => {
+    setCaptureState((s) => {
+      if (s.kind === 'review') URL.revokeObjectURL(s.photoUrl);
+      return { kind: 'idle' };
+    });
+    setShareUnsupported(false);
+  }, []);
+
+  const sharePhoto = useCallback(async () => {
+    if (captureState.kind !== 'review') return;
+    const file = new File([captureState.blob], 'try-on.png', { type: 'image/png' });
+    const nav = navigator as Navigator & { canShare?: (data: { files: File[] }) => boolean };
+    if (nav.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'My virtual try-on', text: 'Check out this outfit!' });
+      } catch {
+        // User cancelled the share sheet, or it failed silently — stay on the review screen either way.
+      }
+    } else {
+      setShareUnsupported(true);
+    }
+  }, [captureState]);
+
+  useEffect(() => {
+    if (captureState.kind !== 'countdown') return;
+    if (captureState.secondsLeft <= 0) {
+      const canvas = fullscreenCanvasRef.current;
+      if (!canvas) {
+        setCaptureState({ kind: 'idle' });
+        return;
+      }
+      canvas.toBlob((blob) => {
+        if (blob) setCaptureState({ kind: 'review', photoUrl: URL.createObjectURL(blob), blob });
+        else setCaptureState({ kind: 'idle' });
+      }, 'image/png');
+      return;
+    }
+    const t = setTimeout(() => {
+      setCaptureState((s) => (s.kind === 'countdown' ? { kind: 'countdown', secondsLeft: s.secondsLeft - 1 } : s));
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [captureState]);
+
+  // Revoke the object URL on unmount if a review photo is still pending —
+  // discardPhoto/a fresh capture handle the normal paths, this only covers
+  // the app closing/navigating away mid-review. Reads a ref rather than
+  // setting state during teardown.
+  const captureStateRef = useRef(captureState);
+  captureStateRef.current = captureState;
+  useEffect(() => {
+    return () => {
+      const s = captureStateRef.current;
+      if (s.kind === 'review') URL.revokeObjectURL(s.photoUrl);
+    };
+  }, []);
+
+  const run = useCallback(
+    async (bitmap: ImageBitmap) => {
+      setProcessing(true);
+      setRunError(null);
+      try {
+        // The worker consumes (transfers) its copy; keep ours for rendering.
+        const copy = await createImageBitmap(bitmap);
+        const res = await pipeline.process(copy);
+        resultRef.current?.maskBitmap.close();
+        resultRef.current = res;
+        setResult(res);
+      } catch (err) {
+        setRunError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setProcessing(false);
+      }
+    },
+    [pipeline.process],
+  );
+
+  const loadBitmap = useCallback(
+    async (blob: Blob) => {
+      try {
+        const bitmap = await createImageBitmap(blob);
+        imageRef.current?.close();
+        imageRef.current = bitmap;
+        resultRef.current?.maskBitmap.close();
+        resultRef.current = null;
+        setResult(null);
+        setImage(bitmap);
+        await run(bitmap);
+      } catch (err) {
+        setRunError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [run],
+  );
+
+  // Re-process the current photo when the worker (re)becomes ready,
+  // e.g. after switching accelerator.
+  useEffect(() => {
+    if (mode === 'photo' && pipeline.status === 'ready' && imageRef.current) {
+      void run(imageRef.current);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, pipeline.status, run]);
+
+  // Do not request camera access merely by opening the try-on page. The user
+  // explicitly starts it from the camera control after seeing the privacy notice.
+  useEffect(() => {
+    setTryOnStatus(null);
+    if (mode !== 'live') webcam.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
+  // A pose warning describes the currently rendered live frame. Once the
+  // camera is stopped that frame is no longer valid, so never leave its
+  // warning visible over the camera-off placeholder.
+  useEffect(() => {
+    if (webcam.status !== 'ready') setTryOnStatus(null);
+  }, [webcam.status]);
+
+  // Load the TOP slot's PNG(s) into ImageBitmap(s) for the compositor
+  // — one image for a single-piece garment, two (choli + lehenga) for a
+  // lehenga-choli ensemble. The bottom slot loads independently below.
+  useEffect(() => {
+    if (!selectedTop) {
+      closeGarmentImages(garmentImagesRef.current);
+      garmentImagesRef.current = null;
+      setGarmentImages(null);
+      setGarmentError(null);
+      return;
+    }
+    let cancelled = false;
+    setGarmentError(null);
+    void (async () => {
+      try {
+        // A single-image lehenga-choli loads like any other one-piece
+        // garment — only the two-piece shape needs the pair.
+        const next: LoadedGarmentImages = isTwoPieceLehenga(selectedTop)
+          ? {
+              kind: 'lehenga-choli',
+              choliImage: await fetchBitmap(selectedTop.choli.image),
+              lehengaImage: await fetchBitmap(selectedTop.lehenga.image),
+            }
+          : {
+              kind: 'single',
+              image: await fetchBitmap(selectedTop.image),
+              backImage:
+                selectedTop.category !== 'lehenga-choli' && selectedTop.back
+                  ? await fetchBitmap(selectedTop.back.image)
+                  : null,
+            };
+        if (cancelled) {
+          closeGarmentImages(next);
+          return;
+        }
+        closeGarmentImages(garmentImagesRef.current);
+        garmentImagesRef.current = next;
+        setGarmentImages(next);
+      } catch (err) {
+        if (!cancelled) setGarmentError(err instanceof Error ? err.message : String(err));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTop]);
+
+  // Bottom (pants) slot image — a single bitmap with the same
+  // load/replace/close lifecycle as the top slot's.
+  useEffect(() => {
+    if (!selectedBottom) {
+      bottomImageRef.current?.close();
+      bottomImageRef.current = null;
+      setBottomImage(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const next = await fetchBitmap(selectedBottom.image);
+        if (cancelled) {
+          next.close();
+          return;
+        }
+        bottomImageRef.current?.close();
+        bottomImageRef.current = next;
+        setBottomImage(next);
+      } catch (err) {
+        if (!cancelled) setGarmentError(err instanceof Error ? err.message : String(err));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedBottom]);
+
+  // Photo-mode person depth (Phase A1 debug view + Phase A2 depth-tested
+  // occlusion; live-mode throttling is Phase A5). Computed whenever it's
+  // actually useful — the "depth" debug toggle is on, or a garment is
+  // selected (occlusion quality improves silently even if the debug view
+  // itself is off) — and recomputed whenever the displayed photo changes.
+  useEffect(() => {
+    if (
+      mode !== 'photo' ||
+      advanced.status !== 'ready' ||
+      !image ||
+      !(showDepth || selectedTop || selectedBottom)
+    ) {
+      photoDepthRef.current?.close();
+      photoDepthRef.current = null;
+      setPhotoDepth(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        // estimateDepth transfers (consumes) its input; keep our own copy for rendering.
+        const copy = await createImageBitmap(image);
+        const depth = await advanced.estimateDepth(copy);
+        if (cancelled) {
+          depth.close();
+          return;
+        }
+        photoDepthRef.current?.close();
+        photoDepthRef.current = depth;
+        setPhotoDepth(depth);
+      } catch {
+        // Depth is a debug-overlay feature; a failure here shouldn't block the app.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showDepth, mode, advanced.status, image, selectedTop, selectedBottom]);
+
+  // Garment depth preview (Phase A1 "done when": depth maps render for
+  // garment images too) + normal maps for relighting (Phase A3). A
+  // lehenga-choli's two pieces are separate photos and each needs its own
+  // normal map; the thumbnail preview still shows just the primary
+  // (choli) depth. Normal-map generation is pure synchronous math on the
+  // depth we already computed (pipeline/normalMap.ts) — no extra model
+  // inference beyond the depth estimation itself.
+  useEffect(() => {
+    if (advanced.status !== 'ready' || !garmentImages) {
+      garmentDepthRef.current?.close();
+      garmentDepthRef.current = null;
+      setGarmentDepth(null);
+      setGarmentNormals(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        if (garmentImages.kind === 'lehenga-choli') {
+          const choliCopy = await createImageBitmap(garmentImages.choliImage);
+          const choliDepth = await advanced.estimateDepth(choliCopy);
+          if (cancelled) {
+            choliDepth.close();
+            return;
+          }
+          const choliNormal = depthToNormalMap(
+            choliDepth,
+            garmentImages.choliImage,
+            config.relighting.normalStrength,
+          );
+
+          const lehengaCopy = await createImageBitmap(garmentImages.lehengaImage);
+          const lehengaDepth = await advanced.estimateDepth(lehengaCopy);
+          if (cancelled) {
+            choliDepth.close();
+            lehengaDepth.close();
+            return;
+          }
+          const lehengaNormal = depthToNormalMap(
+            lehengaDepth,
+            garmentImages.lehengaImage,
+            config.relighting.normalStrength,
+          );
+          lehengaDepth.close(); // only needed to derive its normal map above.
+
+          garmentDepthRef.current?.close();
+          garmentDepthRef.current = choliDepth;
+          setGarmentDepth(choliDepth);
+          setGarmentNormals({ kind: 'lehenga-choli', choliNormal, lehengaNormal });
+        } else {
+          const copy = await createImageBitmap(garmentImages.image);
+          const depth = await advanced.estimateDepth(copy);
+          if (cancelled) {
+            depth.close();
+            return;
+          }
+          const normal = depthToNormalMap(depth, garmentImages.image, config.relighting.normalStrength);
+
+          let backNormal: OffscreenCanvas | null = null;
+          if (garmentImages.backImage) {
+            const backCopy = await createImageBitmap(garmentImages.backImage);
+            const backDepth = await advanced.estimateDepth(backCopy);
+            if (cancelled) {
+              depth.close();
+              backDepth.close();
+              return;
+            }
+            backNormal = depthToNormalMap(backDepth, garmentImages.backImage, config.relighting.normalStrength);
+            backDepth.close(); // only needed to derive its normal map above.
+          }
+
+          garmentDepthRef.current?.close();
+          garmentDepthRef.current = depth;
+          setGarmentDepth(depth);
+          setGarmentNormals({ kind: 'single', normal, backNormal });
+        }
+      } catch {
+        // Best-effort preview/shading; ignore failures — flat rendering still works.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [advanced.status, garmentImages]);
+
+  // Bottom-slot normal map (Phase A3 shading for the pants piece) — same
+  // depth→normal derivation as the top slot's, no preview thumbnail.
+  const [bottomNormal, setBottomNormal] = useState<OffscreenCanvas | null>(null);
+  useEffect(() => {
+    if (advanced.status !== 'ready' || !bottomImage) {
+      setBottomNormal(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const copy = await createImageBitmap(bottomImage);
+        const depth = await advanced.estimateDepth(copy);
+        if (cancelled) {
+          depth.close();
+          return;
+        }
+        setBottomNormal(depthToNormalMap(depth, bottomImage, config.relighting.normalStrength));
+        depth.close(); // only needed to derive the normal map above.
+      } catch {
+        // Best-effort shading; flat rendering still works.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [advanced.status, bottomImage]);
+
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) void loadBitmap(file);
+    e.target.value = '';
+  };
+
+  const onTestPhoto = useCallback(
+    async (name: string) => {
+      setRunError(null);
+      const res = await fetch(assetUrl(`/test-photos/${name}`));
+      if (!res.ok) {
+        setRunError(`could not load ${name} from public/test-photos/.`);
+        return;
+      }
+      await loadBitmap(await res.blob());
+    },
+    [loadBitmap],
+  );
+
+  // WebMCP "stylist" tools (see src/webmcp/, webmcp-challenge-plan.md): an
+  // agent searches the catalog and applies try-ons; the human judges fit.
+  // Photo-based by design — `apply_tryon` falls back to the first test photo
+  // when the user hasn't picked one, so the agent flow works cold.
+  const applyGarmentFromAgent = useCallback(
+    (g: Garment) => {
+      selectGarment(g, { toggle: false });
+      agentApplyKeyRef.current += 1;
+      setAgentApply({ name: g.meta.name ?? g.id, key: agentApplyKeyRef.current });
+    },
+    [selectGarment],
+  );
+  const loadDefaultPhoto = useCallback(
+    () => onTestPhoto(config.testPhotos[0]),
+    [onTestPhoto],
+  );
+
+  // Freeze the current try-on into the saved-looks tray (the `save_look`
+  // tool, and the panel's own "save current look" button). Reads the
+  // composited photo-mode canvas directly — it's full photo resolution, so
+  // snapshotCanvas downscales before stashing the data URL.
+  const captureLook = useCallback(
+    (label?: string): { ok: true; look: SavedLook } | { ok: false; error: string } => {
+      setLookNotice(null);
+      if (mode !== 'photo' || !image) return { ok: false, error: 'Load a photo first (save_look is photo-mode only).' };
+      if (!selectedTop && !selectedBottom) {
+        return { ok: false, error: 'No garment applied yet — apply one first.' };
+      }
+      const canvas = photoCanvasRef.current;
+      if (!canvas || canvas.width === 0) {
+        return { ok: false, error: 'The preview is still rendering — try again in a moment.' };
+      }
+      try {
+        const garmentIds = [selectedTop?.id, selectedBottom?.id].filter((id): id is string => !!id);
+        const look = looks.saveLook({ label, thumbnail: snapshotCanvas(canvas), garmentIds });
+        return { ok: true, look };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+    [mode, image, selectedTop, selectedBottom, looks],
+  );
+
+  const stylist = useStylistTools({
+    catalog: catalog.status === 'ready' ? catalog.garments : [],
+    selectedTop,
+    selectedBottom,
+    hasPhoto: !!image,
+    onApply: applyGarmentFromAgent,
+    onLoadDefaultPhoto: loadDefaultPhoto,
+    looks: looks.looks,
+    onSaveLook: captureLook,
+    onCompareLooks: looks.setComparison,
+    onAwaitReaction: reaction.awaitNext,
+    onRecordReaction: reaction.record,
+  });
+
+  // Clear the "stylist applied X" banner a few seconds after it appears.
+  useEffect(() => {
+    if (!agentApply) return;
+    const t = setTimeout(() => setAgentApply(null), 3500);
+    return () => clearTimeout(t);
+  }, [agentApply]);
+
+  // Live-mode front/back/fade decision (Phase A5) — a lehenga-choli never
+  // has a back piece (schema.ts), so it always resolves hasBack=false and
+  // just gets the profile-band fade, never a view swap.
+  const viewSelection = useMemo(() => {
+    if (!selectedTop && !selectedBottom) return null;
+    const hasBack = !!selectedTop && selectedTop.category !== 'lehenga-choli' && !!selectedTop.back;
+    return selectGarmentView(liveOrientation, hasBack, config.orientation);
+  }, [selectedTop, selectedBottom, liveOrientation]);
+
+  const garmentOverlay = useMemo((): GarmentOverlay | null => {
+    if (!viewSelection) return null;
+    // Shading is an advanced-mode enhancement (Phase A3): the "shading"
+    // checkbox is the A/B toggle demonstrating flat-vs-shaded, so simply
+    // omit the normal map(s) when it's off rather than threading a
+    // separate flag through the compositor.
+    const normals = showShading ? garmentNormals : null;
+    const factor = liveOrientation
+      ? foreshortenFactor(
+          liveOrientation.yawDeg,
+          config.orientation.foreshortenFloor,
+          config.orientation.foreshortenDeadbandDeg,
+        )
+      : 1;
+
+    if (selectedTop && isTwoPieceLehenga(selectedTop)) {
+      // Transient mismatch guard: the slot changed shape and the async image
+      // load hasn't landed yet — skip a render rather than pass mismatched
+      // data (each piece below guards the same way).
+      if (garmentImages?.kind !== 'lehenga-choli') return null;
+      return {
+        kind: 'lehenga-choli',
+        choliImage: garmentImages.choliImage,
+        choliAnchors: selectedTop.choli.anchors,
+        lehengaImage: garmentImages.lehengaImage,
+        lehengaAnchors: selectedTop.lehenga.anchors,
+        skirtLength: selectedTop.meta.length,
+        choliNormal: normals?.kind === 'lehenga-choli' ? normals.choliNormal : null,
+        lehengaNormal: normals?.kind === 'lehenga-choli' ? normals.lehengaNormal : null,
+        foreshortenFactor: factor,
+        viewAlpha: viewSelection.alpha,
+      };
+    }
+
+    let top: Extract<GarmentOverlay, { kind: 'outfit' }>['top'] = null;
+    if (selectedTop && garmentImages?.kind === 'single') {
+      // The back photo's own L/R anchors follow the same image-left/right
+      // convention as the front (pipeline/autoAnchor.ts) — mirror them when
+      // warping onto the body, since the shoulder that anchors the front's
+      // left side anchors the back's right side once viewed from behind
+      // (see anchorMapping.mirrorAnchorsLR).
+      const back = selectedTop.category === 'lehenga-choli' ? undefined : selectedTop.back;
+      const useBack = viewSelection.useBack && garmentImages.backImage && back;
+      top = {
+        image: useBack ? garmentImages.backImage! : garmentImages.image,
+        anchors: useBack ? mirrorAnchorsLR(back!.anchors) : selectedTop.anchors,
+        hemLength: selectedTop.meta.length,
+        sleeves: selectedTop.meta.sleeves,
+        sleeveFlare: selectedTop.meta.sleeveFlare,
+        // A one-image lehenga rides this single-piece path but must keep the
+        // skirt's dramatic flare (see tryon-core HemFlare).
+        hemFlare: selectedTop.category === 'lehenga-choli' ? 'skirt' : 'dress',
+        normal: useBack
+          ? (normals?.kind === 'single' ? normals.backNormal : null)
+          : (normals?.kind === 'single' ? normals.normal : null),
+      };
+    }
+    const pants: Extract<GarmentOverlay, { kind: 'outfit' }>['pants'] =
+      selectedBottom && bottomImage
+        ? {
+            image: bottomImage,
+            anchors: selectedBottom.anchors,
+            hemLength: selectedBottom.meta.length,
+            normal: showShading ? bottomNormal : null,
+          }
+        : null;
+
+    if (!top && !pants) return null;
+    return { kind: 'outfit', top, pants, foreshortenFactor: factor, viewAlpha: viewSelection.alpha };
+  }, [
+    selectedTop,
+    selectedBottom,
+    garmentImages,
+    bottomImage,
+    garmentNormals,
+    bottomNormal,
+    showShading,
+    viewSelection,
+    liveOrientation,
+  ]);
+
+  const displayImage = mode === 'live' ? (live.latest?.frame ?? null) : image;
+  // Photo results get their mask upgraded to the MODNet person matte once
+  // it lands (progressive: the segmenter mask composites immediately, edges
+  // sharpen a beat later). The matte was computed from a downscale of this
+  // same photo, so it can substitute directly — every mask consumer scales
+  // to frame size anyway.
+  const photoResult = useMemo((): PipelineResult | null => {
+    if (!result || !personMatte) return result;
+    return { ...result, maskBitmap: personMatte };
+  }, [result, personMatte]);
+  const displayResult = mode === 'live' ? (live.latest?.result ?? null) : photoResult;
+
+  /** Both worn slots' ids, for the picker's multi-highlight. */
+  const selectedIds = useMemo(
+    () => [selectedTop?.id, selectedBottom?.id].filter((id): id is string => !!id),
+    [selectedTop, selectedBottom],
+  );
+
+  // User-uploaded garments first (most-recently-added on top, so a new
+  // upload doesn't require scrolling to find), catalog garments below.
+  const allGarments = useMemo(
+    (): Garment[] =>
+      catalog.status === 'ready'
+        ? [
+            ...([...userGarments.garments].reverse() as Garment[]),
+            // Its separated top/skirt composition reads as an orphaned product card.
+            ...catalog.garments.filter((garment) => garment.id !== 'lehenga-sangria'),
+          ]
+        : [],
+    [catalog.status, catalog.garments, userGarments.garments],
+  );
+
+  /** Short display label for a garment id — used by the saved-looks panel. */
+  const garmentLabel = useCallback(
+    (id: string) => {
+      const g = allGarments.find((x) => x.id === id);
+      return g?.meta.name ?? id;
+    },
+    [allGarments],
+  );
+
+  /**
+   * What gesture swipes cycle through: top-slot garments only. Including
+   * pants in the cycle made swipes LOOK dead across the catalog's pants
+   * stretch (field-reported as "gestures did not work for dress change"):
+   * landing on pants swaps the bottom slot, which is invisible under a
+   * knee/ankle dress — the flash fires but nothing on screen changes,
+   * three swipes in a row. Bottoms are picked by tapping the fullscreen
+   * picker instead; the swipe gesture means "change my look's main piece".
+   */
+  const cycleGarments = useMemo(
+    () => allGarments.filter((g): g is TopSlotGarment => g.category !== 'pants'),
+    [allGarments],
+  );
+
+  // A fresh live session starts wearing something rather than "none" — an
+  // empty first impression in the fullscreen kiosk view. Only fires once
+  // nothing is selected yet; doesn't override a choice already made in
+  // photo mode carrying over into live.
+  useEffect(() => {
+    if (mode === 'live' && !selectedTop && !selectedBottom && allGarments.length > 0) {
+      // Prefer a top-like garment for the first impression — it's also
+      // where the swipe cycle lives, so the first swipe visibly works.
+      selectGarment(cycleGarments[0] ?? allGarments[0], { toggle: false });
+    }
+  }, [mode, selectedTop, selectedBottom, allGarments, cycleGarments, selectGarment]);
+
+  // Hands-free garment cycling (see pipeline/gesture.ts + hooks/useGestureSwipe.ts):
+  // a left/right swipe steps through the same list the sidebar/fullscreen
+  // picker shows, wrapping around either end. Starting from "none" (no
+  // garment) picks the first/last one rather than requiring an extra swipe
+  // to leave "none". An upward swipe starts the photo-capture countdown
+  // instead of touching the garment selection; downward is unused for now.
+  // Brief on-screen acknowledgment of a fired swipe (field feedback:
+  // detection misses are silent, so without this a *successful* swipe whose
+  // garment loads a beat later is indistinguishable from a miss — users
+  // kept re-swiping). Keyed so a rapid second swipe restarts the animation.
+  const [swipeFlash, setSwipeFlash] = useState<{ direction: 'left' | 'right'; key: number } | null>(null);
+  const swipeFlashTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(swipeFlashTimeoutRef.current), []);
+
+  const onGesture = useCallback(
+    (direction: SwipeDirection) => {
+      if (direction === 'up') {
+        startCountdown();
+        return;
+      }
+      if (direction === 'down') return;
+      if (cycleGarments.length === 0) return;
+      setSwipeFlash((prev) => ({ direction, key: (prev?.key ?? 0) + 1 }));
+      clearTimeout(swipeFlashTimeoutRef.current);
+      swipeFlashTimeoutRef.current = setTimeout(() => setSwipeFlash(null), 700);
+      // The cycle only ever changes the top slot, so the worn top IS the
+      // cursor — no separate "last picked" tracking needed.
+      const currentIndex = selectedTop ? cycleGarments.findIndex((g) => g.id === selectedTop.id) : -1;
+      const delta = direction === 'right' ? 1 : -1;
+      const nextIndex = (currentIndex + delta + cycleGarments.length) % cycleGarments.length;
+      // toggle: false — wrapping the cycle onto the garment already worn
+      // should keep wearing it, not strip it off.
+      selectGarment(cycleGarments[nextIndex], { toggle: false });
+    },
+    [cycleGarments, selectedTop, selectGarment, startCountdown],
+  );
+
+  // Delete a user-uploaded garment. GarmentPicker only ever calls this for
+  // ids with the user-upload prefix (see USER_GARMENT_ID_PREFIX), and only
+  // after its own tap-to-arm / tap-again-to-confirm sequence — a blocking
+  // window.confirm() here would freeze the JS thread (and the live
+  // inference loop) for however long the dialog is up, which is a bad idea
+  // sitting on top of a live camera view.
+  const deleteGarment = useCallback(
+    (id: string) => {
+      if (selectedTop?.id === id) setSelectedTop(null);
+      if (selectedBottom?.id === id) setSelectedBottom(null);
+      void userGarments.removeGarment(id);
+    },
+    [selectedTop, selectedBottom, userGarments],
+  );
+
+  useGestureSwipe(
+    live.latest?.result.keypoints ?? null,
+    live.latest?.frame.width ?? null,
+    mode === 'live',
+    onGesture,
+  );
+
+  // Presentation mode (?present): strips the dev/debug chrome — perf tiles,
+  // debug checkboxes, advanced-mode row, test-photo buttons, upload button —
+  // for demo screenshots and video. See `.presenting` in index.css.
+  const presenting = useMemo(
+    () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('present'),
+    [],
+  );
+  const studioEmbedded = useMemo(
+    () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('embed') === 'studio',
+    [],
+  );
+
+  return (
+    <div className={'app' + (presenting ? ' presenting' : '') + (studioEmbedded ? ' studio-embedded' : '')}>
+      {/* Kept hidden for screen-readers & internal status logic */}
+      <div className="top-bar-hidden" style={{ display: 'none' }}>
+        <header>
+          {mode !== 'live' && (
+            <>
+              <h1>Virtual Try-On</h1>
+              <p className="tagline">
+                Runs entirely in your browser — no server, no uploads. Your photo and webcam video never
+                leave this device.{' '}
+                <a href={assetUrl('/about.html')} target="_blank" rel="noopener noreferrer">
+                  How it works →
+                </a>
+              </p>
+            </>
+          )}
+          <p className="status">
+            {pipeline.status === 'loading' && 'Loading models…'}
+            {pipeline.status === 'error' && <span className="error">init failed: {pipeline.error}</span>}
+            {pipeline.status === 'ready' && `init ${Math.round(pipeline.initMs ?? 0)} ms`}
+          </p>
+          {stylist.available && mode !== 'live' && (
+            <p
+              className="status webmcp-status"
+              title="This page exposes WebMCP tools an AI agent can call: search_catalog, apply_tryon, save_look, compare_looks, await_reaction"
+            >
+              <span className="webmcp-dot" aria-hidden /> AI stylist tools live
+              {' — '}
+              {(
+                [
+                  ['search', stylist.searchState.executionCount],
+                  ['try-on', stylist.applyState.executionCount],
+                  ['save', stylist.saveLookState.executionCount],
+                  ['compare', stylist.compareLooksState.executionCount],
+                  ['reaction', stylist.awaitReactionState.executionCount],
+                ] as const
+              ).map(([label, count], i) => (
+                <span key={label}>
+                  {i > 0 && ' · '}
+                  {label}
+                  {count > 0 && ` ×${count}`}
+                </span>
+              ))}
+            </p>
+          )}
+        </header>
+      </div>
+
+      <div className="layout">
+        <div className="main-column">
+          <div className="controls controls-view controls-bar">
+            <div className="controls-group-left">
+              <button
+                type="button"
+                className={`live-pill${webcam.status === 'ready' ? ' active' : ''}`}
+                onClick={() => {
+                  if (webcam.status === 'ready') webcam.stop();
+                  else void webcam.start();
+                }}
+                title={webcam.status === 'ready' ? 'Nhấn để tắt camera' : 'Nhấn để mở camera'}
+              >
+                <span aria-hidden />
+                <span className="live-pill-full">{webcam.status === 'ready' ? 'Camera trực tiếp' : 'Mở camera'}</span>
+                <span className="live-pill-short">{webcam.status === 'ready' ? 'Camera' : 'Mở cam'}</span>
+              </button>
+              {!studioEmbedded && (
+                <div className="filter-chips">
+                  <label className="filter-chip">
+                    <input type="checkbox" checked={showMask} onChange={(e) => setShowMask(e.target.checked)} />
+                    <span>Mặt nạ</span>
+                  </label>
+                  <label className="filter-chip">
+                    <input
+                      type="checkbox"
+                      checked={showSkeleton}
+                      onChange={(e) => setShowSkeleton(e.target.checked)}
+                    />
+                    <span className="chip-label-full">Lưới xương</span>
+                    <span className="chip-label-short">Xương</span>
+                  </label>
+                  <label className="filter-chip" title="Cân bằng ánh sáng và màu sắc trang phục theo cảnh">
+                    <input
+                      type="checkbox"
+                      checked={showHarmonize}
+                      onChange={(e) => setShowHarmonize(e.target.checked)}
+                    />
+                    <span>Cân màu</span>
+                  </label>
+                </div>
+              )}
+            </div>
+
+            {!studioEmbedded && (
+              <div className="controls-group-right">
+                <PerfStats
+                  accelerator={accelerator}
+                  onAcceleratorChange={setAccelerator}
+                  backend={pipeline.backend}
+                  fps={mode === 'live' && live.latest ? live.fps : null}
+                  timings={
+                    mode === 'photo'
+                      ? (result?.timings ?? null)
+                      : (live.latest?.result.timings ?? null)
+                  }
+                />
+              </div>
+            )}
+          </div>
+
+
+          {mode === 'photo' && (
+            <div className="controls controls-photo">
+              <label>
+              Your Photo
+                <input type="file" accept="image/*" onChange={onFile} disabled={pipeline.status !== 'ready'} />
+              </label>
+              <span className="hint">test photos:</span>
+              {config.testPhotos.map((name) => (
+                <button
+                  key={name}
+                  onClick={() => void onTestPhoto(name)}
+                  disabled={pipeline.status !== 'ready'}
+                >
+                  {name.replace(/\.(jpg|png)$/, '')}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Skipped while the fullscreen overlay owns the view below */}
+          {!isFullscreen && (
+            <main>
+              <div className={'tryon-stage' + (agentApply ? ' agent-applied' : '')}>
+                {/* Floating stage actions: Tắt camera & Toàn màn hình */}
+                {mode === 'live' && !isFullscreen && displayImage && (
+                  <div className="stage-top-actions">
+                    <button
+                      type="button"
+                      className="stage-action-btn stage-stop-btn"
+                      onClick={() => webcam.stop()}
+                      title="Tắt camera"
+                    >
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="1" y1="1" x2="23" y2="23" />
+                        <path d="M21 21H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3m3-3h6l2 3h4a2 2 0 0 1 2 2v9.34m-7.72-2.06a4 4 0 1 1-5.56-5.56" />
+                      </svg>
+                      <span>Tắt cam</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="stage-action-btn stage-fullscreen-btn"
+                      onClick={enterFullscreen}
+                      title="Toàn màn hình"
+                    >
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+                      </svg>
+                      <span>Toàn màn hình</span>
+                    </button>
+                  </div>
+                )}
+                {/* Floating status & hints overlay inside the stage */}
+                {(processing ||
+                  (webcam.status === 'ready' && tryOnStatus === 'pose-not-anchorable') ||
+                  viewSelection?.hint === 'turn-to-front' ||
+                  viewSelection?.hint === 'turn-to-back' ||
+                  runError ||
+                  live.error ||
+                  garmentError ||
+                  webcam.status === 'error') && (
+                  <div className="stage-overlay-message" role="status">
+                    <span className="stage-overlay-dot" />
+                    <span className="stage-overlay-text">
+                      {runError ||
+                        (live.error && 'Không thể xử lý hình ảnh từ camera.') ||
+                        (garmentError && 'Không thể tải trang phục đã chọn.') ||
+                        (webcam.status === 'error' && 'Không thể truy cập camera. Hãy kiểm tra quyền.') ||
+                        (processing && 'Đang xử lý hình ảnh…') ||
+                        (tryOnStatus === 'pose-not-anchorable' && 'Hãy lùi xa camera một chút') ||
+                        (viewSelection?.hint === 'turn-to-front' &&
+                          'Hãy xoay người về phía camera') ||
+                        (viewSelection?.hint === 'turn-to-back' &&
+                          'Hãy xoay người để xem mặt sau')}
+                    </span>
+                  </div>
+                )}
+                {displayImage ? (
+                  <>
+                  {/* Keyed so each agent apply remounts and replays the sweep. */}
+                  {agentApply && (
+                    <div className="agent-apply-flash" key={agentApply.key}>
+                      🎨 Stylist put you in <strong>{agentApply.name}</strong>
+                    </div>
+                  )}
+                  <DebugCanvas
+                    ref={photoCanvasRef}
+                    image={displayImage}
+                    result={displayResult}
+                    showMask={showMask}
+                    showSkeleton={showSkeleton}
+                    garment={garmentOverlay}
+                    depthBitmap={mode === 'photo' && showDepth ? photoDepth : null}
+                    personDepthBitmap={mode === 'photo' ? photoDepth : liveDepth.depth}
+                    harmonize={showHarmonize}
+                    onTryOnStatus={setTryOnStatus}
+                  />
+                  </>
+                ) : (
+                  <div className="camera-placeholder" role="status">
+                    <div className="camera-placeholder-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                        <rect x="3" y="6.5" width="13" height="11" rx="2" />
+                        <path d="m16 10 5-2.5v9L16 14" />
+                        <circle cx="9.5" cy="12" r="2.2" />
+                      </svg>
+                    </div>
+                    {webcam.status === 'requesting' ? (
+                      <span className="camera-placeholder-status">Đang kết nối camera…</span>
+                    ) : (
+                      <button type="button" onClick={() => void webcam.start()}>
+                        {webcam.status === 'error' ? 'Thử lại camera' : 'Mở camera'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </main>
+          )}
+
+          {mode === 'photo' && !isFullscreen && (selectedTop || selectedBottom) && (
+            <ReactionBar pending={reaction.pending} last={reaction.last} onReact={reaction.submit} />
+          )}
+
+          {mode === 'photo' && !isFullscreen && (
+            <>
+              {lookNotice && <p className="hint">{lookNotice}</p>}
+              <LooksPanel
+                looks={looks.looks}
+                comparison={looks.comparison}
+                garmentLabel={garmentLabel}
+                canSave={!!image && (!!selectedTop || !!selectedBottom)}
+                onSaveCurrent={() => {
+                  const res = captureLook();
+                  if (!res.ok) setLookNotice(res.error);
+                }}
+                onToggleComparison={looks.toggleComparison}
+                onClearComparison={looks.clearComparison}
+                onRemove={looks.removeLook}
+              />
+            </>
+          )}
+        </div>
+
+        <aside className="garment-sidebar">
+          <div className="sidebar-upload-wrap">
+            {studioImageStatus === 'loading' && (
+              <p className="hint" role="status">Đang tải ảnh mẫu từ Studio…</p>
+            )}
+            {studioImageError && (
+              <p className="error" role="alert">
+                {studioImageError} Bạn vẫn có thể tải ảnh trang phục rõ mặt trước để thử.
+              </p>
+            )}
+            <GarmentUpload
+              onGarmentAdded={async (stored) => {
+                const garment = await userGarments.addGarment(stored);
+                selectGarment(garment, { toggle: false });
+              }}
+              previewImage={mode === 'photo' ? image : null}
+              previewResult={mode === 'photo' ? photoResult : null}
+              initialFile={studioProductFile}
+              initialCategory={studioContext?.category}
+            />
+          </div>
+
+          <div className="garment-sidebar-list">
+              <div className="garment-list-header">
+              <div className="garment-list-title-row">
+                <h3 className="garment-list-title">Trang phục</h3>
+                {allGarments.length > 0 && (
+                  <span className="garment-badge">{allGarments.length} mẫu</span>
+                )}
+              </div>
+            </div>
+            {studioContext && (
+              <p className="studio-product-context" title={studioContext.name}>
+                Đang thử: <strong>{studioContext.name}</strong>
+              </p>
+            )}
+
+            {catalog.status === 'loading' && <span className="hint">Đang tải bộ sưu tập…</span>}
+            {catalog.status === 'error' && <span className="error">Lỗi bộ sưu tập: {catalog.error}</span>}
+            {catalog.status === 'ready' && (
+              <div className="garment-picker-wrap">
+                <GarmentPicker
+                  garments={allGarments}
+                  selectedIds={selectedIds}
+                  onSelect={selectGarment}
+                  onDelete={deleteGarment}
+                />
+              </div>
+            )}
+            {garmentDepth && (
+              <span className="garment-depth-preview" title="garment depth map">
+                <BitmapCanvas bitmap={garmentDepth} />
+              </span>
+            )}
+          </div>
+        </aside>
+      </div>
+
+      {/* Always mounted (never conditionally removed) so requestFullscreen
+          has a real DOM node to target the moment the button is clicked;
+          `.active` is what actually makes it visible — see index.css. This
+          also keeps working if the Fullscreen API itself is unavailable or
+          denied, since the fixed positioning alone covers the viewport. */}
+      <div ref={fullscreenRef} className={`fullscreen-view${isFullscreen ? ' active' : ''}`}>
+        {isFullscreen && (
+          <>
+            <div className="fullscreen-canvas-wrap">
+              {displayImage ? (
+                <DebugCanvas
+                  ref={fullscreenCanvasRef}
+                  image={displayImage}
+                  result={displayResult}
+                  showMask={showMask}
+                  showSkeleton={showSkeleton}
+                  garment={garmentOverlay}
+                  depthBitmap={null}
+                  personDepthBitmap={liveDepth.depth}
+                  harmonize={showHarmonize}
+                  onTryOnStatus={setTryOnStatus}
+                />
+              ) : (
+                <p className="hint">Đang chờ camera…</p>
+              )}
+            </div>
+
+            {viewSelection?.hint === 'turn-to-front' && (
+              <p className="hint fullscreen-hint">Hãy xoay người về phía camera để xem trang phục.</p>
+            )}
+            {viewSelection?.hint === 'turn-to-back' && (
+              <p className="hint fullscreen-hint">Hãy xoay thêm để xem mặt sau của trang phục.</p>
+            )}
+
+            {showGestureHint && captureState.kind === 'idle' && (
+              <div className="fullscreen-gesture-hint">
+                ‹ swipe to change outfit › &nbsp;·&nbsp; ↑ swipe up for a photo
+              </div>
+            )}
+
+            {swipeFlash && captureState.kind === 'idle' && (
+              <div key={swipeFlash.key} className={`swipe-flash swipe-flash-${swipeFlash.direction}`} aria-hidden>
+                {swipeFlash.direction === 'right' ? '›' : '‹'}
+              </div>
+            )}
+
+            {captureState.kind === 'idle' && (
+              <div className="fullscreen-help">
+                <button
+                  className="fullscreen-help-button"
+                  onClick={() => setShowGestureHelp((v) => !v)}
+                  aria-expanded={showGestureHelp}
+                  aria-label="gesture help"
+                >
+                  ?
+                </button>
+                {showGestureHelp && (
+                  <div className="fullscreen-help-panel">
+                    <p>
+                      <strong>‹ swipe left/right ›</strong>
+                      <br />
+                      change the outfit
+                    </p>
+                    <p>
+                      <strong>↑ swipe up</strong>
+                      <br />
+                      take a photo
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="fullscreen-overlay-top">
+              <button onClick={startCountdown} disabled={captureState.kind !== 'idle'}>
+                📷 take photo
+              </button>
+              <button onClick={exitFullscreenMode}>
+                ✕ close
+              </button>
+            </div>
+
+            <div className="fullscreen-garments">
+              {catalog.status === 'ready' && (
+                <GarmentPicker
+                  garments={allGarments}
+                  selectedIds={selectedIds}
+                  onSelect={selectGarment}
+                  onDelete={deleteGarment}
+                />
+              )}
+            </div>
+
+            {captureState.kind === 'countdown' && (
+              <div className="capture-overlay capture-countdown">
+                <div className="capture-countdown-number">{captureState.secondsLeft}</div>
+                <button onClick={() => setCaptureState({ kind: 'idle' })}>cancel</button>
+              </div>
+            )}
+
+            {captureState.kind === 'review' && (
+              <div className="capture-overlay capture-review">
+                <img src={captureState.photoUrl} alt="captured try-on photo" className="capture-review-image" />
+                {shareUnsupported && (
+                  <p className="hint">
+                    sharing isn't supported in this browser — use download, then share it yourself.
+                  </p>
+                )}
+                <div className="capture-review-actions">
+                  <button onClick={discardPhoto}>↺ retake</button>
+                  <a href={captureState.photoUrl} download="try-on.png">
+                    ⭳ download
+                  </a>
+                  <button onClick={() => void sharePhoto()}>share</button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -1,6 +1,7 @@
 export type Screen =
   | 'catalog'
   | 'detail'
+  | 'virtualTryOn'
   | 'booking'
   | 'myRentals'
   | 'myRentalDetail'
@@ -36,6 +37,7 @@ export interface Route {
 export const paths: Record<Screen, string> = {
   catalog: '/',
   detail: '/trang-phuc/:id',
+  virtualTryOn: '/thu-do-ao',
   booking: '/dat-thue',
   myRentals: '/don-cua-toi',
   myRentalDetail: '/don-cua-toi/:order',
@@ -85,12 +87,28 @@ export function defaultPathForActor(actorGroup: ActorGroup) {
 
 export function portalAreaForScreen(screen: Screen): PortalArea {
   if (['login', 'register', 'forgotPassword'].includes(screen)) return 'AUTH';
-  if (['catalog', 'detail', 'booking', 'myRentals', 'myRentalDetail', 'account'].includes(screen))
+  if (
+    [
+      'catalog',
+      'detail',
+      'virtualTryOn',
+      'booking',
+      'myRentals',
+      'myRentalDetail',
+      'account',
+    ].includes(screen)
+  )
     return 'CUSTOMER';
   if (
-    ['adminCatalog', 'employees', 'roles', 'branches', 'policies', 'promotions', 'reports'].includes(
-      screen,
-    )
+    [
+      'adminCatalog',
+      'employees',
+      'roles',
+      'branches',
+      'policies',
+      'promotions',
+      'reports',
+    ].includes(screen)
   )
     return 'ADMIN';
   if (screen === 'notFound') return 'PUBLIC';
@@ -104,7 +122,7 @@ export function portalAreaForPath(pathname: string): PortalArea | undefined {
     path === '/' ||
     path.startsWith('/trang-phuc/') ||
     path.startsWith('/don-cua-toi/') ||
-    ['/dat-thue', '/don-cua-toi', '/tai-khoan'].includes(path)
+    ['/dat-thue', '/don-cua-toi', '/tai-khoan', '/thu-do-ao'].includes(path)
   )
     return 'CUSTOMER';
   if (path.startsWith('/quan-tri/')) return 'ADMIN';
