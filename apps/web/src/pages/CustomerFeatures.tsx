@@ -472,8 +472,7 @@ export function MyRentalsPage({
                           value:
                             selected.items
                               ?.map((item) => `${item.costume} · ${item.variant}`)
-                              .join(' / ') ??
-                            `${selected.costume} · ${selected.variant}`,
+                              .join(' / ') ?? `${selected.costume} · ${selected.variant}`,
                         },
                         { label: 'Chi nhánh nhận và trả', value: selected.branch },
                         { label: 'Nhận', value: selected.pickup },
@@ -706,7 +705,7 @@ export function AccountPage({
       });
       setAccountName(updated.displayName);
       setAccountPhone(updated.phone ?? '');
-      setProfileNotice('Thông tin liên hệ đã được lưu. Sẽ được điền sẵn vào đơn thuê tiếp theo.');
+      setProfileNotice('Đã lưu thông tin liên hệ.');
       setProfileAvailable(true);
       window.dispatchEvent(new Event('api-session-changed'));
     } catch (error) {
@@ -722,19 +721,18 @@ export function AccountPage({
   if (realApiMode) {
     return (
       <div className="page account-page">
-        <PageHeading
-          eyebrow="TÀI KHOẢN"
-          title="Tài khoản Studio"
-          description="Phiên đăng nhập và quyền truy cập được xác minh bởi máy chủ."
-        />
-        <div className="feature-two-column">
+        <PageHeading eyebrow="TÀI KHOẢN" title="Tài khoản Studio" />
+        <div className="account-layout">
           <Panel title={apiIdentity ? 'Thông tin tài khoản' : 'Đăng nhập'}>
             {apiIdentity ? (
               <>
                 <KeyFacts
                   rows={[
                     { label: 'Họ tên', value: apiIdentity.displayName },
-                    { label: 'Email', value: apiIdentity.email },
+                    {
+                      label: 'Email',
+                      value: <span className="account-email">{apiIdentity.email}</span>,
+                    },
                     {
                       label: 'Vai trò',
                       value:
@@ -742,16 +740,9 @@ export function AccountPage({
                     },
                   ]}
                 />
-                <Feedback tone="info" title="Phiên được quản lý bởi máy chủ">
-                  Quyền của tài khoản được kiểm tra theo vai trò và chi nhánh khi thực hiện từng
-                  thao tác.
-                </Feedback>
                 {isApiCustomer && (
                   <div className="account-profile-editor">
                     <h3>Thông tin liên hệ</h3>
-                    <p className="muted">
-                      Lưu tên và số điện thoại để lần đặt thuê sau không phải nhập lại.
-                    </p>
                     {profileLoading && (
                       <Feedback tone="info" title="Đang tải hồ sơ">
                         Đang lấy thông tin liên hệ đã lưu.
@@ -787,7 +778,6 @@ export function AccountPage({
                           autoComplete="tel"
                           inputMode="tel"
                           placeholder="09xx xxx xxx"
-                          hint="Số điện thoại sẽ được điền sẵn khi bạn tạo đơn thuê."
                           value={accountPhone}
                           onChange={(event) => setAccountPhone(event.target.value)}
                           disabled={profileSaving}
@@ -804,9 +794,6 @@ export function AccountPage({
               <div className="account-entry">
                 <BrandLogoMark className="brand-mark" />
                 <h2>Đăng nhập vào tài khoản</h2>
-                <p>
-                  Đăng nhập để theo dõi đơn thuê, cập nhật thông tin và tiếp tục đặt trang phục.
-                </p>
                 <div className="account-entry-actions">
                   <Button onClick={() => go('login')}>Đăng nhập</Button>
                   <Button variant="secondary" onClick={() => go('register')}>
@@ -815,11 +802,6 @@ export function AccountPage({
                 </div>
               </div>
             )}
-          </Panel>
-          <Panel title="Quyền riêng tư">
-            <p className="muted">
-              Đơn thuê, hồ sơ và quyền vận hành chỉ hiển thị sau khi máy chủ xác minh tài khoản.
-            </p>
           </Panel>
         </div>
       </div>

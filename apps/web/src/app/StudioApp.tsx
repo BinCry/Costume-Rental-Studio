@@ -633,7 +633,7 @@ export default function StudioApp() {
                 }
               }}
             >
-              {nav.map((item, index) => (
+              {nav.flatMap((item, index) => [
                 <a
                   key={item.screen}
                   href={pathFor(item.screen)}
@@ -644,9 +644,15 @@ export default function StudioApp() {
                   }}
                 >
                   {item.label}
-                </a>
-              ))}
-              <a href="/try-on/">Thử đồ ảo</a>
+                </a>,
+                ...(item.screen === 'catalog'
+                  ? [
+                      <a key="virtual-try-on" href="/try-on/">
+                        Thử đồ ảo
+                      </a>,
+                    ]
+                  : []),
+              ])}
               {!authScreen && !apiIdentity && (
                 <>
                   <a
@@ -670,6 +676,16 @@ export default function StudioApp() {
                     Tạo tài khoản
                   </a>
                 </>
+              )}
+              {!authScreen && apiIdentity && actorGroup === 'CUSTOMER' && (
+                <button
+                  type="button"
+                  className="mobile-auth-entry mobile-menu-logout"
+                  onClick={() => void signOut()}
+                  disabled={signingOut}
+                >
+                  {signingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}
+                </button>
               )}
             </nav>
           )}
