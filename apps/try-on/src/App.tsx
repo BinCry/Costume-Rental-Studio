@@ -9,6 +9,7 @@ import { PerfStats } from './components/PerfStats';
 import { ReactionBar } from './components/ReactionBar';
 import { snapshotCanvas } from './components/snapshotCanvas';
 import { config } from './config';
+import { hasStudioSession, logoutStudioSession, restoreStudioSession } from './studioSession';
 import {
   isTwoPieceLehenga,
   type Garment,
@@ -82,6 +83,52 @@ type Mode = 'photo' | 'live';
 type TopSlotGarment = SinglePieceGarment | LehengaCholiGarment | SingleImageLehengaGarment;
 
 export default function App() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [studioSignedIn, setStudioSignedIn] = useState(hasStudioSession);
+  const [signingOut, setSigningOut] = useState(false);
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const firstMobileNavLinkRef = useRef<HTMLAnchorElement>(null);
+
+  useEffect(() => {
+    const syncSession = () => setStudioSignedIn(hasStudioSession());
+    let active = true;
+    window.addEventListener('api-session-changed', syncSession);
+    void restoreStudioSession().then((signedIn) => {
+      if (active) setStudioSignedIn(signedIn);
+    });
+    return () => {
+      active = false;
+      window.removeEventListener('api-session-changed', syncSession);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMobileMenuOpen(false);
+        mobileMenuButtonRef.current?.focus();
+      }
+    };
+    firstMobileNavLinkRef.current?.focus();
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [mobileMenuOpen]);
+
+  const signOutFromStudio = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await logoutStudioSession();
+    } catch {
+      // Clear the local session and leave the tool even if the API is unavailable.
+    } finally {
+      setStudioSignedIn(false);
+      setMobileMenuOpen(false);
+      window.location.assign('/');
+    }
+  };
+
   // The customer-facing experience is camera-first; photo try-on is not exposed.
   const [mode] = useState<Mode>('live');
   const [accelerator, setAccelerator] = useState<Accelerator>('webgpu');
@@ -980,17 +1027,86 @@ export default function App() {
             <h1>Phòng thử trang phục</h1>
           </div>
         </div>
-        <nav className="studio-links" aria-label="Điều hướng Studio">
-          <span>Khám phá</span>
-          <span className="active">Thử trực tuyến</span>
-          <span>Đặt thuê</span>
-          <span>Đơn của tôi</span>
-          <span>Tài khoản</span>
+        <nav
+          id="studio-navigation"
+          className={`studio-links${mobileMenuOpen ? ' open' : ''}`}
+          aria-label="Điều hướng Studio"
+        >
+          <a ref={firstMobileNavLinkRef} href="/" onClick={() => setMobileMenuOpen(false)}>
+            Khám phá
+          </a>
+          <a
+            className="active"
+            href="/try-on/"
+            aria-current="page"
+            onClick={() => setMobileMenuOpen(false)}
+          >
+            Thử đồ ảo
+          </a>
+          <a href="/dat-thue" onClick={() => setMobileMenuOpen(false)}>
+            Đặt thuê
+          </a>
+          <a href="/don-cua-toi" onClick={() => setMobileMenuOpen(false)}>
+            Đơn của tôi
+          </a>
+          <a href="/tai-khoan" onClick={() => setMobileMenuOpen(false)}>
+            Tài khoản
+          </a>
+          {studioSignedIn ? (
+            <button
+              className="studio-mobile-logout"
+              type="button"
+              onClick={() => void signOutFromStudio()}
+              disabled={signingOut}
+            >
+              {signingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}
+            </button>
+          ) : (
+            <div className="studio-mobile-auth">
+              <a href="/dang-nhap" onClick={() => setMobileMenuOpen(false)}>
+                Đăng nhập
+              </a>
+              <a href="/dang-ky" onClick={() => setMobileMenuOpen(false)}>
+                Tạo tài khoản
+              </a>
+            </div>
+          )}
         </nav>
         <div className="studio-account" aria-label="Khu vực tài khoản">
-          <span>Khách hàng</span>
-          <button type="button">Đăng xuất</button>
+          {studioSignedIn ? (
+            <>
+              <a href="/tai-khoan">Tài khoản</a>
+              <button type="button" onClick={() => void signOutFromStudio()} disabled={signingOut}>
+                {signingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}
+              </button>
+            </>
+          ) : (
+            <>
+              <a href="/dang-nhap">Đăng nhập</a>
+              <a className="studio-account-primary" href="/dang-ky">Tạo tài khoản</a>
+            </>
+          )}
         </div>
+        <button
+          ref={mobileMenuButtonRef}
+          className="studio-menu-toggle"
+          type="button"
+          aria-label={mobileMenuOpen ? 'Đóng menu điều hướng' : 'Mở menu điều hướng'}
+          aria-expanded={mobileMenuOpen}
+          aria-controls="studio-navigation"
+          onClick={() => setMobileMenuOpen((open) => !open)}
+        >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+          >
+            <path d="M4 7h16M4 12h16M4 17h16" />
+          </svg>
+        </button>
       </header>
       {/* Kept hidden for screen-readers & internal status logic */}
       <div className="top-bar-hidden" style={{ display: 'none' }}>

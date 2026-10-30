@@ -518,7 +518,6 @@ export function CatalogPage({
           <div>
             <p className="eyebrow">CHỌN ĐÚNG PHONG CÁCH</p>
             <h2>Bộ sưu tập trang phục</h2>
-            <p>Mỗi bộ được theo dõi riêng khi studio xác nhận đơn.</p>
           </div>
           <div className="catalog-count">
             {loading ? 'Đang tải...' : `${filtered.length} mẫu trang phục`}
@@ -744,28 +743,24 @@ export function CatalogPage({
         <div className="section-heading">
           <div>
             <p className="eyebrow">CÁCH THUÊ</p>
-            <h2 id="rental-guide-title">Rõ ràng từ lúc gửi yêu cầu</h2>
-            <p>Studio xác nhận lịch và từng bộ trước khi bạn đến nhận.</p>
+            <h2 id="rental-guide-title">Thuê trang phục trong 3 bước</h2>
           </div>
         </div>
         <ol className="rental-guide-steps">
           <li>
             <span>01</span>
             <h3>Chọn mẫu và lịch</h3>
-            <p>Chọn size, chi nhánh nhận/trả và thời gian bạn cần thuê.</p>
+            <p>Chọn mẫu, size và ngày thuê.</p>
           </li>
           <li>
             <span>02</span>
             <h3>Studio xác nhận</h3>
-            <p>Yêu cầu chưa giữ trang phục. Nhân viên kiểm tra lịch và xác nhận từng bộ.</p>
+            <p>Studio kiểm tra lịch rồi xác nhận từng bộ.</p>
           </li>
           <li>
             <span>03</span>
-            <h3>Nhận, thuê và hoàn cọc</h3>
-            <p>
-              Thanh toán tiền thuê và cọc khi nhận; trả tại cùng chi nhánh. Cọc được quyết toán sau
-              khi kiểm tra đồ.
-            </p>
+            <h3>Nhận đồ và quyết toán cọc</h3>
+            <p>Thanh toán khi nhận; cọc được quyết toán sau khi trả đồ.</p>
           </li>
         </ol>
       </section>
