@@ -1015,18 +1015,13 @@ export default function App() {
   return (
     <div className={'app' + (presenting ? ' presenting' : '')}>
       <header className="studio-nav">
-        <div className="studio-brand">
-          <div className="studio-mark" aria-hidden>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-              <path d="M12 3c1.7 0 3 1.3 3 3s-1.3 3-3 3-3-1.3-3-3 1.3-3 3-3Z" />
-              <path d="M8.2 21c.5-4.7 1.7-8 3.8-8s3.3 3.3 3.8 8M7 21h10M9.5 12l-2.2 4.1M14.5 12l2.2 4.1" />
-            </svg>
-          </div>
-          <div>
-            <p className="studio-kicker">STUDIO</p>
-            <h1>Phòng thử trang phục</h1>
-          </div>
-        </div>
+        <a className="studio-brand" href="/" aria-label="Studio Trang Phục, về trang chủ">
+          <img className="studio-mark" src={assetUrl('/brand-mark.png')} alt="" aria-hidden="true" />
+          <span className="studio-wordmark">
+            STUDIO<span className="studio-brand-period">.</span>
+            <small>TRANG PHỤC</small>
+          </span>
+        </a>
         <nav
           id="studio-navigation"
           className={`studio-links${mobileMenuOpen ? ' open' : ''}`}

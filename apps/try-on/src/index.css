@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap');
+
 * {
   box-sizing: border-box;
 }
@@ -1187,13 +1189,13 @@ main {
 
 /* Studio-facing skin ----------------------------------------------------- */
 :root {
-  --studio-wine: #c62662;
-  --studio-wine-deep: #9c1749;
-  --studio-ink: #211d21;
-  --studio-muted: #746a70;
-  --studio-paper: #fffdfd;
-  --studio-blush: #fbf4f6;
-  --studio-line: #eadde2;
+  --studio-wine: #c0265b;
+  --studio-wine-deep: #9d174d;
+  --studio-ink: #171717;
+  --studio-muted: #52525b;
+  --studio-paper: #fff;
+  --studio-blush: #fdf2f8;
+  --studio-line: #e4e4e7;
 }
 
 html,
@@ -1204,9 +1206,12 @@ body,
 
 body {
   overflow: auto;
-  background: #fcf9fa;
+  background: #fafafa;
   color: var(--studio-ink);
-  font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+  font-family: 'Be Vietnam Pro', 'Noto Sans', system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 .app {
@@ -1217,13 +1222,13 @@ body {
 }
 
 .studio-nav {
-  min-height: 56px;
-  padding: 8px clamp(16px, 3vw, 48px);
+  min-height: 76px;
+  padding: 0 max(24px, calc((100vw - 1440px) / 2));
   border-bottom: 1px solid var(--studio-line);
-  background: rgba(255, 253, 253, 0.94);
+  background: #fff;
   display: flex;
   align-items: center;
-  gap: clamp(16px, 2.5vw, 40px);
+  gap: 32px;
   position: sticky;
   top: 0;
   z-index: 20;
@@ -1235,9 +1240,9 @@ body {
   height: 44px;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--studio-line);
-  border-radius: 10px;
-  background: #fff;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: var(--studio-ink);
   cursor: pointer;
 }
@@ -1251,42 +1256,47 @@ body {
   align-items: center;
   gap: 10px;
   min-width: max-content;
+  color: var(--studio-ink);
+  text-decoration: none;
 }
 
 .studio-mark {
-  width: 36px;
-  height: 36px;
-  padding: 6px;
-  border-radius: 9px;
-  color: #fff;
-  background: var(--studio-wine);
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  object-fit: cover;
 }
 
-.studio-mark svg {
-  width: 100%;
-  height: 100%;
+.studio-wordmark {
+  display: block;
+  font-size: 19px;
+  line-height: 20px;
+  font-weight: 700;
+  letter-spacing: -0.06em;
+  white-space: nowrap;
 }
-.studio-kicker {
-  margin: 0;
+.studio-brand-period {
   color: var(--studio-wine);
-  font-size: 0.65rem;
-  font-weight: 800;
-  letter-spacing: 0.2em;
 }
-.studio-brand h1 {
-  margin: 1px 0 0;
-  font-size: 0.96rem;
-  font-weight: 760;
-  letter-spacing: -0.02em;
+.studio-wordmark small {
+  display: block;
+  margin-top: 2px;
+  color: var(--studio-muted);
+  font-size: 9px;
+  line-height: 11px;
+  letter-spacing: 0.24em;
+  font-weight: 600;
 }
 
 .studio-links {
   display: flex;
   align-items: center;
   gap: 4px;
-  color: #51474d;
-  font-size: 0.9rem;
-  font-weight: 650;
+  margin-left: 28px;
+  color: var(--studio-muted);
+  font-size: 14px;
+  font-weight: 600;
 }
 .studio-links span {
   padding: 6px 12px;
@@ -1297,28 +1307,28 @@ body {
   min-height: 44px;
   display: flex;
   align-items: center;
-  padding: 6px 12px;
-  border-radius: 8px;
+  padding: 0 14px;
+  border-radius: 6px;
   color: inherit;
   text-decoration: none;
   white-space: nowrap;
 }
 .studio-links a:hover,
 .studio-links a:focus-visible {
-  background: #fdf0f5;
+  background: #f4f4f5;
 }
 .studio-links .active {
   color: var(--studio-wine);
-  background: #fdf0f5;
+  background: var(--studio-blush);
 }
 .studio-account {
   margin-left: auto;
   display: flex;
   align-items: center;
   gap: 12px;
-  color: #2f282c;
-  font-size: 0.9rem;
-  font-weight: 720;
+  color: var(--studio-ink);
+  font-size: 14px;
+  font-weight: 600;
   white-space: nowrap;
 }
 .studio-account a {
@@ -1330,10 +1340,13 @@ body {
   color: var(--studio-wine);
 }
 .studio-account button {
-  min-height: 34px;
+  min-height: 40px;
   padding: 0 14px;
   background: #fff;
-  border-radius: 8px;
+  border: 1px solid var(--studio-line);
+  border-radius: 6px;
+  color: var(--studio-ink);
+  font: inherit;
   cursor: pointer;
 }
 .studio-account button:disabled {
@@ -1341,11 +1354,11 @@ body {
   cursor: wait;
 }
 .studio-account-primary {
-  min-height: 38px;
+  min-height: 40px;
   display: inline-flex;
   align-items: center;
-  padding: 0 12px;
-  border-radius: 8px;
+  padding: 0 14px;
+  border-radius: 6px;
   background: var(--studio-wine);
   color: #fff !important;
 }
@@ -1368,8 +1381,8 @@ body {
   grid-template-columns: 1fr 320px;
   gap: 16px;
   align-items: stretch;
-  height: calc(100vh - 66px);
-  max-height: calc(100vh - 66px);
+  height: calc(100vh - 76px);
+  max-height: calc(100vh - 76px);
   min-height: 420px;
   box-sizing: border-box;
   overflow: hidden;
@@ -2082,26 +2095,33 @@ main {
   }
 }
 
-@media (max-width: 1000px) {
+@media (max-width: 1079px) {
+  .studio-nav {
+    height: 64px;
+    min-height: 64px;
+    padding: 0 16px;
+    gap: 12px;
+  }
   .studio-account {
     display: none;
   }
   .studio-menu-toggle {
     display: inline-flex;
+    margin-left: auto;
   }
   .studio-links {
     display: none;
     position: absolute;
-    top: calc(100% + 8px);
-    left: 12px;
-    right: 12px;
+    top: 100%;
+    left: 16px;
+    right: 16px;
     z-index: 30;
     flex-direction: column;
     align-items: stretch;
     gap: 2px;
     padding: 8px;
     border: 1px solid var(--studio-line);
-    border-radius: 12px;
+    border-radius: 10px;
     background: #fff;
     box-shadow: 0 16px 36px rgba(28, 16, 23, 0.14);
   }
@@ -2350,17 +2370,12 @@ main {
 }
 
 @media (max-width: 600px) {
-  .studio-nav {
-    min-height: 56px !important;
-    padding: 8px 12px !important;
-  }
   .studio-mark {
-    width: 32px !important;
-    height: 32px !important;
-    padding: 5px !important;
+    width: 31px;
+    height: 31px;
   }
-  .studio-brand h1 {
-    font-size: 0.88rem !important;
+  .studio-wordmark {
+    font-size: 17px;
   }
   .live-pill,
   .filter-chip {
