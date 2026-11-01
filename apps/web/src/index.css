@@ -1406,10 +1406,12 @@ small {
 .booking-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 310px;
+  grid-template-areas: 'panel sidebar';
   gap: 24px;
   align-items: start;
 }
 .booking-panel {
+  grid-area: panel;
   background: #fff;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -1437,8 +1439,74 @@ small {
   font-weight: 700;
 }
 .booking-sidebar {
+  grid-area: sidebar;
+  min-width: 0;
   position: sticky;
   top: 16px;
+}
+.booking-selection-card {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: #fff;
+}
+.booking-selection-heading {
+  margin-bottom: 16px;
+}
+.booking-selection-heading .eyebrow {
+  margin-bottom: 6px;
+}
+.booking-selection-heading h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  line-height: 26px;
+}
+.booking-selection-heading p:last-child,
+.booking-selection-status {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.booking-selection-card .booking-costumes {
+  min-height: 0;
+  max-height: min(38dvh, 360px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.booking-selection-options {
+  gap: 16px;
+  margin-top: 16px;
+}
+.booking-selection-card .booking-costume {
+  grid-template-columns: 64px minmax(0, 1fr) 20px;
+  gap: 10px;
+  min-height: 84px;
+  padding: 8px;
+  cursor: pointer;
+}
+.booking-selection-card .booking-costume-image {
+  width: 64px;
+  height: 68px;
+}
+.booking-selection-card .booking-costume strong {
+  font-size: 14px;
+  line-height: 20px;
+}
+.booking-selection-card .booking-costume small {
+  font-size: 12px;
+  line-height: 17px;
+}
+.booking-selection-card .booking-costume:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.booking-mobile-summary {
+  grid-area: summary;
 }
 .sidebar-note {
   background: #fff;
@@ -4305,7 +4373,19 @@ small {
     display: block;
   }
   .booking-sidebar {
+    position: static;
+    display: block;
+    margin-bottom: 16px;
+  }
+  .booking-sidebar-summary {
     display: none;
+  }
+  .booking-selection-card {
+    max-height: none;
+  }
+  .booking-selection-card .booking-costumes {
+    max-height: none;
+    overflow: visible;
   }
   .booking-panel {
     padding: 20px;

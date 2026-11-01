@@ -19,7 +19,7 @@ import type { BookingDraft, DemoScenario, QuoteSnapshot } from '../fixtures/type
 import { apiEnabled, getOwnCustomerProfile, hasAccessToken } from '../api/client';
 import { useBranchOptions } from '../components/useBranchOptions';
 
-const steps = ['Trang phục & lịch', 'Báo giá & liên hệ', 'Xem lại & gửi'];
+const steps = ['Thông tin thuê', 'Báo giá & liên hệ', 'Xem lại & gửi'];
 const bookingDraftStorageKey = 'costume-rental.booking-draft.v1';
 const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
 function lateReturnPolicyText(quote: QuoteSnapshot | undefined, apiMode: boolean) {
@@ -406,6 +406,107 @@ export function BookingPage({
             apiMode={apiMode}
           />
         </details>
+        <aside className={`booking-sidebar${step === 0 ? '' : 'booking-sidebar-summary'}`}>
+          {step === 0 ? (
+            <div className="booking-selection-card">
+              <div className="booking-selection-heading">
+                <p className="eyebrow">CHỌN BỘ</p>
+                <h2>Trang phục thuê</h2>
+                <p>Chọn mẫu, size và số lượng.</p>
+              </div>
+              {loading ? (
+                <p className="booking-selection-status">Đang tải bộ sưu tập…</p>
+              ) : error ? (
+                <p className="booking-selection-status" role="status">
+                  Chưa tải được danh sách. Hãy thử lại ở phần thông tin thuê.
+                </p>
+              ) : data?.length ? (
+                <div className="booking-costumes">
+                  {data.map((entry) => (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      className={`booking-costume ${draft.costumeId === entry.id ? 'selected' : ''}`}
+                      aria-pressed={draft.costumeId === entry.id}
+                      onClick={() => {
+                        update('costumeId', entry.id);
+                        setDraft((current) => ({
+                          ...current,
+                          costumeId: entry.id,
+                          variant:
+                            entry.apiVariants?.[0]?.code ??
+                            `${entry.sizes[0]} / ${entry.colors[0]}`,
+                        }));
+                      }}
+                    >
+                      <span
+                        className={`booking-costume-image costume-${entry.imagePosition}`}
+                        role="img"
+                        aria-label={entry.imageAlt ?? `Ảnh ${entry.name}`}
+                      >
+                        <ImageWithFallback
+                          src={entry.imageUrl}
+                          alt=""
+                          compact
+                          missingText="Chưa có ảnh"
+                          failedText="Ảnh chưa tải được"
+                        />
+                      </span>
+                      <span>
+                        <strong>{entry.name}</strong>
+                        <small>
+                          {entry.category} · Từ {money(entry.priceFrom)}/ngày
+                        </small>
+                      </span>
+                      {draft.costumeId === entry.id && <Icon name="check" size={20} />}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="booking-selection-status">Chưa có mẫu trang phục để chọn.</p>
+              )}
+              {!loading && !error && scenario !== 'empty' && data?.length && item && (
+                <div className="form-stack booking-selection-options">
+                  <h3 className="booking-subheading">Thông tin bộ</h3>
+                  <SelectField
+                    label="Size / màu"
+                    value={draft.variant}
+                    onChange={(event) => update('variant', event.target.value)}
+                  >
+                    <option value="">Chọn biến thể</option>
+                    {choices.map((choice) => (
+                      <option key={choice.value} value={choice.value}>
+                        {choice.label}
+                      </option>
+                    ))}
+                  </SelectField>
+                  <SelectField
+                    label="Số bộ"
+                    value={draft.quantity}
+                    onChange={(event) => update('quantity', Number(event.target.value))}
+                  >
+                    <option value={1}>1 bộ</option>
+                    <option value={2}>2 bộ</option>
+                  </SelectField>
+                  <Feedback tone="info" title="Chọn bộ chưa giữ lịch">
+                    Studio sẽ gán mã riêng cho từng bộ sau khi xác nhận yêu cầu.
+                  </Feedback>
+                </div>
+              )}
+            </div>
+          ) : (
+            <BookingSummaryContent
+              itemName={item?.name}
+              variantLabel={selectedVariantLabel}
+              quantity={draft.quantity}
+              branch={draft.branch}
+              pickup={draft.pickup}
+              returnAt={draft.returnAt}
+              quote={quote}
+              apiMode={apiMode}
+            />
+          )}
+        </aside>
         <section className="booking-panel" ref={panelRef}>
           <div className="panel-intro">
             <span className="step-number">0{step + 1}</span>
@@ -442,79 +543,6 @@ export function BookingPage({
           {loading && <SkeletonGrid count={2} />}
           {!loading && !error && scenario !== 'empty' && (
             <>
-              {step === 0 && (
-                <div className="booking-stage-group">
-                  <h3 className="booking-subheading">Chọn trang phục</h3>
-                  <div className="booking-costumes">
-                    {data?.map((entry) => (
-                      <button
-                        key={entry.id}
-                        className={`booking-costume ${draft.costumeId === entry.id ? 'selected' : ''}`}
-                        onClick={() => {
-                          update('costumeId', entry.id);
-                          setDraft((current) => ({
-                            ...current,
-                            costumeId: entry.id,
-                            variant:
-                              entry.apiVariants?.[0]?.code ??
-                              `${entry.sizes[0]} / ${entry.colors[0]}`,
-                          }));
-                        }}
-                      >
-                        <span
-                          className={`booking-costume-image costume-${entry.imagePosition}`}
-                          role="img"
-                          aria-label={entry.imageAlt ?? `Ảnh ${entry.name}`}
-                        >
-                          <ImageWithFallback
-                            src={entry.imageUrl}
-                            alt=""
-                            compact
-                            missingText="Chưa có ảnh"
-                            failedText="Ảnh chưa tải được"
-                          />
-                        </span>
-                        <span>
-                          <strong>{entry.name}</strong>
-                          <small>
-                            {entry.category} · Từ {money(entry.priceFrom)}/ngày
-                          </small>
-                        </span>
-                        {draft.costumeId === entry.id && <Icon name="check" size={20} />}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {step === 0 && (
-                <div className="form-stack">
-                  <h3 className="booking-subheading">Chọn size và số bộ</h3>
-                  <SelectField
-                    label="Biến thể · size / màu"
-                    value={draft.variant}
-                    onChange={(event) => update('variant', event.target.value)}
-                  >
-                    <option value="">Chọn biến thể</option>
-                    {choices.map((choice) => (
-                      <option key={choice.value} value={choice.value}>
-                        {choice.label}
-                      </option>
-                    ))}
-                  </SelectField>
-                  <SelectField
-                    label="Số bộ"
-                    value={draft.quantity}
-                    onChange={(event) => update('quantity', Number(event.target.value))}
-                  >
-                    <option value={1}>1 bộ</option>
-                    <option value={2}>2 bộ</option>
-                  </SelectField>
-                  <Feedback tone="info" title="Mỗi bộ vật lý được quản lý riêng">
-                    Nếu thuê nhiều bộ, mỗi bộ sẽ là một dòng riêng sau khi studio gán mã. Chọn biến
-                    thể ở đây chưa giữ bộ.
-                  </Feedback>
-                </div>
-              )}
               {step === 0 && (
                 <div className="form-stack">
                   <h3 className="booking-subheading">Chi nhánh và lịch thuê</h3>
@@ -600,17 +628,21 @@ export function BookingPage({
                           }}
                         />
                         {promotionIssue && (
-                          <p className="field-error" role="alert">{promotionIssue}</p>
+                          <p className="field-error" role="alert">
+                            {promotionIssue}
+                          </p>
                         )}
-                        {quote?.promotionCode && appliedPromotionCode === promotionCode.trim().toUpperCase() && (
-                          <Feedback tone="success" title={`Đã áp dụng ${quote.promotionCode}`}>
-                            Đã giảm {money(quote.discount)} trên tiền thuê.
-                          </Feedback>
-                        )}
+                        {quote?.promotionCode &&
+                          appliedPromotionCode === promotionCode.trim().toUpperCase() && (
+                            <Feedback tone="success" title={`Đã áp dụng ${quote.promotionCode}`}>
+                              Đã giảm {money(quote.discount)} trên tiền thuê.
+                            </Feedback>
+                          )}
                         {promotionCode.trim() &&
                           promotionCode.trim().toUpperCase() !== appliedPromotionCode && (
                             <p className="field-hint" role="status">
-                              Áp dụng mã để lấy lại báo giá. Bạn chưa bị tính mức giảm cho đến khi máy chủ xác nhận.
+                              Áp dụng mã để lấy lại báo giá. Bạn chưa bị tính mức giảm cho đến khi
+                              máy chủ xác nhận.
                             </p>
                           )}
                       </div>
@@ -641,7 +673,8 @@ export function BookingPage({
                     </div>
                   ) : (
                     <Feedback tone="info" title="Mã ưu đãi được kiểm tra trực tiếp">
-                      Bản xem thử không xác minh voucher. Hãy đăng nhập để lấy báo giá thật và áp dụng mã.
+                      Bản xem thử không xác minh voucher. Hãy đăng nhập để lấy báo giá thật và áp
+                      dụng mã.
                     </Feedback>
                   )}
                   {quote && (
@@ -799,7 +832,9 @@ export function BookingPage({
                   {quote?.promotionCode && (
                     <div>
                       <span>Mã ưu đãi / tiền giảm</span>
-                      <strong>{quote.promotionCode} · {money(quote.discount)}</strong>
+                      <strong>
+                        {quote.promotionCode} · {money(quote.discount)}
+                      </strong>
                     </div>
                   )}
                   <div>
@@ -856,18 +891,6 @@ export function BookingPage({
             )}
           </div>
         </section>
-        <aside className="booking-sidebar">
-          <BookingSummaryContent
-            itemName={item?.name}
-            variantLabel={selectedVariantLabel}
-            quantity={draft.quantity}
-            branch={draft.branch}
-            pickup={draft.pickup}
-            returnAt={draft.returnAt}
-            quote={quote}
-            apiMode={apiMode}
-          />
-        </aside>
       </div>
     </div>
   );
