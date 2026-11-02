@@ -3,6 +3,7 @@ import { Button, Icon } from '../components/ui';
 import { BrandLogoMark } from '../components/BrandLogoMark';
 import { SiteFooter, type SiteBranchContact } from '../components/SiteFooter';
 import {
+  ApiClientError,
   apiEnabled,
   currentUser,
   hasAccessToken,
@@ -155,6 +156,7 @@ export default function StudioApp() {
   const [scenario, setScenario] = useState<DemoScenario>('normal');
   const [role, setRole] = useState<DemoRole>('ADMIN');
   const [apiIdentity, setApiIdentity] = useState<ApiIdentity>();
+  const [apiSessionError, setApiSessionError] = useState<string>();
   const [apiSessionReady, setApiSessionReady] = useState(!apiEnabled || import.meta.env.DEV);
   const [apiBranchIds, setApiBranchIds] = useState<Record<string, string>>({});
   const [publicBranchContacts, setPublicBranchContacts] = useState<SiteBranchContact[]>([]);
@@ -234,11 +236,27 @@ export default function StudioApp() {
       }
     };
     const syncIdentity = async () => {
+      if (active) {
+        setApiSessionReady(false);
+        setApiSessionError(undefined);
+      }
       try {
         const identity = hasAccessToken() ? await currentUser() : await restoreSession();
-        if (active) setApiIdentity(identity);
-      } catch {
-        if (active) setApiIdentity(undefined);
+        if (active) {
+          setApiIdentity(identity);
+          setApiSessionError(undefined);
+        }
+      } catch (error) {
+        if (active) {
+          setApiIdentity(undefined);
+          setApiSessionError(
+            error instanceof ApiClientError && error.status === 429
+              ? 'Studio đang giới hạn số yêu cầu từ kết nối này. Hãy đợi một lúc rồi thử xác minh lại; không cần đăng nhập lại.'
+              : error instanceof ApiClientError && (error.status === 0 || error.status >= 500)
+                ? 'Chưa kết nối được máy chủ để xác minh phiên làm việc. Hãy kiểm tra kết nối rồi thử lại.'
+                : undefined,
+          );
+        }
       } finally {
         if (active) setApiSessionReady(true);
       }
@@ -278,6 +296,7 @@ export default function StudioApp() {
   const finishAuthentication = async (next?: string) => {
     const identity = await currentUser();
     setApiIdentity(identity);
+    setApiSessionError(undefined);
     setApiSessionReady(true);
     window.dispatchEvent(new Event('api-session-changed'));
     const actorGroup = actorGroupFromRoles(identity.roles);
@@ -318,6 +337,7 @@ export default function StudioApp() {
       // The API client clears the local token even when the network request fails.
     } finally {
       setApiIdentity(undefined);
+      setApiSessionError(undefined);
       setApiSessionReady(true);
       window.dispatchEvent(new Event('api-session-changed'));
       go('catalog');
@@ -335,6 +355,10 @@ export default function StudioApp() {
   const authSessionResolving = productionApiMode && !apiSessionReady;
   const staffNavigationPending =
     staff && productionApiMode && (!apiSessionReady || (!!apiIdentity && !apiBranchesReady));
+  const staffSessionUnverified = staff && productionApiMode && !apiIdentity;
+  const staffSessionCheckFailed =
+    staffSessionUnverified && apiSessionReady && Boolean(apiSessionError);
+  const staffSessionMissing = staffSessionUnverified && apiSessionReady && !apiSessionError;
   const mobileDrawerOpen = staff && menuOpen && mobileStaffNav;
   useEffect(() => {
     if (staff || !menuOpen) return;
@@ -427,7 +451,7 @@ export default function StudioApp() {
         : actorGroup === 'CUSTOMER'
           ? 'catalog'
           : 'account';
-  const brandHomeScreen = staffNavigationPending
+  const brandHomeScreen = staffSessionUnverified
     ? route.screen
     : apiIdentity
       ? actorHomeScreen
@@ -577,7 +601,7 @@ export default function StudioApp() {
   const authScreen = ['login', 'register', 'forgotPassword'].includes(route.screen);
   const nav =
     authScreen ||
-    staffNavigationPending ||
+    staffSessionUnverified ||
     (apiIdentity && !canActorAccessScreen(actorGroup, route.screen))
       ? []
       : staff
@@ -589,27 +613,36 @@ export default function StudioApp() {
   const shellActorGroup = apiIdentity || staff ? actorGroup : 'CUSTOMER';
   const actorLabel = staffNavigationPending
     ? 'Đang xác minh phiên'
-    : shellActorGroup === 'ADMIN'
-      ? 'Quản trị'
-      : shellActorGroup === 'STAFF'
-        ? 'Nhân viên'
-        : shellActorGroup === 'CUSTOMER'
-          ? 'Khách hàng'
-          : 'Chưa được phân quyền';
+    : staffSessionCheckFailed
+      ? 'Phiên chưa xác minh'
+      : staffSessionMissing
+        ? 'Đăng nhập'
+        : shellActorGroup === 'ADMIN'
+          ? 'Quản trị'
+          : shellActorGroup === 'STAFF'
+            ? 'Nhân viên'
+            : shellActorGroup === 'CUSTOMER'
+              ? 'Khách hàng'
+              : 'Chưa được phân quyền';
   const requiresCustomerSession =
     route.screen === 'booking' || route.screen === 'myRentals' || route.screen === 'myRentalDetail';
   const requiresSession = productionApiMode && (staff || requiresCustomerSession);
   const sessionPending =
     requiresSession && (!apiSessionReady || (!!apiIdentity && !apiBranchesReady));
-  const sessionMissing = requiresSession && apiSessionReady && !apiIdentity;
+  const sessionCheckFailed = requiresSession && apiSessionReady && !apiIdentity && !!apiSessionError;
+  const sessionMissing = requiresSession && apiSessionReady && !apiIdentity && !apiSessionError;
   const wrongPortal = Boolean(apiIdentity && !canActorAccessScreen(actorGroup, route.screen));
   const protectedArea =
-    (staff && !canOpen(route.screen)) || sessionPending || sessionMissing || wrongPortal;
+    (staff && !canOpen(route.screen)) ||
+    sessionPending ||
+    sessionCheckFailed ||
+    sessionMissing ||
+    wrongPortal;
   const productionConfigurationMissing = !apiEnabled && !import.meta.env.DEV;
   const showFixtureControls = import.meta.env.DEV && !apiIdentity;
   const p = route.params;
   const authAudienceGroup = resolveAuthAudience(p);
-  const portalClass = staffNavigationPending
+  const portalClass = staffSessionUnverified
     ? 'app-employee'
     : shellActorGroup === 'ADMIN'
       ? 'app-admin'
@@ -641,9 +674,15 @@ export default function StudioApp() {
               e.preventDefault();
               go(brandHomeScreen);
             }}
-            aria-label={staffNavigationPending
-              ? 'Studio Trang Phục, đang xác minh phiên đăng nhập'
-              : `Studio Trang Phục, về ${actorLabel.toLowerCase()}`}
+            aria-label={
+              staffNavigationPending
+                ? 'Studio Trang Phục, đang xác minh phiên đăng nhập'
+                : staffSessionCheckFailed
+                  ? 'Studio Trang Phục, phiên chưa xác minh'
+                  : staffSessionMissing
+                    ? 'Studio Trang Phục, cần đăng nhập'
+                    : `Studio Trang Phục, về ${actorLabel.toLowerCase()}`
+            }
           >
             <BrandLogoMark className="brand-mark" />
             <span>
@@ -659,7 +698,7 @@ export default function StudioApp() {
               aria-label={menuOpen ? 'Đóng menu chức năng' : 'Mở menu chức năng'}
               aria-expanded={menuOpen}
               aria-controls="staff-navigation"
-              disabled={staffNavigationPending}
+              disabled={staffSessionUnverified}
               aria-busy={staffNavigationPending}
               onClick={() => {
                 if (menuOpen) closeStaffMenu(true);
@@ -787,7 +826,7 @@ export default function StudioApp() {
                   </button>
                 </>
               ) : null
-            ) : authSessionResolving ? null : (
+            ) : authSessionResolving || staffSessionUnverified ? null : (
               <div className="auth-header-actions">
                 <a
                   className="auth-header-link"
@@ -845,13 +884,23 @@ export default function StudioApp() {
             <nav
               aria-label={staffNavigationPending
                 ? 'Điều hướng đang xác minh quyền'
-                : actorGroup === 'ADMIN'
-                  ? 'Chức năng quản trị'
-                  : 'Chức năng vận hành'}
+                : staffSessionUnverified
+                  ? 'Điều hướng cần đăng nhập'
+                  : actorGroup === 'ADMIN'
+                    ? 'Chức năng quản trị'
+                    : 'Chức năng vận hành'}
             >
               {staffNavigationPending ? (
                 <p className="muted staff-nav-pending" role="status">
                   Đang xác minh quyền truy cập…
+                </p>
+              ) : staffSessionCheckFailed ? (
+                <p className="muted staff-nav-pending" role="status">
+                  Chưa xác minh được phiên làm việc.
+                </p>
+              ) : staffSessionMissing ? (
+                <p className="muted staff-nav-pending" role="status">
+                  Đăng nhập để tiếp tục.
                 </p>
               ) : navGroups.map((group) => {
                 const groupItems = group.screens.flatMap((screen) => {
@@ -1068,6 +1117,20 @@ export default function StudioApp() {
             {sessionPending ? (
               <div className="feature-skeleton shimmer" role="status">
                 Đang xác minh phiên đăng nhập…
+              </div>
+            ) : sessionCheckFailed ? (
+              <div className="feedback feedback-warning" role="status">
+                <div>
+                  <strong>Chưa xác minh được phiên đăng nhập</strong>
+                  <p>{apiSessionError}</p>
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    onClick={() => setBranchRetryRevision((value) => value + 1)}
+                  >
+                    Thử xác minh lại
+                  </button>
+                </div>
               </div>
             ) : sessionMissing ? (
               <div className="feedback feedback-warning" role="status">

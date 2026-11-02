@@ -517,6 +517,13 @@ async function refreshAccessToken() {
     headers: { 'Content-Type': 'application/json' },
   })
     .then(async (response) => {
+      if (response.status === 429) {
+        throw new ApiClientError(
+          response.status,
+          'RATE_LIMITED',
+          apiErrorMessage(response.status, 'RATE_LIMITED'),
+        );
+      }
       if (!response.ok) return false;
       const body = (await response.json()) as ApiEnvelope<{ accessToken?: string }>;
       if (body.success && body.data.accessToken) {
@@ -525,7 +532,10 @@ async function refreshAccessToken() {
       }
       return false;
     })
-    .catch(() => false)
+    .catch((error: unknown) => {
+      if (error instanceof ApiClientError && error.status === 429) throw error;
+      return false;
+    })
     .finally(() => {
       refreshing = undefined;
     });

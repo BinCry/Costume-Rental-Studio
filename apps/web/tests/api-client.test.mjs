@@ -832,6 +832,19 @@ describe('web API client session and error handling', () => {
     });
   });
 
+  it('preserves a rate-limit error while restoring a cookie-backed session', async () => {
+    globalThis.fetch.mockResolvedValueOnce(error(429, 'RATE_LIMITED', 'Too many requests'));
+    const { restoreSession } = await import('../src/api/client.ts');
+
+    await expect(restoreSession()).rejects.toMatchObject({
+      status: 429,
+      code: 'RATE_LIMITED',
+      message:
+        'Studio đang nhận quá nhiều yêu cầu từ kết nối này. Hãy chờ tối đa 15 phút rồi thử lại; tránh gửi liên tiếp.',
+    });
+    expect(globalThis.fetch.mock.calls[0][0]).toBe('https://api.example.test/api/v1/auth/refresh');
+  });
+
   it('handles a non-JSON server error without exposing its body', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response('<html>secret stack trace</html>', { status: 502 }),

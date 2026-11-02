@@ -77,6 +77,74 @@ test('staff navigation does not expose the default admin menu during session res
   await expect(staffNavigation.getByRole('link', { name: 'Tạo tại quầy' })).toBeVisible();
 });
 
+test('rate-limited session checks show a retry message without exposing admin navigation', async ({
+  page,
+}) => {
+  await page.route('**/api/v1/auth/refresh', (route) =>
+    fulfillJson(route, { accessToken: 'e2e-staff-session' }),
+  );
+  await page.route('**/api/v1/auth/me', (route) =>
+    route.fulfill({
+      status: 429,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: false,
+        error: { code: 'RATE_LIMITED', message: 'Too many requests' },
+      }),
+    }),
+  );
+  await page.route('**/api/v1/public/branches**', (route) =>
+    fulfillJson(route, {
+      items: [{ id: branchId, name: branchName, branchCode: 'Q1', status: 'ACTIVE' }],
+    }),
+  );
+
+  await page.goto('/van-hanh/don-thue');
+
+  await expect(page.getByText('Chưa xác minh được phiên đăng nhập', { exact: true })).toBeVisible();
+  await expect(page.getByText(/đang giới hạn số yêu cầu/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Thử xác minh lại' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Chức năng quản trị' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /về quản trị/i })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Đăng nhập', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Mở menu chức năng' })).toBeDisabled();
+  await expect(
+    page.getByRole('link', { name: 'Studio Trang Phục, phiên chưa xác minh' }),
+  ).toHaveAttribute('href', '/van-hanh/don-thue');
+});
+
+test('rate-limited token refresh is explained instead of being treated as a signed-out session', async ({
+  page,
+}) => {
+  let currentUserCalls = 0;
+  await page.route('**/api/v1/auth/refresh', (route) =>
+    route.fulfill({
+      status: 429,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: false,
+        error: { code: 'RATE_LIMITED', message: 'Too many requests' },
+      }),
+    }),
+  );
+  await page.route('**/api/v1/auth/me', async (route) => {
+    currentUserCalls += 1;
+    await fulfillJson(route, staffIdentity);
+  });
+  await page.route('**/api/v1/public/branches**', (route) =>
+    fulfillJson(route, {
+      items: [{ id: branchId, name: branchName, branchCode: 'Q1', status: 'ACTIVE' }],
+    }),
+  );
+
+  await page.goto('/van-hanh/don-thue');
+
+  await expect(page.getByText('Chưa xác minh được phiên đăng nhập', { exact: true })).toBeVisible();
+  await expect(page.getByText(/đang giới hạn số yêu cầu/i)).toBeVisible();
+  expect(currentUserCalls).toBe(0);
+  await expect(page.getByRole('navigation', { name: 'Chức năng quản trị' })).toHaveCount(0);
+});
+
 test('counter quote uses a real catalog variant and checks availability without creating an order', async ({
   page,
 }) => {
@@ -200,5 +268,7 @@ test('staff reports use operations wording and load branch-scoped metrics', asyn
   await expect(page.getByRole('heading', { name: 'Báo cáo vận hành' })).toBeVisible();
   await expect(page.getByText('VẬN HÀNH / BÁO CÁO', { exact: true })).toBeVisible();
   await expect(page.getByText('QUẢN TRỊ / BÁO CÁO', { exact: true })).toHaveCount(0);
-  await expect(page.getByText(branchName, { exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByText(`Theo dõi tình hình thuê và thu chi tại ${branchName}.`, { exact: true }),
+  ).toBeVisible();
 });
