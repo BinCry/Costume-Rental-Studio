@@ -18,8 +18,30 @@ import { useFixtureResource } from '../components/useFixtureResource';
 import { useMobileDetailReveal } from '../components/useMobileDetailReveal';
 import { branches, fixtureAdapter, fixtureCatalog, fixturePeriod } from '../fixtures/adapter';
 import { studioAdapter, type ActiveUnit, type Customer, type Unit } from '../fixtures/studio';
-import type { DemoScenario, QuoteSnapshot } from '../fixtures/types';
+import type { CatalogItem, DemoScenario, QuoteSnapshot } from '../fixtures/types';
 import { apiEnabled, hasAccessToken } from '../api/client';
+
+interface CounterVariantOption {
+  value: string;
+  label: string;
+  apiId?: string;
+}
+
+function counterVariantOptions(item?: CatalogItem): CounterVariantOption[] {
+  if (!item) return [];
+  if (item.apiVariants?.length) {
+    return item.apiVariants.map((variant) => ({
+      value: variant.id,
+      label: `${variant.size} / ${variant.color}`,
+      apiId: variant.id,
+    }));
+  }
+  const color = item.colors[0] ?? '';
+  return item.sizes.map((size) => {
+    const label = [size, color].filter(Boolean).join(' / ');
+    return { value: label, label };
+  });
+}
 
 export function CounterRentalPage({
   scenario,
@@ -73,7 +95,7 @@ export function CounterRentalPage({
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [costume, setCostume] = useState('ao-dai-lina');
-  const [variant, setVariant] = useState('M / Hồng phấn');
+  const [variant, setVariant] = useState('');
   const [pickup, setPickup] = useState(() => realApiMode ? defaultRentalDate(1) : fixturePeriod.pickup);
   const [due, setDue] = useState(() => realApiMode ? defaultRentalDate(3) : fixturePeriod.returnAt);
   const [quote, setQuote] = useState<QuoteSnapshot>();
@@ -104,14 +126,14 @@ export function CounterRentalPage({
     ? costume
     : catalog[0]?.id ?? '';
   const item = catalog.find((c) => c.id === selectedCostume);
-  const selectedVariant = item?.sizes.includes(variant.split(' / ')[0])
-    ? variant
-    : item?.sizes[0]
-      ? `${item.sizes[0]} / ${item.colors[0]}`
-      : '';
-  const selectedApiVariantId = item?.apiVariants?.find(
-    (entry) => `${entry.size} / ${entry.color}` === selectedVariant,
-  )?.id;
+  const variantOptions = counterVariantOptions(item);
+  const selectedVariantOption =
+    variantOptions.find((option) => option.value === variant) ??
+    variantOptions.find((option) => option.label === variant) ??
+    variantOptions[0];
+  const selectedVariantValue = selectedVariantOption?.value ?? '';
+  const selectedVariant = selectedVariantOption?.apiId ?? selectedVariantOption?.label ?? '';
+  const selectedApiVariantId = selectedVariantOption?.apiId;
   const clearQuote = useCallback(() => {
     quoteRequestRef.current += 1;
     setQuote(undefined);
@@ -424,29 +446,29 @@ export function CounterRentalPage({
                         onChange={(e) => {
                           const next = catalog.find((c) => c.id === e.target.value);
                           setCostume(e.target.value);
-                          setVariant(next ? `${next.sizes[0]} / ${next.colors[0]}` : '');
+                          setVariant(counterVariantOptions(next)[0]?.value ?? '');
                           clearQuote();
                         }}
                       >
                         {!catalog.length && <option value="">Chưa có mẫu trang phục</option>}
                         {catalog.map((c) => (
                           <option value={c.id} key={c.id}>
-                            {c.name}{realApiMode ? ` · ${c.sizes[0]} / ${c.colors[0]}` : ''}
+                            {c.name}{realApiMode && counterVariantOptions(c)[0] ? ` · ${counterVariantOptions(c)[0].label}` : ''}
                           </option>
                         ))}
                       </SelectField>
                       <SelectField
                         label="Biến thể"
-                        value={selectedVariant}
+                        value={selectedVariantValue}
                         disabled={!item || catalogLoading}
                         onChange={(e) => {
                           setVariant(e.target.value);
                           clearQuote();
                         }}
                       >
-                        {item?.sizes.map((size) => (
-                          <option key={size}>
-                            {size} / {item.colors[0]}
+                        {variantOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
                           </option>
                         ))}
                       </SelectField>

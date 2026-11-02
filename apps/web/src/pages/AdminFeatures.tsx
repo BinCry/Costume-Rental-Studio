@@ -2220,9 +2220,11 @@ const inventoryConditionLabel = (condition: string) =>
 export function ReportsPage({
   scenario,
   branch,
+  audience = 'admin',
 }: {
   scenario: DemoScenario;
   branch: string;
+  audience?: 'admin' | 'staff';
 }) {
   const realApiMode = apiEnabled && hasAccessToken();
   const [preset, setPreset] = useState<ReportPreset>('30');
@@ -2281,7 +2283,7 @@ export function ReportsPage({
         return (
           <div className="page">
             <PageHeading
-              eyebrow="QUẢN TRỊ / BÁO CÁO"
+              eyebrow={audience === 'staff' ? 'VẬN HÀNH / BÁO CÁO' : 'QUẢN TRỊ / BÁO CÁO'}
               title="Báo cáo vận hành"
               description={`Theo dõi tình hình thuê và thu chi tại ${branch || 'chi nhánh đang chọn'}.`}
             />

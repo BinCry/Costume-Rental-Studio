@@ -331,6 +331,10 @@ export default function StudioApp() {
     ? actorGroupFromRoles(apiIdentity.roles)
     : actorGroupFromRoleCode(activeRole);
   const staff = isStaff(route.screen);
+  const productionApiMode = apiEnabled && !import.meta.env.DEV;
+  const authSessionResolving = productionApiMode && !apiSessionReady;
+  const staffNavigationPending =
+    staff && productionApiMode && (!apiSessionReady || (!!apiIdentity && !apiBranchesReady));
   const mobileDrawerOpen = staff && menuOpen && mobileStaffNav;
   useEffect(() => {
     if (staff || !menuOpen) return;
@@ -423,7 +427,13 @@ export default function StudioApp() {
         : actorGroup === 'CUSTOMER'
           ? 'catalog'
           : 'account';
-  const brandHomeScreen = apiIdentity ? actorHomeScreen : staff ? actorHomeScreen : 'catalog';
+  const brandHomeScreen = staffNavigationPending
+    ? route.screen
+    : apiIdentity
+      ? actorHomeScreen
+      : staff
+        ? actorHomeScreen
+        : 'catalog';
   useEffect(() => {
     if (!apiIdentity || !apiSessionReady || canActorAccessScreen(actorGroup, route.screen)) return;
     const destination = defaultPathForActor(actorGroup);
@@ -566,7 +576,9 @@ export default function StudioApp() {
   };
   const authScreen = ['login', 'register', 'forgotPassword'].includes(route.screen);
   const nav =
-    authScreen || (apiIdentity && !canActorAccessScreen(actorGroup, route.screen))
+    authScreen ||
+    staffNavigationPending ||
+    (apiIdentity && !canActorAccessScreen(actorGroup, route.screen))
       ? []
       : staff
         ? (actorGroup === 'ADMIN' ? adminNav : actorGroup === 'STAFF' ? staffNav : []).filter(
@@ -575,16 +587,15 @@ export default function StudioApp() {
         : customerNav;
   const navGroups = actorGroup === 'ADMIN' ? adminNavGroups : staffNavGroups;
   const shellActorGroup = apiIdentity || staff ? actorGroup : 'CUSTOMER';
-  const actorLabel =
-    shellActorGroup === 'ADMIN'
+  const actorLabel = staffNavigationPending
+    ? 'Đang xác minh phiên'
+    : shellActorGroup === 'ADMIN'
       ? 'Quản trị'
       : shellActorGroup === 'STAFF'
         ? 'Nhân viên'
         : shellActorGroup === 'CUSTOMER'
           ? 'Khách hàng'
           : 'Chưa được phân quyền';
-  const productionApiMode = apiEnabled && !import.meta.env.DEV;
-  const authSessionResolving = productionApiMode && !apiSessionReady;
   const requiresCustomerSession =
     route.screen === 'booking' || route.screen === 'myRentals' || route.screen === 'myRentalDetail';
   const requiresSession = productionApiMode && (staff || requiresCustomerSession);
@@ -598,8 +609,9 @@ export default function StudioApp() {
   const showFixtureControls = import.meta.env.DEV && !apiIdentity;
   const p = route.params;
   const authAudienceGroup = resolveAuthAudience(p);
-  const portalClass =
-    shellActorGroup === 'ADMIN'
+  const portalClass = staffNavigationPending
+    ? 'app-employee'
+    : shellActorGroup === 'ADMIN'
       ? 'app-admin'
       : shellActorGroup === 'STAFF'
         ? 'app-employee'
@@ -629,7 +641,9 @@ export default function StudioApp() {
               e.preventDefault();
               go(brandHomeScreen);
             }}
-            aria-label={`Studio Trang Phục, về ${actorLabel.toLowerCase()}`}
+            aria-label={staffNavigationPending
+              ? 'Studio Trang Phục, đang xác minh phiên đăng nhập'
+              : `Studio Trang Phục, về ${actorLabel.toLowerCase()}`}
           >
             <BrandLogoMark className="brand-mark" />
             <span>
@@ -645,6 +659,8 @@ export default function StudioApp() {
               aria-label={menuOpen ? 'Đóng menu chức năng' : 'Mở menu chức năng'}
               aria-expanded={menuOpen}
               aria-controls="staff-navigation"
+              disabled={staffNavigationPending}
+              aria-busy={staffNavigationPending}
               onClick={() => {
                 if (menuOpen) closeStaffMenu(true);
                 else {
@@ -826,8 +842,18 @@ export default function StudioApp() {
               }
             }}
           >
-            <nav aria-label={actorGroup === 'ADMIN' ? 'Chức năng quản trị' : 'Chức năng vận hành'}>
-              {navGroups.map((group) => {
+            <nav
+              aria-label={staffNavigationPending
+                ? 'Điều hướng đang xác minh quyền'
+                : actorGroup === 'ADMIN'
+                  ? 'Chức năng quản trị'
+                  : 'Chức năng vận hành'}
+            >
+              {staffNavigationPending ? (
+                <p className="muted staff-nav-pending" role="status">
+                  Đang xác minh quyền truy cập…
+                </p>
+              ) : navGroups.map((group) => {
                 const groupItems = group.screens.flatMap((screen) => {
                   const item = nav.find((entry) => entry.screen === screen);
                   return item ? [item] : [];
@@ -1330,7 +1356,11 @@ export default function StudioApp() {
               />
             )}
             {(route.screen === 'reports' || route.screen === 'staffReports') && (
-              <ReportsPage scenario={scenario} branch={activeBranch} />
+              <ReportsPage
+                scenario={scenario}
+                branch={activeBranch}
+                audience={route.screen === 'staffReports' ? 'staff' : 'admin'}
+              />
             )}
           </>
         )}
