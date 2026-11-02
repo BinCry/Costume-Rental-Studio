@@ -15,6 +15,7 @@ import type {
   Transfer,
   TransferStatus,
   Unit,
+  UnitBlock,
   Variant,
 } from '../fixtures/studio';
 
@@ -178,13 +179,56 @@ interface ApiInventoryUnit {
   unitCode: string;
   operationalStatus: Unit['status'];
   conditionGrade?: string;
+  conditionNotes?: string | null;
+  acquiredAt?: string | null;
+  acquisitionCostVnd?: string | number | bigint | null;
   variant?: {
+    id?: string;
     variantCode?: string;
     sizeCode?: string;
     colorCode?: string;
     model?: { name?: string };
   } | null;
   currentBranch?: { name?: string } | null;
+}
+interface ApiUnitBlock {
+  id: string;
+  unitId: string;
+  capacityWindowId?: string | null;
+  blockType: UnitBlock['type'];
+  status: UnitBlock['status'];
+  blockedFrom: string;
+  blockedUntil: string;
+  reason: string;
+  estimatedEffortMinutes?: number | null;
+  costVnd?: string | number | bigint | null;
+  notes?: string | null;
+  updatedAt: string;
+  unit?: { unitCode?: string };
+}
+interface ApiCapacityWindow {
+  id: string;
+  startsAt: string;
+  endsAt: string;
+  availableMinutes: number;
+  notes?: string | null;
+  updatedAt: string;
+}
+interface ApiAccessory {
+  id: string;
+  modelId: string;
+  name: string;
+  defaultQuantity: number;
+  replacementValueVnd: string | number | bigint;
+  isActive: boolean;
+}
+export interface CatalogAccessory {
+  id: string;
+  modelId: string;
+  name: string;
+  defaultQuantity: number;
+  replacementValueVnd: number;
+  isActive: boolean;
 }
 interface ApiCustomer {
   userId: string;
@@ -997,6 +1041,52 @@ export async function listCatalogDetails(): Promise<CostumeDetail[]> {
       variants: byModel.get(model.id) ?? [],
     };
   });
+}
+function accessoryFromApi(item: ApiAccessory): CatalogAccessory {
+  return {
+    id: item.id,
+    modelId: item.modelId,
+    name: item.name,
+    defaultQuantity: item.defaultQuantity,
+    replacementValueVnd: numberValue(item.replacementValueVnd),
+    isActive: item.isActive,
+  };
+}
+export async function listModelAccessories(modelId: string): Promise<CatalogAccessory[]> {
+  const items = await request<ApiAccessory[]>(
+    `/api/v1/catalog/models/${encodeURIComponent(modelId)}/accessories`,
+  );
+  return items.map(accessoryFromApi);
+}
+export async function createModelAccessory(
+  modelId: string,
+  input: { name: string; defaultQuantity: number; replacementValueVnd: number },
+): Promise<CatalogAccessory> {
+  const item = await request<ApiAccessory>(
+    `/api/v1/catalog/models/${encodeURIComponent(modelId)}/accessories`,
+    { method: 'POST', body: JSON.stringify(input) },
+  );
+  return accessoryFromApi(item);
+}
+export async function updateModelAccessory(
+  accessoryId: string,
+  input: { name?: string; defaultQuantity?: number; replacementValueVnd?: number },
+): Promise<CatalogAccessory> {
+  const item = await request<ApiAccessory>(
+    `/api/v1/catalog/accessories/${encodeURIComponent(accessoryId)}`,
+    { method: 'PATCH', body: JSON.stringify(input) },
+  );
+  return accessoryFromApi(item);
+}
+export async function setModelAccessoryActive(
+  accessoryId: string,
+  active: boolean,
+): Promise<CatalogAccessory> {
+  const item = await request<ApiAccessory>(
+    `/api/v1/catalog/accessories/${encodeURIComponent(accessoryId)}/${active ? 'activate' : 'deactivate'}`,
+    { method: 'POST' },
+  );
+  return accessoryFromApi(item);
 }
 export async function saveCatalogModel(model: CostumeDetail): Promise<CostumeDetail> {
   const reference = modelRefs.get(model.id);
@@ -2531,11 +2621,16 @@ export async function listReports(
     params.set('to', toExclusive.toISOString());
   }
   const query = params.toString();
-  const [overview, rentals, payments, revenue] = await Promise.all([
+  const [overview, rentals, payments, revenue, inventory] = await Promise.all([
     request<ApiOverviewReport>('/api/v1/reports/overview?' + query),
     request<ApiRentalReport>('/api/v1/reports/rentals?' + query),
     request<ApiPaymentReport>('/api/v1/reports/payments?' + query),
     request<ApiRevenueReport>('/api/v1/reports/revenue?' + query),
+    request<{
+      totalUnits: number;
+      byOperationalStatus: { operationalStatus: string; count: number }[];
+      byConditionGrade: { conditionGrade: string; count: number }[];
+    }>('/api/v1/reports/inventory?' + query),
   ]);
   const branch =
     branchName ?? (overview.branchId ? branchNameById(overview.branchId) : 'Toàn chuỗi');
@@ -2552,6 +2647,15 @@ export async function listReports(
       overdueUnits: 0,
       overdueOrders: rentals.overdueOrders,
       completedRefund: numberValue(overview.completedRefundVnd ?? 0),
+      inventoryTotalUnits: inventory.totalUnits,
+      inventoryByStatus: inventory.byOperationalStatus.map((item) => ({
+        status: item.operationalStatus,
+        count: item.count,
+      })),
+      inventoryByCondition: inventory.byConditionGrade.map((item) => ({
+        condition: item.conditionGrade,
+        count: item.count,
+      })),
       revenuePeriods: revenue.periods.map((item) => ({
         period: item.period,
         rentalVnd: numberValue(item.rentalVnd),
@@ -2565,14 +2669,8 @@ export async function listReports(
     },
   ];
 }
-export async function listInventoryUnits(branchName?: string, search?: string): Promise<Unit[]> {
-  if (branchName && !branchIds.has(branchName)) await listBranches();
-  const query = new URLSearchParams({ sortBy: 'unitCode', sortOrder: 'asc' });
-  const branchId = branchName ? branchIds.get(branchName) : undefined;
-  if (branchId) query.set('branchId', branchId);
-  if (search?.trim()) query.set('search', search.trim());
-  const page = await requestAllPages<ApiInventoryUnit>('/api/v1/inventory/units', query);
-  return page.map((unit) => ({
+function inventoryUnitFromApi(unit: ApiInventoryUnit): Unit {
+  return {
     apiId: unit.id,
     barcode: unit.unitCode,
     variantCode: unit.variant?.variantCode ?? '',
@@ -2581,29 +2679,290 @@ export async function listInventoryUnits(branchName?: string, search?: string): 
     branch: unit.currentBranch?.name ?? 'Chi nhánh chưa xác định',
     status: unit.operationalStatus,
     condition: unit.conditionGrade ?? 'UNINSPECTED',
+    conditionNotes: unit.conditionNotes ?? undefined,
+    acquiredAt: unit.acquiredAt ?? undefined,
+    acquisitionCostVnd: numberValue(unit.acquisitionCostVnd),
     available: unit.operationalStatus === 'READY',
     blocks: [],
     history: [],
-  }));
+  };
+}
+export async function listInventoryUnits(branchName?: string, search?: string): Promise<Unit[]> {
+  if (branchName && !branchIds.has(branchName)) await listBranches();
+  const query = new URLSearchParams({ sortBy: 'unitCode', sortOrder: 'asc' });
+  const branchId = branchName ? branchIds.get(branchName) : undefined;
+  if (branchName && !branchId) {
+    throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không xác định được chi nhánh để tải tồn kho.');
+  }
+  if (branchId) query.set('branchId', branchId);
+  if (search?.trim()) query.set('search', search.trim());
+  const page = await requestAllPages<ApiInventoryUnit>('/api/v1/inventory/units', query);
+  return page.map(inventoryUnitFromApi);
+}
+export interface ScheduledBlock extends UnitBlock {
+  id: string;
+  unitId: string;
+  unitCode: string;
+  updatedAt: string;
+  capacityWindowId?: string | null;
+  estimatedEffortMinutes?: number;
+  costVnd?: number;
+  notes?: string;
+}
+export interface CapacityWindowRecord {
+  id: string;
+  startsAt: string;
+  endsAt: string;
+  availableMinutes: number;
+  notes?: string;
+  updatedAt: string;
+}
+function blockFromApi(block: ApiUnitBlock): ScheduledBlock {
+  return {
+    id: block.id,
+    unitId: block.unitId,
+    unitCode: block.unit?.unitCode ?? '',
+    updatedAt: block.updatedAt,
+    capacityWindowId: block.capacityWindowId,
+    type: block.blockType,
+    status: block.status,
+    from: block.blockedFrom,
+    until: block.blockedUntil,
+    reason: block.reason,
+    estimatedEffortMinutes: block.estimatedEffortMinutes ?? undefined,
+    costVnd: numberValue(block.costVnd),
+    notes: block.notes ?? undefined,
+  };
+}
+export async function listUnitBlocks(options: {
+  branchName?: string;
+  unitId?: string;
+  from?: string;
+  to?: string;
+} = {}): Promise<ScheduledBlock[]> {
+  if (options.branchName && !branchIds.has(options.branchName)) await listBranches();
+  const query = new URLSearchParams({ pageSize: '100' });
+  const branchId = options.branchName ? branchIds.get(options.branchName) : undefined;
+  if (options.branchName && !branchId) {
+    throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không xác định được chi nhánh để tải lịch xử lý.');
+  }
+  if (branchId) query.set('branchId', branchId);
+  if (options.unitId) query.set('unitId', options.unitId);
+  if (options.from) query.set('from', new Date(options.from).toISOString());
+  if (options.to) query.set('to', new Date(options.to).toISOString());
+  return (await requestAllPages<ApiUnitBlock>('/api/v1/scheduling/unit-blocks', query)).map(blockFromApi);
 }
 export async function createUnitBlock(
   unitId: string,
   block: {
-    type: 'CLEANING' | 'REPAIR' | 'INSPECTION';
+    type: UnitBlock['type'];
     from: string;
     until: string;
     reason: string;
+    capacityWindowId?: string;
+    estimatedEffortMinutes?: number;
+    costVnd?: number;
+    notes?: string;
   },
-) {
-  return request('/api/v1/scheduling/unit-blocks', {
+): Promise<ScheduledBlock> {
+  const created = await request<ApiUnitBlock>('/api/v1/scheduling/unit-blocks', {
     method: 'POST',
     body: JSON.stringify({
       unitId,
       blockType: block.type,
+      capacityWindowId: block.capacityWindowId,
       blockedFrom: new Date(block.from).toISOString(),
       blockedUntil: new Date(block.until).toISOString(),
       reason: block.reason,
+      estimatedEffortMinutes: block.estimatedEffortMinutes,
+      costVnd: block.costVnd,
+      notes: block.notes,
     }),
+  });
+  return blockFromApi(created);
+}
+export async function updateUnitBlock(
+  blockId: string,
+  input: {
+    blockType?: UnitBlock['type'];
+    blockedFrom?: string;
+    blockedUntil?: string;
+    capacityWindowId?: string | null;
+    estimatedEffortMinutes?: number | null;
+    costVnd?: number | null;
+    reason?: string;
+    notes?: string | null;
+    expectedUpdatedAt: string;
+  },
+): Promise<ScheduledBlock> {
+  const item = await request<ApiUnitBlock>(`/api/v1/scheduling/unit-blocks/${encodeURIComponent(blockId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      ...input,
+      blockedFrom: input.blockedFrom ? new Date(input.blockedFrom).toISOString() : undefined,
+      blockedUntil: input.blockedUntil ? new Date(input.blockedUntil).toISOString() : undefined,
+      expectedUpdatedAt: new Date(input.expectedUpdatedAt).toISOString(),
+    }),
+  });
+  return blockFromApi(item);
+}
+export async function startUnitBlock(blockId: string): Promise<ScheduledBlock> {
+  return blockFromApi(
+    await request<ApiUnitBlock>(`/api/v1/scheduling/unit-blocks/${encodeURIComponent(blockId)}/start`, {
+      method: 'POST',
+    }),
+  );
+}
+export async function completeUnitBlock(
+  blockId: string,
+  input: { notes?: string; costVnd?: number; nextOperationalStatus?: 'READY' | 'REPAIR' | 'RETIRED' } = {},
+): Promise<ScheduledBlock> {
+  return blockFromApi(
+    await request<ApiUnitBlock>(`/api/v1/scheduling/unit-blocks/${encodeURIComponent(blockId)}/complete`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  );
+}
+export async function cancelUnitBlock(blockId: string, reason: string): Promise<ScheduledBlock> {
+  return blockFromApi(
+    await request<ApiUnitBlock>(`/api/v1/scheduling/unit-blocks/${encodeURIComponent(blockId)}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+  );
+}
+export async function listCapacityWindows(
+  branchName: string,
+  from?: string,
+  to?: string,
+): Promise<CapacityWindowRecord[]> {
+  if (!branchIds.has(branchName)) await listBranches();
+  const branchId = branchIds.get(branchName);
+  if (!branchId) throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không xác định được chi nhánh.');
+  const query = new URLSearchParams({ branchId, pageSize: '100' });
+  if (from) query.set('from', new Date(from).toISOString());
+  if (to) query.set('to', new Date(to).toISOString());
+  const items = await requestAllPages<ApiCapacityWindow>('/api/v1/scheduling/capacity-windows', query);
+  return items.map((item) => ({
+    id: item.id,
+    startsAt: item.startsAt,
+    endsAt: item.endsAt,
+    availableMinutes: item.availableMinutes,
+    notes: item.notes ?? undefined,
+    updatedAt: item.updatedAt,
+  }));
+}
+export async function createCapacityWindow(
+  branchName: string,
+  input: { startsAt: string; endsAt: string; availableMinutes: number; notes?: string },
+): Promise<CapacityWindowRecord> {
+  if (!branchIds.has(branchName)) await listBranches();
+  const branchId = branchIds.get(branchName);
+  if (!branchId) throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không xác định được chi nhánh.');
+  const item = await request<ApiCapacityWindow>('/api/v1/scheduling/capacity-windows', {
+    method: 'POST',
+    body: JSON.stringify({
+      branchId,
+      startsAt: new Date(input.startsAt).toISOString(),
+      endsAt: new Date(input.endsAt).toISOString(),
+      availableMinutes: input.availableMinutes,
+      notes: input.notes,
+    }),
+  });
+  return {
+    id: item.id,
+    startsAt: item.startsAt,
+    endsAt: item.endsAt,
+    availableMinutes: item.availableMinutes,
+    notes: item.notes ?? undefined,
+    updatedAt: item.updatedAt,
+  };
+}
+export async function updateCapacityWindow(
+  capacityWindowId: string,
+  input: { startsAt?: string; endsAt?: string; availableMinutes?: number; notes?: string | null; expectedUpdatedAt: string },
+): Promise<CapacityWindowRecord> {
+  const item = await request<ApiCapacityWindow>(`/api/v1/scheduling/capacity-windows/${encodeURIComponent(capacityWindowId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      startsAt: input.startsAt ? new Date(input.startsAt).toISOString() : undefined,
+      endsAt: input.endsAt ? new Date(input.endsAt).toISOString() : undefined,
+      availableMinutes: input.availableMinutes,
+      notes: input.notes,
+      expectedUpdatedAt: new Date(input.expectedUpdatedAt).toISOString(),
+    }),
+  });
+  return {
+    id: item.id,
+    startsAt: item.startsAt,
+    endsAt: item.endsAt,
+    availableMinutes: item.availableMinutes,
+    notes: item.notes ?? undefined,
+    updatedAt: item.updatedAt,
+  };
+}
+export async function deleteCapacityWindow(capacityWindowId: string): Promise<void> {
+  await request<{ id: string }>(`/api/v1/scheduling/capacity-windows/${encodeURIComponent(capacityWindowId)}`, {
+    method: 'DELETE',
+  });
+}
+export async function inspectInventoryUnit(
+  unitId: string,
+  input: { conditionGrade: 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED'; nextStatus: 'READY' | 'REPAIR'; notes?: string },
+) {
+  return inventoryUnitFromApi(await request<ApiInventoryUnit>(`/api/v1/inventory/units/${encodeURIComponent(unitId)}/inspect`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }));
+}
+export async function changeInventoryUnitStatus(
+  unitId: string,
+  input: { targetStatus: 'READY' | 'CLEANING' | 'REPAIR'; notes?: string },
+) {
+  return inventoryUnitFromApi(await request<ApiInventoryUnit>(`/api/v1/inventory/units/${encodeURIComponent(unitId)}/status`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }));
+}
+export async function retireInventoryUnit(unitId: string, notes: string) {
+  return inventoryUnitFromApi(await request<ApiInventoryUnit>(`/api/v1/inventory/units/${encodeURIComponent(unitId)}/retire`, {
+    method: 'POST',
+    body: JSON.stringify({ notes }),
+  }));
+}
+export async function createInventoryUnit(input: {
+  unitCode: string;
+  variantId: string;
+  branchName: string;
+  acquiredAt?: string;
+  acquisitionCostVnd?: number;
+  conditionNotes?: string;
+}) {
+  if (!branchIds.has(input.branchName)) await listBranches();
+  const branchId = branchIds.get(input.branchName);
+  if (!branchId) throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không xác định được chi nhánh.');
+  const created = await request<ApiInventoryUnit>('/api/v1/inventory/units', {
+    method: 'POST',
+    body: JSON.stringify({
+      unitCode: input.unitCode.trim().toUpperCase(),
+      variantId: input.variantId,
+      branchId,
+      acquiredAt: input.acquiredAt ? new Date(input.acquiredAt).toISOString() : undefined,
+      acquisitionCostVnd: input.acquisitionCostVnd,
+      conditionNotes: input.conditionNotes,
+    }),
+  });
+  return inventoryUnitFromApi(created);
+}
+export async function listInventoryUnitEvents(unitId: string): Promise<string[]> {
+  const events = await requestAllPages<{ occurredAt: string; eventType: string; notes?: string | null }>(
+    `/api/v1/inventory/units/${encodeURIComponent(unitId)}/events`,
+    new URLSearchParams({ sortBy: 'occurredAt', sortOrder: 'desc', pageSize: '100' }),
+  );
+  return events.map((event) => {
+    const date = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(event.occurredAt));
+    return `${date} · ${event.eventType}${event.notes ? ` · ${event.notes}` : ''}`;
   });
 }
 

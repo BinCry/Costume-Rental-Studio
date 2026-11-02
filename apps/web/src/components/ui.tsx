@@ -323,6 +323,7 @@ export function ConfirmDialog({
   onClose,
   loading = false,
   danger = false,
+  confirmDisabled = false,
 }: {
   title: string;
   children: ReactNode;
@@ -331,6 +332,7 @@ export function ConfirmDialog({
   onClose: () => void;
   loading?: boolean;
   danger?: boolean;
+  confirmDisabled?: boolean;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -409,7 +411,7 @@ export function ConfirmDialog({
           <Button variant="secondary" onClick={onClose} disabled={loading}>
             Quay lại
           </Button>
-          <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} loading={loading}>
+          <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} loading={loading} disabled={confirmDisabled}>
             {confirmText}
           </Button>
         </div>

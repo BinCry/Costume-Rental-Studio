@@ -71,11 +71,14 @@ export interface CostumeDetail {
   variants: Variant[];
 }
 export interface UnitBlock {
-  type: 'CLEANING' | 'REPAIR' | 'INSPECTION';
+  id?: string;
+  unitId?: string;
+  updatedAt?: string;
+  type: 'CLEANING' | 'REPAIR' | 'INSPECTION' | 'ALTERATION' | 'INTERNAL_USE' | 'MANUAL' | 'OTHER';
   from: string;
   until: string;
   reason: string;
-  status: 'PLANNED' | 'IN_PROGRESS' | 'COMPLETED';
+  status: 'PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
 }
 export interface Unit {
   apiId?: string;
@@ -86,6 +89,9 @@ export interface Unit {
   branch: string;
   status: UnitStatus;
   condition: string;
+  conditionNotes?: string;
+  acquiredAt?: string;
+  acquisitionCostVnd?: number;
   available: boolean;
   blocks: UnitBlock[];
   history: string[];
@@ -184,6 +190,9 @@ export interface ReportSnapshot {
   overdueOrders?: number;
   /** Completed deposit refunds reported by the API, in VND. */
   completedRefund?: number;
+  inventoryTotalUnits?: number;
+  inventoryByStatus?: { status: string; count: number }[];
+  inventoryByCondition?: { condition: string; count: number }[];
   revenuePeriods?: ReportRevenuePeriod[];
   dailySnapshots?: ReportDailySnapshot[];
   transactions: { status: string; count: number }[];

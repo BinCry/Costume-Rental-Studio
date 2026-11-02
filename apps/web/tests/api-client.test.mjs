@@ -165,6 +165,13 @@ describe('web API client session and error handling', () => {
             },
           ],
         }),
+      )
+      .mockResolvedValueOnce(
+        success({
+          totalUnits: 8,
+          byOperationalStatus: [{ operationalStatus: 'READY', count: 6 }, { operationalStatus: 'REPAIR', count: 2 }],
+          byConditionGrade: [{ conditionGrade: 'GOOD', count: 7 }, { conditionGrade: 'FAIR', count: 1 }],
+        }),
       );
 
     const { listReports } = await import('../src/api/client.ts');
@@ -184,7 +191,7 @@ describe('web API client session and error handling', () => {
     ]);
 
     const reportCalls = globalThis.fetch.mock.calls.slice(1);
-    expect(reportCalls).toHaveLength(4);
+    expect(reportCalls).toHaveLength(5);
     for (const [url] of reportCalls) {
       const parsed = new URL(url);
       expect(parsed.searchParams.get('branchId')).toBe('branch-1');
@@ -207,6 +214,30 @@ describe('web API client session and error handling', () => {
       code: 'BRANCH_CONTEXT_MISSING',
     });
     expect(globalThis.fetch).toHaveBeenCalledOnce();
+  });
+
+  it('does not fall back to a chain-wide inventory query when the selected branch is unknown', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      success({ items: [], pagination: { page: 1, pageSize: 100, totalItems: 0, totalPages: 0 } }),
+    );
+    const { listInventoryUnits } = await import('../src/api/client.ts');
+
+    await expect(listInventoryUnits('Chi nhánh chưa tải được')).rejects.toMatchObject({
+      code: 'BRANCH_CONTEXT_MISSING',
+    });
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+  });
+
+  it('deletes a capacity window using the authenticated scheduling contract', async () => {
+    values.set(accessTokenKey, 'studio-access-token');
+    globalThis.fetch.mockResolvedValueOnce(success({ id: 'window-1' }));
+    const { deleteCapacityWindow } = await import('../src/api/client.ts');
+
+    await expect(deleteCapacityWindow('window-1')).resolves.toBeUndefined();
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'https://api.example.test/api/v1/scheduling/capacity-windows/window-1',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
   });
 
   it('sends Ops Agent chat through the authenticated public Agent endpoint', async () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import {
   Button,
   ConfirmDialog,
@@ -42,8 +42,13 @@ import {
   deleteCatalogMedia,
   hasAccessToken,
   listCatalogCategories,
+  listModelAccessories,
   listCatalogMedia,
+  createModelAccessory,
+  setModelAccessoryActive,
+  updateModelAccessory,
   type CatalogMediaRecord,
+  type CatalogAccessory,
   updateCatalogMedia,
   uploadCatalogMedia,
 } from '../api/client';
@@ -71,6 +76,147 @@ const staffRoleLabels: Record<string, string> = {
   SALES_STAFF: 'Nhân viên bán hàng',
   INVENTORY_STAFF: 'Nhân viên kho',
 };
+
+function ModelAccessoriesPanel({ modelId, canManage, scenario }: { modelId: string; canManage: boolean; scenario: DemoScenario }) {
+  const loadAccessories = useCallback(async () => listModelAccessories(modelId), [modelId]);
+  const { loading, data: items, error: loadError, retry } = useFixtureResource(scenario, loadAccessories, modelId);
+  const [busy, setBusy] = useState(false);
+  const [issue, setIssue] = useState('');
+  const [notice, setNotice] = useState('');
+  const [name, setName] = useState('');
+  const [quantity, setQuantity] = useState('1');
+  const [replacement, setReplacement] = useState('0');
+  const [editingId, setEditingId] = useState('');
+  const [draft, setDraft] = useState({ name: '', quantity: '1', replacement: '0' });
+
+  const saveNew = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const defaultQuantity = Number(quantity);
+    const replacementValueVnd = Number(replacement);
+    if (!name.trim() || !Number.isInteger(defaultQuantity) || defaultQuantity < 1 || replacementValueVnd < 0) {
+      setIssue('Nhập tên, số lượng mặc định từ 1 trở lên và giá trị thay thế không âm.');
+      return;
+    }
+    setBusy(true);
+    setIssue('');
+    setNotice('');
+    try {
+      await createModelAccessory(modelId, { name: name.trim(), defaultQuantity, replacementValueVnd });
+      setName('');
+      setQuantity('1');
+      setReplacement('0');
+      setNotice('Đã thêm phụ kiện cho mẫu.');
+      retry();
+    } catch (error) {
+      setIssue(issueText(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const saveExisting = async (item: CatalogAccessory) => {
+    const defaultQuantity = Number(draft.quantity);
+    const replacementValueVnd = Number(draft.replacement);
+    if (!draft.name.trim() || !Number.isInteger(defaultQuantity) || defaultQuantity < 1 || replacementValueVnd < 0) {
+      setIssue('Kiểm tra tên, số lượng mặc định và giá trị thay thế.');
+      return;
+    }
+    setBusy(true);
+    setIssue('');
+    try {
+      await updateModelAccessory(item.id, {
+        name: draft.name.trim(),
+        defaultQuantity,
+        replacementValueVnd,
+      });
+      setEditingId('');
+      setNotice('Đã cập nhật phụ kiện.');
+      retry();
+    } catch (error) {
+      setIssue(issueText(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const toggleActive = async (item: CatalogAccessory) => {
+    setBusy(true);
+    setIssue('');
+    setNotice('');
+    try {
+      await setModelAccessoryActive(item.id, !item.isActive);
+      setNotice(item.isActive ? 'Đã ngừng sử dụng phụ kiện; lịch sử thuê được giữ nguyên.' : 'Đã kích hoạt phụ kiện.');
+      retry();
+    } catch (error) {
+      setIssue(issueText(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="catalog-media-manager" aria-label="Quản lý phụ kiện của mẫu">
+      <div>
+        <h3>Phụ kiện theo mẫu</h3>
+        <p className="muted small-note">Số lượng mặc định được ghi nhận trên từng món khi tạo đơn. Phụ kiện đã có lịch sử chỉ được ngừng sử dụng, không xóa.</p>
+      </div>
+      {loading ? <p className="muted" role="status">Đang tải phụ kiện…</p> : loadError ? (
+        <Feedback tone="danger" title="Không tải được danh sách phụ kiện">{loadError} <button type="button" className="text-button" onClick={retry}>Thử lại</button></Feedback>
+      ) : (
+        <div className="feature-card-list">
+          {(items ?? []).map((item) => (
+            <article className="feature-list-row" key={item.id}>
+              {editingId === item.id ? (
+                <>
+                  <Field label="Tên phụ kiện" value={draft.name} disabled={busy} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+                  <div className="feature-filters">
+                    <Field label="Số lượng mặc định" type="number" min="1" step="1" value={draft.quantity} disabled={busy} onChange={(event) => setDraft({ ...draft, quantity: event.target.value })} />
+                    <Field label="Giá trị thay thế (đ)" type="number" min="0" step="1000" value={draft.replacement} disabled={busy} onChange={(event) => setDraft({ ...draft, replacement: event.target.value })} />
+                  </div>
+                  <div className="catalog-media-card__actions">
+                    <Button type="button" loading={busy} onClick={() => void saveExisting(item)}>Lưu phụ kiện</Button>
+                    <Button type="button" variant="quiet" disabled={busy} onClick={() => setEditingId('')}>Hủy</Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <strong>{item.name}</strong>
+                  <span>{item.defaultQuantity} món · giá trị thay thế {money(item.replacementValueVnd)}</span>
+                  <StatusLabel text={item.isActive ? 'Đang dùng' : 'Ngừng dùng'} tone={item.isActive ? 'success' : 'neutral'} />
+                  {canManage && (
+                    <div className="catalog-media-card__actions">
+                      <Button type="button" variant="quiet" disabled={busy} onClick={() => {
+                        setEditingId(item.id);
+                        setDraft({ name: item.name, quantity: String(item.defaultQuantity), replacement: String(item.replacementValueVnd) });
+                        setIssue('');
+                      }}>Chỉnh sửa</Button>
+                      <Button type="button" variant="secondary" loading={busy} onClick={() => void toggleActive(item)}>
+                        {item.isActive ? 'Ngừng sử dụng' : 'Kích hoạt'}
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )}
+            </article>
+          ))}
+          {!items?.length && <EmptyState title="Mẫu chưa có phụ kiện">Thêm các món cần kiểm đếm khi giao và nhận đồ.</EmptyState>}
+        </div>
+      )}
+      {canManage && (
+        <form className="stack-form" onSubmit={(event) => void saveNew(event)}>
+          <h4>Thêm phụ kiện</h4>
+          <Field label="Tên phụ kiện" value={name} disabled={busy} onChange={(event) => setName(event.target.value)} />
+          <div className="feature-filters">
+            <Field label="Số lượng mặc định" type="number" min="1" step="1" value={quantity} disabled={busy} onChange={(event) => setQuantity(event.target.value)} />
+            <Field label="Giá trị thay thế (đ)" type="number" min="0" step="1000" value={replacement} disabled={busy} onChange={(event) => setReplacement(event.target.value)} />
+          </div>
+          <Button type="submit" loading={busy}>Thêm phụ kiện</Button>
+        </form>
+      )}
+      {issue && <Feedback tone="danger" title="Không cập nhật được phụ kiện">{issue}</Feedback>}
+      {notice && <Feedback tone="success" title="Đã lưu thay đổi">{notice}</Feedback>}
+      {!loading && issue && <Button type="button" variant="quiet" onClick={retry}>Tải lại</Button>}
+    </section>
+  );
+}
 
 export function CatalogAdminPage({ scenario, canManage = true }: { scenario: DemoScenario; canManage?: boolean }) {
   const realApiMode = apiEnabled && hasAccessToken();
@@ -474,19 +620,29 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                     value={editing.description}
                     onChange={(e) => setModel({ ...editing, description: e.target.value })}
                   />
-                  <Field
-                    label="Phụ kiện (cách nhau bằng dấu phẩy)"
-                    value={editing.accessories.join(', ')}
-                    onChange={(e) =>
-                      setModel({
-                        ...editing,
-                        accessories: e.target.value
-                          .split(',')
-                          .map((s) => s.trim())
-                          .filter(Boolean),
-                      })
-                    }
-                  />
+                  {realApiMode ? (
+                    editing.modelCode && mediaOwnerId === editing.id ? (
+                      <ModelAccessoriesPanel modelId={editing.id} canManage={canManage} scenario={scenario} />
+                    ) : (
+                      <Feedback tone="info" title="Lưu mẫu trước">
+                        Sau khi mẫu được tạo trên máy chủ, bạn có thể quản lý phụ kiện và số lượng đi kèm.
+                      </Feedback>
+                    )
+                  ) : (
+                    <Field
+                      label="Phụ kiện mẫu (cách nhau bằng dấu phẩy)"
+                      value={editing.accessories.join(', ')}
+                      onChange={(e) =>
+                        setModel({
+                          ...editing,
+                          accessories: e.target.value
+                            .split(',')
+                            .map((s) => s.trim())
+                            .filter(Boolean),
+                        })
+                      }
+                    />
+                  )}
                   {realApiMode && !editing.modelCode && (
                     <p className="muted small-note">
                       Mẫu mới sẽ được tạo với mã mẫu và danh mục đã chọn. Media sẽ được bổ sung ở bước
@@ -2056,6 +2212,10 @@ const refundStatusLabel = (status: string) =>
     FAILED: 'Thất bại',
     CANCELLED: 'Đã hủy',
   })[status] ?? status;
+const inventoryStatusLabel = (status: string) =>
+  ({ INBOUND: 'Chờ kiểm tra', READY: 'Sẵn sàng', CLEANING: 'Đang vệ sinh', REPAIR: 'Đang sửa', IN_TRANSFER: 'Đang điều chuyển', RETIRED: 'Ngừng sử dụng' })[status] ?? status;
+const inventoryConditionLabel = (condition: string) =>
+  ({ UNINSPECTED: 'Chưa kiểm tra', NEW: 'Mới', GOOD: 'Tốt', FAIR: 'Cần theo dõi', POOR: 'Kém', DAMAGED: 'Hư hỏng' })[condition] ?? condition;
 
 export function ReportsPage({
   scenario,
@@ -2228,6 +2388,26 @@ export function ReportsPage({
                     </Panel>
                   )}
                 </div>
+                {realApiMode && (
+                  <div className="feature-two-column report-detail-grid">
+                    <Panel title={`Tồn kho · ${report.inventoryTotalUnits ?? 0} bộ`}>
+                      {(report.inventoryByStatus ?? []).length ? (
+                        <KeyFacts rows={(report.inventoryByStatus ?? []).map((item) => ({
+                          label: inventoryStatusLabel(item.status),
+                          value: item.count,
+                        }))} />
+                      ) : <p className="muted">Chi nhánh chưa có bộ trang phục.</p>}
+                    </Panel>
+                    <Panel title="Tình trạng trang phục">
+                      {(report.inventoryByCondition ?? []).length ? (
+                        <KeyFacts rows={(report.inventoryByCondition ?? []).map((item) => ({
+                          label: inventoryConditionLabel(item.condition),
+                          value: item.count,
+                        }))} />
+                      ) : <p className="muted">Chưa có dữ liệu kiểm tra tình trạng.</p>}
+                    </Panel>
+                  </div>
+                )}
                 <Panel
                   title="Doanh thu thuê theo thời gian"
                   className="report-chart-panel"

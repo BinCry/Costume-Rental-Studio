@@ -12,6 +12,10 @@ export const blockTypeLabels: Record<UnitBlock['type'], string> = {
   CLEANING: 'vệ sinh',
   REPAIR: 'sửa chữa',
   INSPECTION: 'kiểm tra',
+  ALTERATION: 'chỉnh sửa',
+  INTERNAL_USE: 'sử dụng nội bộ',
+  MANUAL: 'chặn lịch thủ công',
+  OTHER: 'khác',
 };
 export const conditionLabels: Record<string, string> = {
   GOOD: 'Tốt',
@@ -19,9 +23,11 @@ export const conditionLabels: Record<string, string> = {
   DAMAGED: 'Hư hỏng',
   POOR: 'Kém',
   UNINSPECTED: 'Chưa kiểm tra',
+  NEW: 'Mới',
 };
 export const blockStatusLabels: Record<UnitBlock['status'], string> = {
   PLANNED: 'Đã lên lịch',
   IN_PROGRESS: 'Đang thực hiện',
   COMPLETED: 'Đã hoàn tất',
+  CANCELLED: 'Đã hủy',
 };
