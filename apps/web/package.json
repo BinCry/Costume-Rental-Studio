@@ -10,7 +10,7 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -b --pretty false",
     "preview": "vite preview",
-    "test": "pnpm --filter @costume/api exec vitest run --globals --root ../web --exclude e2e/**",
+    "test": "pnpm --filter @costume/api exec vitest run --globals --root ../web --exclude='e2e/**'",
     "test:e2e": "playwright test"
   },
   "dependencies": {
