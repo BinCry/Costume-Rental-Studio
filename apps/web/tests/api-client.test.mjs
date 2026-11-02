@@ -870,6 +870,30 @@ describe('web API client session and error handling', () => {
     expect(values.get(accessTokenKey)).toBe('access-refreshed');
   });
 
+  it('clears an old access token before restoring the Google callback session', async () => {
+    values.set(accessTokenKey, 'stale-account-token');
+    globalThis.fetch
+      .mockResolvedValueOnce(error(401, 'SESSION_EXPIRED', 'Phiên hết hạn'))
+      .mockResolvedValueOnce(success({ accessToken: 'google-account-token' }))
+      .mockResolvedValueOnce(
+        success({
+          id: 'google-user',
+          displayName: 'Admin Studio',
+          email: 'adminstudio@gmail.com',
+          roles: [{ actorGroup: 'ADMIN' }],
+        }),
+      );
+
+    const { clearAccessToken, currentUser } = await import('../src/api/client.ts');
+    clearAccessToken();
+    const user = await currentUser();
+
+    expect(user.id).toBe('google-user');
+    expect(values.get(accessTokenKey)).toBe('google-account-token');
+    expect(new Headers(globalThis.fetch.mock.calls[0][1].headers).get('Authorization')).toBeNull();
+    expect(globalThis.fetch.mock.calls[1][0]).toBe('https://api.example.test/api/v1/auth/refresh');
+  });
+
   it('does not loop refresh requests when the retried request remains unauthorized', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(error(401, 'SESSION_EXPIRED', 'Phiên hết hạn'))

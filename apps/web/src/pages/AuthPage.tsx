@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   ApiClientError,
   apiEnabled,
+  clearAccessToken,
   googleLoginUrl,
   login,
   registerCustomer,
@@ -24,12 +25,6 @@ interface PendingRegistration {
   expiresAt: number;
   retryAt: number;
 }
-interface ApiIdentity {
-  displayName: string;
-  email: string;
-  roles: { actorGroup: string }[];
-}
-
 const authErrorMessage = (error: unknown) => {
   if (!(error instanceof ApiClientError))
     return 'Đã xảy ra lỗi kết nối. Vui lòng kiểm tra mạng và thử lại.';
@@ -147,13 +142,11 @@ function validPhone(value: string) {
 export function AuthPage({
   mode,
   params,
-  apiIdentity,
   go,
   onAuthenticated,
 }: {
   mode: AuthMode;
   params: URLSearchParams;
-  apiIdentity?: ApiIdentity;
   go: Navigate;
   onAuthenticated: (next?: string) => Promise<void>;
 }) {
@@ -161,6 +154,9 @@ export function AuthPage({
     mode === 'register' ? readPendingRegistration() : undefined,
   );
   const [busy, setBusy] = useState(false);
+  const [googleCallbackPending, setGoogleCallbackPending] = useState(
+    () => mode === 'login' && params.get('status') === 'success',
+  );
   const [issue, setIssue] = useState('');
   const [notice, setNotice] = useState('');
   const callbackHandled = useRef(false);
@@ -239,15 +235,18 @@ export function AuthPage({
     if (
       mode === 'login' &&
       params.get('status') === 'success' &&
-      apiIdentity &&
       !callbackHandled.current
     ) {
       callbackHandled.current = true;
+      setGoogleCallbackPending(true);
+      clearAccessToken();
       const next = params.get('next') ?? window.sessionStorage.getItem(googleNextKey) ?? undefined;
       window.sessionStorage.removeItem(googleNextKey);
-      void onAuthenticated(next).catch((error: unknown) => setIssue(authErrorMessage(error)));
+      void onAuthenticated(next)
+        .catch((error: unknown) => setIssue(authErrorMessage(error)))
+        .finally(() => setGoogleCallbackPending(false));
     }
-  }, [apiIdentity, mode, onAuthenticated, params]);
+  }, [mode, onAuthenticated, params]);
 
   const submitLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -536,6 +535,14 @@ export function AuthPage({
               {notice}
             </div>
           )}
+          {googleCallbackPending && (
+            <div className="feedback feedback-info auth-feedback" role="status">
+              <div>
+                <strong>Đang hoàn tất đăng nhập Google</strong>
+                <p>Đang xác minh phiên và chuyển bạn đến khu vực phù hợp.</p>
+              </div>
+            </div>
+          )}
 
           {mode === 'login' && (
             <>
@@ -557,7 +564,7 @@ export function AuthPage({
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   required
-                  disabled={disabled || busy}
+                  disabled={disabled || busy || googleCallbackPending}
                 />
                 <Field
                   label="Mật khẩu"
@@ -567,7 +574,7 @@ export function AuthPage({
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   required
-                  disabled={disabled || busy}
+                  disabled={disabled || busy || googleCallbackPending}
                 />
                 <div className="auth-form-meta">
                   <a
@@ -580,7 +587,12 @@ export function AuthPage({
                     Quên mật khẩu?
                   </a>
                 </div>
-                <Button type="submit" loading={busy} disabled={disabled} className="auth-submit">
+                <Button
+                  type="submit"
+                  loading={busy || googleCallbackPending}
+                  disabled={disabled || googleCallbackPending}
+                  className="auth-submit"
+                >
                   Đăng nhập
                 </Button>
               </form>
@@ -592,7 +604,15 @@ export function AuthPage({
                   <a
                     className="button button-secondary auth-google"
                     href={googleLoginUrl()}
-                    onClick={rememberGoogleNext}
+                    onClick={(event) => {
+                      if (googleCallbackPending) {
+                        event.preventDefault();
+                        return;
+                      }
+                      rememberGoogleNext();
+                    }}
+                    aria-disabled={googleCallbackPending}
+                    tabIndex={googleCallbackPending ? -1 : undefined}
                   >
                     <span className="google-mark" aria-hidden="true">
                       G

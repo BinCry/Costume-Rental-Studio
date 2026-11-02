@@ -1131,7 +1131,6 @@ export default function StudioApp() {
                 key={route.screen}
                 mode={route.screen}
                 params={p}
-                apiIdentity={apiIdentity}
                 go={go}
                 onAuthenticated={finishAuthentication}
               />

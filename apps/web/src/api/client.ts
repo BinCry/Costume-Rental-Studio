@@ -807,6 +807,9 @@ export async function logout() {
 export function hasAccessToken() {
   return Boolean(token());
 }
+export function clearAccessToken() {
+  saveToken(null);
+}
 export async function currentUser() {
   return request<{
     id: string;
