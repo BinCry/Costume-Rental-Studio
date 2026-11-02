@@ -584,6 +584,10 @@ function apiErrorMessage(status: number, code: string) {
     AI_RATE_LIMITED: 'Ops Agent đang nhận quá nhiều yêu cầu. Hãy đợi rồi gửi lại.',
     AGENT_RATE_LIMITED:
       'Bạn đã gửi quá nhiều câu hỏi Ops Agent trong thời gian ngắn. Hãy đợi rồi gửi lại.',
+    RATE_LIMITED:
+      'Studio đang nhận quá nhiều yêu cầu từ kết nối này. Hãy chờ tối đa 15 phút rồi thử lại; tránh gửi liên tiếp.',
+    AUTH_RATE_LIMITED:
+      'Có quá nhiều yêu cầu xác thực trong thời gian ngắn. Hãy chờ tối đa 15 phút rồi thử lại.',
     AGENT_CASE_NOT_FOUND: 'Không tìm thấy hồ sơ Agent này hoặc hồ sơ không còn truy cập được.',
     AGENT_CASE_CONFLICT:
       'Dữ liệu của tình huống vừa thay đổi. Kế hoạch cũ đã mất hiệu lực; hãy tải lại và phân tích lại trước khi xác nhận.',

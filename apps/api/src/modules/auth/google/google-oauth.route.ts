@@ -1,4 +1,4 @@
-import { Router, type Request } from 'express';
+import { Router, type Request, type Response } from 'express';
 import rateLimit from 'express-rate-limit';
 
 import { AppError } from '../../../common/errors/app-error.js';
@@ -14,13 +14,21 @@ import { googleCallbackSchema } from './google-oauth.schema.js';
 import { completeGoogleAuthorization, createGoogleAuthorization } from './google-oauth.service.js';
 
 export const googleOAuthRouter = Router();
+
+function rateLimitHandler(request: Request, response: Response) {
+  if (request.accepts('html')) {
+    response.setHeader('Cache-Control', 'no-store');
+    return response.redirect(303, googleOAuthFrontendResultUrl('error', 'AUTH_RATE_LIMITED'));
+  }
+  return sendError(request, response, 429, 'AUTH_RATE_LIMITED', 'Too many authentication attempts');
+}
+
 const limit = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
-  handler: (request, response) =>
-    sendError(request, response, 429, 'AUTH_RATE_LIMITED', 'Too many authentication attempts'),
+  handler: rateLimitHandler,
 });
 
 function requestMetadata(request: Request) {
@@ -30,7 +38,7 @@ function requestMetadata(request: Request) {
   };
 }
 
-function frontendResultUrl(status: 'success' | 'error', errorCode?: string) {
+export function googleOAuthFrontendResultUrl(status: 'success' | 'error', errorCode?: string) {
   const url = new URL('/auth/google/callback', env.WEB_URL);
   url.searchParams.set('status', status);
   if (errorCode) url.searchParams.set('error', errorCode);
@@ -80,7 +88,7 @@ googleOAuthRouter.get('/google/callback', limit, async (request, response) => {
     );
     clearGoogleOAuthFlowCookie(response);
     setRefreshCookie(response, result);
-    return response.redirect(303, frontendResultUrl('success'));
+    return response.redirect(303, googleOAuthFrontendResultUrl('success'));
   } catch (error) {
     clearGoogleOAuthFlowCookie(response);
     if (!(error instanceof AppError)) {
@@ -90,6 +98,6 @@ googleOAuthRouter.get('/google/callback', limit, async (request, response) => {
       );
     }
     const code = error instanceof AppError ? error.code : 'GOOGLE_AUTH_FAILED';
-    return response.redirect(303, frontendResultUrl('error', code));
+    return response.redirect(303, googleOAuthFrontendResultUrl('error', code));
   }
 });

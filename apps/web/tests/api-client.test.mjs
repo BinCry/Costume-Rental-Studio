@@ -820,6 +820,18 @@ describe('web API client session and error handling', () => {
     });
   });
 
+  it('explains general API rate limits in plain Vietnamese', async () => {
+    globalThis.fetch.mockResolvedValueOnce(error(429, 'RATE_LIMITED', 'Too many requests'));
+    const { login } = await import('../src/api/client.ts');
+
+    await expect(login('khach@example.com', 'password-test')).rejects.toMatchObject({
+      status: 429,
+      code: 'RATE_LIMITED',
+      message:
+        'Studio đang nhận quá nhiều yêu cầu từ kết nối này. Hãy chờ tối đa 15 phút rồi thử lại; tránh gửi liên tiếp.',
+    });
+  });
+
   it('handles a non-JSON server error without exposing its body', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response('<html>secret stack trace</html>', { status: 502 }),

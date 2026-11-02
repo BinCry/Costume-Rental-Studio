@@ -178,6 +178,32 @@ describe('Google OAuth HTTP flow', () => {
     );
     expect(dbMocks.createSession).toHaveBeenCalledOnce();
   });
+
+  it('shows a frontend message for browser rate limits and keeps JSON for API clients', async () => {
+    // The earlier flow tests made seven requests across the start and callback routes.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await request(createApp()).get('/api/v1/auth/google').expect(302);
+    }
+
+    const browserResponse = await request(createApp())
+      .get('/api/v1/auth/google')
+      .set('Accept', 'text/html')
+      .expect(303);
+    const location = new URL(browserResponse.headers.location!);
+    expect(location.origin).toBe('http://localhost:3000');
+    expect(location.pathname).toBe('/auth/google/callback');
+    expect(location.searchParams.get('status')).toBe('error');
+    expect(location.searchParams.get('error')).toBe('AUTH_RATE_LIMITED');
+
+    const apiResponse = await request(createApp())
+      .get('/api/v1/auth/google')
+      .set('Accept', 'application/json')
+      .expect(429);
+    expect(apiResponse.body).toMatchObject({
+      success: false,
+      error: { code: 'AUTH_RATE_LIMITED', message: 'Too many authentication attempts' },
+    });
+  });
 });
 
 describe('Google account linking', () => {

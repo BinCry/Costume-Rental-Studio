@@ -137,6 +137,16 @@ describe('Express HTTP foundation', () => {
     });
     expect(typeof body.timestamp).toBe('string');
     expect(typeof body.requestId).toBe('string');
+
+    const browserNavigation = await request(app)
+      .get('/api/v1/auth/google')
+      .set('Accept', 'text/html')
+      .expect(303);
+    const location = new URL(browserNavigation.headers.location!);
+    expect(location.origin).toBe(env.WEB_URL);
+    expect(location.pathname).toBe('/auth/google/callback');
+    expect(location.searchParams.get('status')).toBe('error');
+    expect(location.searchParams.get('error')).toBe('RATE_LIMITED');
   });
 
   it('returns a safe error for malformed JSON', async () => {

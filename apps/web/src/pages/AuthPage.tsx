@@ -55,7 +55,10 @@ const authErrorMessage = (error: unknown) => {
     INVALID_GOOGLE_OAUTH_CALLBACK: 'Google chưa hoàn tất đăng nhập. Hãy thử lại hoặc dùng email.',
     ACCOUNT_UNAVAILABLE:
       'Tài khoản này chưa thể liên kết với Google. Hãy đăng nhập bằng phương thức đã dùng trước đó.',
-    AUTH_RATE_LIMITED: 'Bạn đã thử quá nhiều lần. Vui lòng đợi một lúc rồi thử lại.',
+    AUTH_RATE_LIMITED:
+      'Có quá nhiều yêu cầu đăng nhập trong thời gian ngắn. Hãy chờ tối đa 15 phút rồi thử lại, hoặc đăng nhập bằng email và mật khẩu bên dưới.',
+    RATE_LIMITED:
+      'Studio đang nhận quá nhiều yêu cầu từ kết nối này. Hãy chờ tối đa 15 phút rồi thử lại; tránh gửi liên tiếp.',
     INVALID_PASSWORD_RESET: 'Yêu cầu khôi phục đã hết hạn. Hãy bắt đầu lại.',
     UNTRUSTED_ORIGIN: 'Yêu cầu chưa được chấp nhận từ địa chỉ trang hiện tại.',
   };
@@ -85,6 +88,10 @@ const googleCallbackMessage = (code: string | null) => {
     ACCOUNT_UNAVAILABLE:
       'Tài khoản này chưa thể liên kết với Google. Hãy dùng phương thức đăng nhập trước đó.',
     GOOGLE_REGISTRATION_UNAVAILABLE: 'Đăng ký bằng Google đang tạm thời gián đoạn.',
+    AUTH_RATE_LIMITED:
+      'Có quá nhiều yêu cầu đăng nhập Google trong thời gian ngắn. Hãy chờ tối đa 15 phút rồi thử lại, hoặc đăng nhập bằng email và mật khẩu bên dưới.',
+    RATE_LIMITED:
+      'Studio đang nhận quá nhiều yêu cầu từ kết nối này. Hãy chờ tối đa 15 phút rồi thử lại; tránh bấm đăng nhập liên tục.',
   };
   return messages[code ?? ''] ?? 'Phiên xác thực đã bị hủy hoặc hết hạn. Hãy thử lại bằng email.';
 };

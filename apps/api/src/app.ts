@@ -14,6 +14,7 @@ import { env, webAllowedOrigins } from './config/env.js';
 import { logger } from './config/logger.js';
 import { prisma } from './database/prisma.js';
 import { authRouter } from './modules/auth/auth.route.js';
+import { googleOAuthFrontendResultUrl } from './modules/auth/google/google-oauth.route.js';
 import { customerRouter } from './modules/customers/customer.route.js';
 import { branchRouter } from './modules/branches/branch.route.js';
 import { catalogRouter } from './modules/catalog/catalog.route.js';
@@ -82,6 +83,15 @@ export function createApp() {
       standardHeaders: 'draft-8',
       legacyHeaders: false,
       handler: (request, response) => {
+        const path = request.originalUrl.split('?')[0];
+        if (
+          request.method === 'GET' &&
+          request.accepts('html') &&
+          (path === '/api/v1/auth/google' || path === '/api/v1/auth/google/callback')
+        ) {
+          response.setHeader('Cache-Control', 'no-store');
+          return response.redirect(303, googleOAuthFrontendResultUrl('error', 'RATE_LIMITED'));
+        }
         sendError(request, response, 429, 'RATE_LIMITED', 'Too many requests');
       },
     }),
