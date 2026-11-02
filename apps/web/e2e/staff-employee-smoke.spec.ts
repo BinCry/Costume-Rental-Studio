@@ -107,7 +107,7 @@ test('rate-limited session checks show a retry message without exposing admin na
   await expect(page.getByRole('navigation', { name: 'Chức năng quản trị' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: /về quản trị/i })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Đăng nhập', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Mở menu chức năng' })).toBeDisabled();
+  await expect(page.locator('.staff-menu-toggle')).toBeDisabled();
   await expect(
     page.getByRole('link', { name: 'Studio Trang Phục, phiên chưa xác minh' }),
   ).toHaveAttribute('href', '/van-hanh/don-thue');
