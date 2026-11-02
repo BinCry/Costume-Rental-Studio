@@ -179,6 +179,7 @@ export default function StudioApp() {
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const restoreMenuFocusRef = useRef(false);
   const sectionNavRef = useRef<HTMLElement>(null);
+  const customerNavRef = useRef<HTMLElement>(null);
   const previousRouteRef = useRef(route);
   useEffect(() => {
     if (previousRouteRef.current === route) return;
@@ -331,6 +332,39 @@ export default function StudioApp() {
     : actorGroupFromRoleCode(activeRole);
   const staff = isStaff(route.screen);
   const mobileDrawerOpen = staff && menuOpen && mobileStaffNav;
+  useEffect(() => {
+    if (staff || !menuOpen) return;
+    const navigation = customerNavRef.current;
+    if (!navigation) return;
+
+    const firstFocusable = Array.from(
+      navigation.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), select:not([disabled]), input:not([disabled])',
+      ),
+    ).find((element) => element.getClientRects().length > 0);
+    firstFocusable?.focus({ preventScroll: true });
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (navigation.contains(target) || menuButtonRef.current?.contains(target)) return;
+      setMenuOpen(false);
+      const targetElement = target instanceof Element ? target : null;
+      if (!targetElement?.closest('a[href], button, input, select, textarea, [tabindex]')) {
+        menuButtonRef.current?.focus({ preventScroll: true });
+      }
+    };
+    const onResize = () => {
+      if (window.innerWidth > 1079) setMenuOpen(false);
+    };
+
+    document.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('resize', onResize);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [menuOpen, staff]);
   const previousMobileDrawerOpenRef = useRef(false);
   useEffect(() => {
     if (mobileDrawerOpen) {
@@ -550,6 +584,7 @@ export default function StudioApp() {
           ? 'Khách hàng'
           : 'Chưa được phân quyền';
   const productionApiMode = apiEnabled && !import.meta.env.DEV;
+  const authSessionResolving = productionApiMode && !apiSessionReady;
   const requiresCustomerSession =
     route.screen === 'booking' || route.screen === 'myRentals' || route.screen === 'myRentalDetail';
   const requiresSession = productionApiMode && (staff || requiresCustomerSession);
@@ -623,6 +658,7 @@ export default function StudioApp() {
           )}
           {!staff && (
             <nav
+              ref={customerNavRef}
               id="main-navigation"
               className={`top-nav ${menuOpen ? 'open' : ''} ${authScreen ? 'auth-nav-hidden' : ''}`}
               aria-label="Điều hướng chính"
@@ -653,7 +689,7 @@ export default function StudioApp() {
                     ]
                   : []),
               ])}
-              {!authScreen && !apiIdentity && (
+              {!authScreen && apiSessionReady && !apiIdentity && (
                 <>
                   <a
                     className="mobile-auth-entry"
@@ -691,7 +727,8 @@ export default function StudioApp() {
           )}
           <div className="header-actions">
             {authScreen ? (
-              route.screen === 'login' && authAudienceGroup !== 'CUSTOMER' ? (
+              authSessionResolving ? null : route.screen === 'login' &&
+                authAudienceGroup !== 'CUSTOMER' ? (
                 <span className="auth-portal-label">
                   {authAudienceGroup === 'ADMIN' ? 'Cổng quản trị' : 'Cổng nhân viên'}
                 </span>
@@ -734,7 +771,7 @@ export default function StudioApp() {
                   </button>
                 </>
               ) : null
-            ) : (
+            ) : authSessionResolving ? null : (
               <div className="auth-header-actions">
                 <a
                   className="auth-header-link"
