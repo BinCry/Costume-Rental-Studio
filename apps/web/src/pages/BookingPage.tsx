@@ -120,12 +120,14 @@ export function BookingPage({
   costumeId,
   initialContext,
   onCustomerCreated,
+  customerAuthenticated = false,
 }: {
   scenario: DemoScenario;
   go: Navigate;
   costumeId?: string;
   initialContext: URLSearchParams;
   onCustomerCreated?: (code: string) => void;
+  customerAuthenticated?: boolean;
 }) {
   const apiMode = apiEnabled && (hasAccessToken() || !import.meta.env.DEV);
   const {
@@ -721,33 +723,11 @@ export function BookingPage({
               )}
               {step === 1 && (
                 <div className="form-stack">
-                  <div className="google-placeholder">
-                    <a
-                      className="button button-secondary"
-                      href="/dang-nhap?next=%2Fdat-thue%3Fresume%3D1"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        try {
-                          window.sessionStorage.setItem(
-                            bookingDraftStorageKey,
-                            JSON.stringify({ savedAt: Date.now(), draft: draftState }),
-                          );
-                          go('login', { next: '/dat-thue?resume=1' });
-                        } catch {
-                          setIssue(
-                            'Chưa thể lưu lựa chọn để tiếp tục sau khi đăng nhập. Hãy thử lại hoặc giữ nguyên trang này.',
-                          );
-                        }
-                      }}
-                    >
-                      Đăng nhập
-                    </a>
-                    <span>
-                      {apiMode
-                        ? 'Đăng nhập để tiếp tục gửi yêu cầu và theo dõi đơn thuê.'
-                        : 'Bạn có thể tiếp tục bản xem thử bằng thông tin liên hệ.'}{' '}
+                  {!customerAuthenticated && (
+                    <div className="google-placeholder">
                       <a
-                        href="/dang-ky?next=%2Fdat-thue%3Fresume%3D1"
+                        className="button button-secondary"
+                        href="/dang-nhap?next=%2Fdat-thue%3Fresume%3D1"
                         onClick={(event) => {
                           event.preventDefault();
                           try {
@@ -755,18 +735,42 @@ export function BookingPage({
                               bookingDraftStorageKey,
                               JSON.stringify({ savedAt: Date.now(), draft: draftState }),
                             );
-                            go('register', { next: '/dat-thue?resume=1' });
+                            go('login', { next: '/dat-thue?resume=1' });
                           } catch {
                             setIssue(
-                              'Chưa thể lưu lựa chọn để tiếp tục sau khi đăng ký. Hãy thử lại hoặc giữ nguyên trang này.',
+                              'Chưa thể lưu lựa chọn để tiếp tục sau khi đăng nhập. Hãy thử lại hoặc giữ nguyên trang này.',
                             );
                           }
                         }}
                       >
-                        Tạo tài khoản
+                        Đăng nhập
                       </a>
-                    </span>
-                  </div>
+                      <span>
+                        {apiMode
+                          ? 'Đăng nhập để tiếp tục gửi yêu cầu và theo dõi đơn thuê.'
+                          : 'Bạn có thể tiếp tục bản xem thử bằng thông tin liên hệ.'}{' '}
+                        <a
+                          href="/dang-ky?next=%2Fdat-thue%3Fresume%3D1"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            try {
+                              window.sessionStorage.setItem(
+                                bookingDraftStorageKey,
+                                JSON.stringify({ savedAt: Date.now(), draft: draftState }),
+                              );
+                              go('register', { next: '/dat-thue?resume=1' });
+                            } catch {
+                              setIssue(
+                                'Chưa thể lưu lựa chọn để tiếp tục sau khi đăng ký. Hãy thử lại hoặc giữ nguyên trang này.',
+                              );
+                            }
+                          }}
+                        >
+                          Tạo tài khoản
+                        </a>
+                      </span>
+                    </div>
+                  )}
                   <Field
                     label="Họ và tên người thuê"
                     placeholder="Ví dụ: Nguyễn An"

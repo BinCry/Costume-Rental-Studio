@@ -1100,6 +1100,7 @@ export default function StudioApp() {
                 costumeId={p.get('costume') ?? undefined}
                 initialContext={p}
                 onCustomerCreated={setCustomerCode}
+                customerAuthenticated={Boolean(apiIdentity && actorGroup === 'CUSTOMER')}
               />
             )}
             {route.screen === 'myRentals' && (
