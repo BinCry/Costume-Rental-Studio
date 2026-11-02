@@ -93,7 +93,9 @@ test('does not show guest sign-in links while restoring a customer session', asy
   await expect(page.getByRole('link', { name: 'Tạo tài khoản', exact: true })).toHaveCount(0);
 
   await expect(page.getByText('Đăng nhập để tiếp tục', { exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Đăng nhập', exact: true })).toBeVisible();
+  await expect(
+    page.locator('.auth-header-actions').getByRole('link', { name: 'Đăng nhập', exact: true }),
+  ).toBeVisible();
 });
 
 test('signed-in mobile customer keeps sign-out inside the navigation menu', async ({ page }) => {
