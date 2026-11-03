@@ -1228,9 +1228,16 @@ export function OrderDetailShell({
         <SelectField
           label="Đơn đang xử lý"
           value={order?.id ?? ''}
+          disabled={loading || eligible.length === 0}
           onChange={(event) => onOrderChange(event.target.value)}
         >
-          <option value="">{eligible.length === 0 ? 'Không có đơn' : 'Chọn đơn'}</option>
+          <option value="">
+            {loading
+              ? 'Đang tải danh sách đơn…'
+              : eligible.length === 0
+                ? 'Chưa có đơn phù hợp'
+                : 'Chọn đơn'}
+          </option>
           {eligible.map((entry) => (
             <option key={entry.id} value={entry.id}>
               {entry.id} · {entry.customer}
