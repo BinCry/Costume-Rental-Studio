@@ -8,32 +8,32 @@
 
 ## 1. Mục tiêu và môi trường
 
-Tài liệu này giúp Tester kiểm tra các hành trình thường dùng, quyền theo tài khoản và các lỗi giao diện/nghiệp vụ. Dùng môi trường được người điều phối cung cấp, ưu tiên staging trên Coolify. Không dùng fixture hoặc server local làm bằng chứng nghiệm thu API.
+Tài liệu này hướng dẫn Tester kiểm tra trực tiếp trên **production demo của Costume Rental Studio**: giao diện chạy trên Coolify, kết nối API và database demo. Có thể chạy các luồng ghi bằng dữ liệu TEST do điều phối chuẩn bị hoặc tạo qua giao diện trong phạm vi demo. Không dùng server local hoặc fixture làm bằng chứng nghiệm thu API.
 
-Nếu được yêu cầu test trực tiếp trên production, phải đọc và hoàn tất **Cổng an toàn production** trong [Kịch bản E2E production có kiểm soát](kich-ban-human-test-e2e.md). Không tự tạo đơn, thu/hoàn tiền, đổi chính sách, block hoặc điều chuyển hàng thật nếu chưa được người có thẩm quyền duyệt.
+Production demo có thể ghi dữ liệu lâu dài; không mặc định hệ thống tự reset. Chỉ sử dụng dữ liệu TEST và khép lại theo mục 7. Payment provider, email, SMS và OAuth có thể kết nối dịch vụ thật: không khởi tạo giao dịch tiền thật hoặc gửi thông báo tới người ngoài nhóm test. Nếu luồng cần dịch vụ ngoài mà chưa có sandbox, đánh dấu riêng phần tích hợp đó là BLOCKED; tiếp tục các phần demo an toàn.
 
 ## 2. Thông tin phải nhận trước khi test
 
 Người điều phối cần cung cấp:
 
-- URL môi trường; xác nhận staging hay production.
+- URL production demo và commit/build FE/BE đang chạy.
 - Commit/build FE và BE đang chạy; thời điểm kiểm thử và múi giờ.
 - Tài khoản riêng cho Customer, Staff bán hàng, Staff kho và Admin; chi nhánh được phân công cho từng nhân viên.
 - Khách TEST, mẫu trang phục, size/màu, barcode, chi nhánh và kỳ thuê đã cô lập.
 - Voucher thử nghiệm hợp lệ và không hợp lệ; không tự dùng mã của khách thật.
-- Phạm vi được duyệt: tạo đơn, bàn giao, thanh toán, nhận trả, danh mục, vai trò, chính sách hay điều chuyển.
-- Người liên hệ nếu lỗi ảnh hưởng dữ liệu, tiền, quyền truy cập hoặc trạng thái hàng.
+- Phương thức thanh toán/refund mô phỏng được phép dùng. Không dùng PayOS/chuyển khoản thật.
+- Người liên hệ nếu có lỗi làm sai dữ liệu demo, tiền mô phỏng, quyền hoặc trạng thái hàng.
 
 Không ghi mật khẩu, OTP, token, thông tin thanh toán hoặc dữ liệu khách thật vào báo cáo. Mỗi vai trò nên dùng một profile trình duyệt riêng để tránh nhầm phiên.
 
 ### Điều kiện dữ liệu
 
 - Có ít nhất một mẫu đang kinh doanh, có ảnh và từ hai biến thể/size để kiểm tra chọn lựa.
-- Có barcode READY dành riêng; nếu thử đổi bộ/điều chuyển, quản lý cung cấp thêm bộ dự phòng.
+- Có barcode READY thuộc dữ liệu demo; nếu thử đổi bộ/điều chuyển, dùng barcode TEST khác hoặc tạo dữ liệu demo phù hợp.
 - Đơn và khách TEST do Studio kiểm soát; không dùng thông tin khách thật.
-- Với thao tác ghi, phải có phương án kết thúc: trả bộ về đúng nơi/trạng thái, đóng đơn theo quy trình đã duyệt và thu hồi quyền thử nghiệm khi cần.
+- Với thao tác ghi, phải có phương án kết thúc: khép đơn TEST, trả barcode về đúng nơi/trạng thái, khôi phục cấu hình TEST và thu hồi quyền thử nghiệm khi cần.
 
-Thiếu điều kiện thì đánh dấu ca liên quan là **BLOCKED**, không tự tạo dữ liệu thay thế trên production.
+Điều phối có thể cung cấp trước các bản ghi TEST cần thiết. Nếu thiếu, Tester được tạo dữ liệu TEST qua giao diện production demo; không dùng hoặc sửa dữ liệu có nhãn/ý nghĩa khách thật. Thiếu sandbox bên ngoài thì chỉ chặn bước tích hợp đó, không chặn toàn bộ ca demo.
 
 ## 3. Cách chạy và quy tắc an toàn
 
@@ -46,9 +46,9 @@ Thiếu điều kiện thì đánh dấu ca liên quan là **BLOCKED**, không t
 
 ### Kết quả mỗi ca
 
-- **PASS:** Đạt mong đợi trên môi trường/API thật và có bằng chứng.
+- **PASS:** Đạt mong đợi trên production demo qua API thật và có bằng chứng.
 - **FAIL:** Kết quả sai, giao diện cản trở, ghi trùng, lộ dữ liệu hoặc vượt quyền.
-- **BLOCKED:** Thiếu tài khoản, dữ liệu, cấu hình hoặc phê duyệt.
+- **BLOCKED:** Thiếu tài khoản/dữ liệu demo hoặc cần dịch vụ bên ngoài chưa có sandbox.
 - **UI ONLY:** Chỉ quan sát giao diện fixture/demo; chưa chứng minh dữ liệu đã lưu trên server.
 - **N/A:** Không thuộc phạm vi phiên này; phải ghi lý do.
 
@@ -72,7 +72,7 @@ BLOCKED, UI ONLY và N/A không được tính là PASS.
 2. Mở Quên mật khẩu, hoàn tất trên email TEST nếu được cấu hình.
 3. Nếu hệ thống giới hạn yêu cầu, kiểm tra thông báo chờ/thử lại; không gửi lặp liên tục.
 
-**Mong đợi:** Người dùng hiểu bước tiếp theo; không chỉ thấy mã kỹ thuật như RATE_LIMITED; không tiết lộ thông tin tài khoản không cần thiết. Không cố tạo rate limit trên production.
+**Mong đợi:** Người dùng hiểu bước tiếp theo; không chỉ thấy mã kỹ thuật như RATE_LIMITED; không tiết lộ thông tin tài khoản không cần thiết. Nếu kiểm tra rate limit, chỉ dùng tài khoản TEST và số lần thử đã thống nhất; dừng khi màn hình báo thời gian chờ.
 
 #### AUTH-03 — Google OAuth (nếu đã cấu hình)
 
@@ -117,7 +117,7 @@ BLOCKED, UI ONLY và N/A không được tính là PASS.
 
 #### CUST-04 — Tạo yêu cầu thuê online
 
-1. Chọn mẫu, biến thể, chi nhánh, kỳ thuê và số lượng đã được duyệt.
+1. Chọn mẫu, biến thể, chi nhánh, kỳ thuê và số lượng thuộc dữ liệu TEST.
 2. Kiểm tra liên hệ và báo giá snapshot; gửi một lần.
 3. Mở Đơn của tôi, tải lại rồi mở lại chi tiết.
 
@@ -171,13 +171,13 @@ BLOCKED, UI ONLY và N/A không được tính là PASS.
 2. Chọn biến thể, chi nhánh, kỳ thuê và voucher nếu luồng hỗ trợ.
 3. Kiểm tra báo giá, gửi đơn và mở lại đơn.
 
-**Mong đợi:** Trường bắt buộc/khả dụng được kiểm tra; tổng tiền đúng; chỉ dùng dữ liệu được duyệt; Staff thiếu quyền bị từ chối.
+**Mong đợi:** Trường bắt buộc/khả dụng được kiểm tra; tổng tiền đúng; chỉ dùng dữ liệu TEST; Staff thiếu quyền bị từ chối.
 
 #### STAFF-05 — Giao đồ và thanh toán
 
 1. Mở đơn TEST đã xác nhận; kiểm tra khách, barcode, phụ kiện và tình trạng đồ.
 2. Đối chiếu riêng tiền thuê, cọc, giảm giá và trạng thái thanh toán.
-3. Chỉ ghi nhận tiền/giao đồ trên staging có sandbox hoặc khi đã có duyệt production bằng văn bản.
+3. Dùng phương thức thanh toán mô phỏng dành cho demo. Không mở hoặc xác nhận giao dịch PayOS/chuyển khoản bằng tiền thật.
 
 **Mong đợi:** Cọc không tính là doanh thu; không giao khi khoản bắt buộc chưa xác nhận; không xác nhận chuyển khoản đang chờ; không thu/giao lặp khi tải lại.
 
@@ -186,13 +186,13 @@ BLOCKED, UI ONLY và N/A không được tính là PASS.
 1. Tra đơn đang thuê theo mã đơn/barcode; đối chiếu hạn trả và người đang giữ.
 2. Nhận từng bộ trong đơn nhiều bộ; kiểm tra tình trạng và phụ kiện.
 3. Xem luồng thiếu/hỏng, chờ đánh giá, phụ phí và cọc còn lại.
-4. Chỉ thu thêm/hoàn cọc nếu môi trường, policy và người phụ trách tài chính cho phép.
+4. Dùng luồng thu thêm/hoàn cọc mô phỏng nếu có; nếu nút gọi provider thật thì dừng trước xác nhận và ghi BLOCKED cho phần tích hợp ngoài.
 
 **Mong đợi:** Mỗi bộ có trạng thái riêng; trả một bộ không đóng đơn khi còn bộ khác; đồ CLEANING/REPAIR không được giao; UI không báo refund thành công khi server chưa xác nhận.
 
 #### STAFF-07 — Trả trễ và đơn kế tiếp
 
-Chỉ chạy trên staging hoặc khi mốc đến hạn xảy ra tự nhiên và quản lý cho phép. Không tua đồng hồ, cố ý giữ hàng hay tạo xung đột ảnh hưởng khách thật.
+Chạy trên đơn/barcode demo được điều phối cung cấp. Có thể dùng đơn demo quá hạn và tạo xung đột lịch trong phạm vi demo; không thay đổi đồng hồ hệ thống hoặc dùng tài khoản/dữ liệu khách thật.
 
 **Mong đợi:** Đơn trước vẫn ghi nhận đang giữ đồ đến khi nhận trả; đơn sau không giao được cùng barcode chưa READY; cảnh báo không tự đổi lịch hay thu tiền.
 
@@ -202,13 +202,13 @@ Chỉ chạy trên staging hoặc khi mốc đến hạn xảy ra tự nhiên v�
 
 1. Mở Kho; tìm barcode TEST.
 2. Kiểm tra chi nhánh, trạng thái, lịch và lịch sử.
-3. Trên staging hoặc barcode đã duyệt, thử block/unblock vệ sinh/sửa chữa.
+3. Dùng barcode TEST để thử block/unblock vệ sinh/sửa chữa rồi khôi phục trạng thái ban đầu.
 
 **Mong đợi:** Barcode không lộ ở khu Customer; block có lý do; bộ bị block không được gán giao.
 
 #### INV-02 — Điều chuyển chi nhánh
 
-1. Dùng barcode đã dành riêng; tạo phiếu giữa hai chi nhánh.
+1. Dùng barcode TEST; tạo phiếu giữa hai chi nhánh.
 2. Kiểm tra duyệt, ghi xuất, nhận một phần và nhận đủ.
 3. Tra vị trí từng barcode và lịch sử phiếu.
 
@@ -216,15 +216,15 @@ Chỉ chạy trên staging hoặc khi mốc đến hạn xảy ra tự nhiên v�
 
 #### ADMIN-01 — Danh mục và ảnh
 
-1. Mở Quản trị → Danh mục; chọn mẫu TEST và chỉnh nội dung đã được duyệt.
-2. Qua luồng ảnh chính thức, thêm ảnh được phép, đặt ảnh đại diện, đổi thứ tự; chỉ xóa ảnh TEST nếu được duyệt.
+1. Mở Quản trị → Danh mục; chọn mẫu TEST và chỉnh nội dung thử nghiệm.
+2. Qua luồng ảnh chính thức, thêm ảnh do Studio sở hữu, đặt ảnh đại diện, đổi thứ tự; chỉ xóa ảnh TEST.
 3. Dùng tài khoản chỉ xem để xác nhận thao tác ghi bị chặn.
 
 **Mong đợi:** Ảnh gắn đúng mẫu và vẫn đúng sau khi tải lại; tiến độ/lỗi rõ; không lộ khóa S3; quyền ghi được máy chủ kiểm tra.
 
 #### ADMIN-02 — Nhân viên, vai trò và chi nhánh
 
-1. Tìm nhân viên TEST; gán vai trò ở chi nhánh đã duyệt và lưu.
+1. Tìm nhân viên TEST; gán vai trò ở chi nhánh thử nghiệm và lưu.
 2. Đăng nhập tài khoản đó để kiểm tra portal, menu và thao tác được phép.
 3. Thử mở màn/hành động không có quyền hoặc chi nhánh chưa được gán.
 
@@ -232,7 +232,7 @@ Chỉ chạy trên staging hoặc khi mốc đến hạn xảy ra tự nhiên v�
 
 #### ADMIN-03 — Voucher/ưu đãi
 
-1. Trên staging hoặc bản ghi TEST được duyệt, tạo ưu đãi có thời hạn, mức giảm, đơn tối thiểu và giới hạn.
+1. Tạo ưu đãi TEST có thời hạn, mức giảm, đơn tối thiểu và giới hạn; không sửa ưu đãi đang phục vụ khách thật.
 2. Kiểm tra mã trong báo giá; sửa hoặc tắt ưu đãi và tính lại.
 3. Dùng tài khoản thiếu quyền để thử truy cập.
 
@@ -240,9 +240,9 @@ Chỉ chạy trên staging hoặc khi mốc đến hạn xảy ra tự nhiên v�
 
 #### ADMIN-04 — Chính sách và báo cáo
 
-1. Đọc chính sách hiện tại, phiên bản, ngày hiệu lực và giờ đệm; không lưu thay đổi trên production.
+1. Ghi lại policy TEST hiện tại; chỉnh trên policy TEST, kiểm tra báo giá/đơn mẫu, sau đó khôi phục giá trị ban đầu.
 2. Mở báo cáo theo chi nhánh/khoảng ngày; kiểm tra định dạng dd/mm/yyyy, áp dụng bộ lọc, lỗi và trạng thái rỗng.
-3. Đối chiếu số liệu với các đơn TEST được duyệt.
+3. Đối chiếu số liệu với các đơn TEST đã tạo trong lượt chạy.
 
 **Mong đợi:** Báo cáo đúng chi nhánh và khoảng ngày; cọc đang giữ không cộng vào doanh thu; tài khoản một chi nhánh không xem số liệu toàn chuỗi.
 
@@ -267,7 +267,7 @@ Chạy tối thiểu một luồng Customer và một luồng Staff/Admin trên 
 
 #### UX-03 — Lỗi mạng và phục hồi
 
-Chỉ mô phỏng mất mạng với thao tác đọc hoặc dữ liệu staging có thể bỏ. Không ngắt mạng ngay sau khi ghi đơn, thanh toán, refund, giao/trả hay điều chuyển.
+Có thể mô phỏng mất mạng bằng bản ghi demo; sau thao tác ghi, kiểm tra trạng thái trên server trước khi gửi lại. Không dùng dịch vụ thanh toán hoặc thông báo thật để tạo lỗi.
 
 **Mong đợi:** Lỗi dễ hiểu; sau tải lại xác định được thao tác đã ghi hay chưa trước khi gửi lại.
 
@@ -319,7 +319,7 @@ Chỉ kết luận đạt khi các ca trong phạm vi đã PASS, không còn P0/
 
 ## 8. Tài liệu chi tiết
 
-- [Kịch bản E2E production có kiểm soát và cổng an toàn ghi dữ liệu](kich-ban-human-test-e2e.md)
+- [Kịch bản E2E production demo và quy trình khép lại dữ liệu TEST](kich-ban-human-test-e2e.md)
 - [Nghiệp vụ và quy tắc đơn thuê](../business/business-rules.md)
 - [Đối chiếu UI với tình huống nghiệp vụ](../reports/business-ui-coverage.md)
 - [Quản lý ảnh sản phẩm](../operations/quan-ly-anh-san-pham.md)
