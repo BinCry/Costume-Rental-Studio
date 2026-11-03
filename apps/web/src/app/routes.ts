@@ -24,6 +24,14 @@ export type Screen =
   | 'policies'
   | 'promotions'
   | 'reports'
+  | 'adminOrders'
+  | 'adminHandover'
+  | 'adminReturn'
+  | 'adminCounter'
+  | 'adminActive'
+  | 'adminInventory'
+  | 'adminTransfers'
+  | 'adminCrm'
   | 'staffReports'
   | 'notFound';
 export type ActorGroup = 'ADMIN' | 'STAFF' | 'CUSTOMER' | 'UNASSIGNED';
@@ -59,6 +67,14 @@ export const paths: Record<Screen, string> = {
   policies: '/quan-tri/chinh-sach',
   promotions: '/quan-tri/uu-dai',
   reports: '/quan-tri/bao-cao',
+  adminOrders: '/quan-tri/don-thue',
+  adminHandover: '/quan-tri/don-thue/:order/giao',
+  adminReturn: '/quan-tri/don-thue/:order/tra',
+  adminCounter: '/quan-tri/tao-don',
+  adminActive: '/quan-tri/dang-thue',
+  adminInventory: '/quan-tri/kho',
+  adminTransfers: '/quan-tri/dieu-chuyen',
+  adminCrm: '/quan-tri/khach-hang',
   staffReports: '/van-hanh/bao-cao',
   notFound: '/khong-tim-thay-trang',
 };
@@ -88,9 +104,23 @@ export function portalAreaForScreen(screen: Screen): PortalArea {
   if (['catalog', 'detail', 'booking', 'myRentals', 'myRentalDetail', 'account'].includes(screen))
     return 'CUSTOMER';
   if (
-    ['adminCatalog', 'employees', 'roles', 'branches', 'policies', 'promotions', 'reports'].includes(
-      screen,
-    )
+    [
+      'adminCatalog',
+      'employees',
+      'roles',
+      'branches',
+      'policies',
+      'promotions',
+      'reports',
+      'adminOrders',
+      'adminHandover',
+      'adminReturn',
+      'adminCounter',
+      'adminActive',
+      'adminInventory',
+      'adminTransfers',
+      'adminCrm',
+    ].includes(screen)
   )
     return 'ADMIN';
   if (screen === 'notFound') return 'PUBLIC';
@@ -136,7 +166,7 @@ export function pathFor(screen: Screen, params?: Record<string, string>) {
       path = path.replace(`:${key}`, encodeURIComponent(search[key] ?? ''));
       delete search[key];
     }
-  if (screen === 'orders' && search.order) {
+  if ((screen === 'orders' || screen === 'adminOrders') && search.order) {
     path += `/${encodeURIComponent(search.order)}`;
     delete search.order;
   }
@@ -155,6 +185,15 @@ export function readRoute(): Route {
   if (path.startsWith('/don-cua-toi/')) {
     params.set('order', path.split('/')[2] ?? '');
     return { screen: 'myRentalDetail', params };
+  }
+  if (path.startsWith('/quan-tri/don-thue/')) {
+    const parts = path.split('/');
+    params.set('order', parts[3] ?? '');
+    return {
+      screen:
+        parts[4] === 'giao' ? 'adminHandover' : parts[4] === 'tra' ? 'adminReturn' : 'adminOrders',
+      params,
+    };
   }
   if (path.startsWith('/trang-phuc/')) {
     params.set('id', path.split('/')[2] ?? '');

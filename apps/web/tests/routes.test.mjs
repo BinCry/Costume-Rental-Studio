@@ -76,6 +76,54 @@ describe('role-specific portal routing', () => {
     expect(canActorUsePath('ADMIN', '/quan-tri/nhan-vien')).toBe(true);
   });
 
+  it('keeps Admin business operations in the admin portal with separate URLs', () => {
+    const adminPaths = [
+      '/quan-tri/don-thue',
+      '/quan-tri/tao-don',
+      '/quan-tri/dang-thue',
+      '/quan-tri/kho',
+      '/quan-tri/dieu-chuyen',
+      '/quan-tri/khach-hang',
+    ];
+
+    for (const path of adminPaths) {
+      expect(portalAreaForPath(path)).toBe('ADMIN');
+      expect(canActorUsePath('ADMIN', path)).toBe(true);
+      expect(canActorUsePath('STAFF', path)).toBe(false);
+      expect(canActorUsePath('CUSTOMER', path)).toBe(false);
+    }
+
+    expect(canActorUsePath('ADMIN', '/van-hanh/don-thue')).toBe(false);
+    expect(canActorUsePath('STAFF', '/van-hanh/don-thue')).toBe(true);
+    expect(canActorAccessScreen('ADMIN', 'adminOrders')).toBe(true);
+    expect(canActorAccessScreen('STAFF', 'adminOrders')).toBe(false);
+  });
+
+  it('builds and resolves separate Admin order handover and return URLs', () => {
+    expect(pathFor('adminOrders', { order: 'RT-2026-001' })).toBe('/quan-tri/don-thue/RT-2026-001');
+    expect(pathFor('adminHandover', { order: 'RT-2026-001' })).toBe(
+      '/quan-tri/don-thue/RT-2026-001/giao',
+    );
+    expect(pathFor('adminReturn', { order: 'RT-2026-001' })).toBe(
+      '/quan-tri/don-thue/RT-2026-001/tra',
+    );
+
+    vi.stubGlobal('window', {
+      location: { pathname: '/quan-tri/don-thue/RT-2026-001/giao', search: '?tab=items' },
+    });
+    const handover = readRoute();
+    expect(handover.screen).toBe('adminHandover');
+    expect(handover.params.get('order')).toBe('RT-2026-001');
+    expect(handover.params.get('tab')).toBe('items');
+
+    vi.stubGlobal('window', {
+      location: { pathname: '/quan-tri/don-thue/RT-2026-002/tra', search: '' },
+    });
+    const rentalReturn = readRoute();
+    expect(rentalReturn.screen).toBe('adminReturn');
+    expect(rentalReturn.params.get('order')).toBe('RT-2026-002');
+  });
+
   it('keeps reporting available in separate staff and admin routes', () => {
     expect(pathFor('staffReports')).toBe('/van-hanh/bao-cao');
     expect(canActorAccessScreen('STAFF', 'staffReports')).toBe(true);

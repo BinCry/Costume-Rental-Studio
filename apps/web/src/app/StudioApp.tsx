@@ -81,6 +81,12 @@ const staffNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
 ];
 const adminNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
   { screen: 'reports', label: 'Tổng quan', roles: ['ADMIN'] },
+  { screen: 'adminOrders', label: 'Đơn thuê', roles: ['ADMIN'] },
+  { screen: 'adminCounter', label: 'Tạo tại quầy', roles: ['ADMIN'] },
+  { screen: 'adminActive', label: 'Đang thuê', roles: ['ADMIN'] },
+  { screen: 'adminInventory', label: 'Kho', roles: ['ADMIN'] },
+  { screen: 'adminTransfers', label: 'Điều chuyển', roles: ['ADMIN'] },
+  { screen: 'adminCrm', label: 'Khách hàng', roles: ['ADMIN'] },
   { screen: 'adminCatalog', label: 'Danh mục', roles: ['ADMIN'] },
   { screen: 'employees', label: 'Nhân viên', roles: ['ADMIN'] },
   { screen: 'roles', label: 'Vai trò', roles: ['ADMIN'] },
@@ -97,6 +103,13 @@ const staffNavGroups: { id: string; label: string; screens: Screen[] }[] = [
 ];
 const adminNavGroups: { id: string; label: string; screens: Screen[] }[] = [
   { id: 'overview', label: 'Tổng quan', screens: ['reports'] },
+  {
+    id: 'operations',
+    label: 'Vận hành',
+    screens: ['adminOrders', 'adminCounter', 'adminActive'],
+  },
+  { id: 'inventory', label: 'Kho', screens: ['adminInventory', 'adminTransfers'] },
+  { id: 'customers', label: 'Khách hàng', screens: ['adminCrm'] },
   { id: 'catalog', label: 'Danh mục', screens: ['adminCatalog'] },
   { id: 'organization', label: 'Tổ chức', screens: ['employees', 'roles', 'branches'] },
   { id: 'policies', label: 'Chính sách & ưu đãi', screens: ['policies', 'promotions'] },
@@ -149,6 +162,17 @@ const requiredPermissions: Partial<Record<Screen, string[]>> = {
   promotions: ['promotions.read.all'],
   reports: ['reports.read.all', 'reports.read.branch'],
   staffReports: ['reports.read.all', 'reports.read.branch'],
+  adminOrders: ['rentals.read.branch', 'rentals.read.all'],
+  adminCounter: ['rentals.manage.branch', 'rentals.manage.all'],
+  adminActive: ['rentals.read.branch', 'rentals.read.all'],
+  adminInventory: ['inventory.read.branch', 'inventory.read.all'],
+  adminTransfers: [
+    'transfers.read.branch',
+    'transfers.read.all',
+    'transfers.manage.branch',
+    'transfers.manage.all',
+  ],
+  adminCrm: ['crm.read.branch', 'crm.read.all'],
 };
 
 export default function StudioApp() {
@@ -292,6 +316,21 @@ export default function StudioApp() {
     syncRoute(readRoute());
     closeStaffMenu(false);
     window.scrollTo({ top: 0, behavior: 'instant' });
+  };
+  const adminGo: Navigate = (screen, params) => {
+    const adminTarget: Partial<Record<Screen, Screen>> = {
+      dashboard: 'reports',
+      orders: 'adminOrders',
+      handover: 'adminHandover',
+      return: 'adminReturn',
+      counter: 'adminCounter',
+      active: 'adminActive',
+      inventory: 'adminInventory',
+      transfers: 'adminTransfers',
+      crm: 'adminCrm',
+      staffReports: 'reports',
+    };
+    go(adminTarget[screen] ?? screen, params);
   };
   const finishAuthentication = async (next?: string) => {
     const identity = await currentUser();
@@ -554,14 +593,14 @@ export default function StudioApp() {
     ].some((permission) => effectivePermissions.includes(permission));
   const canOpen = (screen: Screen) => {
     if (!assigned) return false;
-    if (screen === 'handover')
+    if (screen === 'handover' || screen === 'adminHandover')
       return [
         'rentals.handover.branch',
         'rentals.handover.all',
         'rentals.manage.branch',
         'rentals.manage.all',
       ].some((permission) => effectivePermissions.includes(permission));
-    if (screen === 'return') {
+    if (screen === 'return' || screen === 'adminReturn') {
       const canReadOrder = ['rentals.read.branch', 'rentals.read.all'].some((permission) =>
         effectivePermissions.includes(permission),
       );
@@ -629,7 +668,8 @@ export default function StudioApp() {
   const requiresSession = productionApiMode && (staff || requiresCustomerSession);
   const sessionPending =
     requiresSession && (!apiSessionReady || (!!apiIdentity && !apiBranchesReady));
-  const sessionCheckFailed = requiresSession && apiSessionReady && !apiIdentity && !!apiSessionError;
+  const sessionCheckFailed =
+    requiresSession && apiSessionReady && !apiIdentity && !!apiSessionError;
   const sessionMissing = requiresSession && apiSessionReady && !apiIdentity && !apiSessionError;
   const wrongPortal = Boolean(apiIdentity && !canActorAccessScreen(actorGroup, route.screen));
   const protectedArea =
@@ -882,13 +922,15 @@ export default function StudioApp() {
             }}
           >
             <nav
-              aria-label={staffNavigationPending
-                ? 'Điều hướng đang xác minh quyền'
-                : staffSessionUnverified
-                  ? 'Điều hướng cần đăng nhập'
-                  : actorGroup === 'ADMIN'
-                    ? 'Chức năng quản trị'
-                    : 'Chức năng vận hành'}
+              aria-label={
+                staffNavigationPending
+                  ? 'Điều hướng đang xác minh quyền'
+                  : staffSessionUnverified
+                    ? 'Điều hướng cần đăng nhập'
+                    : actorGroup === 'ADMIN'
+                      ? 'Chức năng quản trị'
+                      : 'Chức năng vận hành'
+              }
             >
               {staffNavigationPending ? (
                 <p className="muted staff-nav-pending" role="status">
@@ -902,52 +944,56 @@ export default function StudioApp() {
                 <p className="muted staff-nav-pending" role="status">
                   Đăng nhập để tiếp tục.
                 </p>
-              ) : navGroups.map((group) => {
-                const groupItems = group.screens.flatMap((screen) => {
-                  const item = nav.find((entry) => entry.screen === screen);
-                  return item ? [item] : [];
-                });
-                if (!groupItems.length) return null;
-                const expanded = expandedStaffGroup === group.id;
-                return (
-                  <div className="staff-nav-group" key={group.id}>
-                    <button
-                      type="button"
-                      className="staff-nav-heading"
-                      aria-expanded={expanded}
-                      aria-controls={`staff-nav-items-${group.id}`}
-                      onClick={() =>
-                        setExpandedStaffGroup((current) => (current === group.id ? null : group.id))
-                      }
-                    >
-                      <span>{group.label}</span>
-                      <span className="staff-nav-chevron" aria-hidden="true">
-                        ⌄
-                      </span>
-                    </button>
-                    <div
-                      className="staff-nav-items"
-                      id={`staff-nav-items-${group.id}`}
-                      hidden={!expanded}
-                    >
-                      {groupItems.map((item) => (
-                        <a
-                          key={item.screen}
-                          href={pathFor(item.screen)}
-                          className={route.screen === item.screen ? 'active' : ''}
-                          aria-current={route.screen === item.screen ? 'page' : undefined}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            go(item.screen);
-                          }}
-                        >
-                          {item.label}
-                        </a>
-                      ))}
+              ) : (
+                navGroups.map((group) => {
+                  const groupItems = group.screens.flatMap((screen) => {
+                    const item = nav.find((entry) => entry.screen === screen);
+                    return item ? [item] : [];
+                  });
+                  if (!groupItems.length) return null;
+                  const expanded = expandedStaffGroup === group.id;
+                  return (
+                    <div className="staff-nav-group" key={group.id}>
+                      <button
+                        type="button"
+                        className="staff-nav-heading"
+                        aria-expanded={expanded}
+                        aria-controls={`staff-nav-items-${group.id}`}
+                        onClick={() =>
+                          setExpandedStaffGroup((current) =>
+                            current === group.id ? null : group.id,
+                          )
+                        }
+                      >
+                        <span>{group.label}</span>
+                        <span className="staff-nav-chevron" aria-hidden="true">
+                          ⌄
+                        </span>
+                      </button>
+                      <div
+                        className="staff-nav-items"
+                        id={`staff-nav-items-${group.id}`}
+                        hidden={!expanded}
+                      >
+                        {groupItems.map((item) => (
+                          <a
+                            key={item.screen}
+                            href={pathFor(item.screen)}
+                            className={route.screen === item.screen ? 'active' : ''}
+                            aria-current={route.screen === item.screen ? 'page' : undefined}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              go(item.screen);
+                            }}
+                          >
+                            {item.label}
+                          </a>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </nav>
             {apiIdentity && activeRole !== 'CUSTOMER' && (
               <section className="staff-menu-account" aria-label="Tài khoản và chi nhánh">
@@ -1265,10 +1311,10 @@ export default function StudioApp() {
             {route.screen === 'dashboard' && (
               <DashboardPage scenario={scenario} go={go} initialBranch={activeBranch} />
             )}
-            {route.screen === 'orders' && (
+            {(route.screen === 'orders' || route.screen === 'adminOrders') && (
               <OrdersPage
                 scenario={scenario}
-                go={go}
+                go={actorGroup === 'ADMIN' ? adminGo : go}
                 canManage={
                   !apiIdentity ||
                   effectivePermissions.includes('rentals.manage.branch') ||
@@ -1303,22 +1349,22 @@ export default function StudioApp() {
                 initialBranch={activeBranch}
               />
             )}
-            {route.screen === 'handover' && (
+            {(route.screen === 'handover' || route.screen === 'adminHandover') && (
               <OrderDetailShell
                 scenario={scenario}
                 mode="handover"
-                go={go}
+                go={actorGroup === 'ADMIN' ? adminGo : go}
                 initialOrderId={p.get('order') ?? 'RT-1028'}
                 initialBranch={activeBranch}
                 canReadPayments={canReadPayments}
                 canCollectPayments={canCollectPayments}
               />
             )}
-            {route.screen === 'return' && (
+            {(route.screen === 'return' || route.screen === 'adminReturn') && (
               <OrderDetailShell
                 scenario={scenario}
                 mode="return"
-                go={go}
+                go={actorGroup === 'ADMIN' ? adminGo : go}
                 initialOrderId={p.get('order') ?? 'RT-1031'}
                 initialBranch={activeBranch}
                 canReadPayments={canReadPayments}
@@ -1329,10 +1375,10 @@ export default function StudioApp() {
                 canCompleteSettlement={canCompleteSettlement}
               />
             )}
-            {route.screen === 'counter' && (
+            {(route.screen === 'counter' || route.screen === 'adminCounter') && (
               <CounterRentalPage
                 scenario={scenario}
-                go={go}
+                go={actorGroup === 'ADMIN' ? adminGo : go}
                 branch={activeBranch}
                 canConfirm={[
                   'rentals.confirm.branch',
@@ -1346,13 +1392,17 @@ export default function StudioApp() {
                 }
               />
             )}
-            {route.screen === 'active' && (
-              <ActiveRentalsPage scenario={scenario} go={go} branch={activeBranch} />
+            {(route.screen === 'active' || route.screen === 'adminActive') && (
+              <ActiveRentalsPage
+                scenario={scenario}
+                go={actorGroup === 'ADMIN' ? adminGo : go}
+                branch={activeBranch}
+              />
             )}
-            {route.screen === 'inventory' && (
+            {(route.screen === 'inventory' || route.screen === 'adminInventory') && (
               <InventoryPage
                 scenario={scenario}
-                go={go}
+                go={actorGroup === 'ADMIN' ? adminGo : go}
                 branch={activeBranch}
                 canManage={
                   !apiIdentity ||
@@ -1361,7 +1411,7 @@ export default function StudioApp() {
                 }
               />
             )}
-            {route.screen === 'transfers' && (
+            {(route.screen === 'transfers' || route.screen === 'adminTransfers') && (
               <TransfersPage
                 scenario={scenario}
                 branch={activeBranch}
@@ -1372,7 +1422,7 @@ export default function StudioApp() {
                 }
               />
             )}
-            {route.screen === 'crm' && (
+            {(route.screen === 'crm' || route.screen === 'adminCrm') && (
               <CrmPage
                 scenario={scenario}
                 branch={activeBranch}
