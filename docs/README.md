@@ -89,6 +89,7 @@ docs/
 
 | Tài liệu | Mục đích |
 | --- | --- |
+| [`qa/huong-dan-manual-test-cho-tester.md`](qa/huong-dan-manual-test-cho-tester.md) | Hướng dẫn Tester kiểm tra luồng Customer, Staff, Admin, kho, voucher, thử đồ ảo và UI desktop/mobile; gồm quy tắc an toàn và mẫu ghi nhận lỗi |
 | [`qa/kich-ban-human-test-e2e.md`](qa/kich-ban-human-test-e2e.md) | Kịch bản E2E production có kiểm soát: điều kiện an toàn, tài khoản theo vai trò, luồng nghiệp vụ và phiếu ghi nhận |
 
 ## Archive và chính sách xóa
