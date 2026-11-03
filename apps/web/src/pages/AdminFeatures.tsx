@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import {
   Button,
   ConfirmDialog,
+  DateField,
   EmptyState,
   Feedback,
   Field,
@@ -2231,9 +2232,13 @@ export function ReportsPage({
   const [range, setRange] = useState(() => recentDateRange(30));
   const [draftFrom, setDraftFrom] = useState(range.from);
   const [draftTo, setDraftTo] = useState(range.to);
+  const [draftFromValid, setDraftFromValid] = useState(true);
+  const [draftToValid, setDraftToValid] = useState(true);
   const [groupBy, setGroupBy] = useState<ReportRange['groupBy']>('day');
   const today = dateKeyInStudio();
   const draftRangeValid =
+    draftFromValid &&
+    draftToValid &&
     !!draftFrom &&
     !!draftTo &&
     draftFrom <= draftTo &&
@@ -2261,6 +2266,8 @@ export function ReportsPage({
     setRange(nextRange);
     setDraftFrom(nextRange.from);
     setDraftTo(nextRange.to);
+    setDraftFromValid(true);
+    setDraftToValid(true);
     setGroupBy(nextPreset === '90' ? 'week' : 'day');
   };
   const applyCustomRange = () => {
@@ -2328,20 +2335,20 @@ export function ReportsPage({
               </div>
               {preset === 'custom' && (
                 <div className="report-custom-range">
-                  <Field
+                  <DateField
                     label="Từ ngày"
-                    type="date"
                     value={draftFrom}
                     max={draftTo || today}
-                    onChange={(event) => setDraftFrom(event.target.value)}
+                    onChange={setDraftFrom}
+                    onValidityChange={setDraftFromValid}
                   />
-                  <Field
+                  <DateField
                     label="Đến ngày"
-                    type="date"
                     value={draftTo}
                     min={draftFrom}
                     max={today}
-                    onChange={(event) => setDraftTo(event.target.value)}
+                    onChange={setDraftTo}
+                    onValidityChange={setDraftToValid}
                   />
                   <Button variant="primary" disabled={!draftRangeValid} onClick={applyCustomRange}>
                     Áp dụng khoảng ngày

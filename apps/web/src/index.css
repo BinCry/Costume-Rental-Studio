@@ -641,6 +641,41 @@ small {
 .field textarea::placeholder {
   color: #71717a;
 }
+.date-field-control {
+  position: relative;
+  min-width: 0;
+}
+.date-field-control > input[type='text'] {
+  padding-right: 48px;
+}
+.date-field-calendar {
+  position: absolute;
+  top: 50%;
+  right: 13px;
+  display: flex;
+  align-items: center;
+  color: var(--text-secondary);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+.date-field-control > input.date-field-picker {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.date-field-control > input.date-field-picker:disabled {
+  cursor: not-allowed;
+}
 .field input[aria-invalid='true'],
 .field select[aria-invalid='true'],
 .field textarea[aria-invalid='true'] {

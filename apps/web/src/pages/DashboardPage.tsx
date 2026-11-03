@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { Navigate } from '../App';
-import { Button, EmptyState, Feedback, Field, Icon, SelectField } from '../components/ui';
+import { Button, DateField, EmptyState, Feedback, Field, Icon, SelectField } from '../components/ui';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { WorkQueueItem } from '../components/WorkQueueItem';
 import { branches, fixtureAdapter, fixtureClock } from '../fixtures/adapter';
@@ -48,6 +48,7 @@ export function DashboardPage({
   const [priority, setPriority] = useState('all');
   const [taskStatus, setTaskStatus] = useState('all');
   const [workDateOverride, setWorkDateOverride] = useState<string>();
+  const [workDateInputValid, setWorkDateInputValid] = useState(true);
   const defaultWorkDate = realApiMode ? localDateKey(new Date()) : '2026-10-03';
   const workDate = workDateOverride ?? defaultWorkDate;
   const extraFilterCount = [priority !== 'all', taskStatus !== 'all'].filter(Boolean).length;
@@ -73,19 +74,21 @@ export function DashboardPage({
   const effectiveKind = realApiMode && kind === 'payment' ? 'all' : kind;
   const effectivePriority = realApiMode && priority === 'Chờ xác nhận lâu' ? 'all' : priority;
   const scoped = (data ?? []).filter((task) => task.branch === branch && !stale.includes(task.id));
-  const visibleForDate = scoped.filter(
-    (task) => !workDate || task.workDate === workDate || task.kind === 'overdue',
-  );
-  const visible = scoped.filter(
-    (task) =>
-      (effectiveKind === 'all' || task.kind === effectiveKind) &&
-      (effectivePriority === 'all' || task.group === effectivePriority) &&
-      (taskStatus === 'all' || task.status === taskStatus) &&
-      (!workDate || task.workDate === workDate || task.kind === 'overdue') &&
-      `${task.orderId} ${task.customer} ${task.phone} ${task.barcode ?? ''} ${task.task}`
-        .toLocaleLowerCase('vi')
-        .includes(search.toLocaleLowerCase('vi')),
-  );
+  const visibleForDate = workDateInputValid
+    ? scoped.filter((task) => !workDate || task.workDate === workDate || task.kind === 'overdue')
+    : [];
+  const visible = workDateInputValid
+    ? scoped.filter(
+        (task) =>
+          (effectiveKind === 'all' || task.kind === effectiveKind) &&
+          (effectivePriority === 'all' || task.group === effectivePriority) &&
+          (taskStatus === 'all' || task.status === taskStatus) &&
+          (!workDate || task.workDate === workDate || task.kind === 'overdue') &&
+          `${task.orderId} ${task.customer} ${task.phone} ${task.barcode ?? ''} ${task.task}`
+            .toLocaleLowerCase('vi')
+            .includes(search.toLocaleLowerCase('vi')),
+      )
+    : [];
   const openTask = (task: QueueTask) => {
     if (scenario === 'conflict') {
       setStale((current) => [...current, task.id]);
@@ -148,11 +151,11 @@ export function DashboardPage({
             </option>
           ))}
         </SelectField>
-        <Field
+        <DateField
           label="Ngày cần xử lý"
-          type="date"
           value={workDate}
-          onChange={(event) => setWorkDateOverride(event.target.value)}
+          onChange={setWorkDateOverride}
+          onValidityChange={setWorkDateInputValid}
         />
       </div>
       <details className="queue-filter-disclosure">

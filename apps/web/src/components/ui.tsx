@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
@@ -155,6 +155,132 @@ export function Field({
           {error}
         </p>
       )}
+    </div>
+  );
+}
+
+function formatDateForDisplay(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : '';
+}
+
+function parseDisplayDate(value: string) {
+  if (!value.trim()) return { valid: true, value: '' };
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value.trim());
+  if (!match) return { valid: false, value: '' };
+
+  const [, dayText, monthText, yearText] = match;
+  const day = Number(dayText);
+  const month = Number(monthText);
+  const year = Number(yearText);
+  if (year < 1 || month < 1 || month > 12) return { valid: false, value: '' };
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (day < 1 || day > daysInMonth[month - 1]) return { valid: false, value: '' };
+  return { valid: true, value: `${yearText}-${monthText}-${dayText}` };
+}
+
+export function DateField({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  disabled = false,
+  required = false,
+  hint,
+  onValidityChange,
+  className = '',
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  min?: string;
+  max?: string;
+  disabled?: boolean;
+  required?: boolean;
+  hint?: string;
+  onValidityChange?: (valid: boolean) => void;
+  className?: string;
+}) {
+  const id = useId();
+  const pickerId = useId();
+  const [draftState, setDraftState] = useState(() => ({
+    sourceValue: value,
+    draft: formatDateForDisplay(value),
+    touched: false,
+  }));
+  const draft = draftState.sourceValue === value ? draftState.draft : formatDateForDisplay(value);
+  const touched = draftState.sourceValue === value && draftState.touched;
+
+  const parsed = parseDisplayDate(draft);
+  const outsideRange = parsed.valid && !!parsed.value &&
+    ((!!min && parsed.value < min) || (!!max && parsed.value > max));
+  const invalid = (touched && (!parsed.valid || outsideRange)) || (required && touched && !draft);
+  const error = invalid
+    ? outsideRange
+      ? 'Ngày nằm ngoài khoảng cho phép.'
+      : `Nhập ngày theo định dạng dd/mm/yyyy${required ? ' và không được để trống' : ''}.`
+    : undefined;
+
+  const acceptDate = (nextValue: string) => {
+    setDraftState({
+      sourceValue: nextValue,
+      draft: formatDateForDisplay(nextValue),
+      touched: false,
+    });
+    onChange(nextValue);
+  };
+
+  return (
+    <div className={`field ${className}`}>
+      <label htmlFor={id}>{label}</label>
+      <div className="date-field-control">
+        <input
+          id={id}
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          placeholder="dd/mm/yyyy"
+          maxLength={10}
+          value={draft}
+          disabled={disabled}
+          required={required}
+          aria-invalid={!!error}
+          aria-describedby={error ? `${id}-error` : hint ? `${id}-hint` : undefined}
+          onChange={(event) => {
+            const nextDraft = event.target.value;
+            const next = parseDisplayDate(nextDraft);
+            const withinRange = !next.value || ((!min || next.value >= min) && (!max || next.value <= max));
+            const nextValue = next.valid && withinRange ? next.value : value;
+            setDraftState({ sourceValue: nextValue, draft: nextDraft, touched: false });
+            onValidityChange?.(next.valid && withinRange);
+            if (next.valid && withinRange) {
+              onChange(next.value);
+            }
+          }}
+          onBlur={() => {
+            setDraftState({ sourceValue: value, draft, touched: true });
+            onValidityChange?.(parsed.valid && !outsideRange && (!required || !!draft));
+          }}
+        />
+        <span className="date-field-calendar" aria-hidden="true">
+          <Icon name="calendar" size={18} />
+        </span>
+        <input
+          id={pickerId}
+          className="date-field-picker"
+          type="date"
+          aria-label={`Chọn ngày cho ${label}`}
+          value={value}
+          min={min}
+          max={max}
+          disabled={disabled}
+          onChange={(event) => acceptDate(event.target.value)}
+        />
+      </div>
+      {hint && !error && <p id={`${id}-hint`} className="field-hint">{hint}</p>}
+      {error && <p id={`${id}-error`} className="field-error">{error}</p>}
     </div>
   );
 }
