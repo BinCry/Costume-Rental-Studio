@@ -673,6 +673,26 @@ small {
   opacity: 0;
   cursor: pointer;
 }
+.date-time-picker-button {
+  z-index: 2;
+  right: 0;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.date-field-control > input.date-time-native-picker {
+  pointer-events: none;
+}
+.date-field-control > input.date-time-native-picker:focus-visible {
+  z-index: 3;
+  width: 100%;
+  opacity: 1;
+  pointer-events: auto;
+}
 .date-field-control > input.date-field-picker:disabled {
   cursor: not-allowed;
 }

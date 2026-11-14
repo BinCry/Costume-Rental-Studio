@@ -301,7 +301,7 @@ export function DateTimeField({
   const [draftState, setDraftState] = useState({ source: value, text: formatLocalDateTime(value) });
   const [touched, setTouched] = useState(false);
   const draft = draftState.source === value ? draftState.text : formatLocalDateTime(value);
-  const [date, time] = value.split('T');
+  const pickerRef = useRef<HTMLInputElement>(null);
   const message =
     touched && draft.trim() && !parseDateTimeInput(draft)
       ? 'Nhập ngày giờ hợp lệ theo định dạng dd/mm/yyyy HH:mm.'
@@ -329,17 +329,31 @@ export function DateTimeField({
             if (next !== value) onChange(next);
           }}
         />
-        <span className="date-field-calendar" aria-hidden="true">
+        <button
+          type="button"
+          className="date-field-calendar date-time-picker-button"
+          aria-label={'Chọn ngày giờ cho ' + label}
+          onClick={() => {
+            const picker = pickerRef.current;
+            if (!picker) return;
+            try {
+              picker.showPicker();
+            } catch {
+              picker.focus();
+            }
+          }}
+        >
           <Icon name="calendar" size={18} />
-        </span>
+        </button>
         <input
-          className="date-field-picker"
-          type="date"
-          aria-label={'Chọn ngày cho ' + label}
-          value={date}
+          ref={pickerRef}
+          className="date-field-picker date-time-native-picker"
+          type="datetime-local"
+          tabIndex={-1}
+          aria-label={'Bộ chọn ngày giờ cho ' + label}
+          value={value}
           onChange={(event) => {
-            const selected = event.target.value;
-            const next = selected ? selected + 'T' + (time || '09:00') : '';
+            const next = event.target.value;
             setDraftState({ source: next, text: formatLocalDateTime(next) });
             setTouched(false);
             onChange(next);
