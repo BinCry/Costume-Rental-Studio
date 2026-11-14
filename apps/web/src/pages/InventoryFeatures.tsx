@@ -461,7 +461,7 @@ export function InventoryPage({
                   </FilterBar>
                 </Panel>
                 <Panel title={`${visible.length} bộ tại ${branch}`}>
-                  <div className="responsive-table">
+                  <div className="responsive-table" role="region" aria-label="Bảng bộ trang phục" tabIndex={0}>
                     <table>
                       <thead>
                         <tr>
@@ -515,7 +515,7 @@ export function InventoryPage({
                 <Panel title="Lịch xử lý tại chi nhánh" action={<Button type="button" variant="quiet" loading={blocksResource.loading} onClick={blocksResource.retry}>Tải lại</Button>}>
                   {blocksResource.error && <Feedback tone="danger" title="Không tải được lịch xử lý">{String(blocksResource.error)} <button type="button" className="text-button" onClick={blocksResource.retry}>Thử lại</button></Feedback>}
                   {blocksResource.loading ? <p className="muted" role="status">Đang tải lịch…</p> : (
-                    <div className="responsive-table">
+                    <div className="responsive-table" role="region" aria-label="Bảng lịch xử lý" tabIndex={0}>
                       <table>
                         <thead><tr><th>Barcode</th><th>Công việc</th><th>Thời gian</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
                         <tbody>
