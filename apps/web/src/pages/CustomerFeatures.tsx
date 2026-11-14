@@ -172,6 +172,12 @@ export function CostumeDetailPage({
     if (url.href !== before) window.history.replaceState(window.history.state, '', url);
   }, [branch, id, selectedVariantCode]);
 
+  const start = Date.parse(pickup);
+  const end = Date.parse(due);
+  const dateRangeIssue =
+    pickup && due && (!Number.isFinite(start) || !Number.isFinite(end) || end <= start)
+      ? 'Thời điểm trả phải sau thời điểm nhận.'
+      : undefined;
   const apiVariantId = selectedVariant?.apiId;
   const [availabilityResult, setAvailabilityResult] = useState<{
     key: string;
@@ -179,7 +185,8 @@ export function CostumeDetailPage({
   }>();
   const [availabilityRetry, setAvailabilityRetry] = useState(0);
   const availabilityKey = JSON.stringify([apiVariantId, branch, pickup, due]);
-  const hasAvailabilityInputs = usePublicApi && !!apiVariantId && !!branch && !!pickup && !!due;
+  const hasAvailabilityInputs =
+    usePublicApi && !!apiVariantId && !!branch && !!pickup && !!due && !dateRangeIssue;
   useEffect(() => {
     if (!hasAvailabilityInputs || !apiVariantId) return;
     let active = true;
@@ -356,6 +363,7 @@ export function CostumeDetailPage({
                     <DateTimeField
                       label="Trả"
                       value={due}
+                      error={dateRangeIssue}
                       onChange={(next) =>
                         setPeriod((current) => ({ ...current, due: next, remember: true }))
                       }
@@ -400,6 +408,7 @@ export function CostumeDetailPage({
                 </Panel>
                 <div className="feature-actions">
                   <Button
+                    disabled={!!dateRangeIssue}
                     onClick={() =>
                       go('booking', {
                         costume: item.id,
