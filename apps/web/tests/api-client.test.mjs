@@ -40,6 +40,47 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+function stubQuoteApi() {
+  const variant = {
+    id: 'variant-pearl-l',
+    modelId: 'model-pearl',
+    variantCode: 'AD-PEARL-L',
+    sizeCode: 'L',
+    colorCode: 'BLACK',
+    dailyRentalPriceVnd: 450000,
+    depositAmountVnd: 1250000,
+    model: { id: 'model-pearl', name: 'Áo dài Ngọc Trai', category: { name: 'Áo dài' } },
+  };
+  const page = (items) =>
+    success({ items, pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 } });
+  const state = { quote: () => jsonResponse({}) };
+  globalThis.fetch.mockImplementation((url) => {
+    const path = String(url);
+    if (path.includes('/api/v1/public/catalog/variants')) return Promise.resolve(page([variant]));
+    if (path.includes('/api/v1/public/branches'))
+      return Promise.resolve(page([{ id: 'branch-3', name: 'Costume Studio Quận 3' }]));
+    if (path.includes('/api/v1/auth/me'))
+      return Promise.resolve(
+        success({ id: 'user-1', displayName: 'Chou', email: 'chou@example.test', roles: [] }),
+      );
+    if (path.includes('/api/v1/rentals/quotes')) return Promise.resolve(state.quote());
+    throw new Error('Unexpected request ' + path);
+  });
+  return state;
+}
+
+const quoteDraft = {
+  costumeId: 'model-pearl',
+  variant: 'L / BLACK',
+  quantity: 1,
+  branch: 'Costume Studio Quận 3',
+  pickup: '2026-11-20T10:00',
+  returnAt: '2026-11-22T10:00',
+  name: 'Chou',
+  phone: '0123456789',
+  note: '',
+};
+
 describe('web API client session and error handling', () => {
   it('uploads a catalog image with progress and the requested display order', async () => {
     values.set(accessTokenKey, 'studio-access-token');
@@ -1240,75 +1281,68 @@ describe('web API client session and error handling', () => {
 
   it('shows the rental before discount so a voucher is not subtracted twice on screen', async () => {
     values.set(accessTokenKey, 'studio-access-token');
-    const variant = {
-      id: 'variant-pearl-l',
-      modelId: 'model-pearl',
-      variantCode: 'AD-PEARL-L',
-      sizeCode: 'L',
-      colorCode: 'BLACK',
-      dailyRentalPriceVnd: 450000,
-      depositAmountVnd: 1250000,
-      model: { id: 'model-pearl', name: 'Áo dài Ngọc Trai', category: { name: 'Áo dài' } },
-    };
-    const page = (items) =>
-      success({ items, pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 } });
-    globalThis.fetch.mockImplementation((url) => {
-      const path = String(url);
-      if (path.includes('/api/v1/public/catalog/variants')) return Promise.resolve(page([variant]));
-      if (path.includes('/api/v1/public/branches'))
-        return Promise.resolve(page([{ id: 'branch-3', name: 'Costume Studio Quận 3' }]));
-      if (path.includes('/api/v1/auth/me'))
-        return Promise.resolve(
-          success({ id: 'user-1', displayName: 'Chou', email: 'chou@example.test', roles: [] }),
-        );
-      if (path.includes('/api/v1/rentals/quotes'))
-        return Promise.resolve(
-          success({
-            quoteExpiresAt: '2026-11-13T15:38:00.000Z',
-            policy: { versionCode: 'POLICY-2026-BUFFER-01', billingDayMode: 'ROLLING_24_HOURS' },
-            period: { billableDays: 2 },
-            items: [
-              {
-                variantId: 'variant-pearl-l',
-                dailyRentalPriceVnd: '450000',
-                depositAmountVnd: '1250000',
-                rentalAmountVnd: '900000',
-                availableUnits: 2,
-              },
-            ],
-            promotion: { id: 'promo-1', code: 'WELCOME10', discountVnd: '90000' },
-            subtotalVnd: '900000',
-            discountVnd: '90000',
-            rentalAmountVnd: '810000',
-            depositVnd: '1250000',
-            totalDueVnd: '2060000',
-            available: true,
-          }),
-        );
-      throw new Error('Unexpected request ' + path);
-    });
+    const api = stubQuoteApi();
+    api.quote = () =>
+      success({
+        quoteExpiresAt: '2026-11-13T15:38:00.000Z',
+        policy: { versionCode: 'POLICY-2026-BUFFER-01', billingDayMode: 'ROLLING_24_HOURS' },
+        period: { billableDays: 2 },
+        items: [
+          {
+            variantId: 'variant-pearl-l',
+            dailyRentalPriceVnd: '450000',
+            depositAmountVnd: '1250000',
+            rentalAmountVnd: '900000',
+            availableUnits: 2,
+          },
+        ],
+        promotion: { id: 'promo-1', code: 'WELCOME10', discountVnd: '90000' },
+        subtotalVnd: '900000',
+        discountVnd: '90000',
+        rentalAmountVnd: '810000',
+        depositVnd: '1250000',
+        totalDueVnd: '2060000',
+        available: true,
+      });
     const { getQuote, listCatalog } = await import('../src/api/client.ts');
     await listCatalog();
 
-    const quote = await getQuote(
-      {
-        costumeId: 'model-pearl',
-        variant: 'L / BLACK',
-        quantity: 1,
-        branch: 'Costume Studio Quận 3',
-        pickup: '2026-11-20T10:00',
-        returnAt: '2026-11-22T10:00',
-        name: 'Chou',
-        phone: '0123456789',
-        note: '',
-      },
-      { promotionCode: 'welcome10' },
-    );
+    const quote = await getQuote(quoteDraft, { promotionCode: 'welcome10' });
 
     expect(quote.rental).toBe(900000);
     expect(quote.discount).toBe(90000);
     expect(quote.deposit).toBe(1250000);
     expect(quote.amountDueAtPickup).toBe(2060000);
     expect(quote.rental - quote.discount + quote.deposit).toBe(quote.amountDueAtPickup);
+  });
+
+  it('tells the customer why a promotion code was rejected', async () => {
+    values.set(accessTokenKey, 'studio-access-token');
+    const api = stubQuoteApi();
+    const { getQuote, listCatalog } = await import('../src/api/client.ts');
+    await listCatalog();
+    const cases = [
+      [{ reason: 'NOT_STARTED', startAt: '2026-11-24T17:00:00.000Z' }, 'Mã áp dụng từ 25/11/2026.'],
+      [{ reason: 'INACTIVE' }, 'Mã đã ngừng áp dụng.'],
+      [{ reason: 'EXPIRED' }, 'Mã đã hết hạn.'],
+      [{ reason: 'NOT_FOUND' }, 'Không tìm thấy mã ưu đãi này.'],
+      [
+        { reason: 'BELOW_MINIMUM', minOrderAmountVnd: '600000' },
+        'Đơn cần tối thiểu 600.000 đ tiền thuê để dùng mã này.',
+      ],
+      [
+        undefined,
+        'Mã ưu đãi không hợp lệ, chưa đến hạn, đã hết hạn hoặc đơn chưa đạt mức tối thiểu.',
+      ],
+    ];
+
+    for (const [details, message] of cases) {
+      api.quote = () => error(409, 'PROMOTION_INVALID', 'Promotion is invalid', details);
+      await expect(getQuote(quoteDraft, { promotionCode: 'TESTT1V' })).rejects.toMatchObject({
+        status: 409,
+        code: 'PROMOTION_INVALID',
+        message,
+      });
+    }
   });
 });

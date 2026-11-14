@@ -298,8 +298,15 @@ export function BookingPage({
         const message = caught instanceof Error ? caught.message : 'Chưa tải được báo giá.';
         setQuote(undefined);
         setAppliedPromotionCode('');
-        if (normalizedCode) setPromotionIssue(message);
-        else setIssue(message);
+        if (normalizedCode) {
+          setPromotionIssue(message);
+          try {
+            const withoutCode = await fixtureAdapter.getQuote(draft, scenario, {});
+            if (requestId === quoteRequestRef.current) setQuote(withoutCode);
+          } catch {
+            // Keep the rejection reason; the quote stays empty when it cannot be loaded either.
+          }
+        } else setIssue(message);
       }
       return false;
     } finally {
