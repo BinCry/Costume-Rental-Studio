@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unused-vars */
 import { argon2id, hash } from 'argon2';
 import request from 'supertest';
+import { SignJWT, decodeJwt } from 'jose';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 process.env.NODE_ENV = 'test';
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
   lock: vi.fn(),
   findSession: vi.fn(),
+  findActiveSession: vi.fn(),
   createSession: vi.fn(),
   updateSessions: vi.fn(),
   findSessions: vi.fn(),
@@ -21,7 +23,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../src/database/prisma.js', () => ({
   prisma: {
     user: { findUnique: mocks.findUser },
-    refreshSession: { findMany: mocks.findSessions, updateMany: mocks.revokeSessions },
+    refreshSession: {
+      findMany: mocks.findSessions,
+      findFirst: mocks.findActiveSession,
+      updateMany: mocks.revokeSessions,
+    },
     $transaction: mocks.transaction,
   },
 }));
@@ -29,7 +35,7 @@ const { createApp } = await import('../src/app.js');
 const { authenticatedActorSelect } = await import('../src/modules/auth/authorization.js');
 const { login, refresh, logout, listSessions, revokeAllSessions, revokeSession, currentUser } =
   await import('../src/modules/auth/session/session.service.js');
-const { issueAccessToken } = await import('../src/modules/auth/token.service.js');
+const { env } = await import('../src/config/env.js');
 const email = 'customer@example.com';
 const password = 'a-long-enough-test-password';
 const userId = '10000000-0000-4000-8000-000000000001';
@@ -107,6 +113,17 @@ beforeEach(() => {
   };
   mocks.findUser.mockImplementation(({ where }: { where: { email?: string; id?: string } }) =>
     where.email === email || where.id === userId ? account : null,
+  );
+  mocks.findActiveSession.mockImplementation(
+    ({ where }: { where: { userId: string; familyId: string; expiresAt: { gt: Date } } }) =>
+      sessions.find(
+        (session) =>
+          session.userId === where.userId &&
+          session.familyId === where.familyId &&
+          session.usedAt === null &&
+          session.revokedAt === null &&
+          session.expiresAt > where.expiresAt.gt,
+      ) ?? null,
   );
   mocks.updateUser.mockResolvedValue({ count: 1 });
   let queue = Promise.resolve();
@@ -242,13 +259,113 @@ describe('session lifecycle', () => {
     expect(sessions[1]!.revokedAt).toBeInstanceOf(Date);
   });
 });
+describe('access token session binding', () => {
+  const me = (token: string) =>
+    request(createApp()).get('/api/v1/auth/me').auth(token, { type: 'bearer' });
+
+  it('rejects the copied access token after HTTP logout and preserves another login', async () => {
+    const first = await login({ email, password });
+    const other = await login({ email, password });
+    await me(first.accessToken).expect(200);
+    await request(createApp())
+      .post('/api/v1/auth/logout')
+      .set('Cookie', 'refreshToken=' + first.refreshToken)
+      .expect(200);
+    const rejected = await me(first.accessToken).expect(401);
+    expect(rejected.body.error.code).toBe('INVALID_ACCESS_TOKEN');
+    await request(createApp())
+      .post('/api/v1/knowledge/answer')
+      .auth(first.accessToken, { type: 'bearer' })
+      .send({ query: 'Tôi trả đồ ở đâu?' })
+      .expect(401);
+    await me(other.accessToken).expect(200);
+  });
+
+  it('keeps both tabs valid after rotation and revokes both when logging out with the shared cookie', async () => {
+    const first = await login({ email, password });
+    const rotated = await refresh(first.refreshToken);
+    expect(decodeJwt(rotated.accessToken).sid).toBe(sessions[0]!.familyId);
+    await me(first.accessToken).expect(200);
+    await me(rotated.accessToken).expect(200);
+    await logout(rotated.refreshToken);
+    await me(first.accessToken).expect(401);
+    await me(rotated.accessToken).expect(401);
+  });
+
+  it('revokes rotated access tokens when an old refresh token is replayed', async () => {
+    const first = await login({ email, password });
+    const rotated = await refresh(first.refreshToken);
+    await expect(refresh(first.refreshToken)).rejects.toMatchObject({
+      code: 'INVALID_REFRESH_TOKEN',
+    });
+    await me(first.accessToken).expect(401);
+    await me(rotated.accessToken).expect(401);
+  });
+
+  it('applies explicit session revocation and logout-all to access tokens', async () => {
+    const first = await login({ email, password });
+    const other = await login({ email, password });
+    await revokeSession(userId, sessions[0]!.familyId);
+    await me(first.accessToken).expect(401);
+    await me(other.accessToken).expect(200);
+    await revokeAllSessions(userId);
+    await me(other.accessToken).expect(401);
+  });
+
+  it('keeps access revoked when refresh and logout race', async () => {
+    const first = await login({ email, password });
+    const [rotated] = await Promise.all([refresh(first.refreshToken), logout(first.refreshToken)]);
+    await me(first.accessToken).expect(401);
+    await me(rotated.accessToken).expect(401);
+  });
+
+  it('rejects expired and missing session families', async () => {
+    const first = await login({ email, password });
+    sessions[0]!.expiresAt = new Date(0);
+    await me(first.accessToken).expect(401);
+    sessions = [];
+    await me(first.accessToken).expect(401);
+  });
+
+  it('does not accept another user session family', async () => {
+    const first = await login({ email, password });
+    sessions[0]!.userId = '20000000-0000-4000-8000-000000000001';
+    await me(first.accessToken).expect(401);
+  });
+
+  it('rejects legacy access tokens while allowing their refresh cookie to upgrade', async () => {
+    const first = await login({ email, password });
+    const legacy = await new SignJWT({})
+      .setProtectedHeader({ alg: 'HS256' })
+      .setSubject(userId)
+      .setIssuer(env.JWT_ISSUER)
+      .setAudience(env.JWT_AUDIENCE)
+      .setIssuedAt()
+      .setExpirationTime('15m')
+      .sign(new TextEncoder().encode(env.JWT_ACCESS_SECRET));
+    await me(legacy).expect(401);
+    const rotated = await refresh(first.refreshToken);
+    await me(rotated.accessToken).expect(200);
+  });
+});
+
 describe('auth HTTP contract', () => {
   it('returns the current user using the minimal authenticated actor query', async () => {
     const response = await request(createApp())
       .get('/api/v1/auth/me')
-      .auth(await issueAccessToken(userId), { type: 'bearer' })
+      .auth((await login({ email, password })).accessToken, { type: 'bearer' })
       .expect(200);
 
+    expect(mocks.findActiveSession).toHaveBeenLastCalledWith({
+      where: {
+        userId,
+        familyId: sessions[0]!.familyId,
+        usedAt: null,
+        revokedAt: null,
+        expiresAt: { gt: expect.any(Date) },
+      },
+      select: { id: true },
+    });
     expect(response.body.data).toMatchObject({
       id: userId,
       displayName: 'Customer',

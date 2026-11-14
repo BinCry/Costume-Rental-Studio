@@ -20,16 +20,28 @@ async function authenticate(
   }
 
   let userId: string;
+  let familyId: string;
   try {
     const { payload } = await jwtVerify(match[1], new TextEncoder().encode(env.JWT_ACCESS_SECRET), {
       algorithms: ['HS256'],
       issuer: env.JWT_ISSUER,
       audience: env.JWT_AUDIENCE,
-      requiredClaims: ['sub', 'exp', 'iat'],
+      requiredClaims: ['sub', 'exp', 'iat', 'sid'],
       maxTokenAge: '15m',
     });
     userId = z.uuid().parse(payload.sub);
+    familyId = z.uuid().parse(payload.sid);
   } catch {
+    throw new AppError(401, 'INVALID_ACCESS_TOKEN', 'Access token is invalid or expired');
+  }
+
+  // Check the active family, not the rotated refresh row, so other tabs keep working.
+  // Read from the database on every request so revocation takes effect across API instances.
+  const session = await prisma.refreshSession.findFirst({
+    where: { userId, familyId, usedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
+    select: { id: true },
+  });
+  if (!session) {
     throw new AppError(401, 'INVALID_ACCESS_TOKEN', 'Access token is invalid or expired');
   }
 
