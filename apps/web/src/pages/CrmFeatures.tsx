@@ -31,6 +31,7 @@ import {
 } from '../api/client';
 import { studioAdapter, type Case, type Customer } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
+import { isValidPhone, matchesCustomerSearch, samePhone } from '../utils/phone';
 
 const caseStatusLabels: Record<Case['status'], string> = {
   OPEN: 'Mới mở',
@@ -103,10 +104,7 @@ export function CrmPage({
   const { detailRef: caseDetailRef, revealDetail: revealCase } =
     useMobileDetailReveal<HTMLDivElement>();
   const visibleApiCustomers = (data ?? []).filter((customer) =>
-    customer.preferredBranch === branch &&
-    `${customer.name} ${customer.phone} ${customer.code}`
-      .toLocaleLowerCase('vi')
-      .includes(search.toLocaleLowerCase('vi')),
+    customer.preferredBranch === branch && matchesCustomerSearch(customer, search),
   );
   const activeCustomer = realApiMode
     ? visibleApiCustomers.find((customer) => customer.code === selected) ?? visibleApiCustomers[0]
@@ -264,8 +262,7 @@ export function CrmPage({
       {(customers) => {
         const visible = customers.filter(
           (c) =>
-            c.preferredBranch === branch &&
-            `${c.name} ${c.phone} ${c.code}`.toLowerCase().includes(search.toLowerCase()),
+            c.preferredBranch === branch && matchesCustomerSearch(c, search),
         );
         const person = visible.find((c) => c.code === activeCustomerCode) ?? visible[0];
         const related = (casesResource.data ?? []).filter((c) => c.customerCode === person?.code);
@@ -684,10 +681,7 @@ export function CrmPage({
                 onClose={() => setNewCustomer(undefined)}
                 onConfirm={() => {
                   void (async () => {
-                    if (
-                      !newCustomer.name.trim() ||
-                      !/^0[0-9 ]{8,12}$/.test(newCustomer.phone.trim())
-                    ) {
+                    if (!newCustomer.name.trim() || !isValidPhone(newCustomer.phone)) {
                       setIssue('Nhập họ tên và số điện thoại hợp lệ.');
                       return;
                     }
@@ -695,13 +689,7 @@ export function CrmPage({
                       setIssue('Nhập email hợp lệ để tạo hồ sơ khách trên hệ thống.');
                       return;
                     }
-                    if (
-                      customers.some(
-                        (customer) =>
-                          customer.phone.replaceAll(' ', '') ===
-                          newCustomer.phone.replaceAll(' ', ''),
-                      )
-                    ) {
+                    if (customers.some((customer) => samePhone(customer.phone, newCustomer.phone))) {
                       setIssue(
                         'Số điện thoại đã có hồ sơ. Kiểm tra khách hiện có trước khi tạo hồ sơ khác.',
                       );
