@@ -426,7 +426,7 @@ export function OrdersPage({
     <div className="page staff-page orders-page">
       <div className="staff-page-heading">
         <div>
-          <p className="eyebrow">UI-07 · KHÔNG GIAN XỬ LÝ ĐƠN</p>
+          <p className="eyebrow">KHÔNG GIAN XỬ LÝ ĐƠN</p>
           <h1>Đơn thuê</h1>
           <p>Đọc chi tiết, kiểm tra bộ và xử lý theo đúng trạng thái.</p>
         </div>

@@ -238,6 +238,7 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
   const [mediaLoading, setMediaLoading] = useState(false);
   const [mediaProgress, setMediaProgress] = useState<number>();
   const [mediaIssue, setMediaIssue] = useState('');
+  const [mediaFileIssue, setMediaFileIssue] = useState('');
   const [mediaNotice, setMediaNotice] = useState('');
   const [mediaOwnerLoadedId, setMediaOwnerLoadedId] = useState('');
   const [mediaOwnerErrorId, setMediaOwnerErrorId] = useState('');
@@ -299,6 +300,7 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
     setPendingDeleteMedia(undefined);
     setMediaIssue('');
     setMediaNotice('');
+    setMediaFileIssue('');
     setMediaInputKey((value) => value + 1);
   };
   const saveModel = async () => {
@@ -397,6 +399,7 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
     setMediaAltText('');
     setReplaceTargetId('');
     setMediaProgress(undefined);
+    setMediaFileIssue('');
     setMediaInputKey((value) => value + 1);
     try {
       await refreshMedia(target.id);
@@ -789,15 +792,17 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                             type="file"
                             accept="image/jpeg,image/png,image/webp"
                             label="Chọn ảnh"
+                            error={mediaFileIssue}
                             disabled={mediaBusy || mediaLoading || mediaOwnerLoadedId !== editing.id}
                             onChange={(event) => {
                               const file = event.target.files?.[0];
                               setMediaIssue('');
                               setMediaNotice('');
+                              setMediaFileIssue('');
                               if (file && !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
                                 setMediaFile(undefined);
                                 setMediaPreviewUrl('');
-                                setMediaIssue('Chỉ hỗ trợ ảnh JPEG, PNG hoặc WebP.');
+                                setMediaFileIssue('Chỉ hỗ trợ ảnh JPEG, PNG hoặc WebP.');
                                 return;
                               }
                               setMediaFile(file);
@@ -2369,8 +2374,7 @@ export function ReportsPage({
             ) : (
               <>
                 <p className="report-period-caption">
-                  Kỳ báo cáo: <strong>{periodLabel}</strong> · Tiền cọc đang giữ được theo dõi riêng,
-                  không tính vào doanh thu.
+                  Kỳ báo cáo: <strong>{periodLabel}</strong>
                 </p>
                 <div className="report-grid">
                   <Panel title="Lượt thuê">
@@ -2380,10 +2384,6 @@ export function ReportsPage({
                   <Panel title="Doanh thu tiền thuê">
                     <strong className="report-number">{money(report.rentalRevenue)}</strong>
                     <p className="report-card-note">Không gồm tiền cọc</p>
-                  </Panel>
-                  <Panel title="Cọc đang giữ">
-                    <strong className="report-number">{money(report.depositsHeld)}</strong>
-                    <p className="report-card-note">Khoản cần hoàn hoặc đối soát</p>
                   </Panel>
                   <Panel title={realApiMode ? 'Đơn quá hạn' : 'Bộ quá hạn'}>
                     <strong className="report-number">
@@ -2397,6 +2397,12 @@ export function ReportsPage({
                       <p className="report-card-note">Hoàn tất trong kỳ báo cáo</p>
                     </Panel>
                   )}
+                </div>
+                <div className="report-grid">
+                  <Panel title="Cọc đang giữ (số dư hiện tại)">
+                    <strong className="report-number">{money(report.depositsHeld)}</strong>
+                    <p className="report-card-note">Tính theo số dư hiện tại của chi nhánh.</p>
+                  </Panel>
                 </div>
                 {realApiMode && (
                   <div className="feature-two-column report-detail-grid">

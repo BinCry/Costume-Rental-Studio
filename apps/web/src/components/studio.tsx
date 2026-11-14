@@ -383,9 +383,6 @@ export function PermissionGroup({
             <span>
               <strong>{permission.label}</strong>
               <small>{permission.description}</small>
-              <code>
-                {permission.code} · {permission.scope}
-              </code>
             </span>
           </label>
         ))}

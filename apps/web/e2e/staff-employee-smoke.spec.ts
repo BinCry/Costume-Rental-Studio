@@ -237,6 +237,25 @@ test('counter quote uses a real catalog variant and checks availability without 
   await expect(page.getByRole('button', { name: 'Chỉ tạo yêu cầu chờ' })).toBeVisible();
 });
 
+test('inventory can scroll horizontally by keyboard at 320px', async ({ page }) => {
+  await mockStaffSession(page);
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.route('**/api/v1/inventory/units?**', (route) =>
+    fulfillJson(route, { items: [{
+      id: 'unit-1', unitCode: 'TEST-01', operationalStatus: 'READY', conditionGrade: 'GOOD',
+      currentBranch: { id: branchId, name: branchName },
+      variant: { variantCode: 'TEST-M', model: { name: 'Mẫu thử' } },
+    }] }),
+  );
+  await page.goto('/van-hanh/kho');
+  const table = page.getByRole('region', { name: 'Bảng bộ trang phục' });
+  await expect(table).toBeVisible();
+  await table.focus();
+  await expect(table).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(() => table.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+});
+
 test('staff reports use operations wording and load branch-scoped metrics', async ({ page }) => {
   await mockStaffSession(page);
   await page.route('**/api/v1/reports/overview**', (route) =>

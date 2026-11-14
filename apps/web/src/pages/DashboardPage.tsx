@@ -108,7 +108,7 @@ export function DashboardPage({
     <div className="page staff-page dashboard-page">
       <div className="staff-page-heading">
         <div>
-          <p className="eyebrow">UI-06 · BẢNG VIỆC NHÂN VIÊN</p>
+          <p className="eyebrow">BẢNG VIỆC NHÂN VIÊN</p>
           <h1>Chào buổi làm việc 👋</h1>
           <p>Những việc cần chú ý tại chi nhánh của bạn.</p>
         </div>

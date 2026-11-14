@@ -13,7 +13,13 @@ interface PaymentRow {
   status: 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
   paidAt: Date | null;
   createdAt: Date;
-  order: { pickupBranchId: string; channel: string; pickupBranch: { timezone: string } };
+  order: {
+    id: string;
+    depositDeductionVnd: bigint;
+    pickupBranchId: string;
+    channel: string;
+    pickupBranch: { timezone: string };
+  };
   refunds: { amountVnd: bigint; status: string; completedAt: Date | null }[];
 }
 
@@ -89,6 +95,8 @@ async function payments(query: ReportQueryInput, scope: Scope) {
       refunds: { select: { amountVnd: true, status: true, completedAt: true } },
       order: {
         select: {
+          id: true,
+          depositDeductionVnd: true,
           pickupBranchId: true,
           channel: true,
           pickupBranch: { select: { timezone: true } },
@@ -145,9 +153,20 @@ export async function getOverview(actor: AuthenticatedActor, query: ReportQueryI
         .reduce((refundSum, refund) => refundSum + refund.amountVnd, zero()),
     zero(),
   );
-  const depositsHeldVnd = paymentRows
-    .filter((payment) => payment.status === 'SUCCEEDED' && payment.purpose === 'DEPOSIT')
-    .reduce((sum, payment) => sum + payment.amountVnd, zero());
+  // The deposit balance is current, so completed refunds count across all periods.
+  const depositBalances = new Map<string, bigint>();
+  for (const payment of paymentRows) {
+    if (payment.status !== 'SUCCEEDED' || payment.purpose !== 'DEPOSIT') continue;
+    const refunded = payment.refunds
+      .filter((refund) => refund.status === 'COMPLETED')
+      .reduce((sum, refund) => sum + refund.amountVnd, zero());
+    const balance = depositBalances.get(payment.order.id) ?? -payment.order.depositDeductionVnd;
+    depositBalances.set(payment.order.id, balance + payment.amountVnd - refunded);
+  }
+  const depositsHeldVnd = [...depositBalances.values()].reduce(
+    (sum, balance) => sum + (balance > 0n ? balance : zero()),
+    zero(),
+  );
   const outstandingVnd = paymentRows
     .filter((payment) => payment.status === 'PENDING')
     .reduce((sum, payment) => sum + payment.amountVnd, zero());
