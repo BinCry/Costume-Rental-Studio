@@ -64,11 +64,16 @@ export const modelUpdateSchema = modelSchema
     material: z.string().trim().max(255).nullable().optional(),
   })
   .partial();
-export const accessorySchema = z.object({
+const accessoryFields = z.object({
   name: z.string().trim().min(1).max(255),
-  defaultQuantity: z.coerce.number().int().positive().default(1),
+  defaultQuantity: z.coerce.number().int().positive(),
   replacementValueVnd: z.coerce.bigint().nonnegative().optional(),
 });
+export const accessorySchema = accessoryFields.extend({
+  defaultQuantity: accessoryFields.shape.defaultQuantity.default(1),
+});
+// No defaults here: a PATCH must only touch the fields the client sent.
+export const accessoryUpdateSchema = accessoryFields.partial();
 export const mediaSchema = z.object({
   uploadKey: z.string().trim().min(1).max(500),
   sortOrder: z.coerce.number().int().nonnegative().default(0),

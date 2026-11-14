@@ -6,6 +6,7 @@ import { requireAuthentication } from '../auth/auth.middleware.js';
 import { requireActor } from '../auth/authorization.js';
 import {
   accessorySchema,
+  accessoryUpdateSchema,
   categorySchema,
   idSchema,
   listCatalogSchema,
@@ -180,7 +181,7 @@ catalogRouter.patch('/accessories/:id', async (q, r) =>
     await service.updateAccessory(
       r.locals.actor,
       id(q.params.id),
-      parse(accessorySchema.partial().safeParse(q.body), 'Invalid accessory'),
+      parse(accessoryUpdateSchema.safeParse(q.body), 'Invalid accessory'),
     ),
     'Accessory updated',
   ),
