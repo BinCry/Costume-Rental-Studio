@@ -683,14 +683,13 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   if (response.status === 204) return undefined as T;
   if (!response.ok || !body?.success) {
     const code = body?.error?.code ?? 'API_REQUEST_FAILED';
-    throw new ApiClientError(
-      response.status,
-      code,
-      code === 'PROMOTION_INVALID'
-        ? promotionRejectionMessage(body?.error?.details)
-        : apiErrorMessage(response.status, code),
-      body?.error?.details,
-    );
+    let message = apiErrorMessage(response.status, code);
+    if (response.status === 429 && path === '/api/v1/auth/login') {
+      message = 'Đăng nhập tạm thời bị giới hạn. Vui lòng chờ tối đa 15 phút rồi thử lại.';
+    } else if (code === 'PROMOTION_INVALID') {
+      message = promotionRejectionMessage(body?.error?.details);
+    }
+    throw new ApiClientError(response.status, code, message, body?.error?.details);
   }
   return body.data;
 }

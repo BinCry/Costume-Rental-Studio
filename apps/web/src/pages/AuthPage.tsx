@@ -258,7 +258,11 @@ export function AuthPage({
       window.dispatchEvent(new Event('api-session-changed'));
       await onAuthenticated(params.get('next') ?? undefined);
     } catch (error) {
-      setIssue(authErrorMessage(error));
+      setIssue(
+        error instanceof ApiClientError && error.status === 429
+          ? error.message
+          : authErrorMessage(error),
+      );
     } finally {
       setBusy(false);
     }
