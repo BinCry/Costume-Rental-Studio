@@ -1930,6 +1930,21 @@ export async function listRbacPermissions(): Promise<Permission[]> {
     policies: 'Quản trị',
     promotions: 'Quản trị',
   };
+  const modules: Record<string, string> = {
+    ...groups,
+    branches: 'Chi nhánh', staff: 'Nhân sự', rbac: 'Vai trò và quyền',
+    catalog: 'Danh mục', reports: 'Báo cáo', customers: 'Khách hàng',
+    policies: 'Chính sách', promotions: 'Ưu đãi', transfers: 'Điều chuyển',
+    refunds: 'Hoàn tiền', knowledge: 'Kho tri thức', agents: 'Trợ lý vận hành',
+  };
+  const actions: Record<string, string> = {
+    read: 'Xem', manage: 'Quản lý', create: 'Tạo', update: 'Cập nhật',
+    confirm: 'Xác nhận', prepare: 'Chuẩn bị', handover: 'Giao', return: 'Nhận trả',
+    assessment: 'Đánh giá', settlement: 'Quyết toán', collect: 'Thu tiền', approve: 'Phê duyệt',
+  };
+  const scopes: Record<string, string> = {
+    ALL: 'Toàn hệ thống', BRANCH: 'Chi nhánh được phân công', OWN: 'Dữ liệu của chính mình',
+  };
   return page.map((permission) => ({
     code: permission.code,
     group:
@@ -1937,8 +1952,8 @@ export async function listRbacPermissions(): Promise<Permission[]> {
       ['handover', 'return', 'assessment', 'settlement'].includes(permission.action)
         ? 'Giao / trả'
         : (groups[permission.module] ?? permission.module),
-    label: `${permission.action} · ${permission.scope}`,
-    description: permission.description ?? `${permission.action} · ${permission.scope}`,
+    label: `${actions[permission.action] ?? 'Thao tác'} · ${modules[permission.module] ?? 'Chức năng'}`,
+    description: `Phạm vi: ${scopes[permission.scope] ?? 'Theo cấu hình quyền'}`,
     scope: permission.scope,
   }));
 }

@@ -190,6 +190,19 @@ describe('web API client session and error handling', () => {
     );
   });
 
+  it('localizes permission text from the action, module and scope', async () => {
+    globalThis.fetch.mockResolvedValueOnce(success([{
+      id: 'permission-1', code: 'rentals.handover.branch', module: 'rentals',
+      action: 'handover', scope: 'BRANCH', description: 'Hand over rentals at the branch',
+    }]));
+    const { listRbacPermissions } = await import('../src/api/client.ts');
+    await expect(listRbacPermissions()).resolves.toMatchObject([{
+      code: 'rentals.handover.branch',
+      label: 'Giao · Đơn thuê',
+      description: 'Phạm vi: Chi nhánh được phân công',
+    }]);
+  });
+
   it('requests every report for the selected branch and date range', async () => {
     values.set(accessTokenKey, 'studio-access-token');
     globalThis.fetch

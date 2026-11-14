@@ -1199,7 +1199,7 @@ export function OrderDetailShell({
       <div className="staff-page-heading">
         <div>
           <p className="eyebrow">
-            {mode === 'handover' ? 'UI-09 · GIAO TRANG PHỤC' : 'UI-11 · NHẬN TRẢ TRANG PHỤC'}
+            {mode === 'handover' ? 'GIAO TRANG PHỤC' : 'NHẬN TRẢ TRANG PHỤC'}
           </p>
           <h1>{mode === 'handover' ? 'Giao trang phục' : 'Nhận trả trang phục'}</h1>
           <p>
