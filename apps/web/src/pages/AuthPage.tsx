@@ -188,6 +188,7 @@ export function AuthPage({
   const [resetChallenge, setResetChallenge] = useState('');
   const [resetOtp, setResetOtp] = useState('');
   const [resetToken, setResetToken] = useState('');
+  const [resetPasswordError, setResetPasswordError] = useState('');
   const authNextParams = {
     ...(params.get('next') ? { next: params.get('next')! } : {}),
     ...(params.get('portal') ? { portal: params.get('portal')! } : {}),
@@ -461,6 +462,7 @@ export function AuthPage({
   const finishReset = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIssue('');
+    setResetPasswordError('');
     if (password !== confirmPassword) {
       setIssue('Mật khẩu xác nhận chưa khớp.');
       return;
@@ -473,7 +475,11 @@ export function AuthPage({
       setConfirmPassword('');
       setNotice('Mật khẩu đã được đổi. Bạn có thể đăng nhập bằng mật khẩu mới.');
     } catch (error) {
-      setIssue(authErrorMessage(error));
+      if (error instanceof ApiClientError && error.code === 'PASSWORD_UNCHANGED') {
+        setResetPasswordError(error.message);
+      } else {
+        setIssue(authErrorMessage(error));
+      }
     } finally {
       setBusy(false);
     }
@@ -881,7 +887,11 @@ export function AuthPage({
                 maxLength={128}
                 hint="Tối thiểu 12 ký tự."
                 value={password}
-                onChange={(event) => setPassword(event.target.value)}
+                error={resetPasswordError}
+                onChange={(event) => {
+                  setPassword(event.target.value);
+                  setResetPasswordError('');
+                }}
                 required
                 disabled={busy}
               />

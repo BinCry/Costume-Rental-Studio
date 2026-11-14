@@ -620,6 +620,7 @@ function apiErrorMessage(status: number, code: string) {
       'Studio đang nhận quá nhiều yêu cầu từ kết nối này. Hãy chờ tối đa 15 phút rồi thử lại; tránh gửi liên tiếp.',
     AUTH_RATE_LIMITED:
       'Có quá nhiều yêu cầu xác thực trong thời gian ngắn. Hãy chờ tối đa 15 phút rồi thử lại.',
+    PASSWORD_UNCHANGED: 'Mật khẩu mới cần khác mật khẩu hiện tại.',
     AGENT_CASE_NOT_FOUND: 'Không tìm thấy hồ sơ Agent này hoặc hồ sơ không còn truy cập được.',
     AGENT_CASE_CONFLICT:
       'Dữ liệu của tình huống vừa thay đổi. Kế hoạch cũ đã mất hiệu lực; hãy tải lại và phân tích lại trước khi xác nhận.',
