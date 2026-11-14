@@ -5,6 +5,7 @@ import {
   Button,
   EmptyState,
   Feedback,
+  DateTimeField,
   Field,
   Icon,
   SelectField,
@@ -499,17 +500,15 @@ export function CatalogPage({
             <option key={entry}>{entry}</option>
           ))}
         </SelectField>
-        <Field
+        <DateTimeField
           label="Nhận đồ"
-          type="datetime-local"
           value={pickup}
-          onChange={(event) => setPickup(event.target.value)}
+          onChange={setPickup}
         />
-        <Field
+        <DateTimeField
           label="Trả đồ"
-          type="datetime-local"
           value={returnAt}
-          onChange={(event) => setReturnAt(event.target.value)}
+          onChange={setReturnAt}
           error={dateRangeIssue || undefined}
         />
       </section>

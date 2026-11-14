@@ -7,6 +7,7 @@ import type {
   TextareaHTMLAttributes,
 } from 'react';
 import type { MoneyLine, Tone } from '../fixtures/types';
+import { formatLocalDateTime } from '../utils/date-format';
 import { money } from './support';
 
 export function Icon({
@@ -283,6 +284,84 @@ export function DateField({
       {error && <p id={`${id}-error`} className="field-error">{error}</p>}
     </div>
   );
+}
+
+export function DateTimeField({
+  label,
+  value,
+  onChange,
+  error,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  error?: string;
+}) {
+  const id = useId();
+  const [draftState, setDraftState] = useState({ source: value, text: formatLocalDateTime(value) });
+  const [touched, setTouched] = useState(false);
+  const draft = draftState.source === value ? draftState.text : formatLocalDateTime(value);
+  const [date, time] = value.split('T');
+  const message =
+    touched && draft.trim() && !parseDateTimeInput(draft)
+      ? 'Nhập ngày giờ hợp lệ theo định dạng dd/mm/yyyy HH:mm.'
+      : error;
+
+  return (
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      <div className="date-field-control">
+        <input
+          id={id}
+          type="text"
+          autoComplete="off"
+          placeholder="dd/mm/yyyy HH:mm"
+          maxLength={16}
+          value={draft}
+          aria-invalid={!!message}
+          aria-describedby={message ? id + '-error' : undefined}
+          onBlur={() => setTouched(true)}
+          onChange={(event) => {
+            const text = event.target.value;
+            const next = parseDateTimeInput(text);
+            setDraftState({ source: next, text });
+            setTouched(false);
+            if (next !== value) onChange(next);
+          }}
+        />
+        <span className="date-field-calendar" aria-hidden="true">
+          <Icon name="calendar" size={18} />
+        </span>
+        <input
+          className="date-field-picker"
+          type="date"
+          aria-label={'Chọn ngày cho ' + label}
+          value={date}
+          onChange={(event) => {
+            const selected = event.target.value;
+            const next = selected ? selected + 'T' + (time || '09:00') : '';
+            setDraftState({ source: next, text: formatLocalDateTime(next) });
+            setTouched(false);
+            onChange(next);
+          }}
+        />
+      </div>
+      {message && (
+        <p className="field-error" id={id + '-error'}>
+          {message}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function parseDateTimeInput(text: string) {
+  const match = /^([0-9]{2}[/][0-9]{2}[/][0-9]{4}) +([01][0-9]|2[0-3]):([0-5][0-9])$/.exec(
+    text.trim(),
+  );
+  if (!match) return '';
+  const date = parseDisplayDate(match[1]);
+  return date.valid ? date.value + 'T' + match[2] + ':' + match[3] : '';
 }
 
 export function SelectField({

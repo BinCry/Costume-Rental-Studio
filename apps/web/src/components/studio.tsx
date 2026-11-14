@@ -200,24 +200,7 @@ export function BranchSelector({
     </SelectField>
   );
 }
-export function DateTimeField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <Field
-      type="datetime-local"
-      label={label}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-    />
-  );
-}
+export { DateTimeField } from './ui';
 export function MoneySummary({
   rental,
   deposit,

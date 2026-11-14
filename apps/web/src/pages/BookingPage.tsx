@@ -5,6 +5,7 @@ import {
   Button,
   EmptyState,
   Feedback,
+  DateTimeField,
   Field,
   Icon,
   SelectField,
@@ -584,18 +585,16 @@ export function BookingPage({
                     </Feedback>
                   )}
                   <div className="two-fields">
-                    <Field
+                    <DateTimeField
                       label="Nhận đồ"
-                      type="datetime-local"
                       value={draft.pickup}
-                      onChange={(event) => update('pickup', event.target.value)}
+                      onChange={(value) => update('pickup', value)}
                       error={issue && !draft.pickup ? 'Chọn thời điểm nhận đồ.' : undefined}
                     />
-                    <Field
+                    <DateTimeField
                       label="Trả đồ"
-                      type="datetime-local"
                       value={draft.returnAt}
-                      onChange={(event) => update('returnAt', event.target.value)}
+                      onChange={(value) => update('returnAt', value)}
                       error={
                         issue && (!draft.returnAt || draft.returnAt <= draft.pickup)
                           ? 'Thời điểm trả phải sau thời điểm nhận.'
