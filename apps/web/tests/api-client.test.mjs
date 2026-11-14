@@ -1237,4 +1237,78 @@ describe('web API client session and error handling', () => {
     expect(hasAccessToken()).toBe(false);
     expect(values.has(accessTokenKey)).toBe(false);
   });
+
+  it('shows the rental before discount so a voucher is not subtracted twice on screen', async () => {
+    values.set(accessTokenKey, 'studio-access-token');
+    const variant = {
+      id: 'variant-pearl-l',
+      modelId: 'model-pearl',
+      variantCode: 'AD-PEARL-L',
+      sizeCode: 'L',
+      colorCode: 'BLACK',
+      dailyRentalPriceVnd: 450000,
+      depositAmountVnd: 1250000,
+      model: { id: 'model-pearl', name: 'Áo dài Ngọc Trai', category: { name: 'Áo dài' } },
+    };
+    const page = (items) =>
+      success({ items, pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 } });
+    globalThis.fetch.mockImplementation((url) => {
+      const path = String(url);
+      if (path.includes('/api/v1/public/catalog/variants')) return Promise.resolve(page([variant]));
+      if (path.includes('/api/v1/public/branches'))
+        return Promise.resolve(page([{ id: 'branch-3', name: 'Costume Studio Quận 3' }]));
+      if (path.includes('/api/v1/auth/me'))
+        return Promise.resolve(
+          success({ id: 'user-1', displayName: 'Chou', email: 'chou@example.test', roles: [] }),
+        );
+      if (path.includes('/api/v1/rentals/quotes'))
+        return Promise.resolve(
+          success({
+            quoteExpiresAt: '2026-11-13T15:38:00.000Z',
+            policy: { versionCode: 'POLICY-2026-BUFFER-01', billingDayMode: 'ROLLING_24_HOURS' },
+            period: { billableDays: 2 },
+            items: [
+              {
+                variantId: 'variant-pearl-l',
+                dailyRentalPriceVnd: '450000',
+                depositAmountVnd: '1250000',
+                rentalAmountVnd: '900000',
+                availableUnits: 2,
+              },
+            ],
+            promotion: { id: 'promo-1', code: 'WELCOME10', discountVnd: '90000' },
+            subtotalVnd: '900000',
+            discountVnd: '90000',
+            rentalAmountVnd: '810000',
+            depositVnd: '1250000',
+            totalDueVnd: '2060000',
+            available: true,
+          }),
+        );
+      throw new Error('Unexpected request ' + path);
+    });
+    const { getQuote, listCatalog } = await import('../src/api/client.ts');
+    await listCatalog();
+
+    const quote = await getQuote(
+      {
+        costumeId: 'model-pearl',
+        variant: 'L / BLACK',
+        quantity: 1,
+        branch: 'Costume Studio Quận 3',
+        pickup: '2026-11-20T10:00',
+        returnAt: '2026-11-22T10:00',
+        name: 'Chou',
+        phone: '0123456789',
+        note: '',
+      },
+      { promotionCode: 'welcome10' },
+    );
+
+    expect(quote.rental).toBe(900000);
+    expect(quote.discount).toBe(90000);
+    expect(quote.deposit).toBe(1250000);
+    expect(quote.amountDueAtPickup).toBe(2060000);
+    expect(quote.rental - quote.discount + quote.deposit).toBe(quote.amountDueAtPickup);
+  });
 });

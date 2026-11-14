@@ -1566,7 +1566,8 @@ export async function getQuote(
     daysLabel: response.period.billableDays + ' ngày · ' + billingMode,
     pricePerDay,
     quantity: draft.quantity,
-    rental: numberValue(response.rentalAmountVnd),
+    // Show the rental before discount: the screens list the discount as its own line.
+    rental: numberValue(response.subtotalVnd),
     deposit: numberValue(response.depositVnd),
     discount: numberValue(response.discountVnd),
     promotionCode: response.promotion?.code,
