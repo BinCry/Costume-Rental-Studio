@@ -8,3 +8,7 @@ export function formatLocalDateTime(value: string) {
   const [date, time] = value.split('T');
   return time ? `${formatCalendarDate(date)} ${time.slice(0, 5)}` : formatCalendarDate(date);
 }
+
+export function formatPolicyDate(value?: string) {
+  return value ? formatCalendarDate(value) : 'Hiện hành';
+}

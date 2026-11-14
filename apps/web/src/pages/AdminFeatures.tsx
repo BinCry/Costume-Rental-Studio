@@ -1,3 +1,4 @@
+import { formatPolicyDate } from '../utils/date-format';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import {
   Button,
@@ -1842,7 +1843,7 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                     >
                       <strong>{p.code}</strong>
                       <span>
-                        {p.from} → {p.to ?? 'Hiện hành'}
+                        {formatPolicyDate(p.from)} → {formatPolicyDate(p.to)}
                       </span>
                       <small>
                         {p.billingMode === 'ROLLING_24_HOURS' ? 'Chu kỳ 24 giờ' : 'Ngày lịch'}
@@ -1884,7 +1885,7 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                     ]}
                   />
                   <h3>Audit</h3>
-                  <Timeline items={[`${policy.from} · Tạo ${policy.code}: ${policy.reason}`]} />
+                  <Timeline items={[`${formatPolicyDate(policy.from)} · Tạo ${policy.code}: ${policy.reason}`]} />
                 </Panel>
                 {draft && (
                   <Panel title={realApiMode ? 'Tạo phiên bản trên máy chủ' : 'Tạo phiên bản fixture'}>
