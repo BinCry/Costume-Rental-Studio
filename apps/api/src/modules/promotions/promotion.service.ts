@@ -2,7 +2,7 @@ import { AppError } from '../../common/errors/app-error.js';
 import { pageResult, pagination } from '../../common/http/query.js';
 import { prisma } from '../../database/prisma.js';
 import { assertPermission, type AuthenticatedActor } from '../auth/authorization.js';
-import type { PromotionInput } from './promotion.schema.js';
+import type { PromotionInput, PromotionUpdateInput } from './promotion.schema.js';
 
 export async function listPromotions(
   actor: AuthenticatedActor,
@@ -45,7 +45,7 @@ export async function createPromotion(actor: AuthenticatedActor, input: Promotio
 export async function updatePromotion(
   actor: AuthenticatedActor,
   id: string,
-  input: Partial<PromotionInput>,
+  input: PromotionUpdateInput,
 ) {
   assertPermission(actor, { module: 'promotions', action: 'manage' });
   const existing = await prisma.promotion.findUnique({ where: { id } });

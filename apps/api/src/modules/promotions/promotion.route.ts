@@ -3,7 +3,12 @@ import { Router } from 'express';
 import { AppError } from '../../common/errors/app-error.js';
 import { sendSuccess } from '../../common/http/response.js';
 import { requireAuthentication } from '../auth/auth.middleware.js';
-import { promotionIdSchema, promotionListSchema, promotionSchema } from './promotion.schema.js';
+import {
+  promotionIdSchema,
+  promotionListSchema,
+  promotionSchema,
+  promotionUpdateSchema,
+} from './promotion.schema.js';
 import * as service from './promotion.service.js';
 
 export const promotionRouter = Router();
@@ -39,7 +44,7 @@ promotionRouter.patch('/:id', async (q, r) =>
     await service.updatePromotion(
       r.locals.actor,
       parse(promotionIdSchema.safeParse(q.params), 'Invalid promotion id').id,
-      parse(promotionSchema.partial().safeParse(q.body), 'Invalid promotion'),
+      parse(promotionUpdateSchema.safeParse(q.body), 'Invalid promotion'),
     ),
     'Promotion updated',
   ),
