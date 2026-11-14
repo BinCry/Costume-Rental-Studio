@@ -103,7 +103,18 @@ export async function listCustomers(
 ) {
   assertPermission(actor, { module: 'customers', action: 'read', branchId: query.branchId });
   const where = {
-    customer: query.branchId ? { is: { preferredBranchId: query.branchId } } : { isNot: null },
+    // A branch sees customers who prefer it and those who have rented there, so customers
+    // registered online without a preferred branch are still reachable.
+    customer: query.branchId
+      ? {
+          is: {
+            OR: [
+              { preferredBranchId: query.branchId },
+              { rentalOrders: { some: { pickupBranchId: query.branchId } } },
+            ],
+          },
+        }
+      : { isNot: null },
     ...(query.search
       ? {
           OR: [

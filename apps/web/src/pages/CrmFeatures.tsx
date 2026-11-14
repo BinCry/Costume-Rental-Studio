@@ -31,7 +31,8 @@ import {
 } from '../api/client';
 import { studioAdapter, type Case, type Customer } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
-import { isValidPhone, matchesCustomerSearch, samePhone } from '../utils/phone';
+import { visibleBranchCustomers } from '../utils/crm-customers';
+import { isValidPhone, samePhone } from '../utils/phone';
 
 const caseStatusLabels: Record<Case['status'], string> = {
   OPEN: 'Mới mở',
@@ -103,9 +104,7 @@ export function CrmPage({
     useMobileDetailReveal<HTMLDivElement>();
   const { detailRef: caseDetailRef, revealDetail: revealCase } =
     useMobileDetailReveal<HTMLDivElement>();
-  const visibleApiCustomers = (data ?? []).filter((customer) =>
-    customer.preferredBranch === branch && matchesCustomerSearch(customer, search),
-  );
+  const visibleApiCustomers = visibleBranchCustomers(data ?? [], branch, search, realApiMode);
   const activeCustomer = realApiMode
     ? visibleApiCustomers.find((customer) => customer.code === selected) ?? visibleApiCustomers[0]
     : undefined;
@@ -260,10 +259,7 @@ export function CrmPage({
       emptyTitle="Chưa có hồ sơ khách"
     >
       {(customers) => {
-        const visible = customers.filter(
-          (c) =>
-            c.preferredBranch === branch && matchesCustomerSearch(c, search),
-        );
+        const visible = visibleBranchCustomers(customers, branch, search, realApiMode);
         const person = visible.find((c) => c.code === activeCustomerCode) ?? visible[0];
         const related = (casesResource.data ?? []).filter((c) => c.customerCode === person?.code);
         const current = related.find((c) => c.code === activeCaseCode) ?? related[0];
