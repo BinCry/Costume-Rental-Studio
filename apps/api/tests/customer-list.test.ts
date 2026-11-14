@@ -55,6 +55,12 @@ describe('customer list for a branch', () => {
     });
   });
 
+  it('finds a stored +84 phone when staff type the local 0 form', async () => {
+    const where = await whereFor({ search: '0123 456' });
+
+    expect(where.OR).toContainEqual({ phone: { contains: '84123456' } });
+  });
+
   it('keeps searching name and email for text queries', async () => {
     const where = await whereFor({ search: 'chou@example' });
 
