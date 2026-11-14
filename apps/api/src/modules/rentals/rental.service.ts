@@ -311,9 +311,8 @@ async function assertUnitAvailableForPeriod(
     throw new AppError(409, 'UNIT_UNAVAILABLE', 'Unit is already reserved or unavailable');
 }
 async function pricedItems(tx: Prisma.TransactionClient, input: CreateOrderInput) {
-  const ids = input.items.map((item) => item.variantId);
-  if (new Set(ids).size !== ids.length)
-    throw new AppError(400, 'DUPLICATE_VARIANT', 'Each variant may appear only once per order');
+  // Each order item is one physical unit, so the same variant may repeat to rent several units.
+  const ids = [...new Set(input.items.map((item) => item.variantId))];
   const variants = await tx.costumeVariant.findMany({
     where: { id: { in: ids } },
     include: { model: { include: { category: true, accessories: { where: { isActive: true } } } } },
@@ -333,7 +332,16 @@ async function pricedItems(tx: Prisma.TransactionClient, input: CreateOrderInput
   const days = billableDays(input.plannedStartAt, input.plannedDueAt, policy.billingDayMode);
   if (days < policy.minRentalDays || (policy.maxRentalDays && days > policy.maxRentalDays))
     throw new AppError(400, 'INVALID_RENTAL_PERIOD', 'Rental duration violates the active policy');
-  return { policy, days, variants };
+  const byId = new Map(variants.map((variant) => [variant.id, variant]));
+  const units = input.items.map((item) => byId.get(item.variantId)!);
+  const subtotalVnd = units.reduce(
+    (total, variant) => total + variant.dailyRentalPriceVnd * BigInt(days),
+    0n,
+  );
+  const depositVnd = units.reduce((total, variant) => total + variant.depositAmountVnd, 0n);
+  const quantities = new Map<string, number>();
+  for (const variant of units) quantities.set(variant.id, (quantities.get(variant.id) ?? 0) + 1);
+  return { policy, days, variants, subtotalVnd, depositVnd, quantities };
 }
 
 async function availabilityForQuote(
@@ -407,10 +415,9 @@ export async function createQuote(actor: AuthenticatedActor, input: QuoteInput) 
       select: { userId: true },
     });
     if (!customer) throw new AppError(404, 'CUSTOMER_NOT_FOUND', 'Customer not found');
-    const { policy, days, variants } = await pricedItems(tx, input);
-    const subtotalVnd = variants.reduce(
-      (total, variant) => total + variant.dailyRentalPriceVnd * BigInt(days),
-      0n,
+    const { policy, days, variants, subtotalVnd, depositVnd, quantities } = await pricedItems(
+      tx,
+      input,
     );
     const { promotion, discount } = await resolvePromotion(
       tx,
@@ -418,7 +425,6 @@ export async function createQuote(actor: AuthenticatedActor, input: QuoteInput) 
       input.customerUserId,
       subtotalVnd,
     );
-    const depositVnd = variants.reduce((total, variant) => total + variant.depositAmountVnd, 0n);
     const availability = await availabilityForQuote(
       tx,
       input,
@@ -443,16 +449,20 @@ export async function createQuote(actor: AuthenticatedActor, input: QuoteInput) 
         plannedDueAt: input.plannedDueAt,
         billableDays: days,
       },
-      items: variants.map((variant) => ({
-        variantId: variant.id,
-        variantCode: variant.variantCode,
-        modelId: variant.modelId,
-        dailyRentalPriceVnd: variant.dailyRentalPriceVnd,
-        depositAmountVnd: variant.depositAmountVnd,
-        rentalAmountVnd: variant.dailyRentalPriceVnd * BigInt(days),
-        availableUnits:
-          availability.find((item) => item.variantId === variant.id)?.availableUnits ?? 0,
-      })),
+      items: variants.map((variant) => {
+        const quantity = quantities.get(variant.id) ?? 0;
+        return {
+          variantId: variant.id,
+          variantCode: variant.variantCode,
+          modelId: variant.modelId,
+          quantity,
+          dailyRentalPriceVnd: variant.dailyRentalPriceVnd,
+          depositAmountVnd: variant.depositAmountVnd,
+          rentalAmountVnd: variant.dailyRentalPriceVnd * BigInt(days) * BigInt(quantity),
+          availableUnits:
+            availability.find((item) => item.variantId === variant.id)?.availableUnits ?? 0,
+        };
+      }),
       promotion: promotion
         ? { id: promotion.id, code: promotion.code, discountVnd: discount }
         : null,
@@ -461,7 +471,9 @@ export async function createQuote(actor: AuthenticatedActor, input: QuoteInput) 
       rentalAmountVnd: subtotalVnd - discount,
       depositVnd,
       totalDueVnd: subtotalVnd - discount + depositVnd,
-      available: availability.every((item) => item.availableUnits > 0),
+      available: availability.every(
+        (item) => item.availableUnits >= (quantities.get(item.variantId) ?? 1),
+      ),
     };
   }, transactionOptions);
 }
@@ -708,11 +720,7 @@ export async function createOrder(actor: AuthenticatedActor, input: CreateOrderI
       select: { userId: true },
     });
     if (!customer) throw new AppError(404, 'CUSTOMER_NOT_FOUND', 'Customer not found');
-    const { policy, days, variants } = await pricedItems(tx, input);
-    const subtotal = variants.reduce(
-      (total, variant) => total + variant.dailyRentalPriceVnd * BigInt(days),
-      0n,
-    );
+    const { policy, days, variants, subtotalVnd: subtotal } = await pricedItems(tx, input);
     const { promotion, discount } = await resolvePromotion(
       tx,
       input,
@@ -771,11 +779,7 @@ export async function updateOrder(actor: AuthenticatedActor, id: string, input: 
         branchId: input.pickupBranchId,
       });
     await lockActiveBranch(tx, input.pickupBranchId);
-    const { policy, days, variants } = await pricedItems(tx, input);
-    const subtotal = variants.reduce(
-      (total, variant) => total + variant.dailyRentalPriceVnd * BigInt(days),
-      0n,
-    );
+    const { policy, days, variants, subtotalVnd: subtotal } = await pricedItems(tx, input);
     const { promotion, discount } = await resolvePromotion(
       tx,
       input,
