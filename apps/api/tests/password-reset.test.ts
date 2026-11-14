@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unnecessary-type-assertion */
-import { verify } from 'argon2';
+import { hash, verify } from 'argon2';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -47,10 +47,11 @@ const email = 'customer@example.com';
 const userId = '10000000-0000-4000-8000-000000000001';
 let challenge: any;
 let deliveredCode = '';
+const currentPassword = 'current-password-123';
 const user = {
   id: userId,
   status: 'ACTIVE',
-  passwordHash: 'existing',
+  passwordHash: await hash(currentPassword),
   emailVerifiedAt: new Date(),
   employee: null,
 };
@@ -157,6 +158,28 @@ describe('password recovery', () => {
     await expect(
       resetPassword({ resetToken: result.resetToken, newPassword: 'another-password-123' }),
     ).rejects.toMatchObject({ code: 'INVALID_PASSWORD_RESET' });
+  });
+  it('rejects the current password and leaves the reset token usable', async () => {
+    await requestPasswordReset(email);
+    const { resetToken } = await verifyPasswordResetOtp({
+      challengeId: challenge.id,
+      otp: deliveredCode,
+    });
+    mocks.findChallenge.mockImplementation(({ where }: { where: any }) =>
+      where.resetTokenHash === challenge.resetTokenHash ? { ...challenge, user } : challenge,
+    );
+
+    await expect(resetPassword({ resetToken, newPassword: currentPassword })).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'PASSWORD_UNCHANGED',
+    });
+    expect(mocks.updateUser).not.toHaveBeenCalled();
+    expect(mocks.updateSessions).not.toHaveBeenCalled();
+    expect(mocks.deleteEmailChanges).not.toHaveBeenCalled();
+    expect(challenge.consumedAt).toBeNull();
+
+    await resetPassword({ resetToken, newPassword: 'different-password-123' });
+    expect(challenge.consumedAt).toBeInstanceOf(Date);
   });
   it('rejects invalid OTP and malformed reset input', async () => {
     await requestPasswordReset(email);

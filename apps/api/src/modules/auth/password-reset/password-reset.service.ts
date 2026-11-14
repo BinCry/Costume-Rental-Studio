@@ -6,7 +6,7 @@ import {
   randomUUID,
   timingSafeEqual,
 } from 'node:crypto';
-import { argon2id, hash } from 'argon2';
+import { argon2id, hash, verify } from 'argon2';
 
 import { AppError } from '../../../common/errors/app-error.js';
 import { env } from '../../../config/env.js';
@@ -194,6 +194,12 @@ export async function resetPassword(input: ResetPasswordInput) {
       (challenge.user.employee && challenge.user.employee.employmentStatus !== 'ACTIVE')
     ) {
       return false;
+    }
+    if (
+      challenge.user.passwordHash &&
+      (await verify(challenge.user.passwordHash, input.newPassword))
+    ) {
+      throw new AppError(400, 'PASSWORD_UNCHANGED', 'New password must be different');
     }
     const updated = await tx.user.updateMany({
       where: {

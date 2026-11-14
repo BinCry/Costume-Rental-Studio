@@ -882,17 +882,23 @@ describe('web API client session and error handling', () => {
     });
   });
 
-  it('explains general API rate limits in plain Vietnamese', async () => {
-    globalThis.fetch.mockResolvedValueOnce(error(429, 'RATE_LIMITED', 'Too many requests'));
-    const { login } = await import('../src/api/client.ts');
+  it.each(['RATE_LIMITED', 'AUTH_RATE_LIMITED', 'API_REQUEST_FAILED'])(
+    'explains login rate limits in Vietnamese (%s)',
+    async (code) => {
+      globalThis.fetch.mockResolvedValueOnce(
+        code === 'API_REQUEST_FAILED'
+          ? new Response('Too many requests', { status: 429 })
+          : error(429, code, 'Too many requests'),
+      );
+      const { login } = await import('../src/api/client.ts');
 
-    await expect(login('khach@example.com', 'password-test')).rejects.toMatchObject({
-      status: 429,
-      code: 'RATE_LIMITED',
-      message:
-        'Studio đang nhận quá nhiều yêu cầu từ kết nối này. Hãy chờ tối đa 15 phút rồi thử lại; tránh gửi liên tiếp.',
-    });
-  });
+      await expect(login('khach@example.com', 'password-test')).rejects.toMatchObject({
+        status: 429,
+        code,
+        message: 'Đăng nhập tạm thời bị giới hạn. Vui lòng chờ tối đa 15 phút rồi thử lại.',
+      });
+    },
+  );
 
   it('preserves a rate-limit error while restoring a cookie-backed session', async () => {
     globalThis.fetch.mockResolvedValueOnce(error(429, 'RATE_LIMITED', 'Too many requests'));
