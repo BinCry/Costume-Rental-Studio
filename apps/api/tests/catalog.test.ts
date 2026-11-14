@@ -268,6 +268,18 @@ describe('Catalog API', () => {
     expect((response.body as CatalogResponse).data.editionLabel).toBeNull();
   });
 
+  it('renames an accessory without resetting its default quantity', async () => {
+    await request(createApp())
+      .patch(`/api/v1/catalog/accessories/${accessoryId}`)
+      .auth(await token(), { type: 'bearer' })
+      .send({ name: 'Khăn đóng' })
+      .expect(200);
+    expect(mocks.accessory.update).toHaveBeenCalledWith({
+      where: { id: accessoryId },
+      data: { name: 'Khăn đóng' },
+    });
+  });
+
   it('normalizes model and variant codes to uppercase when patching', async () => {
     await request(createApp())
       .patch(`/api/v1/catalog/models/${modelId}`)
