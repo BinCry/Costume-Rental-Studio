@@ -84,7 +84,7 @@ export function TryOnPreview({ person, result, garmentImage, anchors, category, 
 
   return (
     <div className="anchor-preview">
-      <span className="hint">live preview</span>
+      <span className="hint">Xem trước kết quả</span>
       <canvas ref={canvasRef} />
     </div>
   );
