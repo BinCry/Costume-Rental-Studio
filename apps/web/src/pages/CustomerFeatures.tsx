@@ -39,6 +39,7 @@ import {
   updateOwnCustomerProfile,
 } from '../api/client';
 import { useBranchOptions } from '../components/useBranchOptions';
+import { isValidPhone } from '../utils/phone';
 
 const loadCostumeDetails =
   (id: string) =>
@@ -683,12 +684,7 @@ export function AccountPage({
     event.preventDefault();
     setProfileIssue('');
     setProfileNotice('');
-    const compactPhone = accountPhone.trim().replace(/[\s()-]/g, '');
-    const phoneIsValid =
-      !compactPhone ||
-      /^0\d{9}$/.test(compactPhone) ||
-      /^84\d{9}$/.test(compactPhone) ||
-      /^\+[1-9]\d{7,14}$/.test(compactPhone);
+    const phoneIsValid = !accountPhone.trim() || isValidPhone(accountPhone);
     if (!accountName.trim()) {
       setProfileIssue('Hãy nhập họ và tên.');
       return;
@@ -847,16 +843,12 @@ export function AccountPage({
                 label="Số điện thoại"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                error={
-                  attempted && !/^0[0-9 ]{8,12}$/.test(phone.trim())
-                    ? 'Nhập số điện thoại hợp lệ.'
-                    : undefined
-                }
+                error={attempted && !isValidPhone(phone) ? 'Nhập số điện thoại hợp lệ.' : undefined}
               />
               <Button
                 onClick={() => {
                   setAttempted(true);
-                  if (!name.trim() || !/^0[0-9 ]{8,12}$/.test(phone.trim())) {
+                  if (!name.trim() || !isValidPhone(phone)) {
                     return;
                   }
                   setAttempted(false);

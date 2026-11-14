@@ -20,6 +20,7 @@ import { branches, fixtureAdapter, fixtureCatalog, fixturePeriod } from '../fixt
 import { studioAdapter, type ActiveUnit, type Customer, type Unit } from '../fixtures/studio';
 import type { CatalogItem, DemoScenario, QuoteSnapshot } from '../fixtures/types';
 import { apiEnabled, hasAccessToken } from '../api/client';
+import { isValidPhone, matchesCustomerSearch, samePhone } from '../utils/phone';
 
 interface CounterVariantOption {
   value: string;
@@ -213,7 +214,7 @@ export function CounterRentalPage({
       setIssue('Tài khoản chưa có quyền tạo hồ sơ khách tại chi nhánh này.');
       return;
     }
-    if (!newName.trim() || !/^0[0-9 ]{8,12}$/.test(newPhone.trim())) {
+    if (!newName.trim() || !isValidPhone(newPhone)) {
       setIssue('Nhập họ tên và số điện thoại hợp lệ.');
       return;
     }
@@ -221,11 +222,7 @@ export function CounterRentalPage({
       setIssue('Nhập email hợp lệ để lưu hồ sơ khách trên hệ thống.');
       return;
     }
-    if (
-      customers.some(
-        (customer) => customer.phone.replaceAll(' ', '') === newPhone.replaceAll(' ', ''),
-      )
-    ) {
+    if (customers.some((customer) => samePhone(customer.phone, newPhone))) {
       setIssue('Số điện thoại đã có hồ sơ. Chọn khách hiện có để tránh tạo trùng.');
       return;
     }
@@ -264,7 +261,7 @@ export function CounterRentalPage({
       return;
     }
     const selectedCustomer = data?.find((entry) => entry.code === customerCode);
-    if (creating || !selectedCustomer || !name.trim() || !/^0[0-9 ]{8,12}$/.test(phone.trim())) {
+    if (creating || !selectedCustomer || !name.trim() || !isValidPhone(phone)) {
       setIssue('Lưu hoặc chọn đúng hồ sơ khách trước khi tạo đơn.');
       return;
     }
@@ -347,9 +344,7 @@ export function CounterRentalPage({
       allowEmpty
     >
       {(customers) => {
-        const matches = customers.filter((c) =>
-          `${c.name} ${c.phone} ${c.code}`.toLowerCase().includes(customerSearch.toLowerCase()),
-        );
+        const matches = customers.filter((c) => matchesCustomerSearch(c, customerSearch));
         const customer = matches.find((c) => c.code === customerCode);
         return (
           <div className="page">
