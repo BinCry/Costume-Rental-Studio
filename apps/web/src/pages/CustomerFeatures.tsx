@@ -88,6 +88,21 @@ const loadCustomerOrders = (scenario: DemoScenario) =>
     ? listCustomerOrders()
     : studioAdapter.customerOrders(scenario);
 
+function readDetailPeriod(key: string) {
+  try {
+    const saved = JSON.parse(window.sessionStorage.getItem(key) ?? 'null') as {
+      pickup?: unknown;
+      due?: unknown;
+    } | null;
+    if (typeof saved?.pickup === 'string' && typeof saved?.due === 'string') {
+      return { pickup: saved.pickup, due: saved.due };
+    }
+  } catch {
+    // Detail still works when session storage is unavailable.
+  }
+  return undefined;
+}
+
 export function CostumeDetailPage({
   id,
   scenario,
@@ -120,8 +135,25 @@ export function CostumeDetailPage({
   const branch = branchOptions.includes(branchSelection)
     ? branchSelection
     : (branchOptions[0] ?? (usePublicApi ? '' : branchSelection));
-  const [pickup, setPickup] = useState(requestedPickup?.trim() ? requestedPickup : defaultPickup);
-  const [due, setDue] = useState(requestedReturn?.trim() ? requestedReturn : defaultReturn);
+  const periodKey = 'costume-rental.detail-period:' + id;
+  const [period, setPeriod] = useState(() => {
+    const fromCatalog = requestedPickup !== null || requestedReturn !== null;
+    const saved = fromCatalog ? undefined : readDetailPeriod(periodKey);
+    return {
+      pickup: requestedPickup ?? saved?.pickup ?? defaultPickup,
+      due: requestedReturn ?? saved?.due ?? defaultReturn,
+      remember: fromCatalog,
+    };
+  });
+  const { pickup, due } = period;
+  useEffect(() => {
+    if (!period.remember) return;
+    try {
+      window.sessionStorage.setItem(periodKey, JSON.stringify({ pickup, due }));
+    } catch {
+      // Keep the selected period in memory when session storage is unavailable.
+    }
+  }, [period.remember, periodKey, pickup, due]);
   const [photo, setPhoto] = useState(0);
   const selectedVariant =
     data?.find((value) => value.id === id)?.variants.find((value) => value.code === variantCode) ??
@@ -134,8 +166,11 @@ export function CostumeDetailPage({
     if (url.pathname.replace(/\/$/, '') !== detailPath) return;
     const before = url.href;
     url.searchParams.set('variantCode', selectedVariantCode);
+    if (branch) url.searchParams.set('branch', branch);
+    url.searchParams.delete('pickup');
+    url.searchParams.delete('returnAt');
     if (url.href !== before) window.history.replaceState(window.history.state, '', url);
-  }, [id, selectedVariantCode]);
+  }, [branch, id, selectedVariantCode]);
 
   const apiVariantId = selectedVariant?.apiId;
   const [availabilityResult, setAvailabilityResult] = useState<{
@@ -311,8 +346,20 @@ export function CostumeDetailPage({
                       disabled={!branchOptionsReady || branchOptions.length === 0}
                       onChange={setBranchSelection}
                     />
-                    <DateTimeField label="Nhận" value={pickup} onChange={setPickup} />
-                    <DateTimeField label="Trả" value={due} onChange={setDue} />
+                    <DateTimeField
+                      label="Nhận"
+                      value={pickup}
+                      onChange={(next) =>
+                        setPeriod((current) => ({ ...current, pickup: next, remember: true }))
+                      }
+                    />
+                    <DateTimeField
+                      label="Trả"
+                      value={due}
+                      onChange={(next) =>
+                        setPeriod((current) => ({ ...current, due: next, remember: true }))
+                      }
+                    />
                   </div>
                   {branchOptionsError && (
                     <Feedback tone="danger" title="Chưa tải được danh sách chi nhánh">
