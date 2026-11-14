@@ -626,6 +626,8 @@ function apiErrorMessage(status: number, code: string) {
     IDEMPOTENCY_CONFLICT:
       'Yêu cầu đã thay đổi so với lần gửi trước. Hãy tải lại đơn và kiểm tra giao dịch.',
     INVALID_ORDER_TRANSITION: 'Đơn đã chuyển sang trạng thái khác. Hãy tải lại trước khi thao tác.',
+    CONTACT_CONFLICT:
+      'Số điện thoại hoặc email này đã được dùng cho tài khoản khác. Hãy tìm hồ sơ khách sẵn có hoặc nhập thông tin khác.',
     CRM_CASE_OWNER_UNCHANGED:
       'Case đã được giao cho người này. Hãy chọn người phụ trách khác nếu muốn đổi.',
     INVALID_CRM_CASE_TRANSITION:

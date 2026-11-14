@@ -900,6 +900,20 @@ describe('web API client session and error handling', () => {
     });
   });
 
+  it('explains a phone or email that belongs to another account', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      error(409, 'CONTACT_CONFLICT', 'Email or phone is already in use'),
+    );
+    const { login } = await import('../src/api/client.ts');
+
+    await expect(login('khach@example.com', 'password-test')).rejects.toMatchObject({
+      status: 409,
+      code: 'CONTACT_CONFLICT',
+      message:
+        'Số điện thoại hoặc email này đã được dùng cho tài khoản khác. Hãy tìm hồ sơ khách sẵn có hoặc nhập thông tin khác.',
+    });
+  });
+
   it('explains choosing the same CRM case owner again', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       error(409, 'CRM_CASE_OWNER_UNCHANGED', 'Case already has this owner'),
