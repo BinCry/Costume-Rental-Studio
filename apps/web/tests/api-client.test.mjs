@@ -590,6 +590,7 @@ describe('web API client session and error handling', () => {
           {
             id: 'order-1',
             orderCode: 'RT-TEST-01',
+            policyVersion: { versionCode: 'V2', billingDayMode: 'ROLLING_24_HOURS' },
             status: 'ACTIVE',
             version: 3,
             plannedStartAt: '2026-10-14T03:00:00.000Z',
@@ -627,6 +628,7 @@ describe('web API client session and error handling', () => {
 
     const [order] = await listOrders({ loadPendingAvailability: false });
 
+    expect(order.dayPolicy).toBe('Chu kỳ 24 giờ (V2)');
     expect(order.items[0]).toMatchObject({
       id: 'order-item-1',
       apiAllocationStatus: 'ACTIVE',

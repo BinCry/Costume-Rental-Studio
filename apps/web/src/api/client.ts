@@ -112,6 +112,7 @@ interface ApiOrder {
   plannedStartAt: string;
   plannedDueAt: string;
   customerNote?: string | null;
+  policyVersion?: { versionCode: string; billingDayMode: Policy['billingMode'] } | null;
   promotionDiscountVnd?: string | number | bigint;
   additionalRentalFeeVnd?: string | number | bigint;
   customer?: { user?: { displayName?: string; phone?: string | null } };
@@ -1301,6 +1302,8 @@ function mapOrder(order: ApiOrder): Order {
     (refund) => refund.status === 'PENDING' || refund.status === 'PROCESSING',
   );
   const refundStatus = refundPending ? 'Đang xử lý' : refunded > 0 ? 'Đã hoàn' : 'Chưa phát sinh';
+  const policy = order.policyVersion;
+  const billingMode = policy?.billingDayMode === 'ROLLING_24_HOURS' ? 'Chu kỳ 24 giờ' : 'Ngày lịch';
   return {
     id: order.orderCode || order.id,
     status: order.status,
@@ -1312,7 +1315,7 @@ function mapOrder(order: ApiOrder): Order {
     returnAt: formatDate(order.plannedDueAt),
     apiPlannedStartAt: order.plannedStartAt,
     apiPlannedDueAt: order.plannedDueAt,
-    dayPolicy: 'Theo chính sách hiện hành của máy chủ',
+    dayPolicy: policy ? `${billingMode} (${policy.versionCode})` : 'Chưa có dữ liệu chính sách của đơn',
     items,
     apiPayments: (order.payments ?? []).map((payment) => ({
       purpose: payment.purpose,
