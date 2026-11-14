@@ -7,6 +7,7 @@ import { pageResult, pagination } from '../../common/http/query.js';
 import { assertPermission, type AuthenticatedActor } from '../auth/authorization.js';
 import { lockUserAuthentication } from '../auth/token.service.js';
 import { lockActiveBranch } from '../branches/branch.service.js';
+import { phoneSearchDigits } from '../../common/validation/phone.js';
 import {
   assertActiveGlobalAdmin,
   isActiveGlobalAdmin,
@@ -102,13 +103,29 @@ export async function listCustomers(
   query: { page: number; pageSize: number; search?: string; branchId?: string },
 ) {
   assertPermission(actor, { module: 'customers', action: 'read', branchId: query.branchId });
+  // Phones are stored as E.164 (+84...), so a local 0... query is also matched by its digits.
+  const phoneDigits = query.search ? phoneSearchDigits(query.search) : '';
   const where = {
-    customer: query.branchId ? { is: { preferredBranchId: query.branchId } } : { isNot: null },
+    // A branch sees customers who prefer it and those who have rented there, so customers
+    // registered online without a preferred branch are still reachable.
+    customer: query.branchId
+      ? {
+          is: {
+            OR: [
+              { preferredBranchId: query.branchId },
+              { rentalOrders: { some: { pickupBranchId: query.branchId } } },
+            ],
+          },
+        }
+      : { isNot: null },
     ...(query.search
       ? {
           OR: [
             { displayName: { contains: query.search, mode: 'insensitive' as const } },
             { phone: { contains: query.search } },
+            ...(phoneDigits && phoneDigits !== query.search
+              ? [{ phone: { contains: phoneDigits } }]
+              : []),
             { email: { contains: query.search, mode: 'insensitive' as const } },
           ],
         }

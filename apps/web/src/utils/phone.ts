@@ -22,13 +22,13 @@ function phoneDigits(value: string): string {
 }
 
 export function matchesCustomerSearch(
-  customer: { name: string; phone: string; code: string },
+  customer: { name: string; phone: string; code: string; email?: string },
   query: string,
 ): boolean {
   const text = query.trim().toLocaleLowerCase('vi');
   if (!text) return true;
-  if (`${customer.name} ${customer.phone} ${customer.code}`.toLocaleLowerCase('vi').includes(text))
-    return true;
+  const fields = [customer.name, customer.phone, customer.code, customer.email ?? ''];
+  if (fields.some((field) => field.toLocaleLowerCase('vi').includes(text))) return true;
   // Only a query made of phone characters is also compared as a phone number.
   if (!/^[+\d\s().-]+$/.test(text)) return false;
   const digits = phoneDigits(text);

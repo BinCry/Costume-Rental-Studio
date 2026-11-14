@@ -56,6 +56,13 @@ describe('customer search', () => {
     expect(matchesCustomerSearch(customer, '')).toBe(true);
   });
 
+  it('finds a customer by email, ignoring case', () => {
+    const withEmail = { ...customer, email: 'Chou.Nguyen@Example.com' };
+    expect(matchesCustomerSearch(withEmail, 'chou.nguyen@example.com')).toBe(true);
+    expect(matchesCustomerSearch(withEmail, 'example.com')).toBe(true);
+    expect(matchesCustomerSearch(withEmail, 'other@example.com')).toBe(false);
+  });
+
   it('does not match other customers or turn text into a phone search', () => {
     expect(matchesCustomerSearch(customer, '0999')).toBe(false);
     expect(matchesCustomerSearch(customer, 'xyz')).toBe(false);

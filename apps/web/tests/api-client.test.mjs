@@ -886,6 +886,83 @@ describe('web API client session and error handling', () => {
     expect(globalThis.fetch.mock.calls[0][0]).toBe('https://api.example.test/api/v1/auth/refresh');
   });
 
+  it('explains a CRM case status change the workflow does not allow', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      error(409, 'INVALID_CRM_CASE_TRANSITION', 'Case status transition is not allowed'),
+    );
+    const { login } = await import('../src/api/client.ts');
+
+    await expect(login('khach@example.com', 'password-test')).rejects.toMatchObject({
+      status: 409,
+      code: 'INVALID_CRM_CASE_TRANSITION',
+      message:
+        'Case không chuyển thẳng được sang trạng thái này. Muốn đóng case, hãy chuyển sang "Đã giải quyết" trước.',
+    });
+  });
+
+  it('explains a phone or email that belongs to another account', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      error(409, 'CONTACT_CONFLICT', 'Email or phone is already in use'),
+    );
+    const { login } = await import('../src/api/client.ts');
+
+    await expect(login('khach@example.com', 'password-test')).rejects.toMatchObject({
+      status: 409,
+      code: 'CONTACT_CONFLICT',
+      message:
+        'Số điện thoại hoặc email này đã được dùng cho tài khoản khác. Hãy tìm hồ sơ khách sẵn có hoặc nhập thông tin khác.',
+    });
+  });
+
+  it('explains choosing the same CRM case owner again', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      error(409, 'CRM_CASE_OWNER_UNCHANGED', 'Case already has this owner'),
+    );
+    const { login } = await import('../src/api/client.ts');
+
+    await expect(login('khach@example.com', 'password-test')).rejects.toMatchObject({
+      status: 409,
+      code: 'CRM_CASE_OWNER_UNCHANGED',
+      message: 'Case đã được giao cho người này. Hãy chọn người phụ trách khác nếu muốn đổi.',
+    });
+  });
+
+  it('does not send the screen history line with a fixed date as a CRM case note', async () => {
+    values.set(accessTokenKey, 'access-token');
+    const branchId = '10000000-0000-4000-8000-000000000001';
+    const caseId = '10000000-0000-4000-8000-000000000002';
+    const apiCase = {
+      id: caseId,
+      caseCode: 'CASE-1',
+      customerUserId: '10000000-0000-4000-8000-000000000003',
+      branchId,
+      subject: 'Hỏi lịch thử đồ',
+      priority: 'NORMAL',
+      status: 'IN_PROGRESS',
+    };
+    globalThis.fetch.mockImplementation(async (url) => {
+      const { pathname } = new URL(url);
+      if (pathname === '/api/v1/public/branches')
+        return success({ items: [{ id: branchId, name: 'Quận 1' }] });
+      if (pathname === '/api/v1/crm/cases') return success({ items: [apiCase] });
+      if (pathname.endsWith('/status')) return success({ ...apiCase, status: 'RESOLVED' });
+      return success(apiCase);
+    });
+    const { listCrmCases, saveCrmCase } = await import('../src/api/client.ts');
+    const [current] = await listCrmCases('Quận 1');
+
+    await saveCrmCase({
+      ...current,
+      status: 'RESOLVED',
+      history: ['03/10 · Cập nhật RESOLVED', ...current.history],
+    });
+
+    const statusCall = globalThis.fetch.mock.calls.find(([url]) => url.endsWith('/status'));
+    expect(JSON.parse(statusCall[1].body)).toEqual({ status: 'RESOLVED' });
+    for (const [, init] of globalThis.fetch.mock.calls)
+      expect(String(init?.body ?? '')).not.toContain('03/10');
+  });
+
   it('handles a non-JSON server error without exposing its body', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response('<html>secret stack trace</html>', { status: 502 }),

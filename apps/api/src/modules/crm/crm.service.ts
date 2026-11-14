@@ -80,6 +80,17 @@ function accessibleBranches(actor: AuthenticatedActor, action: 'read' | 'manage'
   return [...new Set(branchIds)];
 }
 
+/** Role assignments that let an employee work CRM cases at a branch (not e.g. warehouse-only). */
+function crmRoleAt(branchId: string) {
+  return {
+    branchId,
+    role: {
+      isActive: true,
+      rolePermissions: { some: { permission: { module: 'crm', action: 'manage' } } },
+    },
+  };
+}
+
 export async function listAssignees(actor: AuthenticatedActor, branchId: string) {
   requireEmployee(actor);
   if (
@@ -92,7 +103,7 @@ export async function listAssignees(actor: AuthenticatedActor, branchId: string)
     where: {
       status: 'ACTIVE',
       employee: { employmentStatus: 'ACTIVE' },
-      roleAssignments: { some: { branchId, role: { isActive: true } } },
+      roleAssignments: { some: crmRoleAt(branchId) },
     },
     select: {
       id: true,
@@ -189,7 +200,7 @@ async function assertOwner(
   if (!ownerUserId) return;
   const owner = await tx.user.findUnique({
     where: { id: ownerUserId },
-    include: { employee: true, roleAssignments: { where: { branchId, role: { isActive: true } } } },
+    include: { employee: true, roleAssignments: { where: crmRoleAt(branchId) } },
   });
   if (
     owner?.status !== 'ACTIVE' ||
@@ -199,7 +210,7 @@ async function assertOwner(
     throw new AppError(
       400,
       'INVALID_CASE_OWNER',
-      'Case owner must be an active employee assigned to this branch',
+      'Case owner must be an active employee with a CRM role at this branch',
     );
 }
 function assertTransition(from: CrmCaseStatus, to: CrmCaseStatus) {

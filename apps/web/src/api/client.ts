@@ -18,6 +18,7 @@ import type {
   UnitBlock,
   Variant,
 } from '../fixtures/studio';
+import { caseHistoryText, interactionText } from '../utils/crm-labels';
 
 function optionalText(value: string | null | undefined): string | undefined {
   if (value === undefined || value === null || value === '') return undefined;
@@ -625,6 +626,12 @@ function apiErrorMessage(status: number, code: string) {
     IDEMPOTENCY_CONFLICT:
       'Yêu cầu đã thay đổi so với lần gửi trước. Hãy tải lại đơn và kiểm tra giao dịch.',
     INVALID_ORDER_TRANSITION: 'Đơn đã chuyển sang trạng thái khác. Hãy tải lại trước khi thao tác.',
+    CONTACT_CONFLICT:
+      'Số điện thoại hoặc email này đã được dùng cho tài khoản khác. Hãy tìm hồ sơ khách sẵn có hoặc nhập thông tin khác.',
+    CRM_CASE_OWNER_UNCHANGED:
+      'Case đã được giao cho người này. Hãy chọn người phụ trách khác nếu muốn đổi.',
+    INVALID_CRM_CASE_TRANSITION:
+      'Case không chuyển thẳng được sang trạng thái này. Muốn đóng case, hãy chuyển sang "Đã giải quyết" trước.',
     POLICY_OVERLAP: 'Thời hạn chính sách bị trùng. Hãy kiểm tra lại thời điểm áp dụng.',
     STAFF_CONFLICT:
       'Không thể liên kết tài khoản này với nhân viên. Kiểm tra trạng thái và xác minh email của tài khoản, hoặc kiểm tra mã nhân viên và số điện thoại có bị trùng không.',
@@ -2105,17 +2112,10 @@ export async function listCustomers(branchName?: string, search?: string): Promi
   return page.map(customerFromApi);
 }
 function historyLine(entry: ApiCaseHistory) {
-  const stamp = formatDate(entry.occurredAt);
-  const transition = entry.toStatus
-    ? ` · ${entry.eventType ?? 'Cập nhật'} · ${entry.toStatus}`
-    : '';
-  return `${stamp || 'Vừa cập nhật'}${transition}${entry.note ? ` · ${entry.note}` : ''}`;
+  return caseHistoryText(entry, formatDate(entry.occurredAt) || 'Vừa cập nhật');
 }
 function interactionLine(entry: ApiInteraction) {
-  const stamp = formatDate(entry.occurredAt);
-  const kind = entry.interactionType ? ` · ${entry.interactionType}` : '';
-  const channel = entry.channel ? ` · ${entry.channel}` : '';
-  return `${stamp || 'Vừa cập nhật'}${kind}${channel}${entry.summary ? ` · ${entry.summary}` : ''}`;
+  return interactionText(entry, formatDate(entry.occurredAt) || 'Vừa cập nhật');
 }
 function crmCaseFromApi(crmCase: ApiCrmCase): Case {
   const customerCode = crmCase.customer?.customerCode ?? crmCase.customerUserId;
@@ -2306,7 +2306,6 @@ export async function saveCrmCase(value: Case): Promise<Case> {
         caseType: 'SUPPORT',
         priority: value.priority,
         ownerUserId: optionalText(await ownerUserId(value.owner, value.branch)),
-        note: value.history[0],
       }),
     });
     return crmCaseFromApi(created);
@@ -2331,7 +2330,11 @@ export async function saveCrmCase(value: Case): Promise<Case> {
       `/api/v1/crm/cases/${encodeURIComponent(reference.id)}/assign`,
       {
         method: 'POST',
-        body: JSON.stringify({ ownerUserId: nextOwnerId, note: value.history[0] }),
+        body: JSON.stringify({
+          ownerUserId: nextOwnerId,
+          // The server keeps the owner's id; the note keeps the name readable in the timeline.
+          note: value.owner ? `Giao cho ${value.owner}` : 'Bỏ phân công',
+        }),
       },
     );
   }
@@ -2340,7 +2343,7 @@ export async function saveCrmCase(value: Case): Promise<Case> {
       `/api/v1/crm/cases/${encodeURIComponent(reference.id)}/status`,
       {
         method: 'POST',
-        body: JSON.stringify({ status: value.status, note: value.history[0] }),
+        body: JSON.stringify({ status: value.status }),
       },
     );
   }

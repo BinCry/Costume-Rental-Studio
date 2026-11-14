@@ -26,6 +26,7 @@ import {
   type UnitBlock,
 } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
+import { newTransferHistory } from '../utils/transfer-history';
 import {
   apiEnabled,
   cancelUnitBlock,
@@ -825,7 +826,7 @@ export function TransfersPage({ scenario, branch, canManage = true }: { scenario
                         units: [{ barcode: unitCode.trim() }],
                         note,
                         version: 1,
-                        history: ['03/10 · Tạo yêu cầu fixture'],
+                        history: newTransferHistory(),
                       });
                     }}
                   >

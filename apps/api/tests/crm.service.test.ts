@@ -52,7 +52,7 @@ beforeEach(() => {
 });
 
 describe('CRM service invariants', () => {
-  it('lists only active employees assigned to the requested branch', async () => {
+  it('lists only active employees with a CRM role at the requested branch', async () => {
     mocks.userFindMany.mockResolvedValue([
       {
         id: '10000000-0000-4000-8000-000000000006',
@@ -69,12 +69,62 @@ describe('CRM service invariants', () => {
         where: {
           status: 'ACTIVE',
           employee: { employmentStatus: 'ACTIVE' },
-          roleAssignments: { some: { branchId, role: { isActive: true } } },
+          roleAssignments: {
+            some: {
+              branchId,
+              role: {
+                isActive: true,
+                rolePermissions: { some: { permission: { module: 'crm', action: 'manage' } } },
+              },
+            },
+          },
         },
         take: 100,
       }),
     );
     expect(result).toMatchObject([{ employeeCode: 'NV-006', displayName: 'Nhân viên CRM' }]);
+  });
+
+  it('rejects a case owner whose branch role has no CRM permission', async () => {
+    const ownerUserId = '10000000-0000-4000-8000-000000000007';
+    const findOwner = vi.fn().mockResolvedValue({
+      status: 'ACTIVE',
+      employee: { employmentStatus: 'ACTIVE' },
+      // The CRM-role filter leaves out a warehouse-only assignment.
+      roleAssignments: [],
+    });
+    const tx = {
+      customer: {
+        findUnique: vi.fn().mockResolvedValue({ user: { status: 'ACTIVE' } }),
+      },
+      user: { findUnique: findOwner },
+      crmCase: { create: vi.fn() },
+    };
+    mocks.transaction.mockImplementation((callback: (client: typeof tx) => unknown) =>
+      callback(tx),
+    );
+
+    await expect(
+      service.createCase(actor, {
+        customerUserId: customerId,
+        branchId,
+        subject: 'Hỏi lịch thử đồ',
+        caseType: 'INQUIRY',
+        priority: 'MEDIUM',
+        ownerUserId,
+      } as never),
+    ).rejects.toMatchObject({ code: 'INVALID_CASE_OWNER' });
+    const [ownerQuery] = findOwner.mock.calls[0] as [
+      { include: { roleAssignments: { where: unknown } } },
+    ];
+    expect(ownerQuery.include.roleAssignments.where).toEqual({
+      branchId,
+      role: {
+        isActive: true,
+        rolePermissions: { some: { permission: { module: 'crm', action: 'manage' } } },
+      },
+    });
+    expect(tx.crmCase.create).not.toHaveBeenCalled();
   });
 
   it('intersects status with overdue instead of overwriting the status filter', async () => {

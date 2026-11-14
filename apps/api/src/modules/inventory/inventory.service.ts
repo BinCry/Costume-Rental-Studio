@@ -1,4 +1,5 @@
 import { AppError } from '../../common/errors/app-error.js';
+import { phoneSearchDigits } from '../../common/validation/phone.js';
 import { pageResult, pagination } from '../../common/http/query.js';
 import { prisma } from '../../database/prisma.js';
 import type { OrderStatus, Prisma } from '../../generated/prisma/client.js';
@@ -138,6 +139,8 @@ export async function listActiveRentals(actor: AuthenticatedActor, query: Active
   else if (!canReadAll && accessibleBranches.length === 0) assertRead(actor);
 
   const now = new Date();
+  // Phones are stored as E.164 (+84...), so a local 0... query is also matched by its digits.
+  const phoneDigits = query.search ? phoneSearchDigits(query.search) : '';
   const where: Prisma.RentalOrderItemWhereInput = {
     unitId: { not: null },
     allocationStatus: 'ACTIVE',
@@ -168,6 +171,9 @@ export async function listActiveRentals(actor: AuthenticatedActor, query: Active
                           OR: [
                             { displayName: { contains: query.search, mode: 'insensitive' } },
                             { phone: { contains: query.search, mode: 'insensitive' } },
+                            ...(phoneDigits && phoneDigits !== query.search
+                              ? [{ phone: { contains: phoneDigits } }]
+                              : []),
                             { email: { contains: query.search, mode: 'insensitive' } },
                           ],
                         },

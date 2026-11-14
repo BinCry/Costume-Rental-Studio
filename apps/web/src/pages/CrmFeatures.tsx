@@ -31,14 +31,11 @@ import {
 } from '../api/client';
 import { studioAdapter, type Case, type Customer } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
-import { isValidPhone, matchesCustomerSearch, samePhone } from '../utils/phone';
+import { nextCaseStatuses } from '../utils/crm-cases';
+import { caseStatusLabels, crmDayStamp } from '../utils/crm-labels';
+import { visibleBranchCustomers } from '../utils/crm-customers';
+import { isValidPhone, samePhone } from '../utils/phone';
 
-const caseStatusLabels: Record<Case['status'], string> = {
-  OPEN: 'Mới mở',
-  IN_PROGRESS: 'Đang xử lý',
-  RESOLVED: 'Đã giải quyết',
-  CLOSED: 'Đã đóng',
-};
 const priorityLabels: Record<Case['priority'], string> = {
   LOW: 'Thấp',
   NORMAL: 'Bình thường',
@@ -103,9 +100,7 @@ export function CrmPage({
     useMobileDetailReveal<HTMLDivElement>();
   const { detailRef: caseDetailRef, revealDetail: revealCase } =
     useMobileDetailReveal<HTMLDivElement>();
-  const visibleApiCustomers = (data ?? []).filter((customer) =>
-    customer.preferredBranch === branch && matchesCustomerSearch(customer, search),
-  );
+  const visibleApiCustomers = visibleBranchCustomers(data ?? [], branch, search, realApiMode);
   const activeCustomer = realApiMode
     ? visibleApiCustomers.find((customer) => customer.code === selected) ?? visibleApiCustomers[0]
     : undefined;
@@ -204,11 +199,11 @@ export function CrmPage({
       const previous = casesResource.data?.find((item) => item.code === value.code);
       const history = previous
         ? value.history[0] === previous.history[0]
-          ? ['03/10 · Cập nhật case', ...value.history]
+          ? [`${crmDayStamp()} · Cập nhật case`, ...value.history]
           : value.history
         : value.history.length
           ? value.history
-          : ['03/10 · Tạo case'];
+          : [`${crmDayStamp()} · Tạo case`];
       const saved = await studioAdapter.saveCase({ ...value, history }, scenario);
       setCaseCode(saved.code);
       setDraft(undefined);
@@ -260,10 +255,7 @@ export function CrmPage({
       emptyTitle="Chưa có hồ sơ khách"
     >
       {(customers) => {
-        const visible = customers.filter(
-          (c) =>
-            c.preferredBranch === branch && matchesCustomerSearch(c, search),
-        );
+        const visible = visibleBranchCustomers(customers, branch, search, realApiMode);
         const person = visible.find((c) => c.code === activeCustomerCode) ?? visible[0];
         const related = (casesResource.data ?? []).filter((c) => c.customerCode === person?.code);
         const current = related.find((c) => c.code === activeCaseCode) ?? related[0];
@@ -531,7 +523,7 @@ export function CrmPage({
                             ...editing,
                             owner: e.target.value || undefined,
                             history: [
-                              `03/10 · Chuyển case cho ${e.target.value || 'chưa phân công'}`,
+                              `${crmDayStamp()} · Chuyển case cho ${e.target.value || 'chưa phân công'}`,
                               ...editing.history,
                             ],
                           });
@@ -573,7 +565,7 @@ export function CrmPage({
                             setDraft({
                               ...editing,
                               branch: v,
-                              history: [`03/10 · Chuyển case sang ${v}`, ...editing.history],
+                              history: [`${crmDayStamp()} · Chuyển case sang ${v}`, ...editing.history],
                             });
                           }}
                         />
@@ -585,11 +577,13 @@ export function CrmPage({
                           setDraft({
                             ...editing,
                             status: e.target.value as Case['status'],
-                            history: [`03/10 · Cập nhật ${e.target.value}`, ...editing.history],
+                            history: [`${crmDayStamp()} · Chuyển sang ${caseStatusLabels[e.target.value]}`, ...editing.history],
                           })
                         }
                       >
-                        {(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'] as const).map((x) => (
+                        {nextCaseStatuses(
+                          (current?.code === editing.code ? current.status : undefined) ?? 'OPEN',
+                        ).map((x) => (
                           <option value={x} key={x}>
                             {caseStatusLabels[x]}
                           </option>
@@ -607,7 +601,7 @@ export function CrmPage({
                               ...editing,
                               history: editing.history.length
                                 ? editing.history
-                                : ['03/10 · Tạo case'],
+                                : [`${crmDayStamp()} · Tạo case`],
                             });
                           }}
                         >
@@ -622,7 +616,7 @@ export function CrmPage({
                                 ...editing,
                                 status: 'IN_PROGRESS',
                                 history: [
-                                  `03/10 · ${editing.owner} bắt đầu xử lý case`,
+                                  `${crmDayStamp()} · ${editing.owner} bắt đầu xử lý case`,
                                   ...editing.history,
                                 ],
                               })
