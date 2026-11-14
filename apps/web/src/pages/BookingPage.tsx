@@ -17,6 +17,7 @@ import { branches, fixtureAdapter, fixtureCatalog, fixturePeriod } from '../fixt
 import { studioAdapter } from '../fixtures/studio';
 import type { BookingDraft, DemoScenario, QuoteSnapshot } from '../fixtures/types';
 import { apiEnabled, getOwnCustomerProfile, hasAccessToken } from '../api/client';
+import { formatLocalDateTime } from '../utils/date-format';
 import { isValidPhone } from '../utils/phone';
 import { useBranchOptions } from '../components/useBranchOptions';
 
@@ -827,7 +828,7 @@ export function BookingPage({
                   <div>
                     <span>Nhận / trả</span>
                     <strong>
-                      {draft.pickup.replace('T', ' ')} → {draft.returnAt.replace('T', ' ')}
+                      {formatLocalDateTime(draft.pickup)} → {formatLocalDateTime(draft.returnAt)}
                     </strong>
                   </div>
                   <div>
@@ -940,11 +941,11 @@ function BookingSummaryContent({
         <Icon name="pin" size={16} /> {branch || 'Chưa chọn chi nhánh'}
       </p>
       <p>
-        <Icon name="calendar" size={16} /> Nhận: {pickup ? pickup.replace('T', ' ') : 'Chưa chọn'}
+        <Icon name="calendar" size={16} /> Nhận: {pickup ? formatLocalDateTime(pickup) : 'Chưa chọn'}
       </p>
       <p>
         <Icon name="calendar" size={16} /> Trả:{' '}
-        {returnAt ? returnAt.replace('T', ' ') : 'Chưa chọn'}
+        {returnAt ? formatLocalDateTime(returnAt) : 'Chưa chọn'}
       </p>
       {quote ? (
         <>
