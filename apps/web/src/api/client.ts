@@ -18,6 +18,7 @@ import type {
   UnitBlock,
   Variant,
 } from '../fixtures/studio';
+import { formatVietnamDateTime as formatDate } from '../utils/date-format';
 import { caseHistoryText, interactionText } from '../utils/crm-labels';
 
 function optionalText(value: string | null | undefined): string | undefined {
@@ -1235,12 +1236,6 @@ export async function checkPublicAvailability(
     available: boolean;
     availableUnits: number;
   }>('/api/v1/public/catalog/availability?' + query.toString());
-}
-function formatDate(value: string | undefined) {
-  if (!value) return '';
-  return new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(
-    new Date(value),
-  );
 }
 function mapOrder(order: ApiOrder): Order {
   const branch = order.pickupBranch?.name ?? 'Chi nhánh chưa xác định';

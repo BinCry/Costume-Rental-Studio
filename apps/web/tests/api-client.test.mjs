@@ -40,6 +40,27 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it('shows active rental times in Vietnam across midnight', async () => {
+  values.set(accessTokenKey, 'access-token');
+  globalThis.fetch.mockResolvedValueOnce(
+    success({
+      items: [
+        {
+          unit: { unitCode: 'UNIT-1' },
+          order: {
+            orderCode: 'ORD-1',
+            plannedStartAt: '2026-03-05T17:00:00.000Z',
+            plannedDueAt: '2026-03-05T18:30:00.000Z',
+          },
+        },
+      ],
+    }),
+  );
+  const { listActiveRentals } = await import('../src/api/client.ts');
+  const [rental] = await listActiveRentals();
+  expect(rental).toMatchObject({ pickedUp: '06/03/2026 00:00', due: '06/03/2026 01:30' });
+});
+
 function stubQuoteApi() {
   const variant = {
     id: 'variant-pearl-l',
