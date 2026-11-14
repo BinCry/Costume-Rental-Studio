@@ -900,6 +900,19 @@ describe('web API client session and error handling', () => {
     });
   });
 
+  it('explains choosing the same CRM case owner again', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      error(409, 'CRM_CASE_OWNER_UNCHANGED', 'Case already has this owner'),
+    );
+    const { login } = await import('../src/api/client.ts');
+
+    await expect(login('khach@example.com', 'password-test')).rejects.toMatchObject({
+      status: 409,
+      code: 'CRM_CASE_OWNER_UNCHANGED',
+      message: 'Case đã được giao cho người này. Hãy chọn người phụ trách khác nếu muốn đổi.',
+    });
+  });
+
   it('does not send the screen history line with a fixed date as a CRM case note', async () => {
     values.set(accessTokenKey, 'access-token');
     const branchId = '10000000-0000-4000-8000-000000000001';
