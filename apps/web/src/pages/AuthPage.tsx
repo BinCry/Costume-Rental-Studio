@@ -15,6 +15,12 @@ import { Button, Field } from '../components/ui';
 import { pathFor, portalAreaForPath, type Navigate } from '../app/routes';
 
 type AuthMode = 'login' | 'register' | 'forgotPassword';
+type RegistrationField = 'displayName' | 'email' | 'phone' | 'password' | 'confirmPassword' | 'otp';
+type RegistrationErrors = Partial<Record<RegistrationField, string>>;
+
+// Match the email format accepted by the registration API.
+const registrationEmailPattern =
+  /^(?:[A-Za-z0-9_'+-]+\.)*[A-Za-z0-9_'+-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9-]*\.)+[A-Za-z]{2,}$/;
 const googleNextKey = 'costume-rental.auth-next';
 const pendingRegistrationKey = 'costume-rental.pending-registration';
 interface PendingRegistration {
@@ -159,6 +165,7 @@ export function AuthPage({
   );
   const [issue, setIssue] = useState('');
   const [notice, setNotice] = useState('');
+  const [registrationErrors, setRegistrationErrors] = useState<RegistrationErrors>({});
   const callbackHandled = useRef(false);
   const [email, setEmail] = useState(savedRegistration?.email ?? '');
   const [password, setPassword] = useState('');
@@ -269,29 +276,41 @@ export function AuthPage({
     }
   };
 
+  const clearRegistrationError = (field: RegistrationField) => {
+    setRegistrationErrors((errors) => ({ ...errors, [field]: undefined }));
+  };
+
+  const registrationPasswordErrors = (): RegistrationErrors => {
+    const errors: RegistrationErrors = {};
+    if (password.length < 12 || password.length > 128) {
+      errors.password = 'Mật khẩu cần có từ 12 đến 128 ký tự.';
+    }
+    if (!confirmPassword) {
+      errors.confirmPassword = 'Hãy nhập lại mật khẩu.';
+    } else if (password !== confirmPassword) {
+      errors.confirmPassword = 'Mật khẩu xác nhận chưa khớp.';
+    }
+    return errors;
+  };
+
   const sendRegistrationCode = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIssue('');
     setNotice('');
     const normalizedEmail = email.trim().toLowerCase();
-    if (!displayName.trim()) {
-      setIssue('Hãy nhập họ và tên của bạn.');
-      return;
+    const errors = registrationPasswordErrors();
+    if (!displayName.trim() || displayName.trim().length > 255) {
+      errors.displayName = 'Hãy nhập họ và tên hợp lệ.';
+    }
+    if (normalizedEmail.length > 255 || !registrationEmailPattern.test(normalizedEmail)) {
+      errors.email = 'Email chưa đúng định dạng.';
     }
     if (!validPhone(phone)) {
-      setIssue(
-        'Số điện thoại chưa đúng. Dùng số Việt Nam 10 chữ số hoặc số quốc tế có mã quốc gia.',
-      );
-      return;
+      errors.phone =
+        'Số điện thoại chưa đúng. Dùng số Việt Nam 10 chữ số hoặc số quốc tế có mã quốc gia.';
     }
-    if (password.length < 12 || password.length > 128) {
-      setIssue('Mật khẩu cần có từ 12 đến 128 ký tự.');
-      return;
-    }
-    if (password !== confirmPassword) {
-      setIssue('Mật khẩu xác nhận chưa khớp.');
-      return;
-    }
+    setRegistrationErrors(errors);
+    if (Object.keys(errors).length > 0) return;
     if (
       registrationChallenge &&
       registrationChallengeEmail === normalizedEmail &&
@@ -374,20 +393,17 @@ export function AuthPage({
   const finishRegistration = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIssue('');
+    const errors = registrationPasswordErrors();
+    if (!/^\d{6}$/.test(registrationOtp)) {
+      errors.otp = 'Hãy nhập đủ 6 chữ số của mã xác nhận.';
+    }
     if (!validPhone(phone)) {
-      setIssue(
-        'Số điện thoại chưa đúng. Dùng số Việt Nam 10 chữ số hoặc số quốc tế có mã quốc gia.',
-      );
-      return;
+      errors.phone =
+        'Số điện thoại chưa đúng. Dùng số Việt Nam 10 chữ số hoặc số quốc tế có mã quốc gia.';
+      setRegistrationStep('details');
     }
-    if (password.length < 12 || password.length > 128) {
-      setIssue('Mật khẩu cần có từ 12 đến 128 ký tự.');
-      return;
-    }
-    if (password !== confirmPassword) {
-      setIssue('Mật khẩu xác nhận chưa khớp.');
-      return;
-    }
+    setRegistrationErrors(errors);
+    if (Object.keys(errors).length > 0) return;
     setBusy(true);
     try {
       await registerCustomer({
@@ -660,14 +676,22 @@ export function AuthPage({
 
           {registerMode && !restrictedPortal && registrationStep === 'details' && (
             <>
-              <form className="auth-form" onSubmit={(event) => void sendRegistrationCode(event)}>
+              <form
+                className="auth-form"
+                noValidate
+                onSubmit={(event) => void sendRegistrationCode(event)}
+              >
                 <Field
                   label="Họ và tên"
                   autoComplete="name"
                   placeholder="Nguyễn Minh Anh"
                   maxLength={255}
                   value={displayName}
-                  onChange={(event) => setDisplayName(event.target.value)}
+                  error={registrationErrors.displayName}
+                  onChange={(event) => {
+                    setDisplayName(event.target.value);
+                    clearRegistrationError('displayName');
+                  }}
                   required
                   disabled={disabled || busy}
                 />
@@ -679,7 +703,11 @@ export function AuthPage({
                   placeholder="ten@email.com"
                   maxLength={255}
                   value={email}
-                  onChange={(event) => setEmail(event.target.value)}
+                  error={registrationErrors.email}
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                    clearRegistrationError('email');
+                  }}
                   required
                   disabled={disabled || busy}
                 />
@@ -691,7 +719,11 @@ export function AuthPage({
                   placeholder="09xx xxx xxx"
                   hint="Studio dùng số này để liên hệ xác nhận đơn thuê."
                   value={phone}
-                  onChange={(event) => setPhone(event.target.value)}
+                  error={registrationErrors.phone}
+                  onChange={(event) => {
+                    setPhone(event.target.value);
+                    clearRegistrationError('phone');
+                  }}
                   disabled={disabled || busy}
                 />
                 <Field
@@ -702,7 +734,11 @@ export function AuthPage({
                   maxLength={128}
                   hint="Tối thiểu 12 ký tự."
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
+                  error={registrationErrors.password}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    clearRegistrationError('password');
+                  }}
                   required
                   disabled={disabled || busy}
                 />
@@ -713,7 +749,11 @@ export function AuthPage({
                   minLength={12}
                   maxLength={128}
                   value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  error={registrationErrors.confirmPassword}
+                  onChange={(event) => {
+                    setConfirmPassword(event.target.value);
+                    clearRegistrationError('confirmPassword');
+                  }}
                   required
                   disabled={disabled || busy}
                 />
@@ -749,7 +789,11 @@ export function AuthPage({
           )}
 
           {registerMode && !restrictedPortal && registrationStep === 'verify' && (
-            <form className="auth-form" onSubmit={(event) => void finishRegistration(event)}>
+            <form
+              className="auth-form"
+              noValidate
+              onSubmit={(event) => void finishRegistration(event)}
+            >
               <div className="auth-verified-email">
                 <span>Mã xác nhận đã gửi đến</span>
                 <strong>{registrationChallengeEmail || email}</strong>
@@ -775,9 +819,11 @@ export function AuthPage({
                 maxLength={6}
                 placeholder="6 chữ số"
                 value={registrationOtp}
-                onChange={(event) =>
-                  setRegistrationOtp(event.target.value.replace(/\D/g, '').slice(0, 6))
-                }
+                error={registrationErrors.otp}
+                onChange={(event) => {
+                  setRegistrationOtp(event.target.value.replace(/\D/g, '').slice(0, 6));
+                  clearRegistrationError('otp');
+                }}
                 required
                 disabled={busy}
               />
@@ -804,7 +850,11 @@ export function AuthPage({
                     maxLength={128}
                     hint="Tối thiểu 12 ký tự."
                     value={password}
-                    onChange={(event) => setPassword(event.target.value)}
+                    error={registrationErrors.password}
+                    onChange={(event) => {
+                      setPassword(event.target.value);
+                      clearRegistrationError('password');
+                    }}
                     required
                     disabled={busy}
                   />
@@ -815,7 +865,11 @@ export function AuthPage({
                     minLength={12}
                     maxLength={128}
                     value={confirmPassword}
-                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    error={registrationErrors.confirmPassword}
+                    onChange={(event) => {
+                      setConfirmPassword(event.target.value);
+                      clearRegistrationError('confirmPassword');
+                    }}
                     required
                     disabled={busy}
                   />
