@@ -64,6 +64,26 @@ const UPLOAD_CATEGORIES = GARMENT_CATEGORIES.filter(
 
 type UploadCategory = TopLikeCategory | 'pants';
 
+const categoryLabels: Record<UploadCategory, string> = {
+  kurti: 'Áo dáng dài',
+  dress: 'Đầm',
+  top: 'Áo kiểu',
+  shirt: 'Áo sơ mi',
+  tshirt: 'Áo thun',
+  pants: 'Quần',
+  saree: 'Đầm dài',
+};
+const sleeveLabels: Record<SleeveLength, string> = {
+  full: 'Tay dài',
+  half: 'Tay ngắn',
+  sleeveless: 'Không tay',
+};
+const lengthLabels: Record<HemLength, string> = {
+  hip: 'Ngang hông',
+  knee: 'Ngang gối',
+  ankle: 'Đến mắt cá chân',
+};
+
 /** Typical hem length per category — applied when the user changes the
  * category select, since length (not category) is what actually drives how
  * far the garment hangs on the body when rendered (see
@@ -247,7 +267,7 @@ export function GarmentUpload({ onGarmentAdded, previewImage, previewResult }: P
     const cropped = await cropToAlphaBBox(matted);
     matted.close();
     if (!cropped) {
-      setError("couldn't detect a garment in that photo — try one with a plain background");
+      setError('Không tìm thấy trang phục trong ảnh. Hãy thử ảnh có nền trơn.');
       return null;
     }
     return {
@@ -262,7 +282,7 @@ export function GarmentUpload({ onGarmentAdded, previewImage, previewResult }: P
 
   const onFrontFile = async (file: File) => {
     setError(null);
-    setStep({ kind: 'front-processing', note: 'removing background…' });
+    setStep({ kind: 'front-processing', note: 'Đang tách nền…' });
     try {
       const front = await processPhoto(file, targetFor(category));
       if (!front) {
@@ -275,15 +295,15 @@ export function GarmentUpload({ onGarmentAdded, previewImage, previewResult }: P
       if (category !== 'pants') setLength(suggestMeta(front.image.width, front.image.height).length);
       front.anchors = suggestFor(front, category, sleeves);
       setStep({ kind: 'front-edit', front });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+    } catch {
+      setError('Không xử lý được ảnh mặt trước. Hãy thử chọn ảnh khác.');
       setStep({ kind: 'front-select' });
     }
   };
 
   const onBackFile = async (front: Draft, file: File) => {
     setError(null);
-    setStep({ kind: 'back-processing', front, note: 'removing background…' });
+    setStep({ kind: 'back-processing', front, note: 'Đang tách nền…' });
     try {
       const back = await processPhoto(file, targetFor(category));
       if (!back) {
@@ -292,8 +312,8 @@ export function GarmentUpload({ onGarmentAdded, previewImage, previewResult }: P
       }
       back.anchors = suggestFor(back, category, sleeves);
       setStep({ kind: 'back-edit', front, back });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+    } catch {
+      setError('Không xử lý được ảnh mặt sau. Hãy thử chọn ảnh khác.');
       setStep({ kind: 'back-select', front });
     }
   };
@@ -315,7 +335,7 @@ export function GarmentUpload({ onGarmentAdded, previewImage, previewResult }: P
         if (prev.kind !== 'front-edit') return prev;
         void (async () => {
           setError(null);
-          setStep({ kind: 'front-processing', note: 're-extracting for the new category…' });
+          setStep({ kind: 'front-processing', note: 'Đang tách lại ảnh theo loại trang phục mới…' });
           try {
             const front = await processPhoto(prev.front.file, targetFor(next));
             if (!front) {
@@ -324,8 +344,8 @@ export function GarmentUpload({ onGarmentAdded, previewImage, previewResult }: P
             }
             front.anchors = suggestFor(front, next, sleeves);
             setStep({ kind: 'front-edit', front });
-          } catch (err) {
-            setError(err instanceof Error ? err.message : String(err));
+          } catch {
+            setError('Không tách được ảnh theo loại trang phục mới. Hãy thử chọn ảnh khác.');
             setStep({ kind: 'front-select' });
           }
         })();
@@ -400,8 +420,8 @@ export function GarmentUpload({ onGarmentAdded, previewImage, previewResult }: P
       };
       await onGarmentAdded(stored);
       close();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+    } catch {
+      setError('Không lưu được trang phục. Hãy thử lại.');
       setStep({ kind: 'front-edit', front });
     }
   };
@@ -419,7 +439,7 @@ export function GarmentUpload({ onGarmentAdded, previewImage, previewResult }: P
       />
     ) : (
       <p className="hint anchor-preview-hint">
-        tip: pick a test photo in the main view first to see a live try-on preview while you drag.
+        Chọn ảnh thử ở màn hình chính để xem kết quả ngay khi kéo các điểm chỉnh.
       </p>
     );
 
@@ -439,7 +459,7 @@ export function GarmentUpload({ onGarmentAdded, previewImage, previewResult }: P
   }
 
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Upload your own garment">
+    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Tải lên trang phục của bạn">
       <div className="modal-content garment-upload">
       <div className="controls">
         <span className="hint">Tải lên trang phục của bạn</span>
@@ -448,12 +468,12 @@ export function GarmentUpload({ onGarmentAdded, previewImage, previewResult }: P
 
       {matting.status === 'downloading' && (
         <p className="hint">
-          downloading background-removal model…{' '}
+          Đang tải mô hình tách nền…{' '}
           {matting.progress !== null ? `${Math.round(matting.progress * 100)}%` : ''}
         </p>
       )}
-      {matting.status === 'error' && <p className="error">matting failed: {matting.error}</p>}
-      {error && <p className="error">{error}</p>}
+      {matting.status === 'error' && <p className="error" role="alert">Không tải được công cụ tách nền. Hãy đóng cửa sổ và thử lại.</p>}
+      {error && <p className="error" role="alert">{error}</p>}
 
       {step.kind === 'front-select' && (
         <>
@@ -462,20 +482,21 @@ export function GarmentUpload({ onGarmentAdded, previewImage, previewResult }: P
               extracted depends on this. Guessing from the silhouette would
               pull the model's shirt out of a trousers photo half the time. */}
           <label>
-            what are you uploading?{' '}
+            Loại trang phục{' '}
             <select value={category} onChange={(e) => changeCategory(e.target.value as UploadCategory)}>
               {UPLOAD_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
-                  {c}
+                  {categoryLabels[c]}
                 </option>
               ))}
             </select>
           </label>
           <p className="hint">
-            front photo — flat-lay, on a hanger, or worn by someone (the person is removed
-            automatically, keeping just the {category === 'pants' ? 'trousers' : 'garment'}).
+            Bạn có thể dùng ảnh chụp trang phục trải phẳng, treo trên móc hoặc đang mặc.
+            Nếu ảnh có người, công cụ sẽ chỉ giữ lại {category === 'pants' ? 'phần quần' : 'phần trang phục đã chọn'}.
           </p>
           <label>
+            Ảnh mặt trước{' '}
             <input
               type="file"
               accept="image/*"
@@ -497,8 +518,8 @@ export function GarmentUpload({ onGarmentAdded, previewImage, previewResult }: P
       {step.kind === 'front-edit' && (
         <>
           <p className="hint">
-            drag the yellow markers to fine-tune the anchors — the preview updates as you drag.
-            "length" decides how far it hangs on the body (hip ≈ top, knee/ankle ≈ dress/pants).
+            Kéo các điểm màu vàng để chỉnh vị trí trang phục. Hình xem trước cập nhật khi bạn kéo.
+            Chọn độ dài để xác định vị trí gấu áo, đầm hoặc quần trên người.
           </p>
           <div className="anchor-edit-row">
             <AnchorEditor
@@ -512,33 +533,33 @@ export function GarmentUpload({ onGarmentAdded, previewImage, previewResult }: P
           </div>
           <div className="controls">
             <label>
-              category{' '}
+              Loại trang phục{' '}
               <select value={category} onChange={(e) => changeCategory(e.target.value as UploadCategory)}>
                 {UPLOAD_CATEGORIES.map((c) => (
                   <option key={c} value={c}>
-                    {c}
+                    {categoryLabels[c]}
                   </option>
                 ))}
               </select>
             </label>
             {!isPants && (
               <label>
-                sleeves{' '}
+                Kiểu tay áo{' '}
                 <select value={sleeves} onChange={(e) => changeSleeves(e.target.value as SleeveLength)}>
                   {SLEEVE_LENGTHS.map((s) => (
                     <option key={s} value={s}>
-                      {s}
+                      {sleeveLabels[s]}
                     </option>
                   ))}
                 </select>
               </label>
             )}
             <label>
-              length{' '}
+              Độ dài{' '}
               <select value={length} onChange={(e) => setLength(e.target.value as HemLength)}>
                 {lengthOptions.map((l) => (
                   <option key={l} value={l}>
-                    {l}
+                    {lengthLabels[l]}
                   </option>
                 ))}
               </select>
@@ -547,10 +568,10 @@ export function GarmentUpload({ onGarmentAdded, previewImage, previewResult }: P
           <div className="controls">
             {isPants ? (
               // Pants have no back-photo support (see schema.ts PantsGarment).
-              <button onClick={() => void save(step.front, undefined)}>save</button>
+              <button onClick={() => void save(step.front, undefined)}>Lưu</button>
             ) : (
               <button onClick={() => setStep({ kind: 'back-select', front: step.front })}>
-                continue
+                Tiếp tục
               </button>
             )}
           </div>
@@ -559,10 +580,10 @@ export function GarmentUpload({ onGarmentAdded, previewImage, previewResult }: P
 
       {step.kind === 'back-select' && (
         <>
-          <p className="hint">add a photo of the back? optional — skip if you only have the front.</p>
+          <p className="hint">Bạn có thể thêm ảnh mặt sau hoặc lưu ngay với ảnh mặt trước.</p>
           <div className="controls">
             <label>
-              back photo{' '}
+              Ảnh mặt sau{' '}
               <input
                 type="file"
                 accept="image/*"
@@ -574,14 +595,14 @@ export function GarmentUpload({ onGarmentAdded, previewImage, previewResult }: P
                 }}
               />
             </label>
-            <button onClick={() => void save(step.front, undefined)}>skip &amp; save</button>
+            <button onClick={() => void save(step.front, undefined)}>Bỏ qua và lưu</button>
           </div>
         </>
       )}
 
       {step.kind === 'back-edit' && (
         <>
-          <p className="hint">drag the yellow markers to fine-tune the back anchors.</p>
+          <p className="hint">Kéo các điểm màu vàng để chỉnh vị trí trang phục ở mặt sau.</p>
           <AnchorEditor
             image={step.back.image}
             anchors={step.back.anchors}
@@ -592,12 +613,12 @@ export function GarmentUpload({ onGarmentAdded, previewImage, previewResult }: P
             }
           />
           <div className="controls">
-            <button onClick={() => void save(step.front, step.back)}>save</button>
+            <button onClick={() => void save(step.front, step.back)}>Lưu</button>
           </div>
         </>
       )}
 
-      {step.kind === 'saving' && <p className="hint">saving…</p>}
+      {step.kind === 'saving' && <p className="hint">Đang lưu…</p>}
       </div>
     </div>
   );
