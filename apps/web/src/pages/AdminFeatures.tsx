@@ -238,6 +238,7 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
   const [mediaLoading, setMediaLoading] = useState(false);
   const [mediaProgress, setMediaProgress] = useState<number>();
   const [mediaIssue, setMediaIssue] = useState('');
+  const [mediaFileIssue, setMediaFileIssue] = useState('');
   const [mediaNotice, setMediaNotice] = useState('');
   const [mediaOwnerLoadedId, setMediaOwnerLoadedId] = useState('');
   const [mediaOwnerErrorId, setMediaOwnerErrorId] = useState('');
@@ -299,6 +300,7 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
     setPendingDeleteMedia(undefined);
     setMediaIssue('');
     setMediaNotice('');
+    setMediaFileIssue('');
     setMediaInputKey((value) => value + 1);
   };
   const saveModel = async () => {
@@ -397,6 +399,7 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
     setMediaAltText('');
     setReplaceTargetId('');
     setMediaProgress(undefined);
+    setMediaFileIssue('');
     setMediaInputKey((value) => value + 1);
     try {
       await refreshMedia(target.id);
@@ -789,15 +792,17 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                             type="file"
                             accept="image/jpeg,image/png,image/webp"
                             label="Chọn ảnh"
+                            error={mediaFileIssue}
                             disabled={mediaBusy || mediaLoading || mediaOwnerLoadedId !== editing.id}
                             onChange={(event) => {
                               const file = event.target.files?.[0];
                               setMediaIssue('');
                               setMediaNotice('');
+                              setMediaFileIssue('');
                               if (file && !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
                                 setMediaFile(undefined);
                                 setMediaPreviewUrl('');
-                                setMediaIssue('Chỉ hỗ trợ ảnh JPEG, PNG hoặc WebP.');
+                                setMediaFileIssue('Chỉ hỗ trợ ảnh JPEG, PNG hoặc WebP.');
                                 return;
                               }
                               setMediaFile(file);
