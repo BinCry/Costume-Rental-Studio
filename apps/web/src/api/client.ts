@@ -625,6 +625,8 @@ function apiErrorMessage(status: number, code: string) {
     IDEMPOTENCY_CONFLICT:
       'Yêu cầu đã thay đổi so với lần gửi trước. Hãy tải lại đơn và kiểm tra giao dịch.',
     INVALID_ORDER_TRANSITION: 'Đơn đã chuyển sang trạng thái khác. Hãy tải lại trước khi thao tác.',
+    INVALID_CRM_CASE_TRANSITION:
+      'Case không chuyển thẳng được sang trạng thái này. Muốn đóng case, hãy chuyển sang "Đã giải quyết" trước.',
     POLICY_OVERLAP: 'Thời hạn chính sách bị trùng. Hãy kiểm tra lại thời điểm áp dụng.',
     STAFF_CONFLICT:
       'Không thể liên kết tài khoản này với nhân viên. Kiểm tra trạng thái và xác minh email của tài khoản, hoặc kiểm tra mã nhân viên và số điện thoại có bị trùng không.',

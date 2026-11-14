@@ -886,6 +886,20 @@ describe('web API client session and error handling', () => {
     expect(globalThis.fetch.mock.calls[0][0]).toBe('https://api.example.test/api/v1/auth/refresh');
   });
 
+  it('explains a CRM case status change the workflow does not allow', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      error(409, 'INVALID_CRM_CASE_TRANSITION', 'Case status transition is not allowed'),
+    );
+    const { login } = await import('../src/api/client.ts');
+
+    await expect(login('khach@example.com', 'password-test')).rejects.toMatchObject({
+      status: 409,
+      code: 'INVALID_CRM_CASE_TRANSITION',
+      message:
+        'Case không chuyển thẳng được sang trạng thái này. Muốn đóng case, hãy chuyển sang "Đã giải quyết" trước.',
+    });
+  });
+
   it('handles a non-JSON server error without exposing its body', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response('<html>secret stack trace</html>', { status: 502 }),

@@ -31,6 +31,7 @@ import {
 } from '../api/client';
 import { studioAdapter, type Case, type Customer } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
+import { nextCaseStatuses } from '../utils/crm-cases';
 import { visibleBranchCustomers } from '../utils/crm-customers';
 import { isValidPhone, samePhone } from '../utils/phone';
 
@@ -585,7 +586,9 @@ export function CrmPage({
                           })
                         }
                       >
-                        {(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'] as const).map((x) => (
+                        {nextCaseStatuses(
+                          (current?.code === editing.code ? current.status : undefined) ?? 'OPEN',
+                        ).map((x) => (
                           <option value={x} key={x}>
                             {caseStatusLabels[x]}
                           </option>
