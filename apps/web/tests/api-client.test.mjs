@@ -900,6 +900,42 @@ describe('web API client session and error handling', () => {
     });
   });
 
+  it('does not send the screen history line with a fixed date as a CRM case note', async () => {
+    values.set(accessTokenKey, 'access-token');
+    const branchId = '10000000-0000-4000-8000-000000000001';
+    const caseId = '10000000-0000-4000-8000-000000000002';
+    const apiCase = {
+      id: caseId,
+      caseCode: 'CASE-1',
+      customerUserId: '10000000-0000-4000-8000-000000000003',
+      branchId,
+      subject: 'Hỏi lịch thử đồ',
+      priority: 'NORMAL',
+      status: 'IN_PROGRESS',
+    };
+    globalThis.fetch.mockImplementation(async (url) => {
+      const { pathname } = new URL(url);
+      if (pathname === '/api/v1/public/branches')
+        return success({ items: [{ id: branchId, name: 'Quận 1' }] });
+      if (pathname === '/api/v1/crm/cases') return success({ items: [apiCase] });
+      if (pathname.endsWith('/status')) return success({ ...apiCase, status: 'RESOLVED' });
+      return success(apiCase);
+    });
+    const { listCrmCases, saveCrmCase } = await import('../src/api/client.ts');
+    const [current] = await listCrmCases('Quận 1');
+
+    await saveCrmCase({
+      ...current,
+      status: 'RESOLVED',
+      history: ['03/10 · Cập nhật RESOLVED', ...current.history],
+    });
+
+    const statusCall = globalThis.fetch.mock.calls.find(([url]) => url.endsWith('/status'));
+    expect(JSON.parse(statusCall[1].body)).toEqual({ status: 'RESOLVED' });
+    for (const [, init] of globalThis.fetch.mock.calls)
+      expect(String(init?.body ?? '')).not.toContain('03/10');
+  });
+
   it('handles a non-JSON server error without exposing its body', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response('<html>secret stack trace</html>', { status: 502 }),

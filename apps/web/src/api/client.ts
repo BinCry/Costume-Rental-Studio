@@ -18,6 +18,7 @@ import type {
   UnitBlock,
   Variant,
 } from '../fixtures/studio';
+import { caseHistoryText, interactionText } from '../utils/crm-labels';
 
 function optionalText(value: string | null | undefined): string | undefined {
   if (value === undefined || value === null || value === '') return undefined;
@@ -2107,17 +2108,10 @@ export async function listCustomers(branchName?: string, search?: string): Promi
   return page.map(customerFromApi);
 }
 function historyLine(entry: ApiCaseHistory) {
-  const stamp = formatDate(entry.occurredAt);
-  const transition = entry.toStatus
-    ? ` · ${entry.eventType ?? 'Cập nhật'} · ${entry.toStatus}`
-    : '';
-  return `${stamp || 'Vừa cập nhật'}${transition}${entry.note ? ` · ${entry.note}` : ''}`;
+  return caseHistoryText(entry, formatDate(entry.occurredAt) || 'Vừa cập nhật');
 }
 function interactionLine(entry: ApiInteraction) {
-  const stamp = formatDate(entry.occurredAt);
-  const kind = entry.interactionType ? ` · ${entry.interactionType}` : '';
-  const channel = entry.channel ? ` · ${entry.channel}` : '';
-  return `${stamp || 'Vừa cập nhật'}${kind}${channel}${entry.summary ? ` · ${entry.summary}` : ''}`;
+  return interactionText(entry, formatDate(entry.occurredAt) || 'Vừa cập nhật');
 }
 function crmCaseFromApi(crmCase: ApiCrmCase): Case {
   const customerCode = crmCase.customer?.customerCode ?? crmCase.customerUserId;
@@ -2308,7 +2302,6 @@ export async function saveCrmCase(value: Case): Promise<Case> {
         caseType: 'SUPPORT',
         priority: value.priority,
         ownerUserId: optionalText(await ownerUserId(value.owner, value.branch)),
-        note: value.history[0],
       }),
     });
     return crmCaseFromApi(created);
@@ -2333,7 +2326,11 @@ export async function saveCrmCase(value: Case): Promise<Case> {
       `/api/v1/crm/cases/${encodeURIComponent(reference.id)}/assign`,
       {
         method: 'POST',
-        body: JSON.stringify({ ownerUserId: nextOwnerId, note: value.history[0] }),
+        body: JSON.stringify({
+          ownerUserId: nextOwnerId,
+          // The server keeps the owner's id; the note keeps the name readable in the timeline.
+          note: value.owner ? `Giao cho ${value.owner}` : 'Bỏ phân công',
+        }),
       },
     );
   }
@@ -2342,7 +2339,7 @@ export async function saveCrmCase(value: Case): Promise<Case> {
       `/api/v1/crm/cases/${encodeURIComponent(reference.id)}/status`,
       {
         method: 'POST',
-        body: JSON.stringify({ status: value.status, note: value.history[0] }),
+        body: JSON.stringify({ status: value.status }),
       },
     );
   }
