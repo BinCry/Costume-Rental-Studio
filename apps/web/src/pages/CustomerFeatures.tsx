@@ -126,6 +126,17 @@ export function CostumeDetailPage({
   const selectedVariant =
     data?.find((value) => value.id === id)?.variants.find((value) => value.code === variantCode) ??
     data?.find((value) => value.id === id)?.variants[0];
+  const selectedVariantCode = selectedVariant?.code;
+  useEffect(() => {
+    if (!selectedVariantCode) return;
+    const url = new URL(window.location.href);
+    const detailPath = '/trang-phuc/' + encodeURIComponent(id);
+    if (url.pathname.replace(/\/$/, '') !== detailPath) return;
+    const before = url.href;
+    url.searchParams.set('variantCode', selectedVariantCode);
+    if (url.href !== before) window.history.replaceState(window.history.state, '', url);
+  }, [id, selectedVariantCode]);
+
   const apiVariantId = selectedVariant?.apiId;
   const [availabilityResult, setAvailabilityResult] = useState<{
     key: string;
@@ -165,7 +176,7 @@ export function CostumeDetailPage({
       : 'loading'
     : 'idle';
   const catalogContext = Object.fromEntries(
-    [...initialContext.entries()].filter(([key]) => key !== 'id'),
+    [...initialContext.entries()].filter(([key]) => key !== 'id' && key !== 'variantCode'),
   );
   return (
     <StateGate

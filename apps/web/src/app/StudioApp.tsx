@@ -1259,6 +1259,7 @@ export default function StudioApp() {
             )}
             {route.screen === 'detail' && (
               <CostumeDetailPage
+                key={p.get('id')}
                 id={p.get('id') ?? ''}
                 scenario={scenario}
                 go={go}
