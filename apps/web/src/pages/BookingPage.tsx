@@ -17,6 +17,7 @@ import { branches, fixtureAdapter, fixtureCatalog, fixturePeriod } from '../fixt
 import { studioAdapter } from '../fixtures/studio';
 import type { BookingDraft, DemoScenario, QuoteSnapshot } from '../fixtures/types';
 import { apiEnabled, getOwnCustomerProfile, hasAccessToken } from '../api/client';
+import { isValidPhone } from '../utils/phone';
 import { useBranchOptions } from '../components/useBranchOptions';
 
 const steps = ['Thông tin thuê', 'Báo giá & liên hệ', 'Xem lại & gửi'];
@@ -248,7 +249,7 @@ export function BookingPage({
       if (!quote) return 'Cần tải báo giá còn hiệu lực để tiếp tục.';
       if (promotionCode.trim().toUpperCase() !== appliedPromotionCode)
         return 'Hãy áp dụng hoặc bỏ mã ưu đãi để cập nhật báo giá trước khi tiếp tục.';
-      if (!draft.name.trim() || !/^0[0-9 ]{8,12}$/.test(draft.phone.trim()))
+      if (!draft.name.trim() || !isValidPhone(draft.phone))
         return 'Nhập tên và số điện thoại liên hệ hợp lệ.';
     }
     return '';
@@ -789,9 +790,7 @@ export function BookingPage({
                     value={draft.phone}
                     onChange={(event) => update('phone', event.target.value)}
                     error={
-                      issue && !/^0[0-9 ]{8,12}$/.test(draft.phone.trim())
-                        ? 'Nhập số điện thoại hợp lệ.'
-                        : undefined
+                      issue && !isValidPhone(draft.phone) ? 'Nhập số điện thoại hợp lệ.' : undefined
                     }
                   />
                   <TextAreaField
