@@ -94,11 +94,14 @@ const initialDraft = (costumeId?: string, context?: URLSearchParams): BookingDra
   return (
     resumedDraft(context) ?? {
       ...baseDraft,
-      costumeId: costumeId ?? baseDraft.costumeId,
+      // Live mode must never start from the sample costume: it is not in the real catalog.
+      costumeId: costumeId ?? (apiMode ? '' : baseDraft.costumeId),
       variant: variants.includes(requestedVariant)
         ? requestedVariant
-        : apiMode && costumeId && requestedVariant
-          ? requestedVariant
+        : apiMode
+          ? costumeId
+            ? requestedVariant
+            : ''
           : (variants[0] ?? baseDraft.variant),
       branch: requestedBranch?.trim() ? requestedBranch : apiMode ? '' : baseDraft.branch,
       pickup: requestedPickup?.trim()
@@ -200,7 +203,7 @@ export function BookingPage({
   }, [apiMode]);
   const item =
     (data ?? []).find((entry) => entry.id === draftState.costumeId) ??
-    fixtureCatalog.find((entry) => entry.id === draftState.costumeId);
+    (apiMode ? undefined : fixtureCatalog.find((entry) => entry.id === draftState.costumeId));
   const choices = item?.apiVariants?.length
     ? item.apiVariants.map((variant) => ({
         value: variant.code,
@@ -295,8 +298,15 @@ export function BookingPage({
         const message = caught instanceof Error ? caught.message : 'Chưa tải được báo giá.';
         setQuote(undefined);
         setAppliedPromotionCode('');
-        if (normalizedCode) setPromotionIssue(message);
-        else setIssue(message);
+        if (normalizedCode) {
+          setPromotionIssue(message);
+          try {
+            const withoutCode = await fixtureAdapter.getQuote(draft, scenario, {});
+            if (requestId === quoteRequestRef.current) setQuote(withoutCode);
+          } catch {
+            // Keep the rejection reason; the quote stays empty when it cannot be loaded either.
+          }
+        } else setIssue(message);
       }
       return false;
     } finally {
@@ -395,7 +405,7 @@ export function BookingPage({
       <div className="booking-layout">
         <details className="booking-mobile-summary">
           <summary>
-            <span>Tóm tắt yêu cầu · {item?.name ?? 'Chưa chọn mẫu'}</span>
+            <span>Tóm tắt yêu cầu · {item?.name ?? 'Chưa chọn trang phục'}</span>
             <strong>{quote ? money(quote.amountDueAtPickup) : 'Chưa có báo giá'}</strong>
           </summary>
           <BookingSummaryContent

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { AppError } from '../../common/errors/app-error.js';
+import { AppError, type ErrorDetails } from '../../common/errors/app-error.js';
 import { pageResult, pagination } from '../../common/http/query.js';
 import { promoteStoredImage } from '../../common/storage/s3.js';
 import { env } from '../../config/env.js';
@@ -465,7 +465,7 @@ export async function createQuote(actor: AuthenticatedActor, input: QuoteInput) 
     };
   }, transactionOptions);
 }
-async function resolvePromotion(
+export async function resolvePromotion(
   tx: Prisma.TransactionClient,
   input: CreateOrderInput,
   customerUserId: string,
@@ -476,14 +476,18 @@ async function resolvePromotion(
     where: { code: input.promotionCode.toUpperCase() },
   });
   const now = new Date();
-  if (
-    !promotion ||
-    !promotion.isActive ||
-    promotion.startAt > now ||
-    promotion.endAt <= now ||
-    subtotal < promotion.minOrderAmountVnd
-  )
-    throw new AppError(409, 'PROMOTION_INVALID', 'Promotion is invalid for this order');
+  const invalid = (reason: string, details: ErrorDetails = {}) =>
+    new AppError(409, 'PROMOTION_INVALID', 'Promotion is invalid for this order', {
+      reason,
+      ...details,
+    });
+  if (!promotion) throw invalid('NOT_FOUND');
+  if (!promotion.isActive) throw invalid('INACTIVE');
+  if (promotion.startAt > now)
+    throw invalid('NOT_STARTED', { startAt: promotion.startAt.toISOString() });
+  if (promotion.endAt <= now) throw invalid('EXPIRED');
+  if (subtotal < promotion.minOrderAmountVnd)
+    throw invalid('BELOW_MINIMUM', { minOrderAmountVnd: promotion.minOrderAmountVnd.toString() });
   await tx.$queryRaw`SELECT id FROM promotions WHERE id = ${promotion.id}::uuid FOR UPDATE`;
   const used = await tx.rentalOrder.count({
     where: {

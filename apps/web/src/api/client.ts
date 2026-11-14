@@ -541,6 +541,26 @@ async function refreshAccessToken() {
     });
   return refreshing;
 }
+function promotionRejectionMessage(details: unknown) {
+  const fallback = apiErrorMessage(409, 'PROMOTION_INVALID');
+  if (!details || typeof details !== 'object') return fallback;
+  const { reason, startAt, minOrderAmountVnd } = details as Record<string, unknown>;
+  if (reason === 'NOT_STARTED' && typeof startAt === 'string') {
+    const start = new Date(new Date(startAt).getTime() + 7 * 3600000);
+    if (Number.isNaN(start.getTime())) return fallback;
+    const pad = (value: number) => String(value).padStart(2, '0');
+    return `Mã áp dụng từ ${pad(start.getUTCDate())}/${pad(start.getUTCMonth() + 1)}/${start.getUTCFullYear()}.`;
+  }
+  if (reason === 'INACTIVE') return 'Mã đã ngừng áp dụng.';
+  if (reason === 'EXPIRED') return 'Mã đã hết hạn.';
+  if (reason === 'NOT_FOUND') return 'Không tìm thấy mã ưu đãi này.';
+  if (reason === 'BELOW_MINIMUM' && minOrderAmountVnd !== undefined) {
+    const amount = Number(minOrderAmountVnd);
+    if (Number.isFinite(amount))
+      return `Đơn cần tối thiểu ${amount.toLocaleString('vi-VN')} đ tiền thuê để dùng mã này.`;
+  }
+  return fallback;
+}
 function apiErrorMessage(status: number, code: string) {
   const known: Record<string, string> = {
     ORDER_VERSION_CONFLICT:
@@ -658,7 +678,9 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
     throw new ApiClientError(
       response.status,
       code,
-      apiErrorMessage(response.status, code),
+      code === 'PROMOTION_INVALID'
+        ? promotionRejectionMessage(body?.error?.details)
+        : apiErrorMessage(response.status, code),
       body?.error?.details,
     );
   }
@@ -1566,7 +1588,8 @@ export async function getQuote(
     daysLabel: response.period.billableDays + ' ngày · ' + billingMode,
     pricePerDay,
     quantity: draft.quantity,
-    rental: numberValue(response.rentalAmountVnd),
+    // Show the rental before discount: the screens list the discount as its own line.
+    rental: numberValue(response.subtotalVnd),
     deposit: numberValue(response.depositVnd),
     discount: numberValue(response.discountVnd),
     promotionCode: response.promotion?.code,
