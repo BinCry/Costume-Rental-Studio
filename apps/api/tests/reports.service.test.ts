@@ -48,6 +48,8 @@ describe('report service', () => {
         createdAt: new Date('2026-10-10T10:00:00.000Z'),
         refunds: [],
         order: {
+          id: 'order-1',
+          depositDeductionVnd: 5n,
           pickupBranchId: branchId,
           channel: 'STORE',
           pickupBranch: { timezone: 'Asia/Ho_Chi_Minh' },
@@ -62,6 +64,8 @@ describe('report service', () => {
         createdAt: new Date('2026-10-10T10:00:00.000Z'),
         refunds: [],
         order: {
+          id: 'order-1',
+          depositDeductionVnd: 5n,
           pickupBranchId: branchId,
           channel: 'STORE',
           pickupBranch: { timezone: 'Asia/Ho_Chi_Minh' },
@@ -76,6 +80,8 @@ describe('report service', () => {
         createdAt: new Date('2026-10-10T10:00:00.000Z'),
         refunds: [],
         order: {
+          id: 'order-1',
+          depositDeductionVnd: 5n,
           pickupBranchId: branchId,
           channel: 'STORE',
           pickupBranch: { timezone: 'Asia/Ho_Chi_Minh' },
@@ -90,6 +96,8 @@ describe('report service', () => {
         createdAt: new Date('2026-10-10T10:00:00.000Z'),
         refunds: [],
         order: {
+          id: 'order-1',
+          depositDeductionVnd: 5n,
           pickupBranchId: branchId,
           channel: 'STORE',
           pickupBranch: { timezone: 'Asia/Ho_Chi_Minh' },
@@ -121,6 +129,8 @@ describe('report service', () => {
           { amountVnd: 30n, status: 'REQUESTED', completedAt: null },
         ],
         order: {
+          id: 'order-1',
+          depositDeductionVnd: 5n,
           pickupBranchId: branchId,
           channel: 'STORE',
           pickupBranch: { timezone: 'Asia/Ho_Chi_Minh' },
@@ -129,7 +139,14 @@ describe('report service', () => {
     ]);
     mocks.orderFindMany.mockResolvedValue([]);
     const result = await service.getOverview(actor, query);
-    expect(result.depositsHeldVnd).toBe(100n);
+    expect(result.depositsHeldVnd).toBe(75n);
+    const nextPeriod = await service.getOverview(actor, {
+      ...query,
+      from: new Date('2026-11-01T00:00:00.000Z'),
+      to: new Date('2026-12-01T00:00:00.000Z'),
+    });
+    expect(nextPeriod.depositsHeldVnd).toBe(75n);
+    expect(nextPeriod.completedRefundVnd).toBe(0n);
     expect(result.completedRefundVnd).toBe(20n);
     expect(result.revenueVnd).toBe(0n);
   });
