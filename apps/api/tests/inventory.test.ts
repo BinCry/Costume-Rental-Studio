@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../src/database/prisma.js', () => ({
   prisma: {
+    refreshSession: { findFirst: () => Promise.resolve({ id: 'active-session' }) },
     user: { findUnique: mocks.actor },
     costumeUnit: {
       findMany: mocks.unitFindMany,
@@ -102,7 +103,7 @@ function account(actions = ['read', 'manage'], scope: 'ALL' | 'BRANCH' = 'ALL') 
 }
 
 async function token() {
-  return new SignJWT({})
+  return new SignJWT({ sid: '30000000-0000-4000-8000-000000000001' })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(actorId)
     .setIssuer(env.JWT_ISSUER)

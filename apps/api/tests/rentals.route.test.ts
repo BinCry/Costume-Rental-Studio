@@ -32,7 +32,11 @@ const mocks = vi.hoisted(() => ({
   events: vi.fn(),
 }));
 vi.mock('../src/database/prisma.js', () => ({
-  prisma: { user: { findUnique: mocks.actor }, $queryRaw: vi.fn() },
+  prisma: {
+    refreshSession: { findFirst: () => Promise.resolve({ id: 'active-session' }) },
+    user: { findUnique: mocks.actor },
+    $queryRaw: vi.fn(),
+  },
 }));
 vi.mock('../src/modules/rentals/rental.service.js', () => ({
   listOrders: mocks.list,
@@ -65,7 +69,7 @@ const orderId = '10000000-0000-4000-8000-000000000004';
 const itemId = '10000000-0000-4000-8000-000000000005';
 const unitId = '10000000-0000-4000-8000-000000000006';
 async function token() {
-  return new SignJWT({})
+  return new SignJWT({ sid: '30000000-0000-4000-8000-000000000001' })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(actorId)
     .setIssuer(env.JWT_ISSUER)

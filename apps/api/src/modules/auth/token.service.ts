@@ -30,8 +30,8 @@ export async function lockUserAuthentication(tx: Prisma.TransactionClient, userI
   await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtextextended(${`auth-user:${userId}`}, 0))`;
 }
 
-export async function issueAccessToken(userId: string) {
-  return new SignJWT({})
+export async function issueAccessToken(userId: string, familyId: string) {
+  return new SignJWT({ sid: familyId })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(userId)
     .setJti(randomUUID())
@@ -65,7 +65,7 @@ export async function issueSessionTokens(
     },
   });
   return {
-    accessToken: await issueAccessToken(userId),
+    accessToken: await issueAccessToken(userId, familyId),
     refreshToken,
     tokenType: 'Bearer',
     expiresIn: 900,

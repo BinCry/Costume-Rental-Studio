@@ -34,6 +34,7 @@ vi.mock('../src/modules/agent/agent.service.js', () => ({
 }));
 vi.mock('../src/database/prisma.js', () => ({
   prisma: {
+    refreshSession: { findFirst: () => Promise.resolve({ id: 'active-session' }) },
     user: { findUnique: mocks.findUser },
   },
 }));
@@ -62,7 +63,7 @@ interface AgentRouteErrorResponse {
 }
 
 async function accessToken() {
-  return new SignJWT({})
+  return new SignJWT({ sid: '30000000-0000-4000-8000-000000000001' })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(userId)
     .setIssuer('costume-api')

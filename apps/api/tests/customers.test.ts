@@ -26,6 +26,7 @@ vi.mock('../src/modules/auth/token.service.js', () => ({
 }));
 vi.mock('../src/database/prisma.js', () => ({
   prisma: {
+    refreshSession: { findFirst: () => Promise.resolve({ id: 'active-session' }) },
     user: { findUnique: mocks.actor },
     customer: { findUnique: mocks.findCustomer },
     $transaction: mocks.transaction,
@@ -80,7 +81,7 @@ interface MockTransaction {
 }
 
 async function token(options: { expired?: boolean; secret?: string; audience?: string } = {}) {
-  return new SignJWT({})
+  return new SignJWT({ sid: '30000000-0000-4000-8000-000000000001' })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(actorId)
     .setIssuer(env.JWT_ISSUER)

@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../src/database/prisma.js', () => ({
   prisma: {
+    refreshSession: { findFirst: () => Promise.resolve({ id: 'active-session' }) },
     user: { findUnique: mocks.findUser },
     $transaction: mocks.transaction,
   },
@@ -113,7 +114,7 @@ describe('change password', () => {
       .send({ currentPassword, newPassword })
       .expect(401);
 
-    const accessToken = await issueAccessToken(userId);
+    const accessToken = await issueAccessToken(userId, '30000000-0000-4000-8000-000000000001');
     const response = await request(createApp())
       .post('/api/v1/auth/change-password')
       .set('Authorization', `Bearer ${accessToken}`)
