@@ -591,6 +591,11 @@ export default function StudioApp() {
       'rentals.manage.branch',
       'rentals.manage.all',
     ].some((permission) => effectivePermissions.includes(permission));
+  const canApproveRefund =
+    canPrepareSettlement ||
+    ['refunds.approve.branch', 'refunds.approve.all'].some((permission) =>
+      effectivePermissions.includes(permission),
+    );
   const canOpen = (screen: Screen) => {
     if (!assigned) return false;
     if (screen === 'handover' || screen === 'adminHandover')
@@ -1373,6 +1378,7 @@ export default function StudioApp() {
                 canReturn={canReturn}
                 canAssessReturn={canAssessReturn}
                 canPrepareSettlement={canPrepareSettlement}
+                canApproveRefund={canApproveRefund}
                 canCompleteSettlement={canCompleteSettlement}
               />
             )}

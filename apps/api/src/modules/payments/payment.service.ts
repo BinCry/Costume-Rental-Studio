@@ -140,7 +140,7 @@ async function lockRefund(tx: Prisma.TransactionClient, refundId: string) {
     SELECT id FROM refunds WHERE id = ${refundId}::uuid FOR UPDATE
   `;
   if (!rows.length) throw new AppError(404, 'REFUND_NOT_FOUND', 'Refund not found');
-  return tx.refund.findUniqueOrThrow({ where: { id: refundId }, include: { payment: true } });
+  return tx.refund.findUniqueOrThrow({ where: { id: refundId } });
 }
 
 function assertPaymentOrderStatus(
@@ -1007,6 +1007,8 @@ export async function completeRefund(
   refundId: string,
   input: CompleteRefundInput,
 ) {
+  const method = input.method ?? null;
+  const transactionReference = 'transactionReference' in input ? input.transactionReference : null;
   return prisma.$transaction(async (tx) => {
     const target = await tx.refund.findUnique({
       where: { id: refundId },
@@ -1016,22 +1018,30 @@ export async function completeRefund(
     const order = await lockOrder(tx, target.payment.orderId);
     assertRefundApproval(actor, order.pickupBranchId);
     const refund = await lockRefund(tx, refundId);
+    if (
+      refund.status === 'COMPLETED' &&
+      refund.method === method &&
+      refund.providerRefundId === transactionReference
+    )
+      return refund;
     if (!['REQUESTED', 'PROCESSING'].includes(refund.status))
       throw new AppError(
         409,
         'INVALID_REFUND_TRANSITION',
         'Refund cannot be completed from its current status',
       );
-    const duplicate = await tx.refund.findFirst({
-      where: { providerRefundId: input.transactionReference, id: { not: refund.id } },
-      select: { id: true },
-    });
-    if (duplicate)
-      throw new AppError(
-        409,
-        'REFUND_REFERENCE_CONFLICT',
-        'Refund transaction reference already exists',
-      );
+    if (transactionReference) {
+      const duplicate = await tx.refund.findFirst({
+        where: { providerRefundId: transactionReference, id: { not: refund.id } },
+        select: { id: true },
+      });
+      if (duplicate)
+        throw new AppError(
+          409,
+          'REFUND_REFERENCE_CONFLICT',
+          'Refund transaction reference already exists',
+        );
+    }
     const summary = settlement(order);
     const availableAfterReleasingCurrentRequest =
       summary.deposit.refundAvailableVnd + refund.amountVnd;
@@ -1046,7 +1056,8 @@ export async function completeRefund(
       data: {
         status: 'COMPLETED',
         approvedBy: actor.id,
-        providerRefundId: input.transactionReference,
+        method,
+        providerRefundId: transactionReference,
         completedAt: new Date(),
         failureReason: null,
       },

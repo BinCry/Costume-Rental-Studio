@@ -24,6 +24,8 @@ import {
   assessOrderReturn,
   prepareOrderSettlement,
   listOrderRefunds,
+  createDepositRefund,
+  completeDepositRefund,
   hasAccessToken,
   listOrderPayments,
   pickupOrder as pickupApiOrder,
@@ -34,6 +36,8 @@ import {
   type SettlementSnapshot,
   type ReturnSettlementOrderDetails,
   type OrderRefundRecord,
+  type PaymentRecord,
+  type RefundConfirmation,
   uploadRentalEvidence,
 } from '../api/client';
 
@@ -81,6 +85,10 @@ function refundLabel(status: string) {
   return status;
 }
 
+function isPendingRefund(refund: OrderRefundRecord) {
+  return refund.status === 'REQUESTED' || refund.status === 'PROCESSING';
+}
+
 function ReturnSettlementWorkflow({
   order,
   snapshot,
@@ -88,8 +96,10 @@ function ReturnSettlementWorkflow({
   canAssess,
   canPrepare,
   canCollect,
+  canApproveRefund,
   canComplete,
   onRefresh,
+  onRefreshSettlement,
   onCompleted,
 }: {
   order: Order;
@@ -98,8 +108,10 @@ function ReturnSettlementWorkflow({
   canAssess: boolean;
   canPrepare: boolean;
   canCollect: boolean;
+  canApproveRefund: boolean;
   canComplete: boolean;
   onRefresh: () => void;
+  onRefreshSettlement: () => void;
   onCompleted: () => void;
 }) {
   const [reloadRevision, setReloadRevision] = useState(0);
@@ -120,6 +132,16 @@ function ReturnSettlementWorkflow({
   const [extraMethod, setExtraMethod] = useState<'CASH' | 'BANK_TRANSFER'>('CASH');
   const [extraTransferReference, setExtraTransferReference] = useState('');
   const [extraAttemptKey, setExtraAttemptKey] = useState(() => crypto.randomUUID());
+  const [depositSources, setDepositSources] = useState<{
+    requestKey: string;
+    payments?: PaymentRecord[];
+    error?: string;
+  }>();
+  const [refundTargetId, setRefundTargetId] = useState('');
+  const [refundAmountInput, setRefundAmountInput] = useState<string>();
+  const [refundMethod, setRefundMethod] = useState<RefundConfirmation['method'] | ''>('');
+  const [refundReference, setRefundReference] = useState('');
+  const [cashRefundAttemptId, setCashRefundAttemptId] = useState(() => crypto.randomUUID());
   const [issue, setIssue] = useState('');
   const [message, setMessage] = useState('');
   const currentDetailsResource =
@@ -137,6 +159,49 @@ function ReturnSettlementWorkflow({
   const refundsLoading = canReadPayments && (!currentRefundsResource || currentRefundsResource.status === 'loading');
   const refundsError = currentRefundsResource?.status === 'error' ? currentRefundsResource.message : '';
   const assessmentComplete = !!details && ['PASSED', 'HAS_DAMAGE', 'HAS_MISSING_ITEM'].includes(details.inspectionStatus ?? '');
+  const settlementEdited = !!details && (
+    settlementDraft.depositDeduction !== amountText(details.depositDeductionVnd) ||
+    settlementDraft.otherFee !== amountText(details.otherFeeVnd) ||
+    settlementDraft.note !== (details.settlementNote ?? '') ||
+    details.items.some((item) => [
+      { key: item.id, ...item },
+      ...item.accessories.map((accessory) => ({ key: `${item.id}:${accessory.id}`, ...accessory })),
+    ].some(({ key, damageFeeVnd, missingFeeVnd }) => {
+      const draft = assessmentDraft[key];
+      return draft && (
+        draft.damage !== amountText(damageFeeVnd) || draft.missing !== amountText(missingFeeVnd)
+      );
+    }))
+  );
+  const pendingRefunds = refunds?.filter(isPendingRefund) ?? [];
+  const refundAvailable = parseVndAmount(snapshot?.deposit.refundAvailableVnd) ?? 0;
+  const currentDepositSources = depositSources?.requestKey === workflowKey ? depositSources : undefined;
+  const refundablePayments = (canPrepare && refunds ? currentDepositSources?.payments ?? [] : [])
+    .filter((payment) => payment.purpose === 'DEPOSIT' && payment.status === 'SUCCEEDED')
+    .map((payment) => {
+      const reserved = (refunds ?? []).filter((refund) =>
+        refund.paymentId === payment.id && (isPendingRefund(refund) || refund.status === 'COMPLETED'),
+      ).reduce((total, refund) => total + (parseVndAmount(refund.amountVnd) ?? 0), 0);
+      const limit = Math.min(refundAvailable, (parseVndAmount(payment.amountVnd) ?? 0) - reserved);
+      return { payment, limit };
+    })
+    .filter(({ limit }) => Number.isSafeInteger(limit) && limit > 0);
+  const selectedRefundTargetId = refundTargetId || pendingRefunds[0]?.id || refundablePayments[0]?.payment.id;
+  const pendingRefund = pendingRefunds.find(({ id }) => id === selectedRefundTargetId);
+  const refundSource = refundablePayments.find(({ payment }) => payment.id === selectedRefundTargetId);
+  const refundTarget = pendingRefund ?? refundSource;
+  const refundAmount = Number(refundAmountInput ?? refundSource?.limit);
+  const validRefundAmount = !!refundSource && Number.isSafeInteger(refundAmount) &&
+    refundAmount > 0 && refundAmount <= refundSource.limit &&
+    (refundAmountInput === undefined || validVndInput(refundAmountInput));
+  const reference = refundReference.trim();
+  const duplicateReference = refunds?.some((refund) => refund.providerRefundId === reference);
+  const validRefundMethod = refundMethod === 'CASH' ||
+    (refundMethod === 'BANK_TRANSFER' && !!reference && reference.length <= 255 && !duplicateReference);
+  const canRecordRefund = canApproveRefund && canReadPayments && assessmentComplete &&
+    details?.status === 'RETURN_INSPECTION' && snapshot?.orderId === details.id &&
+    snapshot.status === 'RETURN_INSPECTION' && !!refunds && !busy && validRefundMethod &&
+    (!!pendingRefund || (!settlementEdited && validRefundAmount));
 
   useEffect(() => {
     let active = true;
@@ -175,9 +240,21 @@ function ReturnSettlementWorkflow({
             message: caught instanceof Error ? caught.message : 'Không tải được trạng thái hoàn cọc.',
           });
         });
+      if (canPrepare) {
+        void listOrderPayments(order.id)
+          .then((payments) => {
+            if (active) setDepositSources({ requestKey: workflowKey, payments });
+          })
+          .catch((caught: unknown) => {
+            if (active) setDepositSources({
+              requestKey: workflowKey,
+              error: caught instanceof Error ? caught.message : 'Không tải được giao dịch thu cọc.',
+            });
+          });
+      }
     }
     return () => { active = false; };
-  }, [workflowKey, order.id, order.version, canReadPayments, reloadRevision]);
+  }, [workflowKey, order.id, order.version, canReadPayments, canPrepare, reloadRevision]);
 
   const refreshWorkflow = () => {
     setMessage('');
@@ -294,6 +371,37 @@ function ReturnSettlementWorkflow({
       setReloadRevision((revision) => revision + 1);
       onRefresh();
     } finally {
+      setBusy(false);
+    }
+  };
+  const recordRefund = async () => {
+    if (!canRecordRefund || !refundMethod || (!pendingRefund && !refundSource)) return;
+    const confirmation: RefundConfirmation = refundMethod === 'CASH'
+      ? { method: 'CASH' }
+      : { method: 'BANK_TRANSFER', transactionReference: reference };
+    const attempt = confirmation.method === 'CASH'
+      ? { ...confirmation, attemptId: cashRefundAttemptId }
+      : confirmation;
+    setBusy(true);
+    setIssue('');
+    setMessage('');
+    try {
+      const refund = pendingRefund ?? (refundSource &&
+        await createDepositRefund(refundSource.payment.id, refundAmount, attempt));
+      if (!refund) return;
+      setRefundTargetId(refund.id);
+      await completeDepositRefund(refund.id, confirmation);
+      setRefundTargetId('');
+      setRefundAmountInput(undefined);
+      setRefundMethod('');
+      setRefundReference('');
+      setCashRefundAttemptId(crypto.randomUUID());
+      setMessage('Đã ghi nhận hoàn cọc. Đang tải lại số dư quyết toán.');
+    } catch (caught: unknown) {
+      setIssue(caught instanceof Error ? caught.message : 'Không ghi nhận được hoàn cọc.');
+    } finally {
+      setReloadRevision((revision) => revision + 1);
+      onRefreshSettlement();
       setBusy(false);
     }
   };
@@ -552,15 +660,113 @@ function ReturnSettlementWorkflow({
                     <li key={refund.id}>
                       <strong>{settlementMoney(refund.amountVnd)}</strong>
                       <span>{refundLabel(refund.status)}</span>
+                      {refund.method === 'CASH' && <span>Tiền mặt</span>}
+                      {refund.method === 'BANK_TRANSFER' && (
+                        <span>Chuyển khoản{refund.providerRefundId && ` · ${refund.providerRefundId}`}</span>
+                      )}
                     </li>
                   ))}
                 </ul>
               ) : (
                 <p className="section-help">Máy chủ chưa trả về bản ghi hoàn cọc nào cho đơn này.</p>
               ))}
-              <Feedback tone="warning" title="Phương thức và thời hạn hoàn cọc cần Studio chốt">
-                Chỉ hiển thị số tiền và trạng thái do máy chủ ghi nhận. Màn hình này không tạo, không đánh dấu và không xác nhận đã chuyển tiền hoàn.
-              </Feedback>
+              {assessmentComplete && details.status === 'RETURN_INSPECTION' && canApproveRefund && (
+                <div className="return-settlement-form">
+                  {canPrepare && refundAvailable > 0 && !currentDepositSources && (
+                    <p role="status">Đang tải giao dịch thu cọc.</p>
+                  )}
+                  {currentDepositSources?.error && (
+                    <Feedback tone="danger" title="Không tải được giao dịch thu cọc">
+                      {currentDepositSources.error}
+                      <Button variant="secondary" disabled={busy} onClick={refreshWorkflow}>Tải lại giao dịch</Button>
+                    </Feedback>
+                  )}
+                  {(pendingRefunds.length > 0 || refundablePayments.length > 0) && (
+                    <>
+                      <SelectField
+                        label="Khoản cọc cần hoàn"
+                        value={refundTarget ? selectedRefundTargetId : ''}
+                        disabled={busy}
+                        onChange={(event) => {
+                          setRefundTargetId(event.target.value);
+                          setRefundAmountInput(undefined);
+                          setRefundMethod('');
+                          setRefundReference('');
+                        }}
+                      >
+                        {!refundTarget && <option value="" disabled>Chọn khoản cọc</option>}
+                        {pendingRefunds.map((refund) => (
+                          <option key={refund.id} value={refund.id}>
+                            Yêu cầu chờ xác nhận · {settlementMoney(refund.amountVnd)} · {refund.id.slice(-8)}
+                          </option>
+                        ))}
+                        {refundablePayments.map(({ payment, limit }) => (
+                          <option key={payment.id} value={payment.id}>
+                            {payment.method === 'CASH' ? 'Cọc tiền mặt' : 'Cọc thanh toán qua ngân hàng'}
+                            {' · '}{payment.transactionReference ?? payment.id.slice(-8)}
+                            {' · còn có thể hoàn '}{money(limit)}
+                          </option>
+                        ))}
+                      </SelectField>
+                      {pendingRefund && <p>Số tiền hoàn: <strong>{settlementMoney(pendingRefund.amountVnd)}</strong></p>}
+                      {refundSource && (
+                        <Field
+                          label="Số tiền đã hoàn (VND)"
+                          inputMode="numeric"
+                          value={refundAmountInput ?? String(refundSource.limit)}
+                          placeholder={String(refundSource.limit)}
+                          maxLength={16}
+                          disabled={busy}
+                          onChange={(event) => {
+                            setRefundTargetId(refundSource.payment.id);
+                            setRefundAmountInput(event.target.value);
+                          }}
+                          hint={`Tối đa ${money(refundSource.limit)} cho khoản cọc này.`}
+                          error={validRefundAmount ? undefined : `Nhập số nguyên dương, tối đa ${money(refundSource.limit)}.`}
+                        />
+                      )}
+                      {refundSource && settlementEdited && (
+                        <p role="status">Lưu đánh giá và quyết toán đã chỉnh sửa trước khi ghi nhận hoàn cọc.</p>
+                      )}
+                      {refundTarget && (
+                        <SelectField
+                          label="Phương thức hoàn cọc"
+                          value={refundMethod}
+                          disabled={busy}
+                          onChange={(event) => {
+                            setRefundTargetId(selectedRefundTargetId ?? '');
+                            setRefundMethod(event.target.value as RefundConfirmation['method'] | '');
+                            setRefundReference('');
+                          }}
+                        >
+                          <option value="" disabled>Chọn phương thức</option>
+                          <option value="CASH">Tiền mặt</option>
+                          <option value="BANK_TRANSFER">Chuyển khoản</option>
+                        </SelectField>
+                      )}
+                      {refundTarget && refundMethod === 'CASH' && (
+                        <p className="section-help">Chỉ ghi nhận sau khi đã giao tiền mặt cho khách.</p>
+                      )}
+                      {refundTarget && refundMethod === 'BANK_TRANSFER' && <Field
+                        label="Mã giao dịch hoàn cọc"
+                        value={refundReference}
+                        required
+                        maxLength={255}
+                        disabled={busy}
+                        onChange={(event) => {
+                          setRefundTargetId(selectedRefundTargetId ?? '');
+                          setRefundReference(event.target.value);
+                        }}
+                        hint="Nhập mã giao dịch sau khi đã chuyển tiền thành công cho khách."
+                        error={duplicateReference ? 'Mã giao dịch này đã được ghi nhận cho đơn.' : undefined}
+                      />}
+                      <Button disabled={!canRecordRefund} loading={busy} onClick={() => void recordRefund()}>
+                        Ghi nhận đã hoàn cọc
+                      </Button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           )}
           {canComplete && (
@@ -596,7 +802,6 @@ function ReturnSettlementWorkflow({
                     (parseVndAmount(snapshot?.deposit.refundRemainingVnd) ?? 0) > 0 && (
                       <p>
                         Còn phải xử lý hoàn cọc: {settlementMoney(snapshot?.deposit.refundRemainingVnd)}.
-                        Trạng thái hiển thị theo máy chủ; phương thức và thời hạn hoàn vẫn cần Studio chốt.
                       </p>
                     )}
                 </div>
@@ -628,6 +833,7 @@ export function OrderDetailShell({
   canReturn = true,
   canAssessReturn = true,
   canPrepareSettlement = true,
+  canApproveRefund = false,
   canCompleteSettlement = true,
 }: {
   scenario: DemoScenario;
@@ -640,6 +846,7 @@ export function OrderDetailShell({
   canReturn?: boolean;
   canAssessReturn?: boolean;
   canPrepareSettlement?: boolean;
+  canApproveRefund?: boolean;
   canCompleteSettlement?: boolean;
 }) {
   const realApiMode = apiEnabled && hasAccessToken();
@@ -1918,9 +2125,7 @@ export function OrderDetailShell({
                       >
                         {settlementAmountsValid ? (
                           <>
-                            Còn phải thu: {settlementMoney(backendSettlement.outstandingVnd)}. Phương thức
-                            và thời hạn hoàn cọc vẫn cần Studio chốt; giao diện chỉ hiển thị số tiền, trạng thái
-                            máy chủ ghi nhận và điểm còn cần xử lý, không suy ra đã hoàn từ số dự kiến.
+                            Còn phải thu: {settlementMoney(backendSettlement.outstandingVnd)}.
                           </>
                         ) : (
                           'Máy chủ chưa trả đủ hoặc trả sai dữ liệu tiền. Chưa thể xác nhận điều kiện hoàn tất; hãy tải lại sau khi dịch vụ quyết toán được cập nhật.'
@@ -1930,17 +2135,20 @@ export function OrderDetailShell({
                   )}
                   {realApiMode && backendReturnReady && order && (
                     <ReturnSettlementWorkflow
+                      key={order.id}
                       order={order}
                       snapshot={backendSettlement}
                       canReadPayments={canReadPayments}
                       canAssess={canAssessReturn}
                       canPrepare={canPrepareSettlement}
                       canCollect={canCollectPayments}
+                      canApproveRefund={canApproveRefund && order.branch === initialBranch}
                       canComplete={canCompleteSettlement}
                       onRefresh={() => {
                         retry();
                         void refreshSettlement();
                       }}
+                      onRefreshSettlement={() => void refreshSettlement()}
                       onCompleted={() => setResult({ text: 'Đơn đã được máy chủ đóng sau khi snapshot xác nhận đủ điều kiện.', signature: previewSignature })}
                     />
                   )}
@@ -2016,7 +2224,7 @@ export function OrderDetailShell({
                         : 'Cần backend trả số phí, cấn trừ và khoản còn hoàn từ chứng từ trước khi quyết toán.'}
                   </Feedback>
                 )}
-              {mode === 'return' && (
+              {mode === 'return' && !realApiMode && (
                 <p className="section-help">
                   Phương thức hoàn cọc qua SePay chưa chốt. Chỉ hiển thị trạng thái giao dịch thực
                   tế; không suy ra đã hoàn từ số dự kiến hoàn.

@@ -201,6 +201,13 @@ enum RefundStatus {
   @@map("refund_status")
 }
 
+enum RefundMethod {
+  CASH
+  BANK_TRANSFER
+
+  @@map("refund_method")
+}
+
 enum CrmCaseStatus {
   OPEN
   IN_PROGRESS
@@ -969,6 +976,7 @@ model Refund {
   status           RefundStatus @default(REQUESTED)
   requestedBy      String       @map("requested_by") @db.Uuid
   approvedBy       String?      @map("approved_by") @db.Uuid
+  method           RefundMethod?
   providerRefundId String?      @unique @map("provider_refund_id") @db.VarChar(255)
   completedAt      DateTime?    @map("completed_at") @db.Timestamptz(6)
   failureReason    String?      @map("failure_reason") @db.Text

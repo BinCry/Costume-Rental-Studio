@@ -1515,6 +1515,32 @@ export const openApiDocument = {
         tags: ['Payments'],
         security: [{ bearerAuth: [] }],
         summary: 'Record a completed manual refund',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                oneOf: [
+                  {
+                    type: 'object',
+                    additionalProperties: false,
+                    required: ['method'],
+                    properties: { method: { type: 'string', enum: ['CASH'] } },
+                  },
+                  {
+                    type: 'object',
+                    additionalProperties: false,
+                    required: ['transactionReference'],
+                    properties: {
+                      method: { type: 'string', enum: ['BANK_TRANSFER'] },
+                      transactionReference: { type: 'string', minLength: 1, maxLength: 255 },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
         responses: {
           '200': { description: 'Refund completed' },
           '409': { $ref: '#/components/responses/Conflict' },

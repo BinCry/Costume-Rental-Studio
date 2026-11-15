@@ -161,9 +161,12 @@ REQUESTED  -> FAILED     (POST /refunds/:refundId/fail)
 PROCESSING -> FAILED     (POST /refunds/:refundId/fail)
 ```
 
-Completion requires a unique `transactionReference`; failure requires a reason. Only
-`COMPLETED` refunds reduce the amount still owed to the customer. `REJECTED` exists in the
-database enum but is not created by this MVP API.
+For cash refunds, complete with `{"method":"CASH"}` after handing the customer their cash.
+For bank transfers, submit `{"method":"BANK_TRANSFER","transactionReference":"TRANSFER-123"}`
+after the transfer succeeds. The reference must be unique. Existing clients can still submit
+only `transactionReference`, which leaves the method unspecified. Failure requires a reason.
+Only `COMPLETED` refunds reduce the amount still owed to the customer. `REJECTED` exists in
+the database enum but is not created by this MVP API.
 
 ## Summary and rental integration
 
