@@ -20,6 +20,7 @@ import type { BookingDraft, DemoScenario, QuoteSnapshot } from '../fixtures/type
 import { apiEnabled, getOwnCustomerProfile, hasAccessToken } from '../api/client';
 import { formatLocalDateTime } from '../utils/date-format';
 import { isValidPhone } from '../utils/phone';
+import { rentalPeriodIssues } from '../utils/rental-period';
 import { useBranchOptions } from '../components/useBranchOptions';
 
 const steps = ['Thông tin thuê', 'Báo giá & liên hệ', 'Xem lại & gửi'];
@@ -238,7 +239,11 @@ export function BookingPage({
     }
     setIssue('');
   };
+  const { pickupIssue, returnIssue } = rentalPeriodIssues(draft.pickup, draft.returnAt);
   const canContinue = () => {
+    const dates = rentalPeriodIssues(draft.pickup, draft.returnAt);
+    const dateIssue = dates.pickupIssue ?? dates.returnIssue;
+    if (dateIssue) return dateIssue;
     if (step === 0 || step === 2) {
       if (!item) return 'Hãy chọn một mẫu trang phục.';
       if (
@@ -247,7 +252,7 @@ export function BookingPage({
         draft.quantity > 2
       )
         return 'Chọn size/màu và số bộ hợp lệ (1–2 bộ).';
-      if (!draft.branch || !draft.pickup || !draft.returnAt || draft.returnAt <= draft.pickup)
+      if (!draft.branch || !draft.pickup || !draft.returnAt)
         return 'Chọn cùng chi nhánh và kỳ nhận/trả hợp lệ.';
     }
     if (step === 1 || step === 2) {
@@ -274,6 +279,12 @@ export function BookingPage({
     setStep((current) => Math.min(current + 1, 5));
   };
   const loadQuote = async (requestedPromotionCode = appliedPromotionCode) => {
+    const dates = rentalPeriodIssues(draft.pickup, draft.returnAt);
+    const dateIssue = dates.pickupIssue ?? dates.returnIssue;
+    if (dateIssue || !draft.pickup || !draft.returnAt) {
+      setIssue(dateIssue ?? 'Chọn thời điểm nhận và trả đồ trước khi tải báo giá.');
+      return;
+    }
     const requestId = ++quoteRequestRef.current;
     const normalizedCode = requestedPromotionCode.trim().toUpperCase();
     setBusy(true);
@@ -589,17 +600,13 @@ export function BookingPage({
                       label="Nhận đồ"
                       value={draft.pickup}
                       onChange={(value) => update('pickup', value)}
-                      error={issue && !draft.pickup ? 'Chọn thời điểm nhận đồ.' : undefined}
+                      error={pickupIssue ?? (issue && !draft.pickup ? 'Chọn thời điểm nhận đồ.' : undefined)}
                     />
                     <DateTimeField
                       label="Trả đồ"
                       value={draft.returnAt}
                       onChange={(value) => update('returnAt', value)}
-                      error={
-                        issue && (!draft.returnAt || draft.returnAt <= draft.pickup)
-                          ? 'Thời điểm trả phải sau thời điểm nhận.'
-                          : undefined
-                      }
+                      error={returnIssue ?? (issue && !draft.returnAt ? 'Chọn thời điểm trả đồ.' : undefined)}
                     />
                   </div>
                   <p className="inline-note">

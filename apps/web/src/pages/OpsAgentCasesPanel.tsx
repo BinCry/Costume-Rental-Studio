@@ -19,7 +19,8 @@ import {
   type OpsAgentOption,
 } from '../api/client';
 import { AssistantMarkdown } from '../components/AssistantMarkdown';
-import { Button, ConfirmDialog, EmptyState, Feedback } from '../components/ui';
+import { Button, ConfirmDialog, DateTimeField, EmptyState, Feedback } from '../components/ui';
+import { formatVietnamDateTime } from '../utils/date-format';
 import { opsAgentPanelActions } from './opsAgentPanelActions';
 
 type SeverityFilter = 'all' | 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
@@ -384,15 +385,7 @@ function nextActionCopy(caseData: OpsAgentCaseResult) {
 
 function formatDate(value?: string | null, fallback = 'Chưa có dữ liệu') {
   if (!value) return fallback;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Thời điểm chưa xác định';
-  return new Intl.DateTimeFormat('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
+  return formatVietnamDateTime(value) || 'Thời điểm chưa xác định';
 }
 
 function formatDuration(value?: number | null) {
@@ -1391,51 +1384,31 @@ export function OpsAgentCasesPanel({ branchId }: { branchId?: string }) {
                             <option value="OTHER">Khác</option>
                           </select>
                         </label>
-                        <label>
-                          Thời điểm đã liên hệ
-                          <input
-                            type="datetime-local"
+                        <DateTimeField
+                          label="Thời điểm đã liên hệ"
+                          required
+                          value={followUp.occurredAt}
+                          onChange={(occurredAt) => updateFollowUp((draft) => ({ ...draft, occurredAt }))}
+                        />
+                        {requiresPromisedReturn && (
+                          <DateTimeField
+                            label="Thời gian khách hẹn trả"
                             required
-                            value={followUp.occurredAt}
-                            onChange={(event) =>
-                              updateFollowUp((draft) => ({
-                                ...draft,
-                                occurredAt: event.target.value,
-                              }))
+                            value={followUp.promisedReturnAt}
+                            onChange={(promisedReturnAt) =>
+                              updateFollowUp((draft) => ({ ...draft, promisedReturnAt }))
                             }
                           />
-                        </label>
-                        {requiresPromisedReturn && (
-                          <label>
-                            Thời gian khách hẹn trả
-                            <input
-                              type="datetime-local"
-                              required
-                              value={followUp.promisedReturnAt}
-                              onChange={(event) =>
-                                updateFollowUp((draft) => ({
-                                  ...draft,
-                                  promisedReturnAt: event.target.value,
-                                }))
-                              }
-                            />
-                          </label>
                         )}
                         {requiresNextFollowUp && (
-                          <label>
-                            Lịch liên hệ tiếp theo
-                            <input
-                              type="datetime-local"
-                              required
-                              value={followUp.nextFollowUpAt}
-                              onChange={(event) =>
-                                updateFollowUp((draft) => ({
-                                  ...draft,
-                                  nextFollowUpAt: event.target.value,
-                                }))
-                              }
-                            />
-                          </label>
+                          <DateTimeField
+                            label="Lịch liên hệ tiếp theo"
+                            required
+                            value={followUp.nextFollowUpAt}
+                            onChange={(nextFollowUpAt) =>
+                              updateFollowUp((draft) => ({ ...draft, nextFollowUpAt }))
+                            }
+                          />
                         )}
                       </div>
                       <p className="ops-alert-muted">

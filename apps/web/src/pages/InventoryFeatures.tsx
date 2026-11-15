@@ -1,6 +1,7 @@
 import { useCallback, useState, type FormEvent } from 'react';
 import type { Navigate } from '../App';
-import { Button, ConfirmDialog, Feedback, Field, SelectField, TextAreaField, StatusLabel } from '../components/ui';
+import { Button, ConfirmDialog, DateField, DateTimeField, Feedback, Field, SelectField, TextAreaField, StatusLabel } from '../components/ui';
+import { formatVietnamDateTime } from '../utils/date-format';
 import {
   BarcodeLookup,
   BranchSelector,
@@ -73,6 +74,7 @@ function CreateInventoryUnitPanel({
   const [unitCode, setUnitCode] = useState('');
   const [variantId, setVariantId] = useState('');
   const [acquiredAt, setAcquiredAt] = useState('');
+  const [acquiredDateValid, setAcquiredDateValid] = useState(true);
   const [cost, setCost] = useState('');
   const [notes, setNotes] = useState('');
   const [issue, setIssue] = useState('');
@@ -83,6 +85,10 @@ function CreateInventoryUnitPanel({
   }))).filter((variant): variant is { id: string; label: string } => !!variant.id);
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!acquiredDateValid) {
+      setIssue('Kiểm tra ngày nhập kho.');
+      return;
+    }
     if (!unitCode.trim() || !variantId || (cost && (!Number.isSafeInteger(Number(cost)) || Number(cost) < 0))) {
       setIssue('Nhập barcode, chọn biến thể và kiểm tra giá nhập.');
       return;
@@ -115,7 +121,7 @@ function CreateInventoryUnitPanel({
               <option value="">Chọn biến thể</option>
               {variants.map((variant) => <option value={variant.id} key={variant.id}>{variant.label}</option>)}
             </SelectField>
-            <Field label="Ngày nhập" type="date" value={acquiredAt} disabled={busy} onChange={(event) => setAcquiredAt(event.target.value)} />
+            <DateField label="Ngày nhập" value={acquiredAt} disabled={busy} onChange={setAcquiredAt} onValidityChange={setAcquiredDateValid} />
             <Field label="Giá nhập (đ)" type="number" min="0" step="1000" value={cost} disabled={busy} onChange={(event) => setCost(event.target.value)} />
           </div>
           <TextAreaField label="Ghi chú tiếp nhận" value={notes} disabled={busy} onChange={(event) => setNotes(event.target.value)} />
@@ -332,7 +338,7 @@ export function InventoryPage({
   const addCapacityWindow = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const availableMinutes = Number(windowMinutes);
-    if (!branch || windowEnd <= windowStart || !Number.isInteger(availableMinutes) || availableMinutes < 1) {
+    if (!branch || !windowStart || windowEnd <= windowStart || !Number.isInteger(availableMinutes) || availableMinutes < 1) {
       setIssue('Kiểm tra khoảng thời gian và số phút năng lực.');
       return;
     }
@@ -522,7 +528,7 @@ export function InventoryPage({
                           {(blocksResource.data ?? []).map((block) => <tr key={block.id}>
                             <td>{block.unitCode || 'Bộ trang phục'}</td>
                             <td>{blockTypeLabels[block.type]}<small>{block.reason}</small></td>
-                            <td>{new Date(block.from).toLocaleString('vi-VN')}<small>đến {new Date(block.until).toLocaleString('vi-VN')}</small></td>
+                            <td>{formatVietnamDateTime(block.from)}<small>đến {formatVietnamDateTime(block.until)}</small></td>
                             <td><StatusLabel text={blockStatusLabels[block.status]} tone={block.status === 'COMPLETED' ? 'success' : block.status === 'CANCELLED' ? 'neutral' : block.status === 'IN_PROGRESS' ? 'warning' : 'info'} /></td>
                           <td>{canManage && block.status === 'PLANNED' && <div className="catalog-media-card__actions"><Button type="button" variant="quiet" disabled={busy} onClick={() => void updateBlock(block, 'start')}>Bắt đầu</Button><Button type="button" variant="quiet" disabled={busy} onClick={() => { const unit = units.find((candidate) => candidate.apiId === block.unitId); if (unit) selectUnit(unit); setEditingBlock(block); setBlockType(block.type); setFrom(toLocalDateTimeInput(block.from)); setUntil(toLocalDateTimeInput(block.until)); setReason(block.reason); setEffort(String(block.estimatedEffortMinutes ?? 60)); setBlockCost(block.costVnd === undefined ? '' : String(block.costVnd)); setCapacityWindowId(block.capacityWindowId ?? ''); }}>Chỉnh lịch</Button><Button type="button" variant="quiet" disabled={busy} onClick={() => { setCancelTarget(block); setCancelReason(''); }}>Hủy lịch</Button></div>}{canManage && block.status === 'IN_PROGRESS' && <Button type="button" variant="secondary" loading={busy} onClick={() => void updateBlock(block, 'complete')}>Hoàn tất</Button>}</td>
                           </tr>)}
@@ -588,24 +594,14 @@ export function InventoryPage({
                           <option value="OTHER">Khác</option>
                         </SelectField>
                         <div className="feature-filters">
-                          <Field
-                            type="datetime-local"
-                            label="Từ"
-                            value={from}
-                            onChange={(e) => setFrom(e.target.value)}
-                          />
-                          <Field
-                            type="datetime-local"
-                            label="Đến"
-                            value={until}
-                            onChange={(e) => setUntil(e.target.value)}
-                          />
+                          <DateTimeField label="Từ" value={from} onChange={setFrom} />
+                          <DateTimeField label="Đến" value={until} onChange={setUntil} />
                         </div>
                         <div className="feature-filters">
                           <Field label="Thời lượng dự kiến (phút)" type="number" min="1" max="10080" value={effort} onChange={(event) => setEffort(event.target.value)} />
                           <Field label="Chi phí dự kiến (đ)" type="number" min="0" step="1000" value={blockCost} onChange={(event) => setBlockCost(event.target.value)} />
                         </div>
-                        {realApiMode && (capacityResource.data?.length ?? 0) > 0 && <SelectField label="Khung năng lực (nếu có)" value={capacityWindowId} onChange={(event) => setCapacityWindowId(event.target.value)}><option value="">Không gắn khung</option>{capacityResource.data?.map((window) => <option key={window.id} value={window.id}>{new Date(window.startsAt).toLocaleString('vi-VN')} · {window.availableMinutes} phút</option>)}</SelectField>}
+                        {realApiMode && (capacityResource.data?.length ?? 0) > 0 && <SelectField label="Khung năng lực (nếu có)" value={capacityWindowId} onChange={(event) => setCapacityWindowId(event.target.value)}><option value="">Không gắn khung</option>{capacityResource.data?.map((window) => <option key={window.id} value={window.id}>{formatVietnamDateTime(window.startsAt)} · {window.availableMinutes} phút</option>)}</SelectField>}
                         <TextAreaField
                           label="Lý do"
                           value={reason}
@@ -630,7 +626,7 @@ export function InventoryPage({
               {capacityResource.loading ? <p className="muted" role="status">Đang tải khung năng lực…</p> : (
                 <div className="feature-card-list">
                   {(capacityResource.data ?? []).map((window: CapacityWindowRecord) => <div className="feature-list-row" key={window.id}>
-                    <strong>{new Date(window.startsAt).toLocaleString('vi-VN')} – {new Date(window.endsAt).toLocaleString('vi-VN')}</strong>
+                    <strong>{formatVietnamDateTime(window.startsAt)} – {formatVietnamDateTime(window.endsAt)}</strong>
                     <span>{window.availableMinutes} phút năng lực</span>
                     {window.notes && <small>{window.notes}</small>}
                     {canManage && <div className="catalog-media-card__actions"><Button type="button" variant="quiet" disabled={busy} onClick={() => { setEditingWindow(window); setWindowStart(toLocalDateTimeInput(window.startsAt)); setWindowEnd(toLocalDateTimeInput(window.endsAt)); setWindowMinutes(String(window.availableMinutes)); setWindowNotes(window.notes ?? ''); }}>Điều chỉnh</Button><Button type="button" variant="quiet" disabled={busy} onClick={() => setDeleteWindowTarget(window)}>Xóa khung</Button></div>}
@@ -641,8 +637,8 @@ export function InventoryPage({
               {canManage && realApiMode && <form className="stack-form" onSubmit={(event) => void addCapacityWindow(event)}>
                 <h3>{editingWindow ? 'Điều chỉnh khung năng lực' : 'Thêm khung năng lực'}</h3>
                 <div className="feature-filters">
-                  <Field label="Bắt đầu" type="datetime-local" value={windowStart} onChange={(event) => setWindowStart(event.target.value)} />
-                  <Field label="Kết thúc" type="datetime-local" value={windowEnd} onChange={(event) => setWindowEnd(event.target.value)} />
+                  <DateTimeField label="Bắt đầu" value={windowStart} onChange={setWindowStart} />
+                  <DateTimeField label="Kết thúc" value={windowEnd} onChange={setWindowEnd} />
                   <Field label="Phút có thể xử lý" type="number" min="1" max="100800" value={windowMinutes} onChange={(event) => setWindowMinutes(event.target.value)} />
                 </div>
                 <Field label="Ghi chú" value={windowNotes} onChange={(event) => setWindowNotes(event.target.value)} />
@@ -659,7 +655,7 @@ export function InventoryPage({
             </ConfirmDialog>}
             {deleteWindowTarget && <ConfirmDialog title="Xóa khung năng lực?" confirmText="Xóa khung" danger loading={busy} onClose={() => setDeleteWindowTarget(undefined)} onConfirm={() => void confirmDeleteCapacityWindow()}>
               <p>Thao tác này gỡ khung khỏi lịch năng lực chi nhánh. Lịch xử lý đang gắn với khung vẫn được giữ lại nhưng sẽ không còn liên kết.</p>
-              <p><strong>{new Date(deleteWindowTarget.startsAt).toLocaleString('vi-VN')} – {new Date(deleteWindowTarget.endsAt).toLocaleString('vi-VN')}</strong></p>
+              <p><strong>{formatVietnamDateTime(deleteWindowTarget.startsAt)} – {formatVietnamDateTime(deleteWindowTarget.endsAt)}</strong></p>
             </ConfirmDialog>}
             {cancelTarget && <ConfirmDialog title="Hủy lịch xử lý?" confirmText="Hủy lịch" danger loading={busy} confirmDisabled={!cancelReason.trim()} onClose={() => setCancelTarget(undefined)} onConfirm={() => void confirmCancelBlock()}>
               <p>Lịch sẽ chuyển sang trạng thái đã hủy và vẫn còn trong lịch sử bộ.</p>

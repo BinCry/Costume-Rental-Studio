@@ -39,6 +39,7 @@ import {
   type OpsAgentEvidence,
   type OpsKnowledgeAnswer,
 } from '../api/client';
+import { formatVietnamDateTime } from '../utils/date-format';
 
 const OpsAgentCasesPanel = lazy(() =>
   import('./OpsAgentCasesPanel').then((module) => ({ default: module.OpsAgentCasesPanel })),
@@ -275,10 +276,7 @@ function agentStateTone(
 }
 
 function formatAgentTime(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value
-    : new Intl.DateTimeFormat('vi-VN', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  return formatVietnamDateTime(value) || 'Thời điểm chưa xác định';
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -403,13 +401,6 @@ const filters: QueueFilterOption[] = [
 
 const sourceStatusTone = (status: string): 'neutral' | 'warning' | 'info' =>
   status === 'Tài liệu mô tả' ? 'info' : status === 'Cần xác minh' ? 'warning' : 'neutral';
-
-const formatFixtureTime = () =>
-  new Intl.DateTimeFormat('vi-VN', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(fixtureClock);
 
 const agentCaseSessionKey = 'costume-rental.ops-agent.case-id';
 
@@ -1317,7 +1308,7 @@ export function OpsAgentPage({
             </span>
             <span className="ops-fixture-time">
               <Icon name="clock" size={16} />
-              Dữ liệu mẫu · {formatFixtureTime()}
+              Dữ liệu mẫu · {formatVietnamDateTime(fixtureClock)}
             </span>
           </div>
         )}
@@ -2573,7 +2564,7 @@ export function OpsAgentPage({
                                   <span>{opsAgentEvidenceLabel(item)}</span>
                                   {item.observedAt && (
                                     <time dateTime={item.observedAt}>
-                                      {new Date(item.observedAt).toLocaleString('vi-VN')}
+                                      {formatAgentTime(item.observedAt)}
                                     </time>
                                   )}
                                 </span>

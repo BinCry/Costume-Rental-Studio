@@ -131,6 +131,12 @@ test('flags reversed and equal dates at the return field before a public availab
   expect(query.get('plannedStartAt')).toBe(new Date('2028-04-05T10:00').toISOString());
   expect(query.get('plannedDueAt')).toBe(new Date('2028-04-06T10:00').toISOString());
   await expect(page.getByRole('button', { name: 'Bắt đầu đặt thuê' })).toBeEnabled();
+
+  const pickup = page.getByRole('textbox', { name: 'Nhận', exact: true });
+  await pickup.fill('01/11/2020 10:00');
+  await expect(pickup).toHaveAccessibleDescription('Thời điểm nhận đồ không được ở quá khứ.');
+  await expect(page.getByRole('button', { name: 'Bắt đầu đặt thuê' })).toBeDisabled();
+  expect(requests).toHaveLength(1);
 });
 
 test('catalog also attaches the reversed-range message to the return field', async ({ page }) => {

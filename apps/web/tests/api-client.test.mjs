@@ -61,6 +61,24 @@ it('shows active rental times in Vietnam across midnight', async () => {
   expect(rental).toMatchObject({ pickedUp: '06/03/2026 00:00', due: '06/03/2026 01:30' });
 });
 
+it('shows inventory unit events in Vietnamese time with readable event names', async () => {
+  values.set(accessTokenKey, 'access-token');
+  globalThis.fetch.mockResolvedValueOnce(
+    success({
+      items: [
+        { occurredAt: '2026-03-05T17:00:00.000Z', eventType: 'TRANSFER_RECEIVED', notes: 'Kho Quận 3' },
+        { occurredAt: '2026-03-05T15:00:00.000Z', eventType: 'NEW_EVENT' },
+      ],
+      pagination: { page: 1, pageSize: 100, totalItems: 2, totalPages: 1 },
+    }),
+  );
+  const { listInventoryUnitEvents } = await import('../src/api/client.ts');
+  await expect(listInventoryUnitEvents('unit-1')).resolves.toEqual([
+    '06/03/2026 00:00 · Nhận điều chuyển · Kho Quận 3',
+    '05/03/2026 22:00 · Cập nhật bộ',
+  ]);
+});
+
 function stubQuoteApi() {
   const variant = {
     id: 'variant-pearl-l',
@@ -259,6 +277,7 @@ describe('web API client session and error handling', () => {
     ).resolves.toMatchObject([
       {
         branch: 'Chi nhánh Quận 1',
+        period: '01/10/2026 → 07/10/2026',
         rentalCount: 2,
         rentalRevenue: 1200000,
         revenuePeriods: [{ period: '2026-10-03', rentalVnd: 1200000 }],

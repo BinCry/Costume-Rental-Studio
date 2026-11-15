@@ -1,4 +1,5 @@
 // Vietnamese names for the CRM codes the API returns, so timelines never show raw codes.
+import { formatVietnamDate } from './date-format';
 
 export const caseStatusLabels: Record<string, string> = {
   OPEN: 'Mới mở',
@@ -63,13 +64,7 @@ export function interactionText(
   ]);
 }
 
-/** Today's day and month in Vietnam time (dd/mm), for history entries written on this device. */
+/** Today's calendar date in Vietnam time, for history entries written on this device. */
 export function crmDayStamp(now = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    day: '2-digit',
-    month: '2-digit',
-    timeZone: 'Asia/Ho_Chi_Minh',
-  }).formatToParts(now);
-  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? '';
-  return `${part('day')}/${part('month')}`;
+  return formatVietnamDate(now);
 }

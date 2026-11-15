@@ -6,6 +6,7 @@ import { WorkQueueItem } from '../components/WorkQueueItem';
 import { branches, fixtureAdapter, fixtureClock } from '../fixtures/adapter';
 import type { DemoScenario, QueueTask } from '../fixtures/types';
 import { apiEnabled, hasAccessToken, listDashboardTasks } from '../api/client';
+import { formatVietnamDateTime } from '../utils/date-format';
 
 const groups: QueueTask['group'][] = [
   'Quá hạn',
@@ -99,11 +100,7 @@ export function DashboardPage({
     }
     go('orders', { order: task.orderId });
   };
-  const dateText = new Intl.DateTimeFormat('vi-VN', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    dateStyle: 'full',
-    timeStyle: 'short',
-  }).format(realApiMode ? new Date() : fixtureClock);
+  const dateText = formatVietnamDateTime(realApiMode ? new Date() : fixtureClock);
   return (
     <div className="page staff-page dashboard-page">
       <div className="staff-page-heading">

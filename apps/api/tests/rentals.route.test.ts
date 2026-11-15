@@ -106,14 +106,13 @@ describe('Rental order HTTP routes', () => {
     const order = {
       customerUserId: actorId,
       pickupBranchId: branchId,
-      plannedStartAt: '2026-10-15T08:00:00.000Z',
-      plannedDueAt: '2026-10-17T08:00:00.000Z',
+      plannedStartAt: new Date(Date.now() + 86_400_000).toISOString(),
+      plannedDueAt: new Date(Date.now() + 3 * 86_400_000).toISOString(),
       items: [{ variantId }],
     };
     await request(createApp())
-      .get(
-        `/api/v1/rentals/availability?variantId=${variantId}&pickupBranchId=${branchId}&plannedStartAt=2026-10-15T08:00:00.000Z&plannedDueAt=2026-10-17T08:00:00.000Z`,
-      )
+      .get('/api/v1/rentals/availability')
+      .query({ variantId, pickupBranchId: branchId, plannedStartAt: order.plannedStartAt, plannedDueAt: order.plannedDueAt })
       .set(auth(bearer))
       .expect(200);
     await request(createApp())

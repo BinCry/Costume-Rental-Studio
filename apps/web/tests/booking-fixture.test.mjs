@@ -1,5 +1,6 @@
 const { afterEach, describe, expect, it, vi } = globalThis;
 import { branches, fixtureAdapter, fixturePeriod } from '../src/fixtures/adapter.ts';
+import { formatVietnamDateTime } from '../src/utils/date-format.ts';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -27,11 +28,7 @@ describe('booking fixture defaults', () => {
   it('expires the sample quote thirty minutes before pickup', async () => {
     vi.stubGlobal('window', { setTimeout: globalThis.setTimeout });
     const quote = await fixtureAdapter.getQuote(draft, 'normal');
-    const [dateLabel, timeLabel] = quote.expiresAt.split(' · ');
-    const [day, month, year] = dateLabel.split('/').map(Number);
-    const [hours, minutes] = timeLabel.split(':').map(Number);
-    const expiry = new Date(year, month - 1, day, hours, minutes);
-
-    expect(expiry.getTime()).toBe(new Date(fixturePeriod.pickup).getTime() - 30 * 60 * 1000);
+    const expiry = new Date(new Date(fixturePeriod.pickup).getTime() - 30 * 60 * 1000);
+    expect(quote.expiresAt).toBe(formatVietnamDateTime(expiry));
   });
 });

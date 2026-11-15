@@ -32,3 +32,7 @@ export function formatVietnamDateTime(value?: string | Date) {
     parts.find((item) => item.type === type)?.value;
   return `${part('day')}/${part('month')}/${part('year')} ${part('hour')}:${part('minute')}`;
 }
+
+export function formatVietnamDate(value?: string | Date) {
+  return formatVietnamDateTime(value).slice(0, 10);
+}

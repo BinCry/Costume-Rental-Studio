@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { rentalPickupDateSchema } from '../rentals/rental.schema.js';
 
 export const publicBranchListSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -27,7 +28,7 @@ export const publicAvailabilitySchema = z
   .object({
     variantId: z.uuid(),
     pickupBranchId: z.uuid(),
-    plannedStartAt: z.coerce.date(),
+    plannedStartAt: rentalPickupDateSchema,
     plannedDueAt: z.coerce.date(),
   })
   .refine((value) => value.plannedDueAt > value.plannedStartAt, {

@@ -231,6 +231,7 @@ export function DateField({
       touched: false,
     });
     onChange(nextValue);
+    onValidityChange?.(!required || !!nextValue);
   };
 
   return (
@@ -291,11 +292,17 @@ export function DateTimeField({
   value,
   onChange,
   error,
+  hint,
+  min,
+  required,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   error?: string;
+  hint?: string;
+  min?: string;
+  required?: boolean;
 }) {
   const id = useId();
   const [draftState, setDraftState] = useState({ source: value, text: formatLocalDateTime(value) });
@@ -316,10 +323,11 @@ export function DateTimeField({
           type="text"
           autoComplete="off"
           placeholder="dd/mm/yyyy HH:mm"
+          required={required}
           maxLength={16}
           value={draft}
           aria-invalid={!!message}
-          aria-describedby={message ? id + '-error' : undefined}
+          aria-describedby={message ? id + '-error' : hint ? id + '-hint' : undefined}
           onBlur={() => setTouched(true)}
           onChange={(event) => {
             const text = event.target.value;
@@ -349,6 +357,7 @@ export function DateTimeField({
           ref={pickerRef}
           className="date-field-picker date-time-native-picker"
           type="datetime-local"
+          min={min}
           tabIndex={-1}
           aria-label={'Bộ chọn ngày giờ cho ' + label}
           value={value}
@@ -360,6 +369,11 @@ export function DateTimeField({
           }}
         />
       </div>
+      {hint && !message && (
+        <p className="field-hint" id={id + '-hint'}>
+          {hint}
+        </p>
+      )}
       {message && (
         <p className="field-error" id={id + '-error'}>
           {message}

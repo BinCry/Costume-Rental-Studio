@@ -47,7 +47,7 @@ describe('CRM interactions in Vietnamese', () => {
 describe('CRM day stamp', () => {
   it('uses the real day in Vietnam time instead of a fixed date', () => {
     // 18:30 UTC on 13/11 is already 14/11 in Vietnam.
-    expect(crmDayStamp(new Date('2026-11-13T18:30:00.000Z'))).toBe('14/11');
-    expect(crmDayStamp(new Date('2026-03-05T02:00:00.000Z'))).toBe('05/03');
+    expect(crmDayStamp(new Date('2026-11-13T18:30:00.000Z'))).toBe('14/11/2026');
+    expect(crmDayStamp(new Date('2026-03-05T02:00:00.000Z'))).toBe('05/03/2026');
   });
 });

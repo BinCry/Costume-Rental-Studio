@@ -20,6 +20,7 @@ import {
   listOrders as listApiOrders,
   listRentalAvailability as listApiRentalAvailability,
 } from '../api/client';
+import { formatVietnamDateTime } from '../utils/date-format';
 
 function localDateTimeValue(date: Date) {
   const pad = (value: number) => String(value).padStart(2, '0');
@@ -134,8 +135,8 @@ const orders: Order[] = [
     customer: 'Nguyễn An',
     phone: '0900 000 124',
     branch: branches[0],
-    pickup: '10/10/2026 · 09:00',
-    returnAt: '12/10/2026 · 09:00',
+    pickup: '10/10/2026 09:00',
+    returnAt: '12/10/2026 09:00',
     dayPolicy: 'Chu kỳ 24 giờ · policy fixture',
     items: [
       { id: '01', costume: 'Áo dài Lina', variant: 'M / Hồng phấn' },
@@ -146,7 +147,7 @@ const orders: Order[] = [
       { label: 'Tiền cọc', amount: 1000000, status: 'Chưa thu', tone: 'neutral' },
       { label: 'Phụ phí / hoàn', amount: 0, status: 'Chưa phát sinh', tone: 'neutral' },
     ],
-    history: ['03/10 · Khách gửi yêu cầu thuê', '03/10 · Chờ nhân viên kiểm tra lịch và gán bộ'],
+    history: ['03/10/2026 · Khách gửi yêu cầu thuê', '03/10/2026 · Chờ nhân viên kiểm tra lịch và gán bộ'],
     note: 'Cần đủ 2 bộ cùng size.',
     eligibleUnits: q1Units,
   },
@@ -157,8 +158,8 @@ const orders: Order[] = [
     customer: 'Trần Minh',
     phone: '0900 000 128',
     branch: branches[0],
-    pickup: '03/10/2026 · 16:30',
-    returnAt: '05/10/2026 · 16:30',
+    pickup: '03/10/2026 16:30',
+    returnAt: '05/10/2026 16:30',
     dayPolicy: 'Chu kỳ 24 giờ · policy fixture',
     items: [
       {
@@ -174,7 +175,7 @@ const orders: Order[] = [
       { label: 'Tiền cọc', amount: 700000, status: 'Chưa thu', tone: 'neutral' },
       { label: 'Phụ phí / hoàn', amount: 0, status: 'Chưa phát sinh', tone: 'neutral' },
     ],
-    history: ['03/10 · Đã xác nhận và gán BC-028', '03/10 · Sẵn sàng nhận đồ'],
+    history: ['03/10/2026 · Đã xác nhận và gán BC-028', '03/10/2026 · Sẵn sàng nhận đồ'],
     note: 'Khách nhận tại quầy Quận 1.',
     eligibleUnits: [],
   },
@@ -185,8 +186,8 @@ const orders: Order[] = [
     customer: 'Lê Hà',
     phone: '0900 000 131',
     branch: branches[0],
-    pickup: '01/10/2026 · 14:00',
-    returnAt: '03/10/2026 · 14:00',
+    pickup: '01/10/2026 14:00',
+    returnAt: '03/10/2026 14:00',
     dayPolicy: 'Chu kỳ 24 giờ · policy fixture',
     items: [
       {
@@ -202,7 +203,7 @@ const orders: Order[] = [
       { label: 'Tiền cọc', amount: 600000, status: 'Đang giữ', tone: 'info' },
       { label: 'Phụ phí / hoàn', amount: 0, status: 'Chưa phát sinh', tone: 'neutral' },
     ],
-    history: ['01/10 · Đã giao BC-031', '01/10 · Đã thu thuê và cọc bằng tiền mặt'],
+    history: ['01/10/2026 · Đã giao BC-031', '01/10/2026 · Đã thu thuê và cọc bằng tiền mặt'],
     note: 'Kiểm tra phụ kiện khi trả.',
     eligibleUnits: [],
   },
@@ -213,8 +214,8 @@ const orders: Order[] = [
     customer: 'Phạm Vy',
     phone: '0900 000 133',
     branch: branches[0],
-    pickup: '29/09/2026 · 09:00',
-    returnAt: '01/10/2026 · 09:00',
+    pickup: '29/09/2026 09:00',
+    returnAt: '01/10/2026 09:00',
     dayPolicy: 'Chu kỳ 24 giờ · policy fixture',
     items: [
       {
@@ -230,7 +231,7 @@ const orders: Order[] = [
       { label: 'Tiền cọc', amount: 500000, status: 'Đang giữ', tone: 'info' },
       { label: 'Phụ phí / hoàn', amount: 0, status: 'Chờ quyết toán', tone: 'warning' },
     ],
-    history: ['29/09 · Đã giao BC-033', '01/10 · Đã nhận lại bộ; đang kiểm tra'],
+    history: ['29/09/2026 · Đã giao BC-033', '01/10/2026 · Đã nhận lại bộ; đang kiểm tra'],
     note: 'Kiểm tra vết bẩn ở tà áo.',
     eligibleUnits: [],
   },
@@ -241,8 +242,8 @@ const orders: Order[] = [
     customer: 'Đỗ Nhi',
     phone: '0900 000 135',
     branch: branches[0],
-    pickup: '02/10/2026 · 10:00',
-    returnAt: '04/10/2026 · 10:00',
+    pickup: '02/10/2026 10:00',
+    returnAt: '04/10/2026 10:00',
     dayPolicy: 'Chu kỳ 24 giờ · policy fixture',
     items: [
       {
@@ -265,7 +266,7 @@ const orders: Order[] = [
       { label: 'Tiền cọc', amount: 1000000, status: 'Đang giữ', tone: 'info' },
       { label: 'Phụ phí / hoàn', amount: 0, status: 'Chưa phát sinh', tone: 'neutral' },
     ],
-    history: ['02/10 · Đã giao BC-035 và BC-036', '02/10 · Đã thu thuê và cọc'],
+    history: ['02/10/2026 · Đã giao BC-035 và BC-036', '02/10/2026 · Đã thu thuê và cọc'],
     note: 'Fixture để kiểm tra luồng trả từng bộ; chưa quyết toán.',
     eligibleUnits: [],
   },
@@ -275,7 +276,7 @@ const queue: QueueTask[] = [
   {
     id: 'q1',
     orderId: 'RT-1031',
-    due: '03/10 · 14:00',
+    due: '03/10/2026 14:00',
     customer: 'Lê Hà',
     phone: '0900 000 131',
     barcode: 'BC-031',
@@ -291,7 +292,7 @@ const queue: QueueTask[] = [
   {
     id: 'q2',
     orderId: 'RT-1028',
-    due: '03/10 · 16:30',
+    due: '03/10/2026 16:30',
     customer: 'Trần Minh',
     phone: '0900 000 128',
     barcode: 'BC-028',
@@ -307,7 +308,7 @@ const queue: QueueTask[] = [
   {
     id: 'q3',
     orderId: 'RT-1033',
-    due: '03/10 · 16:00',
+    due: '03/10/2026 16:00',
     customer: 'Phạm Vy',
     phone: '0900 000 133',
     barcode: 'BC-033',
@@ -323,7 +324,7 @@ const queue: QueueTask[] = [
   {
     id: 'q4',
     orderId: 'RT-1024',
-    due: '03/10 · 08:30',
+    due: '03/10/2026 08:30',
     customer: 'Nguyễn An',
     phone: '0900 000 124',
     task: 'Kiểm tra lịch, chọn 2 bộ và xác nhận',
@@ -338,7 +339,7 @@ const queue: QueueTask[] = [
   {
     id: 'q5',
     orderId: 'RT-1028',
-    due: '03/10 · 16:45',
+    due: '03/10/2026 16:45',
     customer: 'Trần Minh',
     phone: '0900 000 128',
     barcode: 'BC-028',
@@ -467,7 +468,7 @@ export const fixtureAdapter = {
     const expiresAt = new Date(new Date(draft.pickup).getTime() - 30 * 60 * 1000);
     return {
       id: `Q-DEMO-${draft.costumeId}-${draft.quantity}`,
-      expiresAt: `${expiresAt.toLocaleDateString('vi-VN')} · ${expiresAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}`,
+      expiresAt: formatVietnamDateTime(expiresAt),
       daysLabel: '2 ngày · theo kỳ mẫu',
       quantity: draft.quantity,
       discount: 0,
