@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
+import { publicAvailabilitySchema } from '../src/modules/public/public.schema.js';
 import {
+  availabilitySchema,
   confirmSchema,
   createOrderSchema,
   amendOrderItemSchema,
   extendOrderSchema,
   pickupSchema,
+  quoteSchema,
   returnSchema,
 } from '../src/modules/rentals/rental.schema.js';
 
@@ -19,8 +22,8 @@ describe('rental order schemas', () => {
   const order = {
     customerUserId,
     pickupBranchId: branchId,
-    plannedStartAt: '2026-10-15T08:00:00.000Z',
-    plannedDueAt: '2026-10-17T08:00:00.000Z',
+    plannedStartAt: new Date(Date.now() + 86_400_000).toISOString(),
+    plannedDueAt: new Date(Date.now() + 3 * 86_400_000).toISOString(),
     items: [{ variantId }],
   };
 
@@ -29,6 +32,25 @@ describe('rental order schemas', () => {
     expect(
       createOrderSchema.safeParse({ ...order, plannedDueAt: order.plannedStartAt }).success,
     ).toBe(false);
+  });
+
+  it('rejects a past pickup for orders, quotes and both availability endpoints', () => {
+    const plannedStartAt = new Date(Date.now() - 86_400_000).toISOString();
+    const availability = {
+      variantId,
+      pickupBranchId: branchId,
+      plannedStartAt,
+      plannedDueAt: order.plannedDueAt,
+    };
+    const results = [
+      createOrderSchema.safeParse({ ...order, plannedStartAt }),
+      quoteSchema.safeParse({ ...order, plannedStartAt }),
+      availabilitySchema.safeParse(availability),
+      publicAvailabilitySchema.safeParse(availability),
+    ];
+    for (const result of results) {
+      expect(result.error?.issues).toContainEqual(expect.objectContaining({ path: ['plannedStartAt'] }));
+    }
   });
 
   it('requires one explicit allocation per confirmation item', () => {

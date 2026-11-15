@@ -9,9 +9,10 @@ import {
   type PromotionMutation,
   type PromotionRecord,
 } from '../api/client';
-import { Button, EmptyState, Feedback, Field, SelectField, StatusLabel } from '../components/ui';
+import { Button, DateTimeField, EmptyState, Feedback, Field, SelectField, StatusLabel } from '../components/ui';
 import { money } from '../components/support';
 import { PageHeading, Panel } from '../components/studio';
+import { formatVietnamDateTime } from '../utils/date-format';
 
 interface PromotionFormState {
   code: string;
@@ -87,13 +88,6 @@ function promotionStatus(item: PromotionRecord, now: number) {
   if (new Date(item.startAt).getTime() > now)
     return { label: 'Sắp bắt đầu', tone: 'warning' as const };
   return { label: 'Đang áp dụng', tone: 'success' as const };
-}
-
-function promotionDate(value: string) {
-  return new Intl.DateTimeFormat('vi-VN', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value));
 }
 
 export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
@@ -379,22 +373,16 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
                   }
                   required
                 />
-                <Field
+                <DateTimeField
                   label="Bắt đầu áp dụng"
-                  type="datetime-local"
                   value={form.startAt}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, startAt: event.target.value }))
-                  }
+                  onChange={(startAt) => setForm((current) => ({ ...current, startAt }))}
                   required
                 />
-                <Field
+                <DateTimeField
                   label="Kết thúc"
-                  type="datetime-local"
                   value={form.endAt}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, endAt: event.target.value }))
-                  }
+                  onChange={(endAt) => setForm((current) => ({ ...current, endAt }))}
                   required
                 />
                 <Field
@@ -498,7 +486,7 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
                       <div>
                         <dt>Thời hạn</dt>
                         <dd>
-                          {promotionDate(item.startAt)} – {promotionDate(item.endAt)}
+                          {formatVietnamDateTime(item.startAt)} – {formatVietnamDateTime(item.endAt)}
                         </dd>
                       </div>
                       <div>

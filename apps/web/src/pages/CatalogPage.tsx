@@ -18,6 +18,8 @@ import { branches, fixtureAdapter, fixturePeriod } from '../fixtures/adapter';
 import type { CatalogItem, DemoScenario } from '../fixtures/types';
 import { apiEnabled, hasAccessToken } from '../api/client';
 import { useBranchOptions } from '../components/useBranchOptions';
+import { formatCalendarDate } from '../utils/date-format';
+import { rentalPeriodIssues } from '../utils/rental-period';
 import { checkCatalogAvailability, type CatalogAvailability } from './catalogAvailability';
 
 const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
@@ -375,24 +377,19 @@ export function CatalogPage({
     window.history.replaceState(null, '', `/${params.toString() ? `?${params}` : ''}`);
   }, [branch, pickup, returnAt, category, size, color, search]);
   const periodSelected = !!pickup && !!returnAt;
-  const dateRangeIssue =
-    periodSelected &&
-    (!Number.isFinite(Date.parse(pickup)) ||
-      !Number.isFinite(Date.parse(returnAt)) ||
-      Date.parse(returnAt) <= Date.parse(pickup))
-      ? 'Thời điểm trả phải sau thời điểm nhận.'
-      : '';
+  const { pickupIssue, returnIssue } = rentalPeriodIssues(pickup, returnAt);
+  const dateRangeIssue = pickupIssue ?? returnIssue;
   const availabilityRequestEnabled =
     apiMode && !!branch && periodSelected && !dateRangeIssue && Boolean(data?.length);
   const availabilityKey = JSON.stringify([branch, pickup, returnAt, size, color]);
   const currentApiAvailability =
-    apiAvailability?.key === availabilityKey
+    availabilityRequestEnabled && apiAvailability?.key === availabilityKey
       ? apiAvailability.values
       : availabilityRequestEnabled && data?.length
         ? Object.fromEntries(data.map((item) => [item.id, 'loading' as const]))
         : {};
   const currentAvailableVariants =
-    apiAvailability?.key === availabilityKey ? apiAvailability.availableVariants : {};
+    availabilityRequestEnabled && apiAvailability?.key === availabilityKey ? apiAvailability.availableVariants : {};
   useEffect(() => {
     if (!availabilityRequestEnabled || !data?.length) return;
     let cancelled = false;
@@ -416,6 +413,7 @@ export function CatalogPage({
   ]);
   const fixtureAvailabilityKnown =
     !apiMode &&
+    !dateRangeIssue &&
     pickup === fixturePeriod.pickup &&
     returnAt === fixturePeriod.returnAt &&
     branch === branches[0];
@@ -503,13 +501,14 @@ export function CatalogPage({
         <DateTimeField
           label="Nhận đồ"
           value={pickup}
+          error={pickupIssue}
           onChange={setPickup}
         />
         <DateTimeField
           label="Trả đồ"
           value={returnAt}
           onChange={setReturnAt}
-          error={dateRangeIssue || undefined}
+          error={returnIssue}
         />
       </section>
       <section id="bo-suu-tap" className="catalog-section">
@@ -586,7 +585,7 @@ export function CatalogPage({
                 {periodSelected && (
                   <span className="chip">
                     <Icon name="calendar" size={15} />
-                    {pickup.slice(0, 10)} → {returnAt.slice(0, 10)}
+                    {formatCalendarDate(pickup.slice(0, 10))} → {formatCalendarDate(returnAt.slice(0, 10))}
                   </span>
                 )}
               </div>

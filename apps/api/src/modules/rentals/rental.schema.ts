@@ -22,6 +22,9 @@ const activeStatuses = [
 ] as const;
 
 export const orderIdSchema = z.object({ orderId: z.uuid() });
+export const rentalPickupDateSchema = z.coerce.date().refine((date) => date.getTime() >= Date.now(), {
+  message: 'Thời điểm nhận đồ không được ở quá khứ.',
+});
 const accessorySchema = z
   .object({ modelAccessoryId: z.uuid(), quantity: z.coerce.number().int().min(1).max(20) })
   .strict();
@@ -45,8 +48,8 @@ const orderBase = z
     message: 'plannedDueAt must be after plannedStartAt',
   });
 
-export const createOrderSchema = orderBase;
-export const quoteSchema = orderBase;
+export const createOrderSchema = orderBase.safeExtend({ plannedStartAt: rentalPickupDateSchema });
+export const quoteSchema = createOrderSchema;
 export const updateOrderSchema = orderBase.extend({
   expectedVersion: z.coerce.number().int().positive(),
 });
@@ -68,7 +71,7 @@ export const availabilitySchema = z
   .object({
     variantId: z.uuid(),
     pickupBranchId: z.uuid(),
-    plannedStartAt: z.coerce.date(),
+    plannedStartAt: rentalPickupDateSchema,
     plannedDueAt: z.coerce.date(),
   })
   .refine((v) => v.plannedDueAt > v.plannedStartAt, {

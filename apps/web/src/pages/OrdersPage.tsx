@@ -1,8 +1,10 @@
+import { formatLocalDateTime } from '../utils/date-format';
 import { useEffect, useRef, useState } from 'react';
 import type { Navigate } from '../App';
 import { DataTable } from '../components/DataTable';
 import {
   Button,
+  DateTimeField,
   ConfirmDialog,
   EmptyState,
   Feedback,
@@ -988,12 +990,11 @@ export function OrdersPage({
                       Hạn hiện tại: <strong>{order.returnAt}</strong>. Giữ nguyên đơn và bộ đang ở
                       khách trong lúc kiểm tra yêu cầu.
                     </p>
-                    <Field
+                    <DateTimeField
                       label="Hạn trả khách muốn đổi sang"
-                      type="datetime-local"
                       value={proposedDue}
                       min={dueValue || undefined}
-                      onChange={(event) => setProposedDue(event.target.value)}
+                      onChange={setProposedDue}
                     />
                     <TextAreaField
                       label="Lý do khách yêu cầu gia hạn"
@@ -1010,8 +1011,8 @@ export function OrdersPage({
                     {extensionValid && (
                       <Feedback tone="info" title="Cần kiểm tra trước khi gia hạn">
                         {realApiMode
-                          ? `Máy chủ sẽ kiểm tra chính sách và lịch của từng bộ trước khi cập nhật hạn trả ${proposedDue.replace('T', ' · ')} cùng phí phát sinh.`
-                          : `Yêu cầu đến ${proposedDue.replace('T', ' · ')} đang là bản nháp trong phiên demo; hạn trả chưa thay đổi.`}
+                          ? `Máy chủ sẽ kiểm tra chính sách và lịch của từng bộ trước khi cập nhật hạn trả ${formatLocalDateTime(proposedDue)} cùng phí phát sinh.`
+                          : `Yêu cầu đến ${formatLocalDateTime(proposedDue)} đang là bản nháp trong phiên demo; hạn trả chưa thay đổi.`}
                       </Feedback>
                     )}
                     {realApiMode && (
@@ -1142,7 +1143,7 @@ export function OrdersPage({
           loading={busy}
         >
           <p>
-            Cập nhật hạn trả đến <strong>{proposedDue.replace('T', ' · ')}</strong> cho{' '}
+            Cập nhật hạn trả đến <strong>{formatLocalDateTime(proposedDue)}</strong> cho{' '}
             {order.items.length} bộ.
           </p>
           <p>

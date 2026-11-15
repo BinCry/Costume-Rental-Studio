@@ -18,7 +18,7 @@ import type {
   UnitBlock,
   Variant,
 } from '../fixtures/studio';
-import { formatVietnamDateTime as formatDate } from '../utils/date-format';
+import { formatCalendarDate, formatVietnamDateTime as formatDate } from '../utils/date-format';
 import { caseHistoryText, interactionText } from '../utils/crm-labels';
 
 function optionalText(value: string | null | undefined): string | undefined {
@@ -2699,8 +2699,8 @@ export async function listReports(
     {
       branch,
       period: range
-        ? `${range.from} → ${range.to}`
-        : `${overview.from.slice(0, 10)} → ${overview.to.slice(0, 10)}`,
+        ? `${formatCalendarDate(range.from)} → ${formatCalendarDate(range.to)}`
+        : `${formatCalendarDate(overview.from.slice(0, 10))} → ${formatCalendarDate(overview.to.slice(0, 10))}`,
       rentalCount: overview.ordersCreated,
       rentalRevenue: numberValue(overview.rentalRevenueVnd),
       depositsHeld: numberValue(overview.depositsHeldVnd),
@@ -3016,15 +3016,31 @@ export async function createInventoryUnit(input: {
   });
   return inventoryUnitFromApi(created);
 }
+const inventoryUnitEventLabels = new Map([
+  ['ACQUIRED', 'Nhập kho'],
+  ['REGISTERED', 'Đăng ký bộ'],
+  ['INSPECTED', 'Kiểm tra tình trạng'],
+  ['STATUS_CHANGED', 'Đổi trạng thái'],
+  ['RETIRED', 'Ngừng sử dụng'],
+  ['TRANSFER_SHIPPED', 'Gửi điều chuyển'],
+  ['TRANSFER_RECEIVED', 'Nhận điều chuyển'],
+  ['TRANSFER_PARTIAL_RECEIVED', 'Nhận điều chuyển một phần'],
+  ['BLOCK_CREATED', 'Tạo lịch xử lý'],
+  ['BLOCK_STARTED', 'Bắt đầu xử lý'],
+  ['BLOCK_COMPLETED', 'Hoàn tất xử lý'],
+  ['BLOCK_CANCELLED', 'Hủy lịch xử lý'],
+]);
+
 export async function listInventoryUnitEvents(unitId: string): Promise<string[]> {
   const events = await requestAllPages<{ occurredAt: string; eventType: string; notes?: string | null }>(
     `/api/v1/inventory/units/${encodeURIComponent(unitId)}/events`,
     new URLSearchParams({ sortBy: 'occurredAt', sortOrder: 'desc', pageSize: '100' }),
   );
-  return events.map((event) => {
-    const date = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(event.occurredAt));
-    return `${date} · ${event.eventType}${event.notes ? ` · ${event.notes}` : ''}`;
-  });
+  return events.map((event) =>
+    [formatDate(event.occurredAt), inventoryUnitEventLabels.get(event.eventType) ?? 'Cập nhật bộ', event.notes]
+      .filter(Boolean)
+      .join(' · '),
+  );
 }
 
 function idempotencyKey(prefix: string, stableRequestKey?: string) {

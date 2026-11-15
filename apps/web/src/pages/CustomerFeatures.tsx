@@ -40,6 +40,7 @@ import {
 } from '../api/client';
 import { useBranchOptions } from '../components/useBranchOptions';
 import { isValidPhone } from '../utils/phone';
+import { rentalPeriodIssues } from '../utils/rental-period';
 
 const loadCostumeDetails =
   (id: string) =>
@@ -172,12 +173,8 @@ export function CostumeDetailPage({
     if (url.href !== before) window.history.replaceState(window.history.state, '', url);
   }, [branch, id, selectedVariantCode]);
 
-  const start = Date.parse(pickup);
-  const end = Date.parse(due);
-  const dateRangeIssue =
-    pickup && due && (!Number.isFinite(start) || !Number.isFinite(end) || end <= start)
-      ? 'Thời điểm trả phải sau thời điểm nhận.'
-      : undefined;
+  const { pickupIssue, returnIssue } = rentalPeriodIssues(pickup, due);
+  const dateRangeIssue = pickupIssue ?? returnIssue;
   const apiVariantId = selectedVariant?.apiId;
   const [availabilityResult, setAvailabilityResult] = useState<{
     key: string;
@@ -244,6 +241,7 @@ export function CostumeDetailPage({
         const gallery = variant.images?.length ? variant.images : (item.images ?? []);
         const activeImage = gallery[photo];
         const fixtureKnown =
+          !dateRangeIssue &&
           branch === 'Chi nhánh Quận 1' &&
           pickup === fixturePeriod.pickup &&
           due === fixturePeriod.returnAt;
@@ -356,6 +354,7 @@ export function CostumeDetailPage({
                     <DateTimeField
                       label="Nhận"
                       value={pickup}
+                      error={pickupIssue}
                       onChange={(next) =>
                         setPeriod((current) => ({ ...current, pickup: next, remember: true }))
                       }
@@ -363,7 +362,7 @@ export function CostumeDetailPage({
                     <DateTimeField
                       label="Trả"
                       value={due}
-                      error={dateRangeIssue}
+                      error={returnIssue}
                       onChange={(next) =>
                         setPeriod((current) => ({ ...current, due: next, remember: true }))
                       }
@@ -378,7 +377,7 @@ export function CostumeDetailPage({
                     </Feedback>
                   )}
                   <Feedback
-                    tone={known ? (available ? 'success' : 'warning') : 'info'}
+                    tone={dateRangeIssue ? 'warning' : known ? (available ? 'success' : 'warning') : 'info'}
                     action={
                       availability === 'error' ? (
                         <Button
@@ -390,7 +389,9 @@ export function CostumeDetailPage({
                       ) : undefined
                     }
                     title={
-                      availability === 'loading'
+                      dateRangeIssue
+                        ? 'Khoảng thuê chưa hợp lệ'
+                        : availability === 'loading'
                         ? 'Đang kiểm tra khả dụng'
                         : availability === 'error'
                           ? 'Chưa kiểm tra được khả dụng'
@@ -401,9 +402,9 @@ export function CostumeDetailPage({
                             : 'Chưa có dữ liệu khả dụng cho kỳ này'
                     }
                   >
-                    {availability === 'error'
+                    {dateRangeIssue ?? (availability === 'error'
                       ? 'Hãy thử lại hoặc tiếp tục gửi yêu cầu để nhân viên kiểm tra trong bước duyệt.'
-                      : 'Việc xem khả dụng không giữ bộ. Nhân viên sẽ duyệt và gán từng bộ sau khi bạn gửi yêu cầu.'}
+                      : 'Việc xem khả dụng không giữ bộ. Nhân viên sẽ duyệt và gán từng bộ sau khi bạn gửi yêu cầu.')}
                   </Feedback>
                 </Panel>
                 <div className="feature-actions">

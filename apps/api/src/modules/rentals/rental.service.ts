@@ -766,6 +766,11 @@ export async function updateOrder(actor: AuthenticatedActor, id: string, input: 
     assertManage(actor, order);
     assertStatus(order.status, [mutableStatus]);
     assertVersion(order.version, input.expectedVersion);
+    if (
+      input.plannedStartAt.getTime() !== order.plannedStartAt.getTime() &&
+      input.plannedStartAt.getTime() < Date.now()
+    )
+      throw new AppError(400, 'INVALID_RENTAL_PERIOD', 'Thời điểm nhận đồ không được ở quá khứ.');
     if (input.customerUserId !== order.customerUserId)
       throw new AppError(
         400,

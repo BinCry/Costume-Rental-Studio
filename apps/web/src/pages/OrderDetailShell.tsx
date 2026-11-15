@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Navigate } from '../App';
 import {
   Button,
+  DateTimeField,
   EmptyState,
   Feedback,
   Field,
@@ -1796,14 +1797,12 @@ export function OrderDetailShell({
                         )}
                       </SelectField>
                       {realApiMode && ['POOR', 'DAMAGED'].includes(returnConditions[item.id] ?? '') && (
-                        <Field
+                        <DateTimeField
                           label="Dự kiến sẵn sàng sau sửa chữa (bắt buộc)"
-                          type="datetime-local"
                           required
                           hint="Nhập thời điểm dự kiến bộ có thể đưa vào sử dụng sau sửa chữa."
                           value={repairBlockedUntil[item.id] ?? ''}
-                          onChange={(event) => {
-                            const value = event.target.value;
+                          onChange={(value) => {
                             const valid = !!value && Number.isFinite(Date.parse(value)) && Date.parse(value) > Date.now();
                             setRepairBlockedUntil((current) => ({ ...current, [item.id]: value }));
                             setRepairScheduleValidity((current) => ({ ...current, [item.id]: valid }));

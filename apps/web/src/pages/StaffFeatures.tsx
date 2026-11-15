@@ -21,6 +21,7 @@ import { studioAdapter, type ActiveUnit, type Customer, type Unit } from '../fix
 import type { CatalogItem, DemoScenario, QuoteSnapshot } from '../fixtures/types';
 import { apiEnabled, hasAccessToken } from '../api/client';
 import { isValidPhone, matchesCustomerSearch, samePhone } from '../utils/phone';
+import { rentalPeriodIssues } from '../utils/rental-period';
 
 interface CounterVariantOption {
   value: string;
@@ -135,6 +136,12 @@ export function CounterRentalPage({
   const selectedVariantValue = selectedVariantOption?.value ?? '';
   const selectedVariant = selectedVariantOption?.apiId ?? selectedVariantOption?.label ?? '';
   const selectedApiVariantId = selectedVariantOption?.apiId;
+  const { pickupIssue, returnIssue } = rentalPeriodIssues(pickup, due);
+  const validatePeriod = () => {
+    const dates = rentalPeriodIssues(pickup, due);
+    return dates.pickupIssue ?? dates.returnIssue ??
+      (!pickup || !due ? 'Chọn thời điểm nhận và trả đồ.' : undefined);
+  };
   const clearQuote = useCallback(() => {
     quoteRequestRef.current += 1;
     setQuote(undefined);
@@ -143,6 +150,11 @@ export function CounterRentalPage({
     if (!submittingRef.current) setBusy(false);
   }, []);
   const getQuote = async () => {
+    const dateIssue = validatePeriod();
+    if (dateIssue) {
+      setIssue(dateIssue);
+      return;
+    }
     if (creating) {
       setIssue('Lưu hồ sơ khách mới trước khi tải báo giá.');
       return;
@@ -256,6 +268,11 @@ export function CounterRentalPage({
   };
   const create = async (name: string, phone: string, confirmNow: boolean) => {
     if (submittingRef.current || created) return;
+    const dateIssue = validatePeriod();
+    if (dateIssue) {
+      setIssue(dateIssue);
+      return;
+    }
     if (!quote) {
       setIssue('Tải báo giá trước khi tạo yêu cầu.');
       return;
@@ -481,6 +498,7 @@ export function CounterRentalPage({
                       <DateTimeField
                         label="Nhận"
                         value={pickup}
+                        error={pickupIssue}
                         onChange={(v) => {
                           setPickup(v);
                           clearQuote();
@@ -489,6 +507,7 @@ export function CounterRentalPage({
                       <DateTimeField
                         label="Trả"
                         value={due}
+                        error={returnIssue}
                         onChange={(v) => {
                           setDue(v);
                           clearQuote();

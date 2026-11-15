@@ -1,4 +1,4 @@
-import { formatPolicyDate } from '../utils/date-format';
+import { formatCalendarDate, formatPolicyDate } from '../utils/date-format';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import {
   Button,
@@ -1801,6 +1801,7 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.policies);
   const [selected, setSelected] = useState('POLICY-2026-BUFFER-01');
   const [draft, setDraft] = useState<Policy>();
+  const [effectiveDateValid, setEffectiveDateValid] = useState(true);
   const [issue, setIssue] = useState('');
   const [busy, setBusy] = useState(false);
   return (
@@ -1822,7 +1823,8 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
               action={canManage ? (
                 <Button
                   variant="secondary"
-                  onClick={() =>
+                  onClick={() => {
+                    setEffectiveDateValid(true);
                     setDraft({
                       ...policy,
                       lateFeeFormulaVersion: policy.lateFeeFormulaVersion ?? 1,
@@ -1830,8 +1832,8 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                       from: '',
                       to: undefined,
                       reason: '',
-                    })
-                  }
+                    });
+                  }}
                 >
                   + Phiên bản mới
                 </Button>
@@ -1901,11 +1903,12 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                         value={draft.code}
                         onChange={(e) => setDraft({ ...draft, code: e.target.value })}
                       />
-                      <Field
-                        type="date"
+                      <DateField
                         label="Ngày hiệu lực"
+                        required
                         value={draft.from}
-                        onChange={(e) => setDraft({ ...draft, from: e.target.value })}
+                        onChange={(from) => setDraft({ ...draft, from })}
+                        onValidityChange={setEffectiveDateValid}
                       />
                       <SelectField
                         label="Cách đếm ngày"
@@ -2034,6 +2037,7 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                       onClick={() => {
                         void (async () => {
                           if (
+                            !effectiveDateValid ||
                             !draft.from ||
                             !draft.reason.trim() ||
                             (draft.maxDays != null && draft.maxDays < draft.minDays)
@@ -2093,15 +2097,6 @@ function recentDateRange(days: number) {
   return { from: shiftDateKey(to, 1 - days), to };
 }
 
-function formatReportDate(value: string) {
-  return new Intl.DateTimeFormat('vi-VN', {
-    timeZone: 'UTC',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(new Date(`${value}T00:00:00.000Z`));
-}
-
 function reportRangeDays(from: string, to: string) {
   return (Date.parse(`${to}T00:00:00.000Z`) - Date.parse(`${from}T00:00:00.000Z`)) / 86400000;
 }
@@ -2113,9 +2108,9 @@ function compactMoney(value: number) {
 }
 
 function formatReportBucket(value: string, groupBy: ReportRange['groupBy']) {
-  if (/^\d{4}-\d{2}$/.test(value)) return value.slice(5).replace('-', '/') + `/${value.slice(2, 4)}`;
-  const shortDate = formatReportDate(value).slice(0, 5);
-  return groupBy === 'week' ? `Tuần ${shortDate}` : shortDate;
+  if (/^\d{4}-\d{2}$/.test(value)) return `${value.slice(5)}/${value.slice(0, 4)}`;
+  const date = formatCalendarDate(value);
+  return groupBy === 'week' ? `Tuần ${date}` : date;
 }
 
 function RevenueTrendChart({
@@ -2189,7 +2184,7 @@ function RevenueTrendChart({
                 <text
                   x={left + index * step + step / 2}
                   y={baseline + 25}
-                  textAnchor="middle"
+                  textAnchor={points.length === 1 ? 'middle' : index === 0 ? 'start' : index === points.length - 1 ? 'end' : 'middle'}
                   className="report-chart-axis-label"
                 >
                   {formatReportBucket(point.period, groupBy)}
@@ -2280,7 +2275,7 @@ export function ReportsPage({
     if (!draftRangeValid) return;
     setRange({ from: draftFrom, to: draftTo });
   };
-  const periodLabel = `${formatReportDate(range.from)} – ${formatReportDate(range.to)}`;
+  const periodLabel = `${formatCalendarDate(range.from)} – ${formatCalendarDate(range.to)}`;
   return (
     <StateGate
       loading={loading}

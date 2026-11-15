@@ -1,4 +1,5 @@
 import { fixtureCatalog, fixtureOrders, fixtureClock } from './adapter';
+import { formatCalendarDate, formatLocalDateTime } from '../utils/date-format';
 import {
   FixtureIssue,
   type BookingDraft,
@@ -277,7 +278,7 @@ let units: Unit[] = [
     condition: 'GOOD',
     available: true,
     blocks: [],
-    history: ['01/10 · Kiểm tra, sẵn sàng cho thuê'],
+    history: ['01/10/2026 · Kiểm tra, sẵn sàng cho thuê'],
   },
   {
     barcode: 'BC-012',
@@ -289,7 +290,7 @@ let units: Unit[] = [
     condition: 'GOOD',
     available: true,
     blocks: [],
-    history: ['02/10 · Nhập kho'],
+    history: ['02/10/2026 · Nhập kho'],
   },
   {
     barcode: 'BC-014',
@@ -301,7 +302,7 @@ let units: Unit[] = [
     condition: 'GOOD',
     available: true,
     blocks: [],
-    history: ['02/10 · Kiểm và sẵn sàng cho thuê'],
+    history: ['02/10/2026 · Kiểm và sẵn sàng cho thuê'],
   },
   {
     barcode: 'BC-018',
@@ -315,13 +316,13 @@ let units: Unit[] = [
     blocks: [
       {
         type: 'CLEANING',
-        from: '03/10 08:00',
-        until: '04/10 18:00',
+        from: '2026-10-03T08:00:00+07:00',
+        until: '2026-10-04T18:00:00+07:00',
         reason: 'Vệ sinh sau lượt thuê',
         status: 'IN_PROGRESS',
       },
     ],
-    history: ['03/10 · Bắt đầu vệ sinh'],
+    history: ['03/10/2026 · Bắt đầu vệ sinh'],
   },
   {
     barcode: 'BC-019',
@@ -335,13 +336,13 @@ let units: Unit[] = [
     blocks: [
       {
         type: 'REPAIR',
-        from: '02/10 09:00',
-        until: '06/10 18:00',
+        from: '2026-10-02T09:00:00+07:00',
+        until: '2026-10-06T18:00:00+07:00',
         reason: 'Sửa khóa kéo',
         status: 'IN_PROGRESS',
       },
     ],
-    history: ['02/10 · Báo hỏng khóa kéo'],
+    history: ['02/10/2026 · Báo hỏng khóa kéo'],
   },
   {
     barcode: 'BC-028',
@@ -353,7 +354,7 @@ let units: Unit[] = [
     condition: 'GOOD',
     available: false,
     blocks: [],
-    history: ['03/10 · Đã gán cho RT-1028'],
+    history: ['03/10/2026 · Đã gán cho RT-1028'],
   },
   {
     barcode: 'BC-031',
@@ -365,7 +366,7 @@ let units: Unit[] = [
     condition: 'GOOD',
     available: false,
     blocks: [],
-    history: ['01/10 · Đã giao cho RT-1031'],
+    history: ['01/10/2026 · Đã giao cho RT-1031'],
   },
   {
     barcode: 'BC-033',
@@ -377,7 +378,7 @@ let units: Unit[] = [
     condition: 'FAIR',
     available: false,
     blocks: [],
-    history: ['01/10 · Nhận trả, chờ kiểm tra'],
+    history: ['01/10/2026 · Nhận trả, chờ kiểm tra'],
   },
   ...['BC-035', 'BC-036'].map((barcode): Unit => ({
     barcode,
@@ -389,7 +390,7 @@ let units: Unit[] = [
     condition: 'GOOD',
     available: false,
     blocks: [],
-    history: [`02/10 · Đã giao cho RT-1035 (${barcode})`],
+    history: [`02/10/2026 · Đã giao cho RT-1035 (${barcode})`],
   })),
   {
     barcode: 'BC-205',
@@ -401,7 +402,7 @@ let units: Unit[] = [
     condition: 'GOOD',
     available: false,
     blocks: [],
-    history: ['01/10 · Nhập kho Thủ Đức'],
+    history: ['01/10/2026 · Nhập kho Thủ Đức'],
   },
   {
     barcode: 'BC-220',
@@ -413,7 +414,7 @@ let units: Unit[] = [
     condition: 'UNINSPECTED',
     available: false,
     blocks: [],
-    history: ['03/10 · Chờ kiểm tra nhập kho'],
+    history: ['03/10/2026 · Chờ kiểm tra nhập kho'],
   },
   {
     barcode: 'BC-223',
@@ -425,7 +426,7 @@ let units: Unit[] = [
     condition: 'POOR',
     available: false,
     blocks: [],
-    history: ['29/09 · Ngừng sử dụng'],
+    history: ['29/09/2026 · Ngừng sử dụng'],
   },
 ];
 const customers: Customer[] = [
@@ -436,7 +437,7 @@ const customers: Customer[] = [
     email: 'an@example.test',
     preferredBranch: 'Chi nhánh Quận 1',
     history: ['RT-1024 · Chờ xác nhận'],
-    interactions: ['03/10 · Khách gửi yêu cầu thuê Áo dài Lina'],
+    interactions: ['03/10/2026 · Khách gửi yêu cầu thuê Áo dài Lina'],
   },
   {
     code: 'KH-002',
@@ -445,7 +446,7 @@ const customers: Customer[] = [
     email: 'minh@example.test',
     preferredBranch: 'Chi nhánh Quận 1',
     history: ['RT-1028 · Sẵn sàng nhận'],
-    interactions: ['03/10 · Nhân viên xác nhận giờ nhận đồ'],
+    interactions: ['03/10/2026 · Nhân viên xác nhận giờ nhận đồ'],
   },
   {
     code: 'KH-003',
@@ -454,7 +455,7 @@ const customers: Customer[] = [
     email: 'ha@example.test',
     preferredBranch: 'Chi nhánh Quận 1',
     history: ['RT-1031 · Đang thuê'],
-    interactions: ['01/10 · Đã nhận Đầm Rouge'],
+    interactions: ['01/10/2026 · Đã nhận Đầm Rouge'],
   },
   {
     code: 'KH-004',
@@ -463,7 +464,7 @@ const customers: Customer[] = [
     email: 'vy@example.test',
     preferredBranch: 'Chi nhánh Quận 1',
     history: ['RT-1033 · Đang kiểm tra đồ trả'],
-    interactions: ['01/10 · Nhận trả, hẹn quyết toán cọc'],
+    interactions: ['01/10/2026 · Nhận trả, hẹn quyết toán cọc'],
   },
   {
     code: 'KH-005',
@@ -472,7 +473,7 @@ const customers: Customer[] = [
     email: 'nhi@example.test',
     preferredBranch: 'Chi nhánh Quận 1',
     history: ['RT-1035 · Đang thuê 2 bộ'],
-    interactions: ['02/10 · Đã nhận hai bộ Áo dài Lina'],
+    interactions: ['02/10/2026 · Đã nhận hai bộ Áo dài Lina'],
   },
 ];
 const branches: Branch[] = [
@@ -662,7 +663,7 @@ const transfers: Transfer[] = [
     units: [{ barcode: 'BC-012' }, { barcode: 'BC-014' }],
     note: 'Bổ sung size M cho Thủ Đức',
     version: 1,
-    history: ['03/10 · Hà Nguyễn tạo yêu cầu'],
+    history: ['03/10/2026 · Hà Nguyễn tạo yêu cầu'],
   },
   {
     code: 'DC-002',
@@ -672,7 +673,7 @@ const transfers: Transfer[] = [
     units: [{ barcode: 'BC-205', out: 'GOOD' }],
     note: 'Điều phối áo dài',
     version: 3,
-    history: ['02/10 · Đã duyệt', '03/10 · Đã xuất kho'],
+    history: ['02/10/2026 · Đã duyệt', '03/10/2026 · Đã xuất kho'],
   },
 ];
 const cases: Case[] = [
@@ -685,7 +686,7 @@ const cases: Case[] = [
     description: 'Cần xác nhận tình trạng tà áo và trao đổi với khách.',
     priority: 'HIGH',
     status: 'OPEN',
-    history: ['01/10 · Thu Lê tạo case'],
+    history: ['01/10/2026 · Thu Lê tạo case'],
   },
   {
     code: 'CS-002',
@@ -697,7 +698,7 @@ const cases: Case[] = [
     priority: 'NORMAL',
     status: 'IN_PROGRESS',
     owner: 'Hà Nguyễn',
-    history: ['03/10 · Hà Nguyễn nhận case'],
+    history: ['03/10/2026 · Hà Nguyễn nhận case'],
   },
 ];
 const policies: Policy[] = [
@@ -826,8 +827,8 @@ const customerOrders: CustomerOrder[] = [
     customerCode: 'KH-001',
     status: 'PENDING_CONFIRMATION',
     branch: 'Chi nhánh Quận 1',
-    pickup: '10/10/2026 · 09:00',
-    due: '12/10/2026 · 09:00',
+    pickup: '10/10/2026 09:00',
+    due: '12/10/2026 09:00',
     costume: 'Áo dài Lina',
     variant: 'M / Hồng phấn × 2',
     rental: 1280000,
@@ -838,7 +839,7 @@ const customerOrders: CustomerOrder[] = [
     depositStatus: 'Chưa thu',
     refundStatus: 'Chưa phát sinh',
     returnStatus: 'Chưa giao',
-    history: ['03/10 · Gửi yêu cầu thuê', '03/10 · Chờ studio xác nhận'],
+    history: ['03/10/2026 · Gửi yêu cầu thuê', '03/10/2026 · Chờ studio xác nhận'],
     canCancel: true,
   },
   {
@@ -846,8 +847,8 @@ const customerOrders: CustomerOrder[] = [
     customerCode: 'KH-002',
     status: 'READY_FOR_PICKUP',
     branch: 'Chi nhánh Quận 1',
-    pickup: '03/10/2026 · 16:30',
-    due: '05/10/2026 · 16:30',
+    pickup: '03/10/2026 16:30',
+    due: '05/10/2026 16:30',
     costume: 'Suit Aria',
     variant: 'M / Kem',
     rental: 840000,
@@ -858,7 +859,7 @@ const customerOrders: CustomerOrder[] = [
     depositStatus: 'Chưa thu',
     refundStatus: 'Chưa phát sinh',
     returnStatus: 'Chưa giao',
-    history: ['03/10 · Đã gán bộ BC-028', '03/10 · Sẵn sàng nhận'],
+    history: ['03/10/2026 · Đã gán bộ BC-028', '03/10/2026 · Sẵn sàng nhận'],
     canCancel: false,
   },
   {
@@ -866,8 +867,8 @@ const customerOrders: CustomerOrder[] = [
     customerCode: 'KH-003',
     status: 'ACTIVE',
     branch: 'Chi nhánh Quận 1',
-    pickup: '01/10/2026 · 14:00',
-    due: '03/10/2026 · 14:00',
+    pickup: '01/10/2026 14:00',
+    due: '03/10/2026 14:00',
     costume: 'Đầm Rouge',
     variant: 'S / Đỏ berry',
     rental: 780000,
@@ -878,7 +879,7 @@ const customerOrders: CustomerOrder[] = [
     depositStatus: 'Đang giữ',
     refundStatus: 'Chưa phát sinh',
     returnStatus: 'Chưa trả',
-    history: ['01/10 · Đã giao BC-031', '01/10 · Đã thu thuê và cọc'],
+    history: ['01/10/2026 · Đã giao BC-031', '01/10/2026 · Đã thu thuê và cọc'],
     canCancel: false,
   },
   {
@@ -886,8 +887,8 @@ const customerOrders: CustomerOrder[] = [
     customerCode: 'KH-004',
     status: 'RETURN_INSPECTION',
     branch: 'Chi nhánh Quận 1',
-    pickup: '29/09/2026 · 09:00',
-    due: '01/10/2026 · 09:00',
+    pickup: '29/09/2026 09:00',
+    due: '01/10/2026 09:00',
     costume: 'Áo dài Lina',
     variant: 'S / Hồng phấn',
     rental: 640000,
@@ -898,7 +899,7 @@ const customerOrders: CustomerOrder[] = [
     depositStatus: 'Đang giữ',
     refundStatus: 'Chờ quyết toán',
     returnStatus: 'Đang kiểm tra',
-    history: ['29/09 · Đã giao BC-033', '01/10 · Đã nhận trả'],
+    history: ['29/09/2026 · Đã giao BC-033', '01/10/2026 · Đã nhận trả'],
     canCancel: false,
   },
   {
@@ -906,8 +907,8 @@ const customerOrders: CustomerOrder[] = [
     customerCode: 'KH-005',
     status: 'ACTIVE',
     branch: 'Chi nhánh Quận 1',
-    pickup: '02/10/2026 · 10:00',
-    due: '04/10/2026 · 10:00',
+    pickup: '02/10/2026 10:00',
+    due: '04/10/2026 10:00',
     costume: 'Áo dài Lina · 2 bộ',
     variant: 'M / Hồng phấn',
     rental: 1280000,
@@ -918,7 +919,7 @@ const customerOrders: CustomerOrder[] = [
     depositStatus: 'Đang giữ',
     refundStatus: 'Chưa phát sinh',
     returnStatus: 'Chưa trả',
-    history: ['02/10 · Đã giao BC-035 và BC-036', '02/10 · Đã thu thuê và cọc'],
+    history: ['02/10/2026 · Đã giao BC-035 và BC-036', '02/10/2026 · Đã thu thuê và cọc'],
     canCancel: false,
   },
 ];
@@ -1062,7 +1063,7 @@ function summarizeFixtureReport(report: ReportSnapshot, range: ReportRange): Rep
   }
   return {
     ...report,
-    period: `${range.from} → ${range.to}`,
+    period: `${formatCalendarDate(range.from)} → ${formatCalendarDate(range.to)}`,
     rentalCount: sum((day) => day.rentalCount),
     rentalRevenue: sum((day) => day.rentalRevenue),
     // The production report treats held deposits as the current amount for the
@@ -1093,13 +1094,13 @@ export const studioAdapter = {
         email: '',
         preferredBranch: draft.branch,
         history: [],
-        interactions: ['03/10 · Gửi yêu cầu fixture'],
+        interactions: ['03/10/2026 · Gửi yêu cầu fixture'],
       };
       customers.push(customer);
       window.dispatchEvent(new Event('fixture-access-updated'));
     }
-    const pickup = draft.pickup.replace('T', ' · ');
-    const due = draft.returnAt.replace('T', ' · ');
+    const pickup = formatLocalDateTime(draft.pickup);
+    const due = formatLocalDateTime(draft.returnAt);
     const eligibleUnits = units
       .filter(
         (unit) =>
@@ -1135,7 +1136,7 @@ export const studioAdapter = {
         { label: 'Tiền cọc', amount: quote.deposit, status: 'Chưa thu', tone: 'neutral' },
         { label: 'Phụ phí / hoàn', amount: 0, status: 'Chưa phát sinh', tone: 'neutral' },
       ],
-      history: ['03/10 · Tạo yêu cầu fixture', '03/10 · Chờ nhân viên xác nhận, chưa giữ bộ'],
+      history: ['03/10/2026 · Tạo yêu cầu fixture', '03/10/2026 · Chờ nhân viên xác nhận, chưa giữ bộ'],
       note: 'Yêu cầu mẫu; cần kiểm tra khả dụng và gán bộ.',
       eligibleUnits,
     });
@@ -1156,7 +1157,7 @@ export const studioAdapter = {
       depositStatus: 'Chưa thu',
       refundStatus: 'Chưa phát sinh',
       returnStatus: 'Chưa giao',
-      history: ['03/10 · Tạo yêu cầu fixture', '03/10 · Chờ studio xác nhận'],
+      history: ['03/10/2026 · Tạo yêu cầu fixture', '03/10/2026 · Chờ studio xác nhận'],
       canCancel: true,
     });
     customer.history.unshift(`${id} · Chờ xác nhận`);
@@ -1172,17 +1173,17 @@ export const studioAdapter = {
       unitCode: codes[index],
       unitStatus: 'Đã gán',
     }));
-    order.history.unshift(`03/10 · Đã xác nhận và gán ${codes.join(', ')}`);
+    order.history.unshift(`03/10/2026 · Đã xác nhận và gán ${codes.join(', ')}`);
     units = units.map((unit) =>
       codes.includes(unit.barcode)
-        ? { ...unit, available: false, history: [`03/10 · Đã gán cho ${id}`, ...unit.history] }
+        ? { ...unit, available: false, history: [`03/10/2026 · Đã gán cho ${id}`, ...unit.history] }
         : unit,
     );
     const customerOrder = customerOrders.find((value) => value.id === id);
     if (customerOrder) {
       customerOrder.status = 'CONFIRMED';
       customerOrder.canCancel = false;
-      customerOrder.history.unshift('03/10 · Studio đã xác nhận và gán bộ');
+      customerOrder.history.unshift('03/10/2026 · Studio đã xác nhận và gán bộ');
     }
   },
   markReadyForPickup(id: string, scenario: DemoScenario) {
@@ -1212,11 +1213,11 @@ export const studioAdapter = {
       order.status = 'READY_FOR_PICKUP';
       order.version += 1;
       order.items = order.items.map((item) => ({ ...item, unitStatus: 'Sẵn sàng' }));
-      order.history.unshift('03/10 · Đã kiểm bộ và phụ kiện; sẵn sàng giao (fixture)');
+      order.history.unshift('03/10/2026 · Đã kiểm bộ và phụ kiện; sẵn sàng giao (fixture)');
       const customerOrder = customerOrders.find((value) => value.id === id);
       if (customerOrder) {
         customerOrder.status = 'READY_FOR_PICKUP';
-        customerOrder.history.unshift('03/10 · Studio đã chuẩn bị xong, sẵn sàng nhận');
+        customerOrder.history.unshift('03/10/2026 · Studio đã chuẩn bị xong, sẵn sàng nhận');
       }
       return order;
     });
@@ -1233,13 +1234,13 @@ export const studioAdapter = {
         throw new FixtureIssue('INVALID_DECISION', 'Đơn hoặc lý do không hợp lệ.');
       order.status = action;
       order.version += 1;
-      order.history.unshift(`03/10 · ${action}: ${reason}`);
+      order.history.unshift(`03/10/2026 · ${action}: ${reason}`);
       const customerOrder = customerOrders.find((value) => value.id === id);
       if (customerOrder) {
         customerOrder.status = action;
         customerOrder.reason = reason;
         customerOrder.canCancel = false;
-        customerOrder.history.unshift(`03/10 · ${action}: ${reason}`);
+        customerOrder.history.unshift(`03/10/2026 · ${action}: ${reason}`);
       }
       return order;
     });
@@ -1504,7 +1505,7 @@ export const studioAdapter = {
               : block.type === 'REPAIR'
                 ? 'REPAIR'
                 : unit.status;
-          unit.history.unshift(`03/10 · Tạo block ${block.type}: ${block.reason}`);
+          unit.history.unshift(`03/10/2026 · Tạo block ${block.type}: ${block.reason}`);
           return unit;
         }),
   async saveVariant(variant: Variant, scenario: DemoScenario) {
@@ -1632,7 +1633,7 @@ export const studioAdapter = {
                 ...unit,
                 status: 'IN_TRANSFER',
                 available: false,
-                history: [`03/10 · Xuất theo ${code}`, ...unit.history],
+                history: [`03/10/2026 · Xuất theo ${code}`, ...unit.history],
               }
             : unit,
         );
@@ -1673,20 +1674,20 @@ export const studioAdapter = {
                 available: accepted.find((item) => item.barcode === unit.barcode)?.in === 'GOOD',
                 condition:
                   accepted.find((item) => item.barcode === unit.barcode)?.in ?? unit.condition,
-                history: [`03/10 · Nhận theo ${code} tại ${transfer.to}`, ...unit.history],
+                history: [`03/10/2026 · Nhận theo ${code} tại ${transfer.to}`, ...unit.history],
               }
             : unit,
         );
         transfer.status = transfer.units.every((item) => item.received) ? 'RECEIVED' : 'IN_TRANSIT';
         transfer.version += 1;
         transfer.history.unshift(
-          `03/10 · Đã nhận ${transfer.units.filter((item) => item.received).length}/${transfer.units.length} bộ`,
+          `03/10/2026 · Đã nhận ${transfer.units.filter((item) => item.received).length}/${transfer.units.length} bộ`,
         );
         return transfer;
       }
       transfer.status = next;
       if (next === 'REJECTED' || next === 'CANCELLED')
-        transfer.history.unshift(`03/10 · Lý do: ${reason}`);
+        transfer.history.unshift(`03/10/2026 · Lý do: ${reason}`);
       transfer.version += 1;
       const actionLabels: Record<TransferStatus, string> = {
         REQUESTED: 'Tạo yêu cầu',
@@ -1696,7 +1697,7 @@ export const studioAdapter = {
         REJECTED: 'Đã từ chối',
         CANCELLED: 'Đã hủy',
       };
-      transfer.history.unshift(`03/10 · ${actionLabels[next]}`);
+      transfer.history.unshift(`03/10/2026 · ${actionLabels[next]}`);
       return transfer;
     });
   },
@@ -1745,12 +1746,12 @@ export const studioAdapter = {
       order.status = 'CANCELLED';
       order.canCancel = false;
       order.reason = reason;
-      order.history.unshift(`03/10 · Khách hủy: ${reason}`);
+      order.history.unshift(`03/10/2026 · Khách hủy: ${reason}`);
       const staffOrder = fixtureOrders.find((value) => value.id === id);
       if (staffOrder) {
         staffOrder.status = 'CANCELLED';
         staffOrder.version += 1;
-        staffOrder.history.unshift(`03/10 · Khách hủy: ${reason}`);
+        staffOrder.history.unshift(`03/10/2026 · Khách hủy: ${reason}`);
       }
       return order;
     });
