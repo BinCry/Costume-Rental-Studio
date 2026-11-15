@@ -1345,6 +1345,45 @@ describe('web API client session and error handling', () => {
     expect(globalThis.fetch.mock.calls[1][1].method).toBeUndefined();
   });
 
+  it('reuses the refund creation key on retry and sends the transfer reference when confirming', async () => {
+    const refund = { id: 'refund-1', status: 'REQUESTED' };
+    globalThis.fetch
+      .mockResolvedValueOnce(success(refund))
+      .mockResolvedValueOnce(success(refund))
+      .mockResolvedValueOnce(success({ ...refund, status: 'COMPLETED' }));
+    const { createDepositRefund, completeDepositRefund } = await import('../src/api/client.ts');
+
+    const confirmation = { method: 'BANK_TRANSFER', transactionReference: 'TRANSFER-1' };
+    await createDepositRefund('payment-1', 2000000, confirmation);
+    await createDepositRefund('payment-1', 2000000, confirmation);
+    await expect(completeDepositRefund('refund-1', confirmation)).resolves.toMatchObject({
+      status: 'COMPLETED',
+    });
+
+    const [[createUrl, first], [, retry], [completeUrl, completion]] = globalThis.fetch.mock.calls;
+    expect(createUrl).toBe('https://api.example.test/api/v1/payments/payment-1/refunds');
+    expect(first.method).toBe('POST');
+    expect(JSON.parse(first.body)).toMatchObject({
+      amountVnd: '2000000',
+      idempotencyKey: expect.any(String),
+    });
+    expect(retry.body).toBe(first.body);
+    expect(completeUrl).toBe('https://api.example.test/api/v1/payments/refunds/refund-1/complete');
+    expect(completion.method).toBe('POST');
+    expect(JSON.parse(completion.body)).toEqual(confirmation);
+  });
+
+  it('confirms a cash refund without a transfer reference', async () => {
+    globalThis.fetch.mockResolvedValueOnce(success({ id: 'refund-1', method: 'CASH', status: 'COMPLETED' }));
+    const { completeDepositRefund } = await import('../src/api/client.ts');
+
+    await expect(completeDepositRefund('refund-1', { method: 'CASH' })).resolves.toMatchObject({
+      method: 'CASH',
+      status: 'COMPLETED',
+    });
+    expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body)).toEqual({ method: 'CASH' });
+  });
+
   it('preserves large string amounts when preparing settlement instead of rounding them in the browser', async () => {
     const order = {
       id: 'order-1',

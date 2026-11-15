@@ -41,8 +41,14 @@ describe('payment schemas', () => {
     ).toBe(false);
   });
 
-  it('requires references for refund completion', () => {
+  it('requires a transfer reference only for bank refunds', () => {
     expect(completeRefundSchema.safeParse({ transactionReference: 'REF-001' }).success).toBe(true);
+    expect(completeRefundSchema.parse({ method: 'CASH' })).toEqual({ method: 'CASH' });
+    expect(completeRefundSchema.safeParse({ method: 'CASH', transactionReference: 'REF-001' }).success).toBe(false);
+    expect(completeRefundSchema.safeParse({ method: 'BANK_TRANSFER' }).success).toBe(false);
+    expect(completeRefundSchema.safeParse({ method: 'BANK_TRANSFER', transactionReference: '   ' }).success).toBe(false);
+    expect(completeRefundSchema.parse({ method: 'BANK_TRANSFER', transactionReference: ' REF-001 ' }))
+      .toEqual({ method: 'BANK_TRANSFER', transactionReference: 'REF-001' });
   });
 
   it('requires a positive, idempotent refund request', () => {

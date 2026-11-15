@@ -375,6 +375,40 @@ describe('payment service settlement locking', () => {
     };
   }
 
+  it.each([
+    { input: { method: 'CASH' }, reference: null },
+    { input: { method: 'BANK_TRANSFER', transactionReference: 'REF-001' }, reference: 'REF-001' },
+  ] as const)('records a refund by $input.method', async ({ input, reference }) => {
+    const refund = {
+      id: '10000000-0000-4000-8000-000000000004',
+      status: 'REQUESTED',
+      amountVnd: 100_000n,
+    };
+    const order = createOrder(new Date('2026-10-15T09:00:00.000Z'));
+    order.payments.find((payment) => payment.purpose === 'DEPOSIT')?.refunds.push(refund);
+    const completed = { status: 'COMPLETED', method: input.method, providerRefundId: reference };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: orderId }]),
+      rentalOrder: { findUniqueOrThrow: vi.fn().mockResolvedValue(order) },
+      refund: {
+        findUnique: vi.fn().mockResolvedValue({ payment: { orderId } }),
+        findUniqueOrThrow: vi.fn().mockResolvedValue(refund),
+        findFirst: vi.fn().mockResolvedValue(null),
+        update: vi.fn().mockResolvedValue(completed),
+      },
+    };
+    mocks.transaction.mockImplementation((callback: (client: typeof tx) => Promise<unknown>) =>
+      callback(tx),
+    );
+
+    await expect(service.completeRefund(managerActor, refund.id, input)).resolves.toEqual(completed);
+    expect(tx.refund.update).toHaveBeenCalledWith({
+      where: { id: refund.id },
+      data: expect.objectContaining(completed),
+    });
+    expect(tx.refund.findFirst).toHaveBeenCalledTimes(reference === null ? 0 : 1);
+  });
+
   it('allows changing settlement after a pre-return extension charge and failed refund', async () => {
     const order = createOrder(new Date('2026-10-15T09:00:00.000Z'));
     const tx = {

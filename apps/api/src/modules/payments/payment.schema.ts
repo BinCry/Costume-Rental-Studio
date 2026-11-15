@@ -41,9 +41,13 @@ export const createRefundSchema = z
   })
   .strict();
 
-export const completeRefundSchema = z
-  .object({ transactionReference: z.string().trim().min(1).max(255) })
-  .strict();
+export const completeRefundSchema = z.union([
+  z.strictObject({ method: z.literal('CASH') }),
+  z.strictObject({
+    method: z.literal('BANK_TRANSFER').optional(),
+    transactionReference: z.string().trim().min(1).max(255),
+  }),
+]);
 
 export const failRefundSchema = z.object({ reason: z.string().trim().min(1).max(10_000) }).strict();
 

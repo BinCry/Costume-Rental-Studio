@@ -439,6 +439,10 @@ export interface ReturnSettlementOrderDetails {
   }[];
 }
 
+export type RefundConfirmation =
+  | { method: 'CASH' }
+  | { method: 'BANK_TRANSFER'; transactionReference: string };
+
 export interface OrderRefundRecord {
   id: string;
   paymentId: string;
@@ -448,6 +452,7 @@ export interface OrderRefundRecord {
   createdAt?: string;
   updatedAt?: string;
   completedAt?: string | null;
+  method?: RefundConfirmation['method'] | null;
   providerRefundId?: string | null;
 }
 
@@ -3253,6 +3258,38 @@ export async function getReturnSettlementOrder(orderCode: string) {
 export async function listOrderRefunds(orderCode: string) {
   return request<OrderRefundRecord[]>(
     `/api/v1/payments/orders/${encodeURIComponent(orderApiId(orderCode))}/refunds`,
+  );
+}
+
+export async function createDepositRefund(
+  paymentId: string,
+  amountVnd: number,
+  attempt: { method: 'CASH'; attemptId: string } | Extract<RefundConfirmation, { method: 'BANK_TRANSFER' }>,
+) {
+  // Bank transfers reuse a key across sessions. Cash retries reuse the current attempt ID.
+  const source = attempt.method === 'BANK_TRANSFER'
+    ? attempt.transactionReference.trim()
+    : attempt.attemptId;
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(source));
+  const key = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  const prefix = attempt.method === 'CASH' ? 'cash-deposit-refund' : 'deposit-refund';
+  return request<OrderRefundRecord>(`/api/v1/payments/${encodeURIComponent(paymentId)}/refunds`, {
+    method: 'POST',
+    body: JSON.stringify({
+      amountVnd: String(amountVnd),
+      reason: 'Hoàn tiền cọc sau khi trả đồ',
+      idempotencyKey: `${prefix}-${key}`,
+    }),
+  });
+}
+
+export async function completeDepositRefund(refundId: string, confirmation: RefundConfirmation) {
+  return request<OrderRefundRecord>(
+    `/api/v1/payments/refunds/${encodeURIComponent(refundId)}/complete`,
+    {
+      method: 'POST',
+      body: JSON.stringify(confirmation),
+    },
   );
 }
 
