@@ -5,7 +5,7 @@ test('guest discovers a costume and opens its detail page', async ({ page }) => 
   await expect(page).toHaveTitle(/Studio Trang Phục/i);
   await expect(page.getByRole('heading', { name: 'Bộ sưu tập trang phục' })).toBeVisible();
 
-  const firstCostume = page.getByRole('button', { name: 'Xem chi tiết' }).first();
+  const firstCostume = page.getByRole('button', { name: 'Xem nhanh' }).first();
   await expect(firstCostume).toBeVisible();
   await firstCostume.click();
   const preview = page.locator('section[aria-label^="Chi tiết "]');
@@ -28,10 +28,12 @@ test('public catalog stays usable at phone width without horizontal overflow', a
     content: document.documentElement.scrollWidth,
   }));
   expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport + 1);
-  await expect(page.getByRole('button', { name: 'Xem chi tiết' }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Xem nhanh' }).first()).toBeVisible();
 });
 
-test('guest is routed from booking to account access before creating an order', async ({ page }) => {
+test('guest is routed from booking to account access before creating an order', async ({
+  page,
+}) => {
   await page.goto('/dat-thue');
   await expect(page.getByText('Đăng nhập để tiếp tục')).toBeVisible();
 

@@ -274,7 +274,6 @@ function CostumeCard({
             <p className="eyebrow">{item.category}</p>
             <h3>{item.name}</h3>
           </div>
-          <Icon name="arrow" size={19} />
         </div>
         <p className="costume-description">{item.description}</p>
         <p className="costume-variant">
@@ -320,7 +319,7 @@ function CostumeCard({
           className="card-button"
           onClick={(event) => onView(event.currentTarget)}
         >
-          Xem chi tiết <Icon name="arrow" size={17} />
+          Xem nhanh <Icon name="arrow" size={17} />
         </Button>
       </div>
     </article>
@@ -389,7 +388,9 @@ export function CatalogPage({
         ? Object.fromEntries(data.map((item) => [item.id, 'loading' as const]))
         : {};
   const currentAvailableVariants =
-    availabilityRequestEnabled && apiAvailability?.key === availabilityKey ? apiAvailability.availableVariants : {};
+    availabilityRequestEnabled && apiAvailability?.key === availabilityKey
+      ? apiAvailability.availableVariants
+      : {};
   useEffect(() => {
     if (!availabilityRequestEnabled || !data?.length) return;
     let cancelled = false;
@@ -498,18 +499,8 @@ export function CatalogPage({
             <option key={entry}>{entry}</option>
           ))}
         </SelectField>
-        <DateTimeField
-          label="Nhận đồ"
-          value={pickup}
-          error={pickupIssue}
-          onChange={setPickup}
-        />
-        <DateTimeField
-          label="Trả đồ"
-          value={returnAt}
-          onChange={setReturnAt}
-          error={returnIssue}
-        />
+        <DateTimeField label="Nhận đồ" value={pickup} error={pickupIssue} onChange={setPickup} />
+        <DateTimeField label="Trả đồ" value={returnAt} onChange={setReturnAt} error={returnIssue} />
       </section>
       <section id="bo-suu-tap" className="catalog-section">
         <div className="section-heading">
@@ -585,7 +576,8 @@ export function CatalogPage({
                 {periodSelected && (
                   <span className="chip">
                     <Icon name="calendar" size={15} />
-                    {formatCalendarDate(pickup.slice(0, 10))} → {formatCalendarDate(returnAt.slice(0, 10))}
+                    {formatCalendarDate(pickup.slice(0, 10))} →{' '}
+                    {formatCalendarDate(returnAt.slice(0, 10))}
                   </span>
                 )}
               </div>

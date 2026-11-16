@@ -1407,21 +1407,17 @@ small {
   font-size: 14px;
   margin: 0;
 }
-.booking-step-count {
-  background: var(--brand-tint);
-  color: var(--brand-primary);
-  padding: 9px 14px;
-  border-radius: var(--radius-pill);
-  font-size: 13px;
-  font-weight: 600;
-}
 .step-progress {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 6px;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
   margin-bottom: 24px;
 }
 .step-progress button {
+  flex: none;
+  white-space: nowrap;
   border: 0;
   background: none;
   display: flex;
@@ -1457,6 +1453,14 @@ small {
 .step-progress small {
   font-size: 12px;
   line-height: 16px;
+  white-space: nowrap;
+}
+.step-progress button:not(:last-child)::after {
+  content: '→' / '';
+  margin-left: 12px;
+  color: #a1a1aa;
+  font-size: 16px;
+  font-weight: 400;
 }
 .booking-layout {
   display: grid;
@@ -1471,7 +1475,31 @@ small {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 28px;
-  min-height: 560px;
+  align-self: stretch;
+}
+.policy-details {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.policy-details > summary {
+  padding: 12px 16px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.policy-details > summary:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.policy-details-body {
+  display: grid;
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+.policy-details-body .inline-note {
+  margin: 0;
 }
 .panel-intro {
   display: flex;
@@ -1481,6 +1509,9 @@ small {
 }
 .panel-intro h2 {
   margin: 0;
+}
+.panel-intro .eyebrow {
+  display: none;
 }
 .step-number {
   width: 52px;
@@ -1498,6 +1529,15 @@ small {
   min-width: 0;
   position: sticky;
   top: 16px;
+}
+.booking-sidebar-selection {
+  position: relative;
+  top: auto;
+  align-self: stretch;
+}
+.booking-sidebar-selection .booking-selection-card {
+  height: 100%;
+  max-height: none;
 }
 .booking-selection-card {
   display: flex;
@@ -1528,14 +1568,11 @@ small {
   line-height: 1.5;
 }
 .booking-selection-card .booking-costumes {
-  min-height: 0;
-  max-height: min(38dvh, 360px);
+  flex: 1 1 0;
+  min-height: 140px;
+  max-height: none;
   overflow-y: auto;
   padding-right: 4px;
-}
-.booking-selection-options {
-  gap: 16px;
-  margin-top: 16px;
 }
 .booking-selection-card .booking-costume {
   grid-template-columns: 64px minmax(0, 1fr) 20px;
@@ -3012,11 +3049,26 @@ small {
   color: var(--brand-primary);
 }
 .feature-skeleton {
-  height: 350px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 120px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   padding: 24px;
   color: var(--text-secondary);
+  font-size: 14px;
+}
+.feature-skeleton::before {
+  content: '';
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--brand-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 .muted {
   color: var(--text-secondary);
@@ -3245,19 +3297,56 @@ small {
 .rental-card:hover {
   border-color: var(--brand-primary);
 }
-.rental-card > span {
+.rental-card-main {
   display: grid;
   align-content: start;
-  gap: 7px;
+  gap: 4px;
+  min-width: 0;
 }
 .rental-card small {
   display: block;
   color: var(--text-secondary);
   font-size: 12px;
 }
+.rental-card .rental-card-code {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.rental-card .rental-card-title {
+  color: var(--text-primary);
+  font-size: 17px;
+  line-height: 24px;
+}
+.rental-card .rental-card-variant {
+  font-size: 13px;
+  line-height: 20px;
+}
+.rental-card .rental-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
 .rental-card-right {
-  text-align: right;
+  display: grid;
+  align-content: space-between;
   justify-items: end;
+  gap: 8px;
+  text-align: right;
+}
+.rental-card-price {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+}
+.rental-card .rental-card-price strong {
+  color: var(--text-primary);
+  font-size: 18px;
+  line-height: 24px;
+  font-variant-numeric: tabular-nums;
 }
 .costume-detail-grid {
   display: grid;
@@ -3844,7 +3933,8 @@ small {
     animation: none;
   }
   .shimmer,
-  .button-spinner {
+  .button-spinner,
+  .feature-skeleton::before {
     animation: none;
   }
   .button {
@@ -4427,6 +4517,15 @@ small {
   .booking-layout {
     display: block;
   }
+  .panel-intro .eyebrow {
+    display: block;
+  }
+  .booking-sidebar-selection {
+    align-self: auto;
+  }
+  .booking-sidebar-selection .booking-selection-card {
+    height: auto;
+  }
   .booking-sidebar {
     position: static;
     display: block;
@@ -4439,6 +4538,8 @@ small {
     max-height: none;
   }
   .booking-selection-card .booking-costumes {
+    flex: none;
+    min-height: 0;
     max-height: none;
     overflow: visible;
   }
@@ -4468,6 +4569,14 @@ small {
   }
   .step-progress button:first-child:before {
     display: none;
+  }
+  .step-progress {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+  .step-progress button:not(:last-child)::after {
+    content: none;
   }
   .step-progress button > span {
     width: 32px;
@@ -4657,10 +4766,6 @@ small {
   }
   .booking-panel {
     padding: 16px;
-  }
-  .booking-step-count {
-    font-size: 11px;
-    padding: 7px 10px;
   }
   .two-fields {
     grid-template-columns: 1fr;

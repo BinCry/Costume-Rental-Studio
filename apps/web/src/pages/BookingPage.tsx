@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Navigate } from '../App';
 import { ImageWithFallback } from '../components/ImageWithFallback';
 import {
@@ -393,7 +393,6 @@ export function BookingPage({
           <h1>Gửi yêu cầu thuê</h1>
           <p>Chọn bộ, thời gian và xem báo giá trước khi gửi.</p>
         </div>
-        <div className="booking-step-count">Chặng {step + 1} / 3</div>
       </div>
       <div className="step-progress" aria-label="Tiến độ đặt thuê">
         {steps.map((label, index) => (
@@ -432,7 +431,9 @@ export function BookingPage({
             apiMode={apiMode}
           />
         </details>
-        <aside className={`booking-sidebar${step === 0 ? '' : 'booking-sidebar-summary'}`}>
+        <aside
+          className={`booking-sidebar ${step === 0 ? 'booking-sidebar-selection' : 'booking-sidebar-summary'}`}
+        >
           {step === 0 ? (
             <div className="booking-selection-card">
               <div className="booking-selection-heading">
@@ -490,34 +491,6 @@ export function BookingPage({
                 </div>
               ) : (
                 <p className="booking-selection-status">Chưa có mẫu trang phục để chọn.</p>
-              )}
-              {!loading && !error && scenario !== 'empty' && data?.length && item && (
-                <div className="form-stack booking-selection-options">
-                  <h3 className="booking-subheading">Thông tin bộ</h3>
-                  <SelectField
-                    label="Size / màu"
-                    value={draft.variant}
-                    onChange={(event) => update('variant', event.target.value)}
-                  >
-                    <option value="">Chọn biến thể</option>
-                    {choices.map((choice) => (
-                      <option key={choice.value} value={choice.value}>
-                        {choice.label}
-                      </option>
-                    ))}
-                  </SelectField>
-                  <SelectField
-                    label="Số bộ"
-                    value={draft.quantity}
-                    onChange={(event) => update('quantity', Number(event.target.value))}
-                  >
-                    <option value={1}>1 bộ</option>
-                    <option value={2}>2 bộ</option>
-                  </SelectField>
-                  <Feedback tone="info" title="Chọn bộ chưa giữ lịch">
-                    Studio sẽ gán mã riêng cho từng bộ sau khi xác nhận yêu cầu.
-                  </Feedback>
-                </div>
               )}
             </div>
           ) : (
@@ -600,28 +573,65 @@ export function BookingPage({
                       label="Nhận đồ"
                       value={draft.pickup}
                       onChange={(value) => update('pickup', value)}
-                      error={pickupIssue ?? (issue && !draft.pickup ? 'Chọn thời điểm nhận đồ.' : undefined)}
+                      error={
+                        pickupIssue ??
+                        (issue && !draft.pickup ? 'Chọn thời điểm nhận đồ.' : undefined)
+                      }
                     />
                     <DateTimeField
                       label="Trả đồ"
                       value={draft.returnAt}
                       onChange={(value) => update('returnAt', value)}
-                      error={returnIssue ?? (issue && !draft.returnAt ? 'Chọn thời điểm trả đồ.' : undefined)}
+                      error={
+                        returnIssue ??
+                        (issue && !draft.returnAt ? 'Chọn thời điểm trả đồ.' : undefined)
+                      }
                     />
                   </div>
                   <p className="inline-note">
                     <Icon name="pin" size={17} /> Nhận và trả cùng chi nhánh. Số ngày tính thuê theo
                     chính sách trong báo giá.
                   </p>
+                  {Boolean(data?.length) && item && (
+                    <>
+                      <h3 className="booking-subheading">Thông tin bộ</h3>
+                      <div className="two-fields">
+                        <SelectField
+                          label="Size / màu"
+                          value={draft.variant}
+                          onChange={(event) => update('variant', event.target.value)}
+                        >
+                          <option value="">Chọn biến thể</option>
+                          {choices.map((choice) => (
+                            <option key={choice.value} value={choice.value}>
+                              {choice.label}
+                            </option>
+                          ))}
+                        </SelectField>
+                        <SelectField
+                          label="Số bộ"
+                          value={draft.quantity}
+                          onChange={(event) => update('quantity', Number(event.target.value))}
+                        >
+                          <option value={1}>1 bộ</option>
+                          <option value={2}>2 bộ</option>
+                        </SelectField>
+                      </div>
+                      <Feedback tone="info" title="Chọn bộ chưa giữ lịch">
+                        Studio sẽ gán mã riêng cho từng bộ sau khi xác nhận yêu cầu.
+                      </Feedback>
+                    </>
+                  )}
                 </div>
               )}
               {step === 1 && (
                 <div className="form-stack">
-                  <Feedback tone="info" title={apiMode ? 'Báo giá từ hệ thống' : 'Báo giá xem thử'}>
+                  <p className="inline-note">
+                    <strong>{apiMode ? 'Báo giá từ hệ thống' : 'Báo giá xem thử'}.</strong>{' '}
                     {apiMode
                       ? 'Số ngày, giá thuê, tiền cọc và thời hạn được tính theo chính sách hiện hành.'
                       : 'Bản xem thử dùng dữ liệu mẫu; giá áp dụng thực tế cần được studio xác nhận.'}
-                  </Feedback>
+                  </p>
                   <Button
                     variant="secondary"
                     onClick={() => {
@@ -734,7 +744,9 @@ export function BookingPage({
                       <small>
                         Báo giá có hiệu lực đến: {quote.expiresAt} · {quote.policy}
                       </small>
-                      <p className="inline-note">{lateReturnPolicyText(quote, apiMode)}</p>
+                      <PolicyDetails title="Chính sách trả trễ và cọc">
+                        <p className="inline-note">{lateReturnPolicyText(quote, apiMode)}</p>
+                      </PolicyDetails>
                     </div>
                   )}
                 </div>
@@ -789,27 +801,31 @@ export function BookingPage({
                       </span>
                     </div>
                   )}
-                  <Field
-                    label="Họ và tên người thuê"
-                    placeholder="Ví dụ: Nguyễn An"
-                    autoComplete="name"
-                    hint="Được điền từ hồ sơ của bạn nếu đã lưu; bạn có thể sửa cho riêng đơn này."
-                    value={draft.name}
-                    onChange={(event) => update('name', event.target.value)}
-                    error={issue && !draft.name.trim() ? 'Nhập tên người thuê.' : undefined}
-                  />
-                  <Field
-                    label="Số điện thoại"
-                    placeholder="09xx xxx xxx"
-                    type="tel"
-                    autoComplete="tel"
-                    hint="Studio dùng số này để xác nhận đơn. Lưu trong Tài khoản để tự điền lần sau."
-                    value={draft.phone}
-                    onChange={(event) => update('phone', event.target.value)}
-                    error={
-                      issue && !isValidPhone(draft.phone) ? 'Nhập số điện thoại hợp lệ.' : undefined
-                    }
-                  />
+                  <div className="two-fields">
+                    <Field
+                      label="Họ và tên người thuê"
+                      placeholder="Ví dụ: Nguyễn An"
+                      autoComplete="name"
+                      hint="Được điền từ hồ sơ của bạn nếu đã lưu; bạn có thể sửa cho riêng đơn này."
+                      value={draft.name}
+                      onChange={(event) => update('name', event.target.value)}
+                      error={issue && !draft.name.trim() ? 'Nhập tên người thuê.' : undefined}
+                    />
+                    <Field
+                      label="Số điện thoại"
+                      placeholder="09xx xxx xxx"
+                      type="tel"
+                      autoComplete="tel"
+                      hint="Studio dùng số này để xác nhận đơn. Lưu trong Tài khoản để tự điền lần sau."
+                      value={draft.phone}
+                      onChange={(event) => update('phone', event.target.value)}
+                      error={
+                        issue && !isValidPhone(draft.phone)
+                          ? 'Nhập số điện thoại hợp lệ.'
+                          : undefined
+                      }
+                    />
+                  </div>
                   <TextAreaField
                     label="Ghi chú cho studio (không bắt buộc)"
                     rows={4}
@@ -861,11 +877,13 @@ export function BookingPage({
                     <span>Tổng dự kiến khi nhận đồ</span>
                     <strong>{money(quote?.amountDueAtPickup ?? 0)}</strong>
                   </div>
-                  <p className="inline-note">{lateReturnPolicyText(quote, apiMode)}</p>
-                  <p className="inline-note">
-                    Thông tin về phí hủy chưa có trong báo giá. Hãy liên hệ studio để xác nhận trước
-                    khi gửi yêu cầu.
-                  </p>
+                  <PolicyDetails title="Chính sách trả trễ, cọc và hủy đơn">
+                    <p className="inline-note">{lateReturnPolicyText(quote, apiMode)}</p>
+                    <p className="inline-note">
+                      Thông tin về phí hủy chưa có trong báo giá. Hãy liên hệ studio để xác nhận
+                      trước khi gửi yêu cầu.
+                    </p>
+                  </PolicyDetails>
                   <Feedback
                     tone="warning"
                     title="Yêu cầu chưa giữ trang phục cho đến khi studio xác nhận."
@@ -916,6 +934,15 @@ export function BookingPage({
   );
 }
 
+function PolicyDetails({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <details className="policy-details">
+      <summary>{title}</summary>
+      <div className="policy-details-body">{children}</div>
+    </details>
+  );
+}
+
 function BookingSummaryContent({
   itemName,
   variantLabel,
@@ -947,7 +974,8 @@ function BookingSummaryContent({
         <Icon name="pin" size={16} /> {branch || 'Chưa chọn chi nhánh'}
       </p>
       <p>
-        <Icon name="calendar" size={16} /> Nhận: {pickup ? formatLocalDateTime(pickup) : 'Chưa chọn'}
+        <Icon name="calendar" size={16} /> Nhận:{' '}
+        {pickup ? formatLocalDateTime(pickup) : 'Chưa chọn'}
       </p>
       <p>
         <Icon name="calendar" size={16} /> Trả:{' '}
