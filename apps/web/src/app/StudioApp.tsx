@@ -859,9 +859,7 @@ export default function StudioApp() {
             ) : apiIdentity ? (
               actorGroup === 'CUSTOMER' ? (
                 <>
-                  <span className="header-account">
-                    {apiIdentity.displayName || 'Tài khoản'}
-                  </span>
+                  <span className="header-account">{apiIdentity.displayName || 'Tài khoản'}</span>
                   <button
                     type="button"
                     className="button button-secondary header-logout"
@@ -957,6 +955,24 @@ export default function StudioApp() {
                     return item ? [item] : [];
                   });
                   if (!groupItems.length) return null;
+                  if (groupItems.length === 1) {
+                    const item = groupItems[0];
+                    return (
+                      <div className="staff-nav-group" key={group.id}>
+                        <a
+                          href={pathFor(item.screen)}
+                          className={`staff-nav-direct ${route.screen === item.screen ? 'active' : ''}`}
+                          aria-current={route.screen === item.screen ? 'page' : undefined}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            go(item.screen);
+                          }}
+                        >
+                          {item.label}
+                        </a>
+                      </div>
+                    );
+                  }
                   const expanded = expandedStaffGroup === group.id;
                   return (
                     <div className="staff-nav-group" key={group.id}>
