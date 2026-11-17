@@ -434,9 +434,7 @@ export function InventoryPage({
         return (
           <div className="page">
             <PageHeading
-              eyebrow="KHO / BỘ TRANG PHỤC"
               title="Kho theo barcode"
-              description="Quản lý tình trạng từng bộ, lịch xử lý và năng lực của chi nhánh."
               action={canManage ? <div className="feature-actions">
                 <Button variant="secondary" onClick={() => go('transfers')}>Phiếu điều chuyển</Button>
                 {realApiMode && <Button onClick={() => setShowCreateUnit((value) => !value)}>{showCreateUnit ? 'Đóng nhập bộ' : '＋ Nhập bộ mới'}</Button>}
@@ -488,9 +486,8 @@ export function InventoryPage({
                         <tr>
                           <th>Barcode</th>
                           <th>Mẫu / biến thể</th>
-                          <th>Chi nhánh</th>
                           <th>Vận hành</th>
-                          <th>Khả dụng kỳ mẫu</th>
+                          <th>Khả dụng</th>
                           <th>Block</th>
                         </tr>
                       </thead>
@@ -511,7 +508,6 @@ export function InventoryPage({
                               {u.model}
                               <small>{u.variant}</small>
                             </td>
-                            <td>{u.branch}</td>
                             <td>
                               <StatusLabel
                                 text={unitStatusLabels[u.status]}
@@ -533,6 +529,8 @@ export function InventoryPage({
                   </div>
                   {!visible.length && <p className="muted">Không có bộ phù hợp bộ lọc.</p>}
                 </Panel>
+                <details className="inventory-secondary-section">
+                  <summary>Lịch xử lý · {blocksResource.data?.length ?? 0}{blocksResource.error ? ' · Lỗi tải' : ''}</summary>
                 <Panel title="Lịch xử lý tại chi nhánh" action={<Button type="button" variant="quiet" loading={blocksResource.loading} onClick={blocksResource.retry}>Tải lại</Button>}>
                   <InlineIssue text={scheduleIssue} conflict={scenario === 'conflict' || scenario === 'version'} />
                   {scheduleNotice && <Feedback tone="success" title="Đã cập nhật lịch xử lý">{scheduleNotice}</Feedback>}
@@ -555,6 +553,7 @@ export function InventoryPage({
                     </div>
                   )}
                 </Panel>
+                </details>
               </div>
               <div ref={detailRef} tabIndex={0} role="region" aria-label="Chi tiết bộ đang chọn" key={selected?.barcode ?? 'none'}>
                 {selected ? (
@@ -639,6 +638,8 @@ export function InventoryPage({
                 )}
               </div>
             </div>
+            <details className="inventory-secondary-section inventory-capacity-section">
+              <summary>Năng lực xử lý · {branch}{capacityResource.error ? ' · Lỗi tải' : ''}</summary>
             <Panel title={`Năng lực xử lý · ${branch}`}>
               <InlineIssue text={capacityIssue} conflict={scenario === 'conflict' || scenario === 'version'} />
               {capacityNotice && <Feedback tone="success" title="Đã cập nhật năng lực">{capacityNotice}</Feedback>}
@@ -665,6 +666,7 @@ export function InventoryPage({
                 <div className="feature-actions"><Button type="submit" loading={busy}>{editingWindow ? 'Cập nhật khung' : 'Lưu năng lực chi nhánh'}</Button>{editingWindow && <Button type="button" variant="quiet" disabled={busy} onClick={() => setEditingWindow(undefined)}>Hủy chỉnh sửa</Button>}</div>
               </form>}
             </Panel>
+            </details>
             {retirementOpen && selected && <ConfirmDialog title="Ngừng sử dụng bộ này?" confirmText="Ngừng sử dụng" danger loading={busy} confirmDisabled={!retirementNotes.trim()} onClose={() => setRetirementOpen(false)} onConfirm={() => void updateUnit(async () => {
               const updated = await retireInventoryUnit(selected.apiId!, retirementNotes.trim());
               setRetirementOpen(false);
