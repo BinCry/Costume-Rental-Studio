@@ -121,7 +121,7 @@ the user to log in again.
 - Apply the reviewed migration with `pnpm exec prisma migrate deploy` in apps/api; implementation
   does not automatically apply it or reset existing data.
 - Login and refresh share a per-IP allowance of 10 requests per 15 minutes. Me uses the general
-  API rate limit. Configure trusted proxy hops correctly for Coolify; distributed limits and
+  allowance of 10,000 requests per 15 minutes. Configure trusted proxy hops correctly for Coolify; distributed limits and
   per-account abuse controls remain required before multi-instance public production use.
 - Token and me responses use Cache-Control: no-store. Use HTTPS and never log raw tokens/passwords.
 - The refresh cookie is host-only, HttpOnly, SameSite=Lax, with Path=/api/v1/auth and a lifetime
