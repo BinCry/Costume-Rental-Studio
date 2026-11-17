@@ -1,6 +1,6 @@
 import { useCallback, useState, type FormEvent } from 'react';
 import type { Navigate } from '../App';
-import { Button, ConfirmDialog, DateField, DateTimeField, Feedback, Field, SelectField, TextAreaField, StatusLabel } from '../components/ui';
+import { Button, ConfirmDialog, DateField, DateTimeField, EmptyState, Feedback, Field, SelectField, TextAreaField, StatusLabel } from '../components/ui';
 import { formatVietnamDateTime } from '../utils/date-format';
 import {
   BarcodeLookup,
@@ -720,6 +720,7 @@ export function TransfersPage({ scenario, branch, canManage = true }: { scenario
   const [issue, setIssue] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showCreateTransfer, setShowCreateTransfer] = useState(false);
   const { detailRef, revealDetail } = useMobileDetailReveal<HTMLDivElement>();
   const sourceBranch = realApiMode ? branch : from;
   const destinationOptions = branchOptions.filter((name) => name !== sourceBranch);
@@ -735,6 +736,7 @@ export function TransfersPage({ scenario, branch, canManage = true }: { scenario
       setSelected(result.code);
       revealDetail();
       setNote('');
+      setShowCreateTransfer(false);
       setNotice(`Đã tạo ${result.code}; chờ duyệt trước khi xuất bộ.`);
       retry();
     } catch (e) {
@@ -776,6 +778,7 @@ export function TransfersPage({ scenario, branch, canManage = true }: { scenario
       data={data}
       retry={retry}
       emptyTitle="Chưa có phiếu điều chuyển"
+      allowEmpty
     >
       {(transfers) => {
         const current = transfers.find((t) => t.code === selected) ?? transfers[0];
@@ -784,11 +787,15 @@ export function TransfersPage({ scenario, branch, canManage = true }: { scenario
             <PageHeading
               eyebrow="KHO / ĐIỀU CHUYỂN"
               title="Điều chuyển chi nhánh"
-              description="Yêu cầu → duyệt → xuất kho → kiểm từng bộ khi nhận. Bộ chỉ đổi chi nhánh sau bước nhận."
+              action={canManage && transfers.length > 0 ? (
+                <Button variant="secondary" onClick={() => setShowCreateTransfer((value) => !value)}>
+                  {showCreateTransfer ? 'Đóng biểu mẫu' : '+ Tạo phiếu'}
+                </Button>
+              ) : undefined}
             />
             <div className="feature-two-column independent-scroll-workspace">
               <div role="region" aria-label="Cuộn yêu cầu và danh sách điều chuyển" tabIndex={0}>
-                {canManage && <Panel title="Tạo yêu cầu">
+                {canManage && (showCreateTransfer || transfers.length === 0) && <Panel title="Tạo yêu cầu">
                   <div className="feature-filters">
                     {realApiMode ? (
                       <div className="field">
@@ -857,31 +864,39 @@ export function TransfersPage({ scenario, branch, canManage = true }: { scenario
                   </Button>
                 </Panel>}
                 <Panel title="Phiếu điều chuyển">
-                  <div className="feature-card-list">
-                    {transfers.map((t) => (
-                      <button
-                        className={`feature-list-row selectable ${current.code === t.code ? 'selected' : ''}`}
-                        key={t.code}
-                        onClick={() => {
-                          setSelected(t.code);
-                          setChecks({});
-                          setNotice('');
-                          revealDetail();
-                        }}
-                      >
-                        <strong>
-                          {t.code} · {transferStatus[t.status]}
-                        </strong>
-                        <span>
-                          {t.from} → {t.to}
-                        </span>
-                        <small>{t.units.map((u) => u.barcode).join(', ')}</small>
-                      </button>
-                    ))}
-                  </div>
+                  {transfers.length === 0 ? (
+                    <EmptyState title="Chưa có phiếu điều chuyển">Tạo phiếu đầu tiên để theo dõi quá trình chuyển bộ.</EmptyState>
+                  ) : <div className="responsive-table catalog-admin-table transfer-admin-table" role="region" aria-label="Bảng phiếu điều chuyển" tabIndex={0}>
+                    <table>
+                      <thead><tr><th>Mã phiếu</th><th>Từ</th><th>Đến</th><th>Bộ</th><th>Trạng thái</th></tr></thead>
+                      <tbody>
+                        {transfers.map((transfer) => (
+                          <tr key={transfer.code} className={current?.code === transfer.code ? 'selected' : ''}>
+                            <td data-label="Mã phiếu">
+                              <button
+                                type="button"
+                                className="text-link"
+                                aria-pressed={current?.code === transfer.code}
+                                onClick={() => {
+                                  setSelected(transfer.code);
+                                  setChecks({});
+                                  setNotice('');
+                                  revealDetail();
+                                }}
+                              >{transfer.code}</button>
+                            </td>
+                            <td data-label="Từ">{transfer.from}</td>
+                            <td data-label="Đến">{transfer.to}</td>
+                            <td data-label="Bộ">{transfer.units.map((unit) => unit.barcode).join(', ')}</td>
+                            <td data-label="Trạng thái">{transferStatus[transfer.status]}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>}
                 </Panel>
               </div>
-              <div
+              {current ? <div
                 ref={detailRef}
                 tabIndex={0}
                 role="region"
@@ -1009,7 +1024,7 @@ export function TransfersPage({ scenario, branch, canManage = true }: { scenario
                     Bộ đang vệ sinh hoặc sửa chữa không được xuất.
                   </Feedback>
                 )}
-              </div>
+              </div> : <EmptyState title="Chọn phiếu để xem chi tiết" />}
             </div>
           </div>
         );

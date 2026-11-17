@@ -3677,6 +3677,9 @@ small {
 .promotion-admin-table table {
   min-width: 880px;
 }
+.transfer-admin-table table {
+  min-width: 700px;
+}
 .promotion-admin-identity {
   display: grid;
   gap: 4px;
