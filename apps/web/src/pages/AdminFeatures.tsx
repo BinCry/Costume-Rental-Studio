@@ -1415,6 +1415,7 @@ export function BranchesPage({ scenario, canManage = true }: { scenario: DemoSce
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.branches);
   const [selected, setSelected] = useState('HCM-Q1');
   const [editing, setEditing] = useState<Branch>();
+  const [pendingBranch, setPendingBranch] = useState('');
   const [issue, setIssue] = useState('');
   const [busy, setBusy] = useState(false);
   return (
@@ -1434,25 +1435,28 @@ export function BranchesPage({ scenario, canManage = true }: { scenario: DemoSce
           : { orders: 0, units: 0, transfers: 0 };
         const hasObligations = obligations.orders + obligations.units + obligations.transfers > 0;
         const closingExisting = existingBranch?.status === 'ACTIVE' && branch.status === 'INACTIVE';
+        const startNewBranch = () => {
+          const code = `CN-DEMO-${items.length + 1}`;
+          setSelected(code);
+          setEditing({
+            code,
+            name: '',
+            address: '',
+            timezone: 'Asia/Ho_Chi_Minh',
+            status: 'ACTIVE',
+          });
+          setIssue('');
+        };
         return (
           <div className="page">
             <PageHeading
-              eyebrow="QUẢN TRỊ / CHI NHÁNH"
               title="Chi nhánh"
-              description="Mỗi bộ có chi nhánh hiện tại; nhận/trả cùng chi nhánh trong đơn thuê."
               action={canManage ? (
                 <Button
                   variant="secondary"
                   onClick={() => {
-                    const code = `CN-DEMO-${items.length + 1}`;
-                    setSelected(code);
-                    setEditing({
-                      code,
-                      name: '',
-                      address: '',
-                      timezone: 'Asia/Ho_Chi_Minh',
-                      status: 'ACTIVE',
-                    });
+                    if (editing) setPendingBranch('__new__');
+                    else startNewBranch();
                   }}
                 >
                   + Thêm chi nhánh
@@ -1467,8 +1471,13 @@ export function BranchesPage({ scenario, canManage = true }: { scenario: DemoSce
                       className={`feature-list-row selectable ${selected === x.code ? 'selected' : ''}`}
                       key={x.code}
                       onClick={() => {
+                        if (editing && selected !== x.code) {
+                          setPendingBranch(x.code);
+                          return;
+                        }
                         setSelected(x.code);
                         setEditing(undefined);
+                        setIssue('');
                       }}
                     >
                       <strong>{x.name}</strong>
@@ -1541,7 +1550,9 @@ export function BranchesPage({ scenario, canManage = true }: { scenario: DemoSce
                         setBusy(true);
                         setIssue('');
                         try {
-                          await studioAdapter.saveBranch(branch, scenario);
+                          const saved = await studioAdapter.saveBranch(branch, scenario);
+                          setSelected(saved.code);
+                          setEditing(undefined);
                           retry();
                         } catch (e) {
                           setIssue(issueText(e));
@@ -1554,10 +1565,29 @@ export function BranchesPage({ scenario, canManage = true }: { scenario: DemoSce
                     Lưu chi nhánh
                   </Button>
                   <InlineIssue text={issue} />
+                  {editing && <p className="field-hint" role="status">Chi nhánh có thay đổi chưa lưu.</p>}
                 </div>
                 </fieldset>
               </Panel>
             </div>
+            {pendingBranch && (
+              <ConfirmDialog
+                title="Chưa lưu thay đổi chi nhánh"
+                confirmText="Bỏ thay đổi"
+                onClose={() => setPendingBranch('')}
+                onConfirm={() => {
+                  if (pendingBranch === '__new__') startNewBranch();
+                  else {
+                    setSelected(pendingBranch);
+                    setEditing(undefined);
+                    setIssue('');
+                  }
+                  setPendingBranch('');
+                }}
+              >
+                <p>Thông tin đang sửa sẽ mất. Bạn có thể quay lại để lưu trước.</p>
+              </ConfirmDialog>
+            )}
           </div>
         );
       }}
