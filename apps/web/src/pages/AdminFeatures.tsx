@@ -1931,6 +1931,7 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.policies);
   const [selected, setSelected] = useState('POLICY-2026-BUFFER-01');
   const [draft, setDraft] = useState<Policy>();
+  const [pendingPolicyAction, setPendingPolicyAction] = useState('');
   const [effectiveDateValid, setEffectiveDateValid] = useState(true);
   const [issue, setIssue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1944,6 +1945,18 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
     >
       {(items) => {
         const policy = items.find((p) => p.code === selected) ?? items[0];
+        const startPolicyDraft = () => {
+          setEffectiveDateValid(true);
+          setIssue('');
+          setDraft({
+            ...policy,
+            lateFeeFormulaVersion: policy.lateFeeFormulaVersion ?? 1,
+            code: `POLICY-DEMO-${items.length + 1}`,
+            from: '',
+            to: undefined,
+            reason: '',
+          });
+        };
         return (
           <div className="page">
             <PageHeading
@@ -1952,15 +1965,8 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                 <Button
                   variant="secondary"
                   onClick={() => {
-                    setEffectiveDateValid(true);
-                    setDraft({
-                      ...policy,
-                      lateFeeFormulaVersion: policy.lateFeeFormulaVersion ?? 1,
-                      code: `POLICY-DEMO-${items.length + 1}`,
-                      from: '',
-                      to: undefined,
-                      reason: '',
-                    });
+                    if (draft) setPendingPolicyAction('__new__');
+                    else startPolicyDraft();
                   }}
                 >
                   + Phiên bản mới
@@ -1969,22 +1975,26 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
             />
             <div className="feature-two-column independent-scroll-workspace">
               <Panel title="Lịch sử phiên bản" scrollRegionLabel="Cuộn lịch sử chính sách">
-                <div className="feature-card-list">
-                  {items.map((p) => (
-                    <button
-                      className={`feature-list-row selectable ${selected === p.code ? 'selected' : ''}`}
-                      key={p.code}
-                      onClick={() => setSelected(p.code)}
-                    >
-                      <strong>{p.code}</strong>
-                      <span>
-                        {formatPolicyDate(p.from)} → {formatPolicyDate(p.to)}
-                      </span>
-                      <small>
-                        {p.billingMode === 'ROLLING_24_HOURS' ? 'Chu kỳ 24 giờ' : 'Ngày lịch'}
-                      </small>
-                    </button>
-                  ))}
+                <div className="responsive-table catalog-admin-table policy-admin-table" role="region" aria-label="Bảng phiên bản chính sách" tabIndex={0}>
+                  <table>
+                    <thead><tr><th>Phiên bản</th><th>Hiệu lực</th><th>Đếm ngày</th><th>Trạng thái</th></tr></thead>
+                    <tbody>
+                      {items.map((item) => (
+                        <tr key={item.code} className={selected === item.code ? 'selected' : ''}>
+                          <td data-label="Phiên bản">
+                            <button type="button" className="text-link" aria-pressed={selected === item.code} onClick={() => {
+                              if (selected === item.code) return;
+                              if (draft) setPendingPolicyAction(item.code);
+                              else setSelected(item.code);
+                            }}>{item.code}</button>
+                          </td>
+                          <td data-label="Hiệu lực">{formatPolicyDate(item.from)} → {formatPolicyDate(item.to)}</td>
+                          <td data-label="Đếm ngày">{item.billingMode === 'ROLLING_24_HOURS' ? '24 giờ' : 'Ngày lịch'}</td>
+                          <td data-label="Trạng thái">{item.to ? 'Lịch sử' : 'Hiện hành'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </Panel>
               <div key={policy.code} role="region" aria-label="Cuộn chi tiết chính sách" tabIndex={0}>
@@ -2205,12 +2215,29 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                     >
                       Tạo phiên bản
                     </Button>
+                    <Button type="button" variant="secondary" onClick={() => { setDraft(undefined); setIssue(''); }}>
+                      Bỏ bản nháp
+                    </Button>
                     </fieldset>
                   </Panel>
                 )}
                 <InlineIssue text={issue} />
               </div>
             </div>
+            {pendingPolicyAction && (
+              <ConfirmDialog
+                title="Chưa lưu phiên bản chính sách"
+                confirmText="Bỏ bản nháp"
+                onClose={() => setPendingPolicyAction('')}
+                onConfirm={() => {
+                  if (pendingPolicyAction === '__new__') startPolicyDraft();
+                  else { setDraft(undefined); setSelected(pendingPolicyAction); setIssue(''); }
+                  setPendingPolicyAction('');
+                }}
+              >
+                <p>Phiên bản đang soạn sẽ mất. Bạn có thể quay lại để lưu trước.</p>
+              </ConfirmDialog>
+            )}
           </div>
         );
       }}

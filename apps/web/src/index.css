@@ -3680,6 +3680,9 @@ small {
 .transfer-admin-table table {
   min-width: 700px;
 }
+.policy-admin-table table {
+  min-width: 620px;
+}
 .promotion-admin-identity {
   display: grid;
   gap: 4px;
