@@ -9,7 +9,7 @@ import {
   type PromotionMutation,
   type PromotionRecord,
 } from '../api/client';
-import { Button, DateTimeField, EmptyState, Feedback, Field, SelectField, StatusLabel } from '../components/ui';
+import { Button, ConfirmDialog, DateTimeField, EmptyState, Feedback, Field, SelectField, StatusLabel } from '../components/ui';
 import { money } from '../components/support';
 import { PageHeading, Panel } from '../components/studio';
 import { formatVietnamDateTime } from '../utils/date-format';
@@ -102,6 +102,8 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<PromotionRecord>();
   const [form, setForm] = useState<PromotionFormState>(newPromotionForm);
+  const [formBaseline, setFormBaseline] = useState(() => JSON.stringify(form));
+  const [pendingPromotion, setPendingPromotion] = useState<PromotionRecord>();
   const [showForm, setShowForm] = useState(false);
   const [now, setNow] = useState(0);
 
@@ -223,7 +225,9 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
         setNotice('Đã tạo mã ưu đãi.');
       }
       setEditing(undefined);
-      setForm(newPromotionForm());
+      const nextForm = newPromotionForm();
+      setForm(nextForm);
+      setFormBaseline(JSON.stringify(nextForm));
       setShowForm(false);
       await reload();
     } catch (caught) {
@@ -253,6 +257,16 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
       .toLocaleLowerCase('vi')
       .includes(search.trim().toLocaleLowerCase('vi')),
   );
+  const formDirty = JSON.stringify(form) !== formBaseline;
+  const openPromotion = (item: PromotionRecord) => {
+    const nextForm = promotionFormFromRecord(item);
+    setEditing(item);
+    setForm(nextForm);
+    setFormBaseline(JSON.stringify(nextForm));
+    setShowForm(true);
+    setIssue('');
+    setNotice('');
+  };
   return (
     <div className="page">
       <PageHeading
@@ -420,17 +434,20 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
                 <Button type="submit" loading={busy} disabled={!canManage}>
                   {editing ? 'Lưu thay đổi' : 'Tạo mã'}
                 </Button>
-                {editing && (
+                {(editing || formDirty) && (
                   <Button
                     type="button"
                     variant="secondary"
                     onClick={() => {
                       setEditing(undefined);
-                      setForm(newPromotionForm());
+                      const nextForm = newPromotionForm();
+                      setForm(nextForm);
+                      setFormBaseline(JSON.stringify(nextForm));
+                      setShowForm(false);
                       setIssue('');
                     }}
                   >
-                    Hủy sửa
+                    Bỏ bản nháp
                   </Button>
                 )}
                 {!canManage && <small>Tài khoản chỉ có quyền xem mã ưu đãi.</small>}
@@ -499,13 +516,11 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
                           <div className="promotion-admin-actions">
                             <Button
                               variant="secondary"
-                              disabled={!canManage || !realApiMode || busyId === item.id}
+                              disabled={!canManage || !realApiMode || busy || busyId === item.id}
                               onClick={() => {
-                                setEditing(item);
-                                setForm(promotionFormFromRecord(item));
-                                setShowForm(true);
-                                setIssue('');
-                                setNotice('');
+                                if (editing?.id === item.id) { setShowForm(true); return; }
+                                if (formDirty) setPendingPromotion(item);
+                                else openPromotion(item);
                               }}
                             >Sửa</Button>
                             <Button
@@ -525,6 +540,19 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
           )}
         </Panel>
       </div>
+      {pendingPromotion && (
+        <ConfirmDialog
+          title="Chưa lưu mã ưu đãi"
+          confirmText="Bỏ bản nháp"
+          onClose={() => setPendingPromotion(undefined)}
+          onConfirm={() => {
+            openPromotion(pendingPromotion);
+            setPendingPromotion(undefined);
+          }}
+        >
+          <p>Thay đổi trong biểu mẫu hiện tại sẽ mất. Bạn có thể quay lại để lưu trước.</p>
+        </ConfirmDialog>
+      )}
     </div>
   );
 }
