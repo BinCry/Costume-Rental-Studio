@@ -168,7 +168,8 @@ export function CounterRentalPage({
       setIssue('Lưu hồ sơ khách mới trước khi tải báo giá.');
       return;
     }
-    const selectedCustomer = data?.find((entry) => entry.code === customerCode);
+    const selectedCustomer = data?.find((entry) => entry.code === customerCode) ??
+      (resolvedCustomer?.code === customerCode ? resolvedCustomer : undefined);
     if (!selectedCustomer) {
       setIssue('Chọn đúng hồ sơ khách trước khi tải báo giá.');
       return;
@@ -314,7 +315,8 @@ export function CounterRentalPage({
       setIssue('Tải báo giá trước khi tạo yêu cầu.');
       return;
     }
-    const selectedCustomer = data?.find((entry) => entry.code === customerCode);
+    const selectedCustomer = data?.find((entry) => entry.code === customerCode) ??
+      (resolvedCustomer?.code === customerCode ? resolvedCustomer : undefined);
     if (creating || !selectedCustomer || !name.trim() || !isValidPhone(phone)) {
       setIssue('Lưu hoặc chọn đúng hồ sơ khách trước khi tạo đơn.');
       return;
@@ -408,9 +410,7 @@ export function CounterRentalPage({
         return (
           <div className="page">
             <PageHeading
-              eyebrow="VẬN HÀNH / TẠI QUẦY"
               title="Tạo đơn thuê tại quầy"
-              description="Chọn khách và kỳ thuê, xem báo giá, rồi tạo yêu cầu hoặc gán bộ ngay khi có quyền."
             />
             <div className="feature-two-column">
               <div>
@@ -448,11 +448,7 @@ export function CounterRentalPage({
                             onChange={(e) => setNewEmail(e.target.value)}
                           />
                         )}
-                        <p className="muted">
-                          {realApiMode
-                            ? 'Hồ sơ sẽ được lưu trên hệ thống. Việc lưu hồ sơ không tự tạo tài khoản đăng nhập.'
-                            : 'Hồ sơ mới được lưu trong dữ liệu demo trên thiết bị này.'}
-                        </p>
+                        {realApiMode && <p className="field-hint">Lưu hồ sơ không tạo tài khoản đăng nhập.</p>}
                         <Button loading={busy} onClick={() => void saveNewCustomer(customers)}>
                           Lưu hồ sơ khách
                         </Button>
@@ -465,12 +461,27 @@ export function CounterRentalPage({
                           onChange={(value) => {
                             setCustomerSearch(value);
                             setCustomerNotice('');
+                            const nextMatches = availableCustomers.filter((entry) =>
+                              matchesCustomerSearch(entry, value),
+                            );
+                            const nextCode = value.trim() && nextMatches.length === 1
+                              ? nextMatches[0].code
+                              : nextMatches.some((entry) => entry.code === customerCode)
+                                ? customerCode
+                                : '';
+                            if (nextCode !== customerCode) {
+                              setCustomerCode(nextCode);
+                              clearQuote();
+                            }
                           }}
                         />
                         <SelectField
                           label="Chọn khách"
                           value={customer?.code ?? ''}
-                          onChange={(e) => setCustomerCode(e.target.value)}
+                          onChange={(e) => {
+                            setCustomerCode(e.target.value);
+                            clearQuote();
+                          }}
                         >
                           {!customer && <option value="">Chọn đúng khách trong kết quả</option>}
                           {matches.map((c) => (
@@ -481,11 +492,7 @@ export function CounterRentalPage({
                             </option>
                           ))}
                         </SelectField>
-                        {customer && (
-                          <p className="muted">
-                            {customer.code} · {customer.preferredBranch}
-                          </p>
-                        )}
+                        {customer && <p className="field-hint">{customer.code} · {customer.preferredBranch}</p>}
                         {!customer && customerSearch && (
                           <p className="field-hint" role="status">
                             {matches.length
@@ -578,13 +585,8 @@ export function CounterRentalPage({
                         {catalogError}
                       </Feedback>
                     )}
-                    <Feedback title={realApiMode ? 'Khả dụng được kiểm tra theo lịch và chi nhánh' : 'Dữ liệu demo'}>
-                      {realApiMode
-                        ? 'Chọn một bộ phù hợp để gán khi xác nhận đơn. Tiền thuê và tiền cọc được thu ở bước giao đồ. Chính sách giữ bộ trong lúc chờ duyệt vẫn cần được chốt.'
-                        : 'Báo giá và yêu cầu không tự giữ bộ trong dữ liệu demo. Tiền thuê và tiền cọc vẫn chỉ được thu ở bước giao đồ.'}
-                    </Feedback>
                     <Button variant="secondary" loading={busy} disabled={catalogLoading || !catalog.length || creating || !customer} onClick={() => void getQuote()}>
-                      Kiểm tra khả dụng & báo giá
+                      Xem báo giá
                     </Button>
                   </Panel>
                 </fieldset>
@@ -609,15 +611,14 @@ export function CounterRentalPage({
                       <KeyFacts
                         rows={[
                           { label: 'Số ngày tính tiền', value: quote.daysLabel },
-                          { label: 'Chính sách', value: quote.policy },
                           { label: 'Giá/ngày', value: money(quote.pricePerDay) },
                           { label: 'Tiền thuê', value: money(quote.rental) },
                           { label: 'Cọc', value: money(quote.deposit) },
                           { label: 'Cần thu khi nhận', value: money(quote.amountDueAtPickup) },
                         ]}
                       />
-                      <p className="muted">
-                        {realApiMode ? 'Báo giá hệ thống hết hạn: ' : 'Báo giá fixture hết hạn: '}{quote.expiresAt}. Cọc không phải doanh thu.
+                      <p className="field-hint">
+                        Hết hạn: {quote.expiresAt} · {quote.policy} · Chưa thu tiền.
                       </p>
                       {canConfirm && (
                         <SelectField
@@ -646,8 +647,8 @@ export function CounterRentalPage({
                         </SelectField>
                       )}
                       {eligibleUnits.length === 0 && (
-                        <Feedback tone="warning" title={realApiMode ? 'Không có bộ còn khả dụng' : 'Chưa có bộ phù hợp trong fixture'}>
-                          Đổi mẫu, chi nhánh hoặc kỳ thuê; hoặc tạo yêu cầu chờ nhân viên kiểm tra lại.
+                        <Feedback tone="warning" title="Chưa có bộ khả dụng">
+                          Đổi mẫu hoặc kỳ thuê, hoặc tạo yêu cầu chờ kiểm tra.
                         </Feedback>
                       )}
                     </>
