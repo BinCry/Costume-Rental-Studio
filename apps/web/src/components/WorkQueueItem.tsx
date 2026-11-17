@@ -22,7 +22,7 @@ export function WorkQueueItem({ task, onOpen }: { task: QueueTask; onOpen: () =>
       <span className="work-main">
         <strong>{task.task}</strong>
         <small>
-          <b>{task.orderId}</b> · {task.customer} · {task.status} · Phụ trách: {task.owner}
+          <b>{task.orderId}</b> · {task.customer} · {task.status}
         </small>
       </span>
       <StatusLabel text={task.urgency} tone={tone} />

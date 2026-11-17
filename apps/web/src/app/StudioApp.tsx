@@ -100,23 +100,24 @@ const adminNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
 ];
 const staffNavGroups: { id: string; label: string; screens: Screen[] }[] = [
   { id: 'overview', label: 'Tổng quan', screens: ['dashboard'] },
-  { id: 'operations', label: 'Vận hành', screens: ['orders', 'counter', 'active'] },
-  { id: 'inventory', label: 'Kho', screens: ['inventory', 'transfers'] },
+  { id: 'orders', label: 'Đơn thuê', screens: ['orders'] },
+  { id: 'counter', label: 'Tạo tại quầy', screens: ['counter'] },
+  { id: 'active', label: 'Đang thuê', screens: ['active'] },
+  { id: 'inventory', label: 'Kho', screens: ['inventory'] },
+  { id: 'transfers', label: 'Điều chuyển', screens: ['transfers'] },
   { id: 'customers', label: 'Khách hàng', screens: ['crm'] },
   { id: 'reports', label: 'Báo cáo', screens: ['staffReports'] },
 ];
 const adminNavGroups: { id: string; label: string; screens: Screen[] }[] = [
   { id: 'overview', label: 'Tổng quan', screens: ['reports'] },
-  {
-    id: 'operations',
-    label: 'Vận hành',
-    screens: ['adminOrders', 'adminCounter', 'adminActive'],
-  },
-  { id: 'inventory', label: 'Kho', screens: ['adminInventory', 'adminTransfers'] },
+  { id: 'orders', label: 'Đơn thuê', screens: ['adminOrders'] },
+  { id: 'counter', label: 'Tạo tại quầy', screens: ['adminCounter'] },
+  { id: 'active', label: 'Đang thuê', screens: ['adminActive'] },
+  { id: 'inventory', label: 'Kho', screens: ['adminInventory'] },
+  { id: 'transfers', label: 'Điều chuyển', screens: ['adminTransfers'] },
   { id: 'customers', label: 'Khách hàng', screens: ['adminCrm'] },
   { id: 'catalog', label: 'Danh mục', screens: ['adminCatalog'] },
-  { id: 'organization', label: 'Tổ chức', screens: ['employees', 'roles', 'branches'] },
-  { id: 'policies', label: 'Chính sách & ưu đãi', screens: ['policies', 'promotions'] },
+  { id: 'settings', label: 'Cấu hình', screens: ['employees', 'roles', 'branches', 'policies', 'promotions'] },
 ];
 const isStaff = (screen: Screen) =>
   ![

@@ -1915,17 +1915,18 @@ small {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
-  margin-bottom: 32px;
+  margin-bottom: 18px;
 }
 .queue-counter {
   background: #fff;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  min-height: 112px;
-  padding: 15px;
+  min-height: 70px;
+  padding: 12px 14px;
   text-align: left;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 12px;
   justify-content: space-between;
 }
 .queue-counter:hover {
@@ -1942,8 +1943,8 @@ small {
   font-weight: 600;
 }
 .queue-counter strong {
-  font-size: 26px;
-  line-height: 30px;
+  font-size: 22px;
+  line-height: 26px;
   font-weight: 600;
 }
 .queue-counter small {
@@ -4807,7 +4808,7 @@ small {
   }
   .queue-counter {
     flex: 0 0 148px;
-    min-height: 112px;
+    min-height: 70px;
     scroll-snap-align: start;
   }
   .work-item {
@@ -5182,11 +5183,11 @@ small {
 .app-staff .section-nav .staff-nav-group a.staff-nav-direct {
   min-height: 44px;
   padding: 0 10px;
-  color: var(--text-tertiary, var(--text-secondary));
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
 }
 .app-staff .section-nav .staff-nav-group a.staff-nav-direct.active {
   background: var(--brand-tint);

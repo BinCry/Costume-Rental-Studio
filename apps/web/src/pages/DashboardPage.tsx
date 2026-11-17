@@ -23,12 +23,12 @@ const groups: QueueTask['group'][] = [
   'Ngày khác',
   'Chờ xác nhận lâu',
 ];
-const summary: { label: string; kind: QueueTask['kind']; short: string }[] = [
-  { label: 'Chờ xác nhận', kind: 'pending', short: 'Cần duyệt' },
-  { label: 'Giao trong ngày', kind: 'handover', short: 'Sắp giao' },
-  { label: 'Trả trong ngày', kind: 'return', short: 'Sắp trả' },
-  { label: 'Quá hạn', kind: 'overdue', short: 'Cần theo dõi' },
-  { label: 'Giao dịch cần xử lý', kind: 'payment', short: 'Tiền' },
+const summary: { label: string; kind: QueueTask['kind'] }[] = [
+  { label: 'Chờ xác nhận', kind: 'pending' },
+  { label: 'Giao trong ngày', kind: 'handover' },
+  { label: 'Trả trong ngày', kind: 'return' },
+  { label: 'Quá hạn', kind: 'overdue' },
+  { label: 'Giao dịch cần xử lý', kind: 'payment' },
 ];
 
 const localDateKey = (value: Date) => {
@@ -210,16 +210,12 @@ export function DashboardPage({
             <strong>
               {loading ? '—' : visibleForDate.filter((task) => task.kind === entry.kind).length}
             </strong>
-            <small>
-              {entry.short} <Icon name="arrow" size={14} />
-            </small>
           </button>
         ))}
       </section>
       <div className="queue-heading">
         <div>
-          <p className="eyebrow">THEO THỨ TỰ ƯU TIÊN</p>
-          <h2>Ưu tiên xử lý</h2>
+          <h2>Việc cần xử lý</h2>
         </div>
         <Button
           variant="secondary"
@@ -304,11 +300,7 @@ export function DashboardPage({
           })}
         </div>
       )}
-      <p className="fixture-caption">
-        {realApiMode
-          ? 'Thứ tự ưu tiên giúp sắp xếp công việc; hãy kiểm tra hạn trả và trạng thái đơn trước khi xử lý.'
-          : 'Ngưỡng “trong 2 giờ” và các mốc hạn chỉ là dữ liệu minh họa. SLA thực tế cần cấu hình theo chính sách studio.'}
-      </p>
+      {!realApiMode && <p className="fixture-caption">Các mốc hạn là dữ liệu minh họa.</p>}
     </div>
   );
 }
