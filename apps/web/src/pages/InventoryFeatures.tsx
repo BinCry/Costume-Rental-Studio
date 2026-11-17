@@ -188,6 +188,7 @@ export function InventoryPage({
   const [capacityNotice, setCapacityNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [showCreateUnit, setShowCreateUnit] = useState(false);
+  const [showBlockForm, setShowBlockForm] = useState(false);
   const [inspectionGrade, setInspectionGrade] = useState<'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED'>('GOOD');
   const [unitTargetStatus, setUnitTargetStatus] = useState<'READY' | 'CLEANING' | 'REPAIR'>('CLEANING');
   const [operationNotes, setOperationNotes] = useState('');
@@ -229,6 +230,8 @@ export function InventoryPage({
     setBlockNotice('');
     setScheduleIssue('');
     setScheduleNotice('');
+    setEditingBlock(undefined);
+    setShowBlockForm(false);
     setSelected(unit);
     revealDetail();
     void refreshUnitDetail(unit);
@@ -288,6 +291,7 @@ export function InventoryPage({
         : realApiMode
           ? `Đã tạo lịch ${blockTypeLabels[blockType]} cho ${selected.barcode} trên hệ thống.`
           : `Đã tạo block ${blockTypeLabels[blockType]} cho ${selected.barcode} trong fixture.`);
+      setShowBlockForm(false);
     } catch (e) {
       setBlockIssue(e instanceof Error ? e.message : 'Không tạo được block.');
     } finally {
@@ -559,6 +563,7 @@ export function InventoryPage({
                 {selected ? (
                   <>
                     <UnitDetailPanel unit={selected} />
+                    {blockNotice && <Feedback tone="success" title="Đã lưu lịch xử lý">{blockNotice}</Feedback>}
                     {canManage && (
                       <Panel title="Cập nhật tình trạng bộ">
                         {realApiMode && selected.apiId ? (
@@ -589,13 +594,14 @@ export function InventoryPage({
                         {notice && <Feedback tone="success" title="Đã cập nhật">{notice}</Feedback>}
                       </Panel>
                     )}
-                    {canManage && (
-                      <Panel title={editingBlock ? 'Chỉnh lịch xử lý' : 'Tạo lịch xử lý cho bộ'} action={editingBlock ? <Button type="button" variant="quiet" onClick={() => setEditingBlock(undefined)}>Bỏ chỉnh sửa</Button> : undefined}>
-                        <p className="muted">
-                          {realApiMode
-                            ? 'Tạo block sẽ gửi thời gian, loại block và lý do lên backend để giữ lịch khả dụng nhất quán.'
-                            : 'Fixture hỗ trợ vệ sinh, sửa chữa và kiểm tra. Việc block có thể ảnh hưởng lịch còn bộ.'}
-                        </p>
+                    {canManage && !showBlockForm && !editingBlock && (
+                      <Button variant="secondary" onClick={() => { setEditingBlock(undefined); setBlockIssue(''); setBlockNotice(''); setShowBlockForm(true); }}>
+                        Tạo lịch xử lý cho bộ
+                      </Button>
+                    )}
+                    {canManage && (showBlockForm || !!editingBlock) && (
+                      <Panel title={editingBlock ? 'Chỉnh lịch xử lý' : 'Tạo lịch xử lý cho bộ'} action={<Button type="button" variant="quiet" onClick={() => { setEditingBlock(undefined); setShowBlockForm(false); setBlockIssue(''); }}>Đóng</Button>}>
+                        <p className="field-hint">Lịch xử lý làm bộ không khả dụng trong khoảng đã chọn.</p>
                         <SelectField
                           label="Loại block"
                           value={blockType}
@@ -627,7 +633,6 @@ export function InventoryPage({
                           {editingBlock ? 'Lưu lịch xử lý' : realApiMode ? 'Tạo lịch xử lý' : 'Tạo block fixture'}
                         </Button>
                         <InlineIssue text={blockIssue} conflict={scenario === 'conflict' || scenario === 'version'} />
-                        {blockNotice && <Feedback tone="success" title="Đã lưu lịch xử lý">{blockNotice}</Feedback>}
                       </Panel>
                     )}
                   </>
