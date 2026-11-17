@@ -3591,6 +3591,29 @@ small {
   outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
 }
+.policy-advanced-details {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.policy-advanced-details > summary {
+  padding: 12px 0;
+  cursor: pointer;
+  font-weight: 600;
+}
+.policy-advanced-details > summary:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.policy-draft-preview {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+}
+.policy-draft-preview > strong {
+  display: block;
+  margin-bottom: 8px;
+}
 .crm-case-table table {
   min-width: 620px;
 }

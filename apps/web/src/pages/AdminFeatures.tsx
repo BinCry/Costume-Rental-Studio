@@ -1846,9 +1846,7 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
         return (
           <div className="page">
             <PageHeading
-              eyebrow="QUẢN TRỊ / CHÍNH SÁCH"
               title="Phiên bản chính sách thuê"
-              description="Đơn giữ snapshot chính sách tại thời điểm lập. Sửa bằng cách tạo phiên bản mới có thời điểm hiệu lực."
               action={canManage ? (
                 <Button
                   variant="secondary"
@@ -1908,11 +1906,17 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                       { label: 'Số ngày', value: `${policy.minDays}–${policy.maxDays ?? 'Không giới hạn'}` },
                       { label: 'Báo giá hiệu lực', value: `${policy.quoteHours} giờ` },
                       { label: 'Hủy miễn phí trước', value: `${policy.cancelHours} giờ` },
-                      { label: 'Ân hạn không đến nhận', value: `${policy.noShowGraceMinutes ?? 0} phút` },
                       { label: 'Phí hủy trễ', value: `${policy.lateCancelFeePercent ?? 0}%` },
-                      { label: 'Thời hạn hoàn tiền dự kiến', value: policy.refundSlaBusinessDays == null ? 'Chưa cấu hình' : `${policy.refundSlaBusinessDays} ngày làm việc` },
                       { label: 'Ân hạn trả trễ', value: `${policy.lateGraceMinutes ?? 0} phút` },
                       { label: 'Phí trễ', value: `${policy.lateFeePercentPerDay ?? 0}% mỗi 24 giờ, tối đa 100% tiền thuê từng bộ` },
+                    ]}
+                  />
+                  <details className="policy-advanced-details">
+                    <summary>Điều kiện và cấu hình khác</summary>
+                  <KeyFacts
+                    rows={[
+                      { label: 'Ân hạn không đến nhận', value: `${policy.noShowGraceMinutes ?? 0} phút` },
+                      { label: 'Thời hạn hoàn tiền dự kiến', value: policy.refundSlaBusinessDays == null ? 'Chưa cấu hình' : `${policy.refundSlaBusinessDays} ngày làm việc` },
                       { label: 'Cách tính phí', value: policy.lateFeeFormulaVersion === 2 ? 'Theo từng bộ, sau giảm giá' : 'Cách tính cũ theo toàn đơn' },
                       { label: 'Dự phòng trả trễ', value: `${((policy.lateReturnBufferMinutes ?? 0) / 60).toLocaleString('vi-VN')} giờ` },
                       { label: 'Vệ sinh/chuẩn bị mặc định', value: `${((policy.defaultCleaningBufferMinutes ?? 0) / 60).toLocaleString('vi-VN')} giờ; mẫu có thể ghi đè` },
@@ -1920,8 +1924,8 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                       { label: 'Lý do thay đổi', value: policy.reason },
                     ]}
                   />
-                  <h3>Audit</h3>
                   <Timeline items={[`${formatPolicyDate(policy.from)} · Tạo ${policy.code}: ${policy.reason}`]} />
+                  </details>
                 </Panel>
                 {draft && (
                   <Panel title={realApiMode ? 'Tạo phiên bản trên máy chủ' : 'Tạo phiên bản fixture'}>
@@ -2047,9 +2051,7 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                         hint="Dùng khi mẫu chưa có thời gian riêng. Giá trị cụ thể của mẫu sẽ ghi đè mức mặc định này."
                       />
                     </div>
-                    <p className="muted small-note">
-                      Mức khởi điểm đã duyệt là 12 giờ dự phòng + 12 giờ vệ sinh/chuẩn bị. Phiên bản policy này đang tạo tổng đệm mặc định {(((draft.lateReturnBufferMinutes ?? 0) + (draft.defaultCleaningBufferMinutes ?? 0)) / 60).toLocaleString('vi-VN')} giờ; có thể thay đổi ở các phiên bản sau. Đây là khoảng xếp lịch nội bộ, không phải ân hạn hay gia hạn thuê. Ân hạn và mức phí trễ là chính sách riêng, vẫn cần được chốt trước khi công bố.
-                    </p>
+                    <p className="field-hint">Tổng đệm xếp lịch nội bộ: {(((draft.lateReturnBufferMinutes ?? 0) + (draft.defaultCleaningBufferMinutes ?? 0)) / 60).toLocaleString('vi-VN')} giờ; không kéo dài kỳ thuê của khách.</p>
                     {realApiMode && ((draft.lateReturnBufferMinutes ?? 0) > 0 || (draft.defaultCleaningBufferMinutes ?? 0) > 0) && (
                       <Feedback tone="warning" title="Rà soát các đơn đã xác nhận">
                         Mọi đơn tương lai cần được kiểm tra theo buffer mới; nếu hai khoảng chiếm dụng chồng nhau, hãy xử lý phân công trước khi phiên bản policy có hiệu lực.
@@ -2060,6 +2062,17 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                       value={draft.reason}
                       onChange={(e) => setDraft({ ...draft, reason: e.target.value })}
                     />
+                    <div className="policy-draft-preview" role="region" aria-label="Xem trước phiên bản chính sách">
+                      <strong>Xem trước cấu hình</strong>
+                      <KeyFacts rows={[
+                        { label: 'Hiệu lực từ', value: draft.from ? formatPolicyDate(draft.from) : 'Chưa chọn' },
+                        { label: 'Kỳ thuê', value: `${draft.minDays}–${draft.maxDays ?? 'Không giới hạn'} ngày` },
+                        { label: 'Hủy miễn phí trước', value: `${draft.cancelHours} giờ` },
+                        { label: 'Phí hủy trễ', value: `${draft.lateCancelFeePercent ?? 0}%` },
+                        { label: 'Phí trả trễ', value: `${draft.lateFeePercentPerDay ?? 0}% mỗi 24 giờ` },
+                        { label: 'Đệm lịch nội bộ', value: `${(((draft.lateReturnBufferMinutes ?? 0) + (draft.defaultCleaningBufferMinutes ?? 0)) / 60).toLocaleString('vi-VN')} giờ` },
+                      ]} />
+                    </div>
                     <Button
                       disabled={!canManage}
                       loading={busy}
