@@ -278,9 +278,7 @@ export function CrmPage({
         return (
           <div className="page">
             <PageHeading
-              eyebrow="CRM / KHÁCH HÀNG"
               title="Khách hàng & case"
-              description="Hồ sơ, lịch sử thuê, tương tác và xử lý case theo chi nhánh."
               action={
                 canManage ? (
                   <Button
@@ -307,7 +305,7 @@ export function CrmPage({
                 Vai trò hiện tại chưa có mã quyền cập nhật CRM tại chi nhánh này.
               </Feedback>
             )}
-            <div className="crm-layout">
+            <div className="crm-layout independent-scroll-workspace">
               <Panel title="Hồ sơ khách">
                 <SearchField
                   label="Tìm tên, mã, số điện thoại"
@@ -330,6 +328,7 @@ export function CrmPage({
                 </div>
                 {!visible.length && <p className="muted">Không có khách phù hợp ở {branch}.</p>}
               </Panel>
+              <div className="crm-detail-workspace" role="region" aria-label="Hồ sơ và case của khách" tabIndex={0}>
               {person ? (
                 <div
                   ref={customerDetailRef}
@@ -346,7 +345,8 @@ export function CrmPage({
                         { label: 'Chi nhánh ưu tiên', value: person.preferredBranch },
                       ]}
                     />
-                    <h3>Lịch sử thuê</h3>
+                    <details className="crm-history-section">
+                      <summary>Lịch sử thuê</summary>
                     {realApiMode && (apiRentalHistory[person.code] === undefined && !apiRentalHistoryErrors[person.code]) ? (
                       <p className="muted" role="status">Đang tải lịch sử thuê…</p>
                     ) : realApiMode && apiRentalHistoryErrors[person.code] ? (
@@ -363,7 +363,9 @@ export function CrmPage({
                     ) : (
                       <Timeline items={realApiMode ? apiRentalHistory[person.code] ?? [] : person.history} />
                     )}
-                    <h3>Tương tác</h3>
+                    </details>
+                    <details className="crm-history-section">
+                      <summary>Lịch sử tương tác</summary>
                     {realApiMode && (apiInteractions[JSON.stringify([person.code, branch])] === undefined && !apiInteractionErrors[JSON.stringify([person.code, branch])]) ? (
                       <p className="muted" role="status">Đang tải tương tác…</p>
                     ) : realApiMode && apiInteractionErrors[JSON.stringify([person.code, branch])] ? (
@@ -380,6 +382,7 @@ export function CrmPage({
                     ) : (
                       <Timeline items={personInteractions} />
                     )}
+                    </details>
                     {realApiMode && canManage && (
                       <div className="stack-form">
                         <SelectField
@@ -447,7 +450,23 @@ export function CrmPage({
                       ) : undefined
                     }
                   >
-                    <div className="feature-card-list">
+                    <div className="responsive-table crm-case-table" role="region" aria-label="Danh sách case của khách" tabIndex={0}>
+                      <table>
+                        <thead><tr><th>Mã</th><th>Nội dung</th><th>Ưu tiên</th><th>Trạng thái</th><th>Người xử lý</th></tr></thead>
+                        <tbody>
+                          {related.map((item) => (
+                            <tr key={item.code}>
+                              <td><button className="text-link" aria-pressed={current?.code === item.code} onClick={() => switchView('case', item.code)}>{item.code}</button></td>
+                              <td className="crm-case-subject" title={item.subject}>{item.subject}</td>
+                              <td>{priorityLabels[item.priority]}</td>
+                              <td>{caseStatusLabels[item.status]}</td>
+                              <td>{item.owner ?? 'Chưa phân công'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="feature-card-list crm-case-mobile-list">
                       {related.map((c) => (
                         <button
                           className={`feature-list-row selectable ${current?.code === c.code ? 'selected' : ''}`}
@@ -638,7 +657,8 @@ export function CrmPage({
                         </p>
                       )}
                     </fieldset>
-                    <h3>Lịch sử case</h3>
+                    <details className="crm-history-section">
+                      <summary>Lịch sử case</summary>
                     {realApiMode && editing === current && current && apiCaseHistoryErrors[current.code] ? (
                       <Feedback
                         tone="danger"
@@ -655,6 +675,7 @@ export function CrmPage({
                     ) : (
                       <Timeline items={editing === current ? currentHistory : editing.history} />
                     )}
+                    </details>
                   </Panel>
                 ) : (
                   <Panel title="Chi tiết case">
@@ -667,6 +688,7 @@ export function CrmPage({
                     {notice}
                   </Feedback>
                 )}
+              </div>
               </div>
             </div>
             {newCustomer && (
