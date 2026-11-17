@@ -229,8 +229,13 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
   );
   const categoriesResource = useFixtureResource(scenario, loadCategories);
   const [selected, setSelected] = useState('ao-dai-lina');
+  const [catalogSection, setCatalogSection] = useState<'info' | 'variants' | 'media'>('info');
   const [model, setModel] = useState<CostumeDetail>();
   const [variant, setVariant] = useState<Variant>();
+  const [pendingCatalogTarget, setPendingCatalogTarget] = useState('');
+  const [pendingVariantTarget, setPendingVariantTarget] = useState('');
+  const [savedModelSnapshot, setSavedModelSnapshot] = useState<{ id: string; value: string }>();
+  const [savedVariantSnapshot, setSavedVariantSnapshot] = useState<{ code: string; value: string }>();
   const [issue, setIssue] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
@@ -318,6 +323,7 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
       const saved = await studioAdapter.saveModel(model, scenario);
       setModel(saved);
       setSelected(saved.id);
+      setSavedModelSnapshot({ id: saved.id, value: JSON.stringify(saved) });
       if (realApiMode) setSavedModelId(saved.id);
       setNotice(realApiMode ? 'Đã lưu mẫu vào danh mục trên máy chủ.' : 'Đã lưu mẫu trong fixture.');
       retry();
@@ -497,6 +503,7 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
     setIssue('');
     try {
       await studioAdapter.saveVariant(variant, scenario);
+      setSavedVariantSnapshot({ code: variant.code, value: JSON.stringify(variant) });
       setNotice(realApiMode ? 'Đã lưu biến thể và giá trên máy chủ. Đơn cũ vẫn giữ snapshot.' : 'Đã lưu biến thể và giá hiện hành trong fixture. Đơn cũ giữ snapshot.');
       retry();
     } catch (e) {
@@ -514,9 +521,59 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
       emptyTitle="Chưa có mẫu trang phục"
     >
       {(items) => {
-        const current =
-          model?.id === selected ? model : (items.find((i) => i.id === selected) ?? items[0]);
-        const editing = model?.id === current.id ? model : current;
+        const originalModel = items.find((item) => item.id === model?.id);
+        const modelSnapshot = model && savedModelSnapshot?.id === model.id
+          ? savedModelSnapshot.value : JSON.stringify(originalModel);
+        const hasUnsavedModel = !!model && JSON.stringify(model) !== modelSnapshot;
+        const current = model?.id === selected && (hasUnsavedModel || !originalModel)
+          ? model : (items.find((item) => item.id === selected) ?? model ?? items[0]);
+        const editing = model?.id === current.id && hasUnsavedModel ? model : current;
+        const originalVariant = current.variants.find((item) => item.code === variant?.code);
+        const variantSnapshot = variant && savedVariantSnapshot?.code === variant.code
+          ? savedVariantSnapshot.value : JSON.stringify(originalVariant);
+        const hasUnsavedVariant = !!variant && JSON.stringify(variant) !== variantSnapshot;
+        const hasUnsavedCatalogDraft =
+          hasUnsavedModel ||
+          hasUnsavedVariant ||
+          !!mediaFile || !!editingMediaAltId || !!replaceTargetId;
+        const createVariant = () => setVariant({
+          code: `${current.id.toUpperCase()}-NEW`,
+          modelId: current.id,
+          size: '',
+          color: '',
+          fit: '',
+          price: 0,
+          deposit: 0,
+          replacement: 0,
+        });
+        const startNewModel = () => {
+          resetMediaDraft();
+          setCatalogSection('info');
+          const id = `mau-demo-${items.length + 1}`;
+          setSelected(id);
+          setModel({
+            id,
+            name: '',
+            modelCode: '',
+            categoryId: '',
+            category: 'Trang phục',
+            description: '',
+            material: '',
+            accessories: [],
+            imagePosition: 'missing',
+            variants: [],
+          });
+          setVariant(undefined);
+          setIssue('');
+        };
+        const selectExistingModel = (id: string) => {
+          resetMediaDraft();
+          setCatalogSection('info');
+          setSelected(id);
+          setModel(undefined);
+          setVariant(undefined);
+          setIssue('');
+        };
         return (
           <div className="page">
             <PageHeading
@@ -524,35 +581,21 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
               action={canManage ? (
                 <Button
                   variant="secondary"
-                  disabled={mediaBusy}
+                  disabled={mediaBusy || busy}
                   onClick={() => {
-                    resetMediaDraft();
-                    const id = `mau-demo-${items.length + 1}`;
-                    setSelected(id);
-                    setModel({
-                      id,
-                      name: '',
-                      modelCode: '',
-                      categoryId: '',
-                      category: 'Trang phục',
-                      description: '',
-                      material: '',
-                      accessories: [],
-                      imagePosition: 'missing',
-                      variants: [],
-                    });
-                    setVariant(undefined);
+                    if (hasUnsavedCatalogDraft) setPendingCatalogTarget('__new__');
+                    else startNewModel();
                   }}
                 >
                   + Tạo mẫu
                 </Button>
               ) : undefined}
             />
-            <div className="feature-two-column">
-              <div>
+            <div className="feature-two-column catalog-admin-layout independent-scroll-workspace">
+              <div role="region" aria-label="Danh sách mẫu trang phục" tabIndex={0}>
                 <Panel title="Danh mục mẫu">
-                  {model && !items.some((item) => item.id === model.id) && (
-                    <p className="field-hint" role="status">Mẫu mới chưa được lưu.</p>
+                  {hasUnsavedCatalogDraft && (
+                    <p className="field-hint" role="status">Có thay đổi chưa lưu trong mẫu đang mở.</p>
                   )}
                   <div className="responsive-table catalog-admin-table" role="region" aria-label="Danh sách mẫu trang phục" tabIndex={0}>
                     <table>
@@ -560,7 +603,7 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                       <tbody>
                         {items.map((item) => (
                           <tr key={item.id} className={selected === item.id ? 'selected' : ''}>
-                            <td data-label="Mã mẫu"><button className="text-link" aria-pressed={selected === item.id} disabled={mediaBusy} onClick={() => { resetMediaDraft(); setSelected(item.id); setModel(undefined); setVariant(undefined); }}>{item.modelCode?.trim() ? item.modelCode : item.id}</button></td>
+                            <td data-label="Mã mẫu"><button className="text-link" aria-pressed={selected === item.id} disabled={mediaBusy || busy} onClick={() => { if (selected === item.id) return; if (hasUnsavedCatalogDraft) setPendingCatalogTarget(item.id); else selectExistingModel(item.id); }}>{item.modelCode?.trim() ? item.modelCode : item.id}</button></td>
                             <td data-label="Tên mẫu">{item.name}</td>
                             <td data-label="Danh mục">{item.category}</td>
                             <td data-label="Biến thể">{item.variants.length}</td>
@@ -570,7 +613,16 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                     </table>
                   </div>
                 </Panel>
-                <Panel title="Thông tin mẫu">
+              </div>
+              <div role="region" aria-label="Chỉnh sửa mẫu trang phục" tabIndex={0}>
+                <div className="variant-pills catalog-editor-sections" role="group" aria-label="Chỉnh sửa mẫu trang phục">
+                  <button type="button" className={catalogSection === 'info' ? 'active' : ''} aria-pressed={catalogSection === 'info'} onClick={() => setCatalogSection('info')}>Thông tin</button>
+                  <button type="button" className={catalogSection === 'variants' ? 'active' : ''} aria-pressed={catalogSection === 'variants'} onClick={() => setCatalogSection('variants')}>Biến thể & giá</button>
+                  {realApiMode && <button type="button" className={catalogSection === 'media' ? 'active' : ''} aria-pressed={catalogSection === 'media'} onClick={() => setCatalogSection('media')}>Ảnh sản phẩm</button>}
+                </div>
+                <div hidden={catalogSection === 'variants'}>
+                <Panel title={catalogSection === 'media' ? 'Ảnh sản phẩm' : 'Thông tin mẫu'}>
+                  <div hidden={catalogSection !== 'info'}>
                   <fieldset className="permission-fieldset" disabled={!canManage || mediaBusy}>
                   <div className="feature-filters">
                     <Field
@@ -643,6 +695,12 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                       }
                     />
                   )}
+                  <Button loading={busy} onClick={() => void saveModel()}>
+                    Lưu mẫu
+                  </Button>
+                  </fieldset>
+                  </div>
+                  <div hidden={catalogSection !== 'media'}>
                   {realApiMode && !editing.modelCode && (
                     <p className="muted small-note">
                       Mẫu mới sẽ được tạo với mã mẫu và danh mục đã chọn. Media sẽ được bổ sung ở bước
@@ -653,8 +711,6 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                     <p className="muted small-note">Lưu mẫu trước để mở thư viện ảnh và tải ảnh lên.</p>
                   )}
                   {realApiMode && editing.modelCode && mediaOwnerId === editing.id && (
-                    <details className="catalog-media-disclosure">
-                      <summary>Ảnh sản phẩm · {mediaItems.length}{mediaOwnerErrorId === editing.id || mediaIssue ? ' · Cần kiểm tra' : ''}</summary>
                     <section className="catalog-media-manager" aria-label="Quản lý ảnh sản phẩm">
                       {mediaOwnerId === editing.id && mediaOwnerErrorId !== editing.id && (mediaLoading || mediaOwnerLoadedId !== editing.id) && (
                         <p className="muted" role="status">Đang tải thư viện ảnh…</p>
@@ -840,32 +896,21 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                         <Feedback tone="success" title="Ảnh đã được cập nhật">{mediaNotice}</Feedback>
                       )}
                     </section>
-                    </details>
                   )}
-                  <Button loading={busy} onClick={() => void saveModel()}>
-                    Lưu mẫu
-                  </Button>
-                  </fieldset>
+                  </div>
                 </Panel>
-              </div>
-              <div>
+                </div>
+                <div hidden={catalogSection !== 'variants'}>
                 <Panel
                   title="Biến thể & giá"
                   action={canManage ? (
                     <Button
                       variant="quiet"
-                      onClick={() =>
-                        setVariant({
-                          code: `${current.id.toUpperCase()}-NEW`,
-                          modelId: current.id,
-                          size: '',
-                          color: '',
-                          fit: '',
-                          price: 0,
-                          deposit: 0,
-                          replacement: 0,
-                        })
-                      }
+                      disabled={busy || mediaBusy}
+                      onClick={() => {
+                        if (hasUnsavedVariant) setPendingVariantTarget('__new__');
+                        else createVariant();
+                      }}
                     >
                       + Biến thể
                     </Button>
@@ -875,8 +920,15 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                     {current.variants.map((v) => (
                       <button
                         key={v.code}
+                        type="button"
                         className={variant?.code === v.code ? 'active' : ''}
-                        onClick={() => setVariant(v)}
+                        aria-pressed={variant?.code === v.code}
+                        disabled={busy || mediaBusy}
+                        onClick={() => {
+                          if (variant?.code === v.code) return;
+                          if (hasUnsavedVariant) setPendingVariantTarget(v.code);
+                          else setVariant(v);
+                        }}
                       >
                         {v.size} · {v.color}
                       </button>
@@ -947,6 +999,7 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                     <p className="muted">Chọn biến thể để sửa giá hoặc tạo mới.</p>
                   )}
                 </Panel>
+                </div>
                 <InlineIssue text={issue} conflict={scenario === 'version'} />
                 {notice && (
                   <Feedback tone="success" title="Đã lưu">
@@ -966,6 +1019,34 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                       Ảnh “{pendingDeleteMedia.altText?.trim() ? pendingDeleteMedia.altText : 'không có mô tả'}” sẽ bị gỡ khỏi mẫu.
                       Thao tác này không thể hoàn tác.
                     </p>
+                  </ConfirmDialog>
+                )}
+                {pendingCatalogTarget && (
+                  <ConfirmDialog
+                    title="Chưa lưu thay đổi danh mục"
+                    confirmText="Bỏ thay đổi"
+                    onClose={() => setPendingCatalogTarget('')}
+                    onConfirm={() => {
+                      if (pendingCatalogTarget === '__new__') startNewModel();
+                      else selectExistingModel(pendingCatalogTarget);
+                      setPendingCatalogTarget('');
+                    }}
+                  >
+                    <p>Thông tin mẫu, giá hoặc ảnh đang sửa sẽ mất. Bạn có thể quay lại để lưu trước.</p>
+                  </ConfirmDialog>
+                )}
+                {pendingVariantTarget && (
+                  <ConfirmDialog
+                    title="Chưa lưu biến thể"
+                    confirmText="Bỏ thay đổi"
+                    onClose={() => setPendingVariantTarget('')}
+                    onConfirm={() => {
+                      if (pendingVariantTarget === '__new__') createVariant();
+                      else setVariant(current.variants.find((item) => item.code === pendingVariantTarget));
+                      setPendingVariantTarget('');
+                    }}
+                  >
+                    <p>Giá và thông tin biến thể đang sửa sẽ mất. Bạn có thể quay lại để lưu trước.</p>
                   </ConfirmDialog>
                 )}
               </div>

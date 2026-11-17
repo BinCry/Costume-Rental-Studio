@@ -2957,6 +2957,9 @@ small {
   gap: 20px;
   align-items: start;
 }
+.feature-two-column.catalog-admin-layout {
+  grid-template-columns: minmax(360px, 0.95fr) minmax(0, 1.45fr);
+}
 .feature-two-column > *,
 .crm-layout > *,
 .role-layout > * {
@@ -3799,6 +3802,9 @@ small {
   gap: 8px;
   margin: 12px 0 18px;
 }
+.variant-pills.catalog-editor-sections {
+  margin: 0;
+}
 .variant-pills button {
   min-height: 44px;
   padding: 8px 13px;
@@ -4140,6 +4146,7 @@ small {
     line-height: 36px;
   }
   .feature-two-column,
+  .feature-two-column.catalog-admin-layout,
   .role-layout,
   .crm-layout,
   .costume-detail-grid {
