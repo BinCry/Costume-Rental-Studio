@@ -754,22 +754,8 @@ export function BookingPage({
                       Lựa chọn sẽ được giữ để tiếp tục sau khi đăng nhập.
                     </Feedback>
                   ) : (
-                    <>
-                      <Button
-                        variant="secondary"
-                        onClick={() => {
-                          void loadQuote();
-                        }}
-                        loading={busy}
-                      >
-                        <Icon name="refresh" size={18} />{' '}
-                        {quote
-                          ? 'Cập nhật báo giá'
-                          : apiMode
-                            ? 'Tải báo giá'
-                            : 'Tải báo giá xem thử'}
-                      </Button>
-                      {quoteIssue && (
+                    <div className="booking-quote-status" aria-live="polite">
+                      {quoteIssue ? (
                         <Feedback
                           tone="danger"
                           className="booking-quote-error"
@@ -812,8 +798,31 @@ export function BookingPage({
                         >
                           {quoteIssue}
                         </Feedback>
+                      ) : (
+                        <div className="booking-quote-status__summary">
+                          <div>
+                            <span>Dự kiến thu khi nhận</span>
+                            <strong>
+                              {quote?.available === false
+                                ? 'Không đủ bộ'
+                                : quote
+                                  ? money(quote.amountDueAtPickup)
+                                  : busy
+                                    ? 'Đang tải báo giá…'
+                                    : 'Chưa có báo giá'}
+                            </strong>
+                          </div>
+                          <Button
+                            variant="secondary"
+                            onClick={() => void loadQuote()}
+                            loading={busy}
+                          >
+                            <Icon name="refresh" size={18} />{' '}
+                            {quote ? 'Cập nhật báo giá' : apiMode ? 'Tải báo giá' : 'Tải báo giá xem thử'}
+                          </Button>
+                        </div>
                       )}
-                    </>
+                    </div>
                   )}
                   {apiMode && customerAuthenticated && (
                     <details className="booking-promotion-details">

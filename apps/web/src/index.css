@@ -1764,6 +1764,33 @@ small {
 .booking-quote-error {
   align-items: flex-start;
 }
+.booking-quote-status {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  background: var(--surface-muted);
+}
+.booking-quote-status .feedback {
+  margin: 0;
+}
+.booking-quote-status__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.booking-quote-status__summary > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.booking-quote-status__summary span {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.booking-quote-status__summary strong {
+  font-size: 20px;
+}
 .booking-auth-actions {
   display: flex;
   flex-wrap: wrap;
@@ -5040,6 +5067,10 @@ small {
   .booking-quote-error {
     flex-direction: column;
     align-items: stretch;
+  }
+  .booking-quote-status__summary {
+    align-items: stretch;
+    flex-direction: column;
   }
   .booking-auth-actions {
     width: 100%;
