@@ -426,10 +426,16 @@ export function CatalogPage({
   const filtered = (data ?? []).filter(
     (item) =>
       (category === 'Tất cả' || item.category === category) &&
-      (size === 'Tất cả' || item.sizes.includes(size)) &&
-      (color === 'Tất cả' || item.colors.includes(color)) &&
+      (item.apiVariants?.length
+        ? item.apiVariants.some((variant) =>
+            (size === 'Tất cả' || variant.size === size) &&
+            (color === 'Tất cả' || variant.color === color))
+        : (size === 'Tất cả' || item.sizes.includes(size)) &&
+          (color === 'Tất cả' || item.colors.includes(color))) &&
       item.name.toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi')),
   );
+  const hasActiveFilters = category !== 'Tất cả' || size !== 'Tất cả' ||
+    color !== 'Tất cả' || Boolean(search.trim());
   const reset = () => {
     setCategory('Tất cả');
     setSize('Tất cả');
@@ -481,7 +487,7 @@ export function CatalogPage({
         <div className="availability-title">
           <Icon name="calendar" size={21} />
           <span>
-            Chọn lịch của bạn<small>Khả dụng chỉ hiển thị sau khi chọn kỳ thuê</small>
+            Chọn lịch của bạn
           </span>
         </div>
         <SelectField
@@ -505,7 +511,6 @@ export function CatalogPage({
       <section id="bo-suu-tap" className="catalog-section">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">CHỌN ĐÚNG PHONG CÁCH</p>
             <h2>Bộ sưu tập trang phục</h2>
           </div>
           <div className="catalog-count">
@@ -525,9 +530,6 @@ export function CatalogPage({
           >
             <div className="filter-heading">
               <h3>Bộ lọc</h3>
-              <button className="text-button" onClick={reset}>
-                Xóa lọc
-              </button>
             </div>
             <Field
               label="Tìm trang phục"
@@ -562,9 +564,6 @@ export function CatalogPage({
                 <option key={entry}>{entry}</option>
               ))}
             </SelectField>
-            <p className="filter-note">
-              Giá “từ” là mức tham khảo theo biến thể. Báo giá cuối cần được studio xác nhận.
-            </p>
           </aside>
           <div className="catalog-results">
             <div className="result-toolbar">
@@ -574,12 +573,18 @@ export function CatalogPage({
                   {branch}
                 </span>
                 {periodSelected && (
-                  <span className="chip">
+                  <button type="button" className="chip chip-filter" onClick={() => { setPickup(''); setReturnAt(''); }} aria-label="Xóa kỳ thuê đã chọn">
                     <Icon name="calendar" size={15} />
                     {formatCalendarDate(pickup.slice(0, 10))} →{' '}
                     {formatCalendarDate(returnAt.slice(0, 10))}
-                  </span>
+                    <span aria-hidden="true">×</span>
+                  </button>
                 )}
+                {category !== 'Tất cả' && <button type="button" className="chip chip-filter" onClick={() => setCategory('Tất cả')} aria-label={`Xóa lọc loại ${category}`}>Loại: {category} <span aria-hidden="true">×</span></button>}
+                {size !== 'Tất cả' && <button type="button" className="chip chip-filter" onClick={() => setSize('Tất cả')} aria-label={`Xóa lọc kích cỡ ${size}`}>Size: {size} <span aria-hidden="true">×</span></button>}
+                {color !== 'Tất cả' && <button type="button" className="chip chip-filter" onClick={() => setColor('Tất cả')} aria-label={`Xóa lọc màu ${color}`}>Màu: {color} <span aria-hidden="true">×</span></button>}
+                {search.trim() && <button type="button" className="chip chip-filter" onClick={() => setSearch('')} aria-label={`Xóa từ khóa ${search}`}>Tìm: {search} <span aria-hidden="true">×</span></button>}
+                {hasActiveFilters && <button type="button" className="text-button" onClick={reset}>Xóa lọc</button>}
               </div>
               <Button
                 variant="secondary"

@@ -1249,6 +1249,13 @@ small {
   font-size: 12px;
   font-weight: 500;
 }
+.chip-filter {
+  max-width: 100%;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.chip-filter:hover { border-color: var(--brand-primary); color: var(--brand-primary); }
+.chip-filter:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
 .filter-toggle {
   display: none;
 }
