@@ -1510,6 +1510,23 @@ small {
 .policy-details-body .inline-note {
   margin: 0;
 }
+.costume-detail-extra {
+  margin-top: 18px;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+.costume-detail-extra > summary {
+  padding: 14px 0;
+  color: var(--brand-primary);
+  font-weight: 600;
+  cursor: pointer;
+}
+.costume-detail-extra > summary:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.costume-detail-extra p { margin: 0 0 10px; }
 .panel-intro {
   display: flex;
   gap: 16px;

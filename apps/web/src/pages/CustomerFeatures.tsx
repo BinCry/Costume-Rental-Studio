@@ -288,33 +288,13 @@ export function CostumeDetailPage({
                     ))}
                   </div>
                 )}
-                <p className="muted small-note">
-                  {gallery.length > 0 || (item.imageUrl?.length ?? 0) > 0
-                    ? 'Ảnh do studio cung cấp.'
-                    : 'Ảnh trang phục trong bản minh họa.'}
-                </p>
+                {gallery.length === 0 && !item.imageUrl && (
+                  <p className="muted small-note">Ảnh minh họa.</p>
+                )}
               </div>
               <div>
                 <p className="eyebrow">{item.category} · Bộ sưu tập</p>
                 <h1>{item.name}</h1>
-                <p className="lead">{item.description}</p>
-                <div className="detail-rule">
-                  <h2>Chất liệu và phom dáng</h2>
-                  <p>
-                    {item.material}.{' '}
-                    {variant.fit.trim()
-                      ? variant.fit
-                      : 'Studio chưa cập nhật số đo cho size này. Hãy liên hệ để được tư vấn trước khi gửi yêu cầu.'}
-                  </p>
-                </div>
-                <div className="detail-rule">
-                  <h2>Phụ kiện</h2>
-                  <p>
-                    {item.accessories.length
-                      ? item.accessories.join(' · ')
-                      : 'Chưa có thông tin phụ kiện công khai.'}
-                  </p>
-                </div>
                 <Panel title="Chọn size / màu">
                   <div className="variant-pills">
                     {item.variants.map((value) => (
@@ -336,14 +316,6 @@ export function CostumeDetailPage({
                     rows={[
                       { label: 'Giá thuê / ngày', value: money(variant.price) },
                       { label: 'Tiền cọc', value: money(variant.deposit) },
-                      ...(variant.replacement
-                        ? [
-                            {
-                              label: 'Giá thay thế theo biến thể',
-                              value: money(variant.replacement),
-                            },
-                          ]
-                        : []),
                     ]}
                   />
                 </Panel>
@@ -437,9 +409,16 @@ export function CostumeDetailPage({
                   </Button>
                 </div>
                 <p className="muted small-note">
-                  Có thể thanh toán qua payOS sau khi đơn được xác nhận hoặc tại chi nhánh khi nhận.
-                  Tiền cọc được quyết toán sau khi kiểm tra đồ trả.
+                  Thanh toán qua payOS hoặc tại chi nhánh sau khi xác nhận; cọc quyết toán khi trả đồ.
                 </p>
+                <details className="costume-detail-extra">
+                  <summary>Chi tiết trang phục</summary>
+                  {item.description && <p>{item.description}</p>}
+                  {item.material && <p><strong>Chất liệu:</strong> {item.material}</p>}
+                  {variant.fit.trim() && <p><strong>Phom dáng:</strong> {variant.fit}</p>}
+                  {item.accessories.length > 0 && <p><strong>Phụ kiện:</strong> {item.accessories.join(' · ')}</p>}
+                  {variant.replacement && <p><strong>Giá thay thế:</strong> {money(variant.replacement)}</p>}
+                </details>
               </div>
             </div>
           </div>
@@ -1048,6 +1027,9 @@ export function AccountPage({
   const [attempted, setAttempted] = useState(false);
   const [accountName, setAccountName] = useState(apiIdentity?.displayName ?? '');
   const [accountPhone, setAccountPhone] = useState('');
+  const [savedAccountProfile, setSavedAccountProfile] = useState({ name: apiIdentity?.displayName ?? '', phone: '' });
+  const [accountEditing, setAccountEditing] = useState(false);
+  const [profileRetry, setProfileRetry] = useState(0);
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileIssue, setProfileIssue] = useState('');
@@ -1074,6 +1056,7 @@ export function AccountPage({
         if (!active) return;
         setAccountName(profile.displayName);
         setAccountPhone(profile.phone ?? '');
+        setSavedAccountProfile({ name: profile.displayName, phone: profile.phone ?? '' });
         setProfileIssue('');
         setProfileAvailable(true);
       })
@@ -1086,7 +1069,7 @@ export function AccountPage({
     return () => {
       active = false;
     };
-  }, [apiIdentity?.email, isApiCustomer]);
+  }, [apiIdentity?.email, isApiCustomer, profileRetry]);
 
   const saveAccountProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1109,6 +1092,8 @@ export function AccountPage({
       });
       setAccountName(updated.displayName);
       setAccountPhone(updated.phone ?? '');
+      setSavedAccountProfile({ name: updated.displayName, phone: updated.phone ?? '' });
+      setAccountEditing(false);
       setProfileNotice('Đã lưu thông tin liên hệ.');
       setProfileAvailable(true);
       window.dispatchEvent(new Event('api-session-changed'));
@@ -1125,18 +1110,19 @@ export function AccountPage({
   if (realApiMode) {
     return (
       <div className="page account-page">
-        <PageHeading eyebrow="TÀI KHOẢN" title="Tài khoản Studio" />
+        <PageHeading title="Tài khoản" />
         <div className="account-layout">
-          <Panel title={apiIdentity ? 'Thông tin tài khoản' : 'Đăng nhập'}>
+          <Panel title={apiIdentity ? 'Hồ sơ' : 'Đăng nhập'}>
             {apiIdentity ? (
               <>
                 <KeyFacts
                   rows={[
-                    { label: 'Họ tên', value: apiIdentity.displayName },
+                    { label: 'Họ tên', value: profileAvailable ? savedAccountProfile.name : apiIdentity.displayName },
                     {
                       label: 'Email',
                       value: <span className="account-email">{apiIdentity.email}</span>,
                     },
+                    ...(isApiCustomer ? [{ label: 'Điện thoại', value: profileAvailable ? savedAccountProfile.phone || 'Chưa thêm' : profileLoading ? 'Đang tải' : 'Chưa tải được' }] : []),
                     {
                       label: 'Vai trò',
                       value:
@@ -1146,14 +1132,13 @@ export function AccountPage({
                 />
                 {isApiCustomer && (
                   <div className="account-profile-editor">
-                    <h3>Thông tin liên hệ</h3>
                     {profileLoading && (
-                      <Feedback tone="info" title="Đang tải hồ sơ">
-                        Đang lấy thông tin liên hệ đã lưu.
-                      </Feedback>
+                      <p className="muted" role="status">Đang tải thông tin liên hệ…</p>
                     )}
                     {profileIssue && (
-                      <Feedback tone="danger" title="Chưa hoàn tất được thao tác">
+                      <Feedback tone="danger" title="Chưa cập nhật được hồ sơ" action={!profileAvailable ? (
+                        <Button variant="secondary" onClick={() => { setProfileLoading(true); setProfileRetry((value) => value + 1); }}>Thử lại</Button>
+                      ) : undefined}>
                         {profileIssue}
                       </Feedback>
                     )}
@@ -1162,7 +1147,12 @@ export function AccountPage({
                         {profileNotice}
                       </Feedback>
                     )}
-                    {profileAvailable && (
+                    {profileAvailable && !accountEditing && (
+                      <Button variant="secondary" onClick={() => { setAccountEditing(true); setProfileNotice(''); }}>
+                        Chỉnh sửa liên hệ
+                      </Button>
+                    )}
+                    {profileAvailable && accountEditing && (
                       <form
                         className="stack-form"
                         onSubmit={(event) => void saveAccountProfile(event)}
@@ -1186,9 +1176,15 @@ export function AccountPage({
                           onChange={(event) => setAccountPhone(event.target.value)}
                           disabled={profileSaving}
                         />
-                        <Button type="submit" loading={profileSaving} disabled={profileLoading}>
-                          Lưu thông tin liên hệ
-                        </Button>
+                        <div className="feature-actions">
+                          <Button type="submit" loading={profileSaving} disabled={profileLoading}>Lưu</Button>
+                          <Button type="button" variant="secondary" disabled={profileSaving} onClick={() => {
+                            setAccountName(savedAccountProfile.name);
+                            setAccountPhone(savedAccountProfile.phone);
+                            setProfileIssue('');
+                            setAccountEditing(false);
+                          }}>Hủy</Button>
+                        </div>
                       </form>
                     )}
                   </div>
