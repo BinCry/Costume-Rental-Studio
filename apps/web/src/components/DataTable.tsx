@@ -14,9 +14,11 @@ export function DataTable<T extends { id: string }>({
   columns,
   selectedId,
   onSelect,
-  pageSize = 6,
+  pageSize = 12,
   emptyText = 'Không có dữ liệu phù hợp',
   searchKey,
+  searchLabel = 'Tìm trong bảng',
+  searchPlaceholder = 'Nhập từ khóa',
   filterKey,
   filterLabel = 'Bộ lọc',
   filterDisplay = (value: string) => value,
@@ -27,7 +29,9 @@ export function DataTable<T extends { id: string }>({
   onSelect?: (row: T) => void;
   pageSize?: number;
   emptyText?: string;
-  searchKey?: (row: T) => string;
+  searchKey: (row: T) => string;
+  searchLabel?: string;
+  searchPlaceholder?: string;
   filterKey?: (row: T) => string;
   filterLabel?: string;
   filterDisplay?: (value: string) => string;
@@ -40,7 +44,7 @@ export function DataTable<T extends { id: string }>({
   const filtered = rows.filter(
     (row) =>
       (!filterKey || filter === 'all' || filterKey(row) === filter) &&
-      (searchKey ? searchKey(row) : JSON.stringify(row))
+      searchKey(row)
         .toLocaleLowerCase('vi')
         .includes(search.toLocaleLowerCase('vi')),
   );
@@ -64,8 +68,8 @@ export function DataTable<T extends { id: string }>({
     <div className="data-table-wrap">
       <div className="table-toolbar">
         <Field
-          label="Tìm trong bảng"
-          placeholder="Barcode, biến thể..."
+          label={searchLabel}
+          placeholder={searchPlaceholder}
           value={search}
           onChange={(event) => {
             setSearch(event.target.value);
@@ -90,6 +94,16 @@ export function DataTable<T extends { id: string }>({
           </SelectField>
         )}
       </div>
+      {(search || filter !== 'all') && (
+        <div className="table-filter-summary">
+          <span>{sorted.length} / {rows.length} kết quả</span>
+          <button type="button" className="text-button" onClick={() => {
+            setSearch('');
+            setFilter('all');
+            setPage(1);
+          }}>Xóa bộ lọc</button>
+        </div>
+      )}
       <div className="data-table-scroll">
         <table className="data-table">
           <thead>
@@ -165,7 +179,7 @@ export function DataTable<T extends { id: string }>({
       {pageCount > 1 && (
         <div className="table-pagination">
           <span>
-            Trang {currentPage} / {pageCount}
+            {sorted.length ? `${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, sorted.length)} / ${sorted.length}` : '0 kết quả'} · Trang {currentPage} / {pageCount}
           </span>
           <div>
             <Button

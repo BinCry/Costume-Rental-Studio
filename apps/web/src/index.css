@@ -2343,6 +2343,15 @@ small {
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
+.table-filter-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
 .data-table-scroll {
   max-width: 100%;
   overflow: auto;

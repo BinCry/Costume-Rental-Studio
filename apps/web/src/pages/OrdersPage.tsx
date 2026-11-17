@@ -901,6 +901,8 @@ export function OrdersPage({
                       filterKey={(unit) => unit.status}
                       filterLabel="Trạng thái bộ"
                       searchKey={(unit) => `${unit.code} ${unit.variant}`}
+                      searchLabel="Tìm barcode hoặc biến thể"
+                      searchPlaceholder="Nhập barcode hoặc size/màu"
                       rows={order.eligibleUnits.map((unit) => ({ ...unit, id: unit.code }))}
                       columns={[
                         {
