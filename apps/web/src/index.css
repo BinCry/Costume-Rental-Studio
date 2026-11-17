@@ -2795,6 +2795,20 @@ small {
   gap: 20px;
   align-content: start;
 }
+@media (min-width: 1200px) {
+  .independent-scroll-workspace {
+    height: clamp(420px, calc(100dvh - 220px), 900px);
+    align-items: stretch;
+  }
+  .independent-scroll-workspace > * {
+    min-height: 0;
+    max-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+}
 .customer-payment-list {
   display: grid;
   gap: 12px;

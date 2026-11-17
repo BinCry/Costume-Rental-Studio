@@ -784,8 +784,8 @@ export function ActiveRentalsPage({
               title="Đang thuê"
               description="Mỗi dòng là một bộ từ dòng đơn có phân bổ ACTIVE; trạng thái vận hành kho được giữ riêng."
             />
-            <div className="feature-two-column">
-              <div>
+            <div className="feature-two-column independent-scroll-workspace">
+              <div role="region" aria-label="Cuộn danh sách bộ đang thuê" tabIndex={0}>
                 <Panel title="Tra cứu nhanh">
                   <BarcodeLookup
                     branch={branch}
@@ -865,9 +865,10 @@ export function ActiveRentalsPage({
               </div>
               <div
                 ref={detailRef}
-                tabIndex={-1}
+                tabIndex={0}
                 role="region"
                 aria-label="Chi tiết bộ đang thuê được chọn"
+                key={selected?.barcode ?? 'none'}
               >
                 {selected ? (
                   <Panel title={`${selected.barcode} · ${selected.costume}`}>

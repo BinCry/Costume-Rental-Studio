@@ -39,14 +39,21 @@ export function Panel({
   children,
   action,
   className = '',
+  scrollRegionLabel,
 }: {
   title?: string;
   children: ReactNode;
   action?: ReactNode;
   className?: string;
+  scrollRegionLabel?: string;
 }) {
   return (
-    <section className={`feature-panel ${className}`}>
+    <section
+      className={`feature-panel ${className}`}
+      role={scrollRegionLabel ? 'region' : undefined}
+      aria-label={scrollRegionLabel}
+      tabIndex={scrollRegionLabel ? 0 : undefined}
+    >
       {title && (
         <div className="feature-panel-head">
           <h2>{title}</h2>

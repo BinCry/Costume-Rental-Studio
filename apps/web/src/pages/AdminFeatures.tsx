@@ -1113,8 +1113,8 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                 </Button>
               ) : undefined}
             />
-            <div className="feature-two-column">
-              <Panel title="Danh sách nhân viên">
+            <div className="feature-two-column independent-scroll-workspace">
+              <Panel title="Danh sách nhân viên" scrollRegionLabel="Cuộn danh sách nhân viên">
                 <SearchField
                   label="Tìm theo tên, email hoặc mã nhân viên"
                   value={search}
@@ -1196,9 +1196,10 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
               </Panel>
               <div
                 ref={detailRef}
-                tabIndex={-1}
+                tabIndex={0}
                 role="region"
                 aria-label="Hồ sơ nhân viên đang chọn"
+                key={person.code}
               >
                 <Panel title={`Hồ sơ ${employeeDisplayCode(person)}`}>
                   <fieldset className="permission-fieldset" disabled={!canManage}>
@@ -1467,8 +1468,8 @@ export function BranchesPage({ scenario, canManage = true }: { scenario: DemoSce
                 </Button>
               ) : undefined}
             />
-            <div className="feature-two-column">
-              <Panel title="Danh sách chi nhánh">
+            <div className="feature-two-column independent-scroll-workspace">
+              <Panel title="Danh sách chi nhánh" scrollRegionLabel="Cuộn danh sách chi nhánh">
                 <div className="feature-card-list">
                   {items.map((x) => (
                     <button
@@ -1488,7 +1489,11 @@ export function BranchesPage({ scenario, canManage = true }: { scenario: DemoSce
                   ))}
                 </div>
               </Panel>
-              <Panel title={`Thông tin ${branch.code}`}>
+              <Panel
+                key={branch.code}
+                title={`Thông tin ${branch.code}`}
+                scrollRegionLabel="Cuộn thông tin chi nhánh"
+              >
                 <fieldset className="permission-fieldset" disabled={!canManage}>
                 <div className="stack-form">
                   <Field
@@ -1609,8 +1614,8 @@ export function RolesPage({ scenario, canManage = true }: { scenario: DemoScenar
               title="Quyền theo vai trò"
               description="Chọn một vai trò, tick mã quyền có sẵn. Scope thuộc định nghĩa quyền và không đổi tại màn hình này."
             />
-            <div className={`role-layout ${changed ? 'has-unsaved-role' : ''}`}>
-              <Panel title="Vai trò">
+            <div className={`role-layout independent-scroll-workspace ${changed ? 'has-unsaved-role' : ''}`}>
+              <Panel title="Vai trò" scrollRegionLabel="Cuộn danh sách vai trò">
                 <div className="feature-card-list">
                   {roles.map((r) => (
                     <button
@@ -1638,9 +1643,10 @@ export function RolesPage({ scenario, canManage = true }: { scenario: DemoScenar
               </Panel>
               <div
                 ref={detailRef}
-                tabIndex={-1}
+                tabIndex={0}
                 role="region"
                 aria-label="Quyền của vai trò đang chọn"
+                key={role.code}
               >
                 <Panel title={role.name}>
                   <p className="muted">
@@ -1841,8 +1847,8 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                 </Button>
               ) : undefined}
             />
-            <div className="feature-two-column">
-              <Panel title="Lịch sử phiên bản">
+            <div className="feature-two-column independent-scroll-workspace">
+              <Panel title="Lịch sử phiên bản" scrollRegionLabel="Cuộn lịch sử chính sách">
                 <div className="feature-card-list">
                   {items.map((p) => (
                     <button
@@ -1861,7 +1867,7 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                   ))}
                 </div>
               </Panel>
-              <div>
+              <div key={policy.code} role="region" aria-label="Cuộn chi tiết chính sách" tabIndex={0}>
                 <Panel title={policy.code}>
                   <StatusLabel
                     text={policy.to ? 'Lịch sử' : realApiMode ? 'Đang hiệu lực trên máy chủ' : 'Đang hiệu lực theo fixture'}

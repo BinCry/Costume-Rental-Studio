@@ -454,8 +454,8 @@ export function InventoryPage({
                 }}
               />
             )}
-            <div className="feature-two-column">
-              <div>
+            <div className="feature-two-column independent-scroll-workspace">
+              <div role="region" aria-label="Cuộn danh sách và lịch bộ" tabIndex={0}>
                 <Panel title="Tra cứu bộ">
                   <BarcodeLookup
                     branch={branch}
@@ -556,7 +556,7 @@ export function InventoryPage({
                   )}
                 </Panel>
               </div>
-              <div ref={detailRef} tabIndex={-1} role="region" aria-label="Chi tiết bộ đang chọn">
+              <div ref={detailRef} tabIndex={0} role="region" aria-label="Chi tiết bộ đang chọn" key={selected?.barcode ?? 'none'}>
                 {selected ? (
                   <>
                     <UnitDetailPanel unit={selected} />
@@ -779,8 +779,8 @@ export function TransfersPage({ scenario, branch, canManage = true }: { scenario
               title="Điều chuyển chi nhánh"
               description="Yêu cầu → duyệt → xuất kho → kiểm từng bộ khi nhận. Bộ chỉ đổi chi nhánh sau bước nhận."
             />
-            <div className="feature-two-column">
-              <div>
+            <div className="feature-two-column independent-scroll-workspace">
+              <div role="region" aria-label="Cuộn yêu cầu và danh sách điều chuyển" tabIndex={0}>
                 {canManage && <Panel title="Tạo yêu cầu">
                   <div className="feature-filters">
                     {realApiMode ? (
@@ -876,9 +876,10 @@ export function TransfersPage({ scenario, branch, canManage = true }: { scenario
               </div>
               <div
                 ref={detailRef}
-                tabIndex={-1}
+                tabIndex={0}
                 role="region"
                 aria-label="Chi tiết phiếu điều chuyển đang chọn"
+                key={current.code}
               >
                 <Panel title={current.code}>
                   <StatusLabel
