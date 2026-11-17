@@ -1447,11 +1447,13 @@ export function OrderDetailShell({
       </div>
       {order && (
         <nav className="task-jump-nav" aria-label="Các bước xử lý đơn">
-          <a href="#task-scan">
-            1. Quét mã · {matchedCodes.length}/{operationItems.length}
-          </a>
-          <a href="#task-check">2. Kiểm tình trạng</a>
-          <a href="#task-money">3. {mode === 'handover' ? 'Thu tiền' : 'Quyết toán'}</a>
+          {!backendReturnReady && (
+            <>
+              <a href="#task-scan">1. Quét mã · {matchedCodes.length}/{operationItems.length}</a>
+              <a href="#task-check">2. Kiểm tình trạng</a>
+            </>
+          )}
+          <a href="#task-money">{backendReturnReady ? 'Quyết toán' : `3. ${mode === 'handover' ? 'Thu tiền' : 'Quyết toán'}`}</a>
         </nav>
       )}
       {scenario === 'permission' && (
@@ -2348,17 +2350,15 @@ export function OrderDetailShell({
           <aside className="task-side">
             {!(realApiMode && backendReturnReady) && <MoneyBreakdown lines={order.money} title="Trạng thái tiền của đơn" />}
             <div className="task-side-note">
-              <p className="eyebrow">TRẠNG THÁI NHIỀU CHIỀU</p>
-              <p>
-                <strong>Đơn:</strong> {orderStatus[order.status].text}
-              </p>
-              <p>
-                <strong>Bộ:</strong>{' '}
-                {order.items.map((item) => `${item.unitCode} · ${item.unitStatus}`).join(', ')}
-              </p>
-              <p>
-                <strong>Cọc:</strong> {deposit?.status}
-              </p>
+              <p className="eyebrow">TÓM TẮT ĐƠN</p>
+              <p><strong>{order.items.length} bộ</strong> · {orderStatus[order.status].text}</p>
+              {deposit?.status && <p><strong>Cọc:</strong> {deposit.status}</p>}
+              <details>
+                <summary>Trạng thái từng bộ</summary>
+                <ul>
+                  {order.items.map((item) => <li key={item.id}>{item.unitCode ?? 'Chưa gán mã'} · {item.unitStatus}</li>)}
+                </ul>
+              </details>
             </div>
           </aside>
         </div>

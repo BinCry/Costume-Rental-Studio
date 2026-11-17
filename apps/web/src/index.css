@@ -2756,6 +2756,19 @@ small {
 .task-side-note strong {
   color: var(--text-primary);
 }
+.task-side-note details {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.task-side-note summary {
+  cursor: pointer;
+  color: var(--text-primary);
+}
+.task-side-note ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
 .task-jump-nav {
   display: flex;
   flex-wrap: wrap;
