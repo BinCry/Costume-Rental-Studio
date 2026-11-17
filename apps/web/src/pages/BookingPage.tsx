@@ -685,6 +685,10 @@ export function BookingPage({
                         <div className="booking-lines">
                           {lines.map((line, index) => {
                             const costume = catalog.find((entry) => entry.id === line.costumeId);
+                            const quotedLine = quote?.lines?.find((entry) =>
+                              entry.variantId === `${line.costumeId}:${line.variant}` ||
+                              costume?.apiVariants?.some((variant) =>
+                                variant.code === line.variant && variant.id === entry.variantId));
                             return (
                               <div className="booking-line" key={`${line.costumeId}-${index}`}>
                                 <div className="booking-line-title">
@@ -715,6 +719,11 @@ export function BookingPage({
                                       ? { ...entry, quantity: Number(event.target.value) } : entry))}
                                   />
                                 </div>
+                                {quote?.available === false && quotedLine && quotedLine.availableUnits < quotedLine.quantity && (
+                                  <p className="field-error" role="status">
+                                    Cần {quotedLine.quantity} bộ, hiện còn {quotedLine.availableUnits} bộ cho kỳ thuê này.
+                                  </p>
+                                )}
                               </div>
                             );
                           })}
