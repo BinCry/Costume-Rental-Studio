@@ -121,6 +121,9 @@ const envSchema = z
     // never invokes rental write tools.
     AGENT_READINESS_ANALYSIS_ENABLED: optionalBoolean.default(false),
     AGENT_READINESS_EXECUTION_ENABLED: optionalBoolean.default(false),
+    // General API allowance. Authentication and agent routes retain their
+    // narrower, dedicated limits.
+    API_RATE_LIMIT: optionalIntegerRange(1, 100_000).default(10_000),
     TRUST_PROXY_HOPS: z.preprocess(
       (value) => (value === '' ? undefined : value),
       z.coerce.number().int().min(1).optional(),

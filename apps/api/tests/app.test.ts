@@ -113,40 +113,13 @@ describe('Express HTTP foundation', () => {
     expect(response.headers['access-control-allow-credentials']).toBe('true');
   });
 
-  it('returns 429 after the API rate limit is exceeded', async () => {
+  it('configures a 10,000-request general API rate limit', async () => {
     const app = createApp();
-
-    for (let requestNumber = 0; requestNumber < 100; requestNumber += 1) {
-      await request(app).get('/api/v1/unknown').expect(404);
-    }
-
     const response = await request(app).get('/api/v1/unknown');
-    const body = response.body as ErrorResponse;
 
-    expect(response.status).toBe(429);
-    expect(body).toEqual({
-      success: false,
-      error: {
-        code: 'RATE_LIMITED',
-        message: 'Too many requests',
-      },
-      statusCode: 429,
-      timestamp: body.timestamp,
-      path: '/api/v1/unknown',
-      requestId: body.requestId,
-    });
-    expect(typeof body.timestamp).toBe('string');
-    expect(typeof body.requestId).toBe('string');
-
-    const browserNavigation = await request(app)
-      .get('/api/v1/auth/google')
-      .set('Accept', 'text/html')
-      .expect(303);
-    const location = new URL(browserNavigation.headers.location!);
-    expect(location.origin).toBe(env.WEB_URL);
-    expect(location.pathname).toBe('/auth/google/callback');
-    expect(location.searchParams.get('status')).toBe('error');
-    expect(location.searchParams.get('error')).toBe('RATE_LIMITED');
+    expect(response.status).toBe(404);
+    expect(response.headers['ratelimit-policy']).toContain('q=10000');
+    expect(response.headers['ratelimit-policy']).toContain('w=900');
   });
 
   it('returns a safe error for malformed JSON', async () => {

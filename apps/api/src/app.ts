@@ -79,7 +79,7 @@ export function createApp() {
     '/api/v1',
     rateLimit({
       windowMs: 15 * 60 * 1_000,
-      limit: 100,
+      limit: env.API_RATE_LIMIT,
       standardHeaders: 'draft-8',
       legacyHeaders: false,
       handler: (request, response) => {
