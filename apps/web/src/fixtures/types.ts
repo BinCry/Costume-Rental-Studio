@@ -144,6 +144,8 @@ export interface BookingDraft {
   costumeId: string;
   variant: string;
   quantity: number;
+  /** Customer booking lines; older staff flows still use the fields above. */
+  items?: { costumeId: string; variant: string; quantity: number }[];
   branch: string;
   pickup: string;
   returnAt: string;
@@ -152,12 +154,28 @@ export interface BookingDraft {
   note: string;
 }
 
+export function bookingItems(draft: BookingDraft) {
+  return draft.items?.length
+    ? draft.items
+    : [{ costumeId: draft.costumeId, variant: draft.variant, quantity: draft.quantity }];
+}
+
 export interface QuoteSnapshot {
   id: string;
   expiresAt: string;
   daysLabel: string;
   pricePerDay: number;
   quantity: number;
+  available?: boolean;
+  lines?: {
+    variantId: string;
+    variantLabel: string;
+    quantity: number;
+    availableUnits: number;
+    pricePerDay: number;
+    rental: number;
+    deposit: number;
+  }[];
   rental: number;
   deposit: number;
   discount: number;

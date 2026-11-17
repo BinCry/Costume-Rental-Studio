@@ -2,6 +2,7 @@ import { fixtureCatalog, fixtureOrders, fixtureClock } from './adapter';
 import { formatCalendarDate, formatLocalDateTime } from '../utils/date-format';
 import {
   FixtureIssue,
+  bookingItems,
   type BookingDraft,
   type DemoScenario,
   type OrderStatus,
@@ -1094,7 +1095,9 @@ export const studioAdapter = {
   recordBooking(id: string, draft: BookingDraft, quote: QuoteSnapshot) {
     const existing = customerOrders.find((order) => order.id === id);
     if (existing) return existing.customerCode;
-    const catalog = fixtureCatalog.find((item) => item.id === draft.costumeId);
+    const requestedItems = bookingItems(draft).flatMap((line) =>
+      Array.from({ length: line.quantity }, () => line));
+    const catalog = fixtureCatalog.find((item) => item.id === requestedItems[0]?.costumeId);
     if (!catalog) throw new FixtureIssue('NOT_FOUND', 'Không tìm thấy mẫu đã chọn.');
     let customer = customers.find((item) => item.phone === draft.phone);
     if (!customer) {
@@ -1116,8 +1119,9 @@ export const studioAdapter = {
       .filter(
         (unit) =>
           unit.branch === draft.branch &&
-          unit.model === catalog.name &&
-          unit.variant === draft.variant &&
+          requestedItems.some((line) =>
+            unit.model === fixtureCatalog.find((item) => item.id === line.costumeId)?.name &&
+            unit.variant === line.variant) &&
           ['READY', 'CLEANING', 'REPAIR'].includes(unit.status),
       )
       .map((unit) => ({
@@ -1137,10 +1141,10 @@ export const studioAdapter = {
       pickup,
       returnAt: due,
       dayPolicy: quote.policy,
-      items: Array.from({ length: draft.quantity }, (_, index) => ({
+      items: requestedItems.map((line, index) => ({
         id: String(index + 1).padStart(2, '0'),
-        costume: catalog.name,
-        variant: draft.variant,
+        costume: fixtureCatalog.find((item) => item.id === line.costumeId)?.name ?? catalog.name,
+        variant: line.variant,
       })),
       money: [
         { label: 'Tiền thuê', amount: quote.rental, status: 'Chưa thu', tone: 'neutral' },
@@ -1158,8 +1162,9 @@ export const studioAdapter = {
       branch: draft.branch,
       pickup,
       due,
-      costume: catalog.name,
-      variant: `${draft.variant} × ${draft.quantity}`,
+      costume: [...new Set(requestedItems.map((line) =>
+        fixtureCatalog.find((item) => item.id === line.costumeId)?.name ?? catalog.name))].join(', '),
+      variant: requestedItems.map((line) => line.variant).join(', '),
       rental: quote.rental,
       deposit: quote.deposit,
       extra: 0,

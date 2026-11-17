@@ -24,6 +24,7 @@ import { rentalPeriodIssues } from '../utils/rental-period';
 import { useBranchOptions } from '../components/useBranchOptions';
 
 const steps = ['Thông tin thuê', 'Báo giá & liên hệ', 'Xem lại & gửi'];
+type BookingLine = NonNullable<BookingDraft['items']>[number];
 const bookingDraftStorageKey = 'costume-rental.booking-draft.v1';
 const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
 function toLocalDateTimeInput(value: Date) {
@@ -82,13 +83,21 @@ function resumedDraft(context?: URLSearchParams): BookingDraft | undefined {
       typeof value.branch !== 'string' ||
       typeof value.pickup !== 'string' ||
       typeof value.returnAt !== 'string' ||
-      ![1, 2].includes(value.quantity ?? 0) ||
+      !Number.isInteger(value.quantity) ||
+      (value.quantity ?? 0) < 1 || (value.quantity ?? 0) > 50 ||
       typeof value.name !== 'string' ||
       typeof value.phone !== 'string' ||
       typeof value.note !== 'string'
     )
       return undefined;
-    return { ...baseDraft, ...value, quantity: value.quantity as 1 | 2 };
+    const savedItems = value.items;
+    const items = Array.isArray(savedItems) && savedItems.length > 0 &&
+      savedItems.length <= 50 && savedItems.every((line) =>
+        typeof line.costumeId === 'string' && typeof line.variant === 'string' &&
+        Number.isInteger(line.quantity) && line.quantity > 0)
+      ? savedItems
+      : [{ costumeId: value.costumeId, variant: value.variant, quantity: value.quantity! }];
+    return { ...baseDraft, ...value, quantity: value.quantity!, items };
   } catch {
     return undefined;
   }
@@ -101,18 +110,21 @@ const initialDraft = (costumeId?: string, context?: URLSearchParams): BookingDra
   const requestedPickup = context?.get('pickup');
   const requestedReturn = context?.get('returnAt');
   const apiMode = apiEnabled && (hasAccessToken() || !import.meta.env.DEV);
-  return (
-    resumedDraft(context) ?? {
+  const resume = resumedDraft(context);
+  if (resume) return resume;
+  const selectedVariant = variants.includes(requestedVariant)
+    ? requestedVariant
+    : apiMode
+      ? costumeId ? requestedVariant : ''
+      : (variants[0] ?? baseDraft.variant);
+  return {
       ...baseDraft,
       // Live mode must never start from the sample costume: it is not in the real catalog.
       costumeId: costumeId ?? (apiMode ? '' : baseDraft.costumeId),
-      variant: variants.includes(requestedVariant)
-        ? requestedVariant
-        : apiMode
-          ? costumeId
-            ? requestedVariant
-            : ''
-          : (variants[0] ?? baseDraft.variant),
+      variant: selectedVariant,
+      items: costumeId || !apiMode
+        ? [{ costumeId: costumeId ?? baseDraft.costumeId, variant: selectedVariant, quantity: 1 }]
+        : [],
       branch: requestedBranch?.trim() ? requestedBranch : apiMode ? '' : baseDraft.branch,
       pickup: requestedPickup?.trim()
         ? requestedPickup
@@ -124,8 +136,7 @@ const initialDraft = (costumeId?: string, context?: URLSearchParams): BookingDra
         : apiMode
           ? defaultRentalDate(3)
           : baseDraft.returnAt,
-    }
-  );
+    };
 };
 
 export function BookingPage({
@@ -223,41 +234,69 @@ export function BookingPage({
       active = false;
     };
   }, [apiMode]);
-  const item =
-    (data ?? []).find((entry) => entry.id === draftState.costumeId) ??
-    (apiMode ? undefined : fixtureCatalog.find((entry) => entry.id === draftState.costumeId));
-  const choices = item?.apiVariants?.length
-    ? item.apiVariants.map((variant) => ({
+  const catalog = data ?? (apiMode ? [] : fixtureCatalog);
+  const choicesFor = (costumeId: string) => {
+    const costume = catalog.find((entry) => entry.id === costumeId);
+    return costume?.apiVariants?.length
+    ? costume.apiVariants.map((variant) => ({
         value: variant.code,
         label: `${variant.size} / ${variant.color}${variant.edition ? ` · ${variant.edition}` : ''}`,
       }))
-    : item
-      ? item.sizes.map((size) => ({
-          value: `${size} / ${item.colors[0]}`,
-          label: `${size} / ${item.colors[0]}`,
+    : costume
+      ? costume.sizes.map((size) => ({
+          value: `${size} / ${costume.colors[0]}`,
+          label: `${size} / ${costume.colors[0]}`,
         }))
       : [];
-  const selectedVariantLabel =
-    choices.find((choice) => choice.value === draftState.variant)?.label ?? draftState.variant;
+  };
+  const rawLines = draftState.items ?? (draftState.costumeId
+    ? [{ costumeId: draftState.costumeId, variant: draftState.variant, quantity: draftState.quantity }]
+    : []);
+  const lines = rawLines.map((line) => {
+    const options = choicesFor(line.costumeId);
+    return {
+      ...line,
+      variant: options.length && !options.some((option) => option.value === line.variant)
+        ? options[0].value : line.variant,
+    };
+  });
+  const totalQuantity = lines.reduce((sum, line) => sum + line.quantity, 0);
+  const summaryLines = lines.map((line) => ({
+    name: catalog.find((entry) => entry.id === line.costumeId)?.name ?? 'Mẫu chưa tải',
+    variant: choicesFor(line.costumeId).find((option) => option.value === line.variant)?.label ?? line.variant,
+    quantity: line.quantity,
+  }));
   const draft = {
     ...draftState,
-    variant:
-      item && !choices.some((choice) => choice.value === draftState.variant)
-        ? (choices[0]?.value ?? draftState.variant)
-        : draftState.variant,
+    items: lines,
+    costumeId: lines[0]?.costumeId ?? '',
+    variant: lines[0]?.variant ?? '',
+    quantity: totalQuantity,
     branch: branchOptions.includes(draftState.branch)
       ? draftState.branch
       : (branchOptions[0] ?? (apiMode ? '' : draftState.branch)),
   };
+  const invalidateQuote = () => {
+    quoteRequestRef.current += 1;
+    setQuote(undefined);
+    setQuoteIssue('');
+    setQuoteIssueCode('');
+    if (!submittingRef.current) setBusy(false);
+  };
   const update = <K extends keyof BookingDraft>(key: K, value: BookingDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
-    if (['costumeId', 'variant', 'quantity', 'branch', 'pickup', 'returnAt'].includes(key)) {
-      quoteRequestRef.current += 1;
-      setQuote(undefined);
-      setQuoteIssue('');
-      setQuoteIssueCode('');
-      if (!submittingRef.current) setBusy(false);
-    }
+    if (['branch', 'pickup', 'returnAt'].includes(key)) invalidateQuote();
+    setIssue('');
+  };
+  const updateLines = (nextLines: BookingLine[]) => {
+    setDraft((current) => ({
+      ...current,
+      items: nextLines,
+      costumeId: nextLines[0]?.costumeId ?? '',
+      variant: nextLines[0]?.variant ?? '',
+      quantity: nextLines.reduce((sum, line) => sum + line.quantity, 0),
+    }));
+    invalidateQuote();
     setIssue('');
   };
   const { pickupIssue, returnIssue } = rentalPeriodIssues(draft.pickup, draft.returnAt);
@@ -266,13 +305,12 @@ export function BookingPage({
     const dateIssue = dates.pickupIssue ?? dates.returnIssue;
     if (dateIssue) return dateIssue;
     if (step === 0 || step === 2) {
-      if (!item) return 'Hãy chọn một mẫu trang phục.';
-      if (
-        !choices.some((choice) => choice.value === draft.variant) ||
-        draft.quantity < 1 ||
-        draft.quantity > 2
-      )
-        return 'Chọn size/màu và số bộ hợp lệ (1–2 bộ).';
+      if (!lines.length) return 'Hãy thêm ít nhất một mẫu trang phục.';
+      if (totalQuantity < 1 || totalQuantity > 50 || lines.some((line) =>
+        !Number.isInteger(line.quantity) || line.quantity < 1 ||
+        !catalog.some((entry) => entry.id === line.costumeId) ||
+        !choicesFor(line.costumeId).some((choice) => choice.value === line.variant)))
+        return 'Kiểm tra mẫu, size và số bộ ở từng dòng (tối đa 50 bộ).';
       if (!draft.branch || !draft.pickup || !draft.returnAt)
         return 'Chọn cùng chi nhánh và kỳ nhận/trả hợp lệ.';
       if (currentTime > 0 && new Date(draft.pickup).getTime() <= currentTime)
@@ -280,6 +318,7 @@ export function BookingPage({
     }
     if (step === 1 || step === 2) {
       if (!quote) return 'Cần tải báo giá còn hiệu lực để tiếp tục.';
+      if (quote.available === false) return 'Không đủ bộ cho kỳ thuê này. Hãy đổi size, mẫu, chi nhánh hoặc thời gian.';
       if (promotionCode.trim().toUpperCase() !== appliedPromotionCode)
         return 'Hãy áp dụng hoặc bỏ mã ưu đãi để cập nhật báo giá trước khi tiếp tục.';
       if (!draft.name.trim() || !isValidPhone(draft.phone))
@@ -463,13 +502,11 @@ export function BookingPage({
       <div className="booking-layout">
         <details className="booking-mobile-summary">
           <summary>
-            <span>Tóm tắt yêu cầu · {item?.name ?? 'Chưa chọn trang phục'}</span>
+            <span>{totalQuantity} bộ · {lines.length} lựa chọn</span>
             <strong>{quote ? money(quote.amountDueAtPickup) : 'Chưa có báo giá'}</strong>
           </summary>
           <BookingSummaryContent
-            itemName={item?.name}
-            variantLabel={selectedVariantLabel}
-            quantity={draft.quantity}
+            lines={summaryLines}
             branch={draft.branch}
             pickup={draft.pickup}
             returnAt={draft.returnAt}
@@ -497,17 +534,16 @@ export function BookingPage({
                     <button
                       key={entry.id}
                       type="button"
-                      className={`booking-costume ${draft.costumeId === entry.id ? 'selected' : ''}`}
-                      aria-pressed={draft.costumeId === entry.id}
+                      className={`booking-costume ${lines.some((line) => line.costumeId === entry.id) ? 'selected' : ''}`}
+                      aria-label={`Thêm ${entry.name} vào yêu cầu`}
+                      disabled={totalQuantity >= 50}
                       onClick={() => {
-                        update('costumeId', entry.id);
-                        setDraft((current) => ({
-                          ...current,
+                        updateLines([...lines, {
                           costumeId: entry.id,
-                          variant:
-                            entry.apiVariants?.[0]?.code ??
+                          variant: entry.apiVariants?.[0]?.code ??
                             `${entry.sizes[0]} / ${entry.colors[0]}`,
-                        }));
+                          quantity: 1,
+                        }]);
                       }}
                     >
                       <span
@@ -529,7 +565,7 @@ export function BookingPage({
                           {entry.category} · Từ {money(entry.priceFrom)}/ngày
                         </small>
                       </span>
-                      {draft.costumeId === entry.id && <Icon name="check" size={20} />}
+                      <span className="booking-add-icon" aria-hidden="true">+</span>
                     </button>
                   ))}
                 </div>
@@ -539,9 +575,7 @@ export function BookingPage({
             </div>
           ) : (
             <BookingSummaryContent
-              itemName={item?.name}
-              variantLabel={selectedVariantLabel}
-              quantity={draft.quantity}
+              lines={summaryLines}
               branch={draft.branch}
               pickup={draft.pickup}
               returnAt={draft.returnAt}
@@ -644,34 +678,48 @@ export function BookingPage({
                     <Icon name="pin" size={17} /> Nhận và trả cùng chi nhánh. Số ngày tính thuê theo
                     chính sách trong báo giá.
                   </p>
-                  {Boolean(data?.length) && item && (
+                  {Boolean(data?.length) && (
                     <>
-                      <h3 className="booking-subheading">Thông tin bộ</h3>
-                      <div className="two-fields">
-                        <SelectField
-                          label="Size / màu"
-                          value={draft.variant}
-                          onChange={(event) => update('variant', event.target.value)}
-                        >
-                          <option value="">Chọn biến thể</option>
-                          {choices.map((choice) => (
-                            <option key={choice.value} value={choice.value}>
-                              {choice.label}
-                            </option>
-                          ))}
-                        </SelectField>
-                        <SelectField
-                          label="Số bộ"
-                          value={draft.quantity}
-                          onChange={(event) => update('quantity', Number(event.target.value))}
-                        >
-                          <option value={1}>1 bộ</option>
-                          <option value={2}>2 bộ</option>
-                        </SelectField>
-                      </div>
-                      <Feedback tone="info" title="Chọn bộ chưa giữ lịch">
-                        Studio sẽ gán mã riêng cho từng bộ sau khi xác nhận yêu cầu.
-                      </Feedback>
+                      <h3 className="booking-subheading">Bộ đã chọn · {totalQuantity}</h3>
+                      {lines.length ? (
+                        <div className="booking-lines">
+                          {lines.map((line, index) => {
+                            const costume = catalog.find((entry) => entry.id === line.costumeId);
+                            return (
+                              <div className="booking-line" key={`${line.costumeId}-${index}`}>
+                                <div className="booking-line-title">
+                                  <strong>{costume?.name ?? 'Mẫu chưa tải'}</strong>
+                                  <button type="button" className="text-button" onClick={() => updateLines(lines.filter((_, row) => row !== index))}>
+                                    Xóa
+                                  </button>
+                                </div>
+                                <div className="booking-line-fields">
+                                  <SelectField
+                                    label={`Size / màu · dòng ${index + 1}`}
+                                    value={line.variant}
+                                    onChange={(event) => updateLines(lines.map((entry, row) => row === index
+                                      ? { ...entry, variant: event.target.value } : entry))}
+                                  >
+                                    {choicesFor(line.costumeId).map((choice) => (
+                                      <option key={choice.value} value={choice.value}>{choice.label}</option>
+                                    ))}
+                                  </SelectField>
+                                  <Field
+                                    label="Số bộ"
+                                    type="number"
+                                    min="1"
+                                    max={String(50 - totalQuantity + line.quantity)}
+                                    step="1"
+                                    value={line.quantity}
+                                    onChange={(event) => updateLines(lines.map((entry, row) => row === index
+                                      ? { ...entry, quantity: Number(event.target.value) } : entry))}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : <p className="inline-note">Chọn mẫu ở cột bên phải để thêm vào yêu cầu.</p>}
                     </>
                   )}
                 </div>
@@ -699,14 +747,6 @@ export function BookingPage({
                     </Feedback>
                   ) : (
                     <>
-                      <Feedback
-                        tone="info"
-                        title={apiMode ? 'Báo giá từ hệ thống' : 'Báo giá xem thử'}
-                      >
-                        {apiMode
-                          ? 'Số ngày, giá thuê, tiền cọc và thời hạn được tính theo chính sách hiện hành.'
-                          : 'Bản xem thử dùng dữ liệu mẫu; giá áp dụng thực tế cần được studio xác nhận.'}
-                      </Feedback>
                       <Button
                         variant="secondary"
                         onClick={() => {
@@ -834,16 +874,28 @@ export function BookingPage({
                   )}
                   {quote && (
                     <div className="quote-card">
+                      {quote.available === false && (
+                        <Feedback tone="danger" title="Không đủ bộ trong kỳ thuê này" action={
+                          <Button variant="secondary" onClick={() => setStep(0)}>Đổi lựa chọn</Button>
+                        }>
+                          {quote.lines?.filter((line) => line.availableUnits < line.quantity)
+                            .map((line) => `${line.variantLabel}: cần ${line.quantity}, còn ${line.availableUnits}`)
+                            .join(' · ') ?? 'Hãy đổi size, mẫu, chi nhánh hoặc thời gian.'}
+                        </Feedback>
+                      )}
                       <div>
                         <span>Thời gian tính thuê</span>
                         <strong>{quote.daysLabel}</strong>
                       </div>
-                      <div>
+                      {quote.lines?.map((line) => (
+                        <div key={line.variantId}>
+                          <span>{line.variantLabel} · {line.quantity} bộ</span>
+                          <strong>{money(line.pricePerDay)}/ngày mỗi bộ</strong>
+                        </div>
+                      )) ?? <div>
                         <span>Giá/ngày × số bộ</span>
-                        <strong>
-                          {money(quote.pricePerDay)} × {quote.quantity}
-                        </strong>
-                      </div>
+                        <strong>{money(quote.pricePerDay)} × {quote.quantity}</strong>
+                      </div>}
                       <div>
                         <span>Tiền thuê</span>
                         <strong>{money(quote.rental)}</strong>
@@ -963,10 +1015,8 @@ export function BookingPage({
               {step === 2 && (
                 <div className="confirm-summary">
                   <div>
-                    <span>Trang phục</span>
-                    <strong>
-                      {item?.name} · {selectedVariantLabel} · {draft.quantity} bộ
-                    </strong>
+                    <span>Trang phục · {totalQuantity} bộ</span>
+                    <strong>{summaryLines.map((line) => `${line.name} · ${line.variant} × ${line.quantity}`).join('; ')}</strong>
                   </div>
                   <div>
                     <span>Chi nhánh</span>
@@ -1070,18 +1120,14 @@ function PolicyDetails({ title, children }: { title: string; children: ReactNode
 }
 
 function BookingSummaryContent({
-  itemName,
-  variantLabel,
-  quantity,
+  lines,
   branch,
   pickup,
   returnAt,
   quote,
   apiMode,
 }: {
-  itemName?: string;
-  variantLabel: string;
-  quantity: number;
+  lines: { name: string; variant: string; quantity: number }[];
   branch: string;
   pickup: string;
   returnAt: string;
@@ -1091,10 +1137,10 @@ function BookingSummaryContent({
   return (
     <div className="sidebar-note">
       <span className="eyebrow">TÓM TẮT YÊU CẦU</span>
-      <h3>{itemName ?? 'Chưa chọn mẫu'}</h3>
-      <p>
-        {variantLabel || 'Chưa chọn biến thể'} · {quantity} bộ
-      </p>
+      <h3>{lines.length ? `${lines.reduce((sum, line) => sum + line.quantity, 0)} bộ đã chọn` : 'Chưa chọn mẫu'}</h3>
+      {lines.map((line, index) => (
+        <p key={`${line.name}-${index}`}>{line.name} · {line.variant} × {line.quantity}</p>
+      ))}
       <div className="sidebar-divider" />
       <p>
         <Icon name="pin" size={16} /> {branch || 'Chưa chọn chi nhánh'}

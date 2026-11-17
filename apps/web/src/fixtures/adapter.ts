@@ -7,7 +7,7 @@ import type {
   QuoteSnapshot,
   UnitOption,
 } from './types';
-import { FixtureIssue } from './types';
+import { FixtureIssue, bookingItems } from './types';
 import type { Unit } from './studio';
 import {
   ApiClientError,
@@ -426,54 +426,54 @@ export const fixtureAdapter = {
       draft.branch !== branches[0] ||
       draft.pickup !== fixturePeriod.pickup ||
       draft.returnAt !== fixturePeriod.returnAt ||
-      ![1, 2].includes(draft.quantity)
+      bookingItems(draft).length === 0
     ) {
       throw new FixtureIssue(
         'NO_FIXTURE_QUOTE',
         'Chưa có báo giá fixture cho lựa chọn này. Thông tin đã nhập được giữ để đối chiếu khi nối API thật.',
       );
     }
-    const quoteFixtures: Record<
-      string,
-      Record<
-        number,
-        { pricePerDay: number; rental: number; deposit: number; amountDueAtPickup: number }
-      >
-    > = {
-      'ao-dai-lina': {
-        1: { pricePerDay: 320000, rental: 640000, deposit: 500000, amountDueAtPickup: 1140000 },
-        2: { pricePerDay: 320000, rental: 1280000, deposit: 1000000, amountDueAtPickup: 2280000 },
-      },
-      'suit-aria': {
-        1: { pricePerDay: 420000, rental: 840000, deposit: 700000, amountDueAtPickup: 1540000 },
-      },
-      'ao-dai-may': {
-        1: { pricePerDay: 280000, rental: 560000, deposit: 450000, amountDueAtPickup: 1010000 },
-      },
-    };
-    const item = catalog.find((entry) => entry.id === draft.costumeId);
-    if (!item?.availableAtFixturePeriod)
-      throw new FixtureIssue(
-        'UNAVAILABLE',
-        'Không còn bộ phù hợp ở chi nhánh này trong thời gian đã chọn. Hãy đổi ngày, chi nhánh hoặc mẫu.',
-      );
-    if (
-      !item.sizes.map((size) => `${size} / ${item.colors[0]}`).includes(draft.variant) ||
-      !quoteFixtures[draft.costumeId]?.[draft.quantity]
-    )
-      throw new FixtureIssue(
-        'NO_FIXTURE_QUOTE',
-        'Chưa có báo giá fixture cho biến thể và số bộ này. Lựa chọn vẫn được giữ.',
-      );
+    const requested = bookingItems(draft);
+    const quantity = requested.reduce((sum, line) => sum + line.quantity, 0);
+    if (quantity < 1 || quantity > 50 || requested.some((line) =>
+      !Number.isInteger(line.quantity) || line.quantity < 1 ||
+      !catalog.some((item) => item.id === line.costumeId &&
+        item.sizes.map((size) => `${size} / ${item.colors[0]}`).includes(line.variant))))
+      throw new FixtureIssue('NO_FIXTURE_QUOTE', 'Kiểm tra mẫu, size và số bộ đã chọn.');
+    const groups = new Map<string, { costumeId: string; variant: string; quantity: number }>();
+    for (const line of requested) {
+      const key = `${line.costumeId}:${line.variant}`;
+      const existing = groups.get(key);
+      groups.set(key, { ...line, quantity: (existing?.quantity ?? 0) + line.quantity });
+    }
+    const lines = [...groups.values()].map((line) => {
+      const item = catalog.find((entry) => entry.id === line.costumeId)!;
+      return {
+        variantId: `${line.costumeId}:${line.variant}`,
+        variantLabel: `${item.name} · ${line.variant}`,
+        quantity: line.quantity,
+        availableUnits: item.availableAtFixturePeriod ? 2 : 0,
+        pricePerDay: item.priceFrom,
+        rental: item.priceFrom * 2 * line.quantity,
+        deposit: item.depositFrom * line.quantity,
+      };
+    });
+    const rental = lines.reduce((sum, line) => sum + line.rental, 0);
+    const deposit = lines.reduce((sum, line) => sum + line.deposit, 0);
     const expiresAt = new Date(new Date(draft.pickup).getTime() - 30 * 60 * 1000);
     return {
-      id: `Q-DEMO-${draft.costumeId}-${draft.quantity}`,
+      id: `Q-DEMO-${Date.now()}`,
       expiresAt: formatVietnamDateTime(expiresAt),
       daysLabel: '2 ngày · theo kỳ mẫu',
-      quantity: draft.quantity,
+      quantity,
+      available: lines.every((line) => line.availableUnits >= line.quantity),
+      lines,
+      pricePerDay: lines[0]?.pricePerDay ?? 0,
+      rental,
+      deposit,
+      amountDueAtPickup: rental + deposit,
       discount: 0,
       policy: 'Chu kỳ 24 giờ · dữ liệu mẫu',
-      ...quoteFixtures[draft.costumeId][draft.quantity],
     };
   },
   async submitBooking(
@@ -500,6 +500,8 @@ export const fixtureAdapter = {
       );
     if (!quote.id)
       throw new FixtureIssue('QUOTE_MISSING', 'Cần báo giá còn hiệu lực trước khi gửi.');
+    if (quote.available === false)
+      throw new FixtureIssue('UNAVAILABLE', 'Không đủ bộ cho kỳ thuê này. Hãy đổi lựa chọn và tải lại báo giá.');
     return `RT-DEMO-${nextDemoRequest++}`;
   },
   async rentalAvailability(

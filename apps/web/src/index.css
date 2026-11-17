@@ -1533,13 +1533,14 @@ small {
   top: 16px;
 }
 .booking-sidebar-selection {
-  position: relative;
-  top: auto;
-  align-self: stretch;
+  align-self: start;
 }
 .booking-sidebar-selection .booking-selection-card {
-  height: 100%;
-  max-height: none;
+  max-height: calc(100dvh - 32px);
+}
+.booking-sidebar-summary .sidebar-note {
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
 }
 .booking-selection-card {
   display: flex;
@@ -1598,6 +1599,45 @@ small {
 .booking-selection-card .booking-costume:focus-visible {
   outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
+}
+.booking-selection-card .booking-costume:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.booking-add-icon {
+  color: var(--brand-primary);
+  font-size: 23px;
+  line-height: 1;
+  text-align: center;
+}
+.booking-lines {
+  display: grid;
+  gap: 12px;
+}
+.booking-line {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.booking-line-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.booking-line-title strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.booking-line-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(110px, 1fr);
+  gap: 12px;
+}
+@media (max-width: 520px) {
+  .booking-line-fields { grid-template-columns: minmax(0, 1fr); }
 }
 .booking-mobile-summary {
   grid-area: summary;

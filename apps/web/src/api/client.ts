@@ -1,4 +1,5 @@
 import type { BookingDraft, CatalogItem, Order, QueueTask, QuoteSnapshot } from '../fixtures/types';
+import { bookingItems } from '../fixtures/types';
 import type {
   ActiveUnit,
   Branch,
@@ -91,6 +92,7 @@ interface ApiQuote {
   period: { billableDays: number; plannedStartAt: string; plannedDueAt: string };
   items: {
     variantId: string;
+    quantity?: number;
     dailyRentalPriceVnd: string | number | bigint;
     depositAmountVnd: string | number | bigint;
     rentalAmountVnd: string | number | bigint;
@@ -771,11 +773,13 @@ const unitVariantRefs = new Map<string, Map<string, string>>();
 const quoteRefs = new Map<
   string,
   {
-    variantId: string;
+    variantIds: string[];
     branchId: string;
     customerUserId: string;
     channel: string;
     promotionCode?: string;
+    pickup: string;
+    returnAt: string;
   }
 >();
 const roleRefs = new Map<string, string>();
@@ -1565,23 +1569,31 @@ export async function getOrder(orderId: string) {
   const order = await request<ApiOrder>('/api/v1/rentals/orders/' + encodeURIComponent(orderId));
   return enrichOrder(order, await availableForOrder(order));
 }
+function resolveBookingVariant(line: { costumeId: string; variant: string }) {
+  const variant = variants.get(line.variant) ?? [...variants.values()].find(
+    (entry) => entry.modelId === line.costumeId &&
+      (entry.variantCode === line.variant ||
+        `${entry.sizeCode} / ${entry.colorCode}` === line.variant),
+  );
+  return variant?.modelId === line.costumeId ? variant : undefined;
+}
+
 export async function getQuote(
   draft: BookingDraft,
   options: { customerCode?: string; channel?: string; promotionCode?: string } = {},
 ): Promise<QuoteSnapshot> {
   if (!branchIds.has(draft.branch)) await listBranches();
   const branchId = branchIds.get(draft.branch);
-  const variant =
-    variants.get(draft.variant) ??
-    variants.get(draft.costumeId) ??
-    [...variants.values()].find(
-      (entry) =>
-        entry.modelId === draft.costumeId &&
-        (entry.variantCode === draft.variant ||
-          `${entry.sizeCode} / ${entry.colorCode}` === draft.variant),
-    );
-  if (!branchId || !variant)
+  const requestedLines = bookingItems(draft);
+  const selectedVariants = requestedLines.map(resolveBookingVariant);
+  const totalQuantity = requestedLines.reduce((sum, line) => sum + line.quantity, 0);
+  if (!branchId || selectedVariants.some((variant) => !variant) ||
+      requestedLines.length === 0 || totalQuantity < 1 || totalQuantity > 50 ||
+      requestedLines.some((line) => !Number.isInteger(line.quantity) || line.quantity < 1))
     throw new ApiClientError(422, 'API_CONTEXT_MISSING', 'Cần tải lại chi nhánh và mẫu trang phục');
+  const variantIds = requestedLines.flatMap((line, index) =>
+    Array.from({ length: line.quantity }, () => selectedVariants[index]!.id),
+  );
   const customerUserId = options.customerCode
     ? customerRefs.get(options.customerCode)?.userId
     : (await currentUser()).id;
@@ -1602,31 +1614,43 @@ export async function getQuote(
       plannedStartAt: new Date(draft.pickup).toISOString(),
       plannedDueAt: new Date(draft.returnAt).toISOString(),
       ...(promotionCode ? { promotionCode } : {}),
-      items: Array.from({ length: draft.quantity }, () => ({
-        variantId: variant.id,
-        accessories: [],
-      })),
+      items: variantIds.map((variantId) => ({ variantId, accessories: [] })),
     }),
   });
   const quoteId = 'api-quote-' + (globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36));
-  const pricePerDay = numberValue(
-    response.items.find((item) => item.variantId === variant.id)?.dailyRentalPriceVnd,
-  );
+  const pricePerDay = numberValue(response.items[0]?.dailyRentalPriceVnd);
   const billingMode =
     response.policy.billingDayMode === 'ROLLING_24_HOURS' ? 'chu kỳ 24 giờ' : 'ngày lịch';
   quoteRefs.set(quoteId, {
-    variantId: variant.id,
+    variantIds,
     branchId,
     customerUserId,
     channel,
     promotionCode: response.promotion?.code,
+    pickup: draft.pickup,
+    returnAt: draft.returnAt,
   });
   return {
     id: quoteId,
     expiresAt: formatDate(response.quoteExpiresAt),
     daysLabel: response.period.billableDays + ' ngày · ' + billingMode,
     pricePerDay,
-    quantity: draft.quantity,
+    quantity: totalQuantity,
+    available: response.available,
+    lines: response.items.map((line) => {
+      const variant = selectedVariants.find((entry) => entry?.id === line.variantId);
+      return {
+        variantId: line.variantId,
+        variantLabel: variant
+          ? `${variant.model?.name ?? variant.variantCode} · ${variant.sizeCode} / ${variant.colorCode}`
+          : 'Biến thể',
+        quantity: variantIds.filter((id) => id === line.variantId).length,
+        availableUnits: line.availableUnits,
+        pricePerDay: numberValue(line.dailyRentalPriceVnd),
+        rental: numberValue(line.rentalAmountVnd),
+        deposit: numberValue(line.depositAmountVnd),
+      };
+    }),
     // Show the rental before discount: the screens list the discount as its own line.
     rental: numberValue(response.subtotalVnd),
     deposit: numberValue(response.depositVnd),
@@ -1644,16 +1668,25 @@ export async function createOrder(
   assignedUnit?: { code: string; id: string },
 ) {
   const reference = quoteRefs.get(quote.id);
-  const variantId = reference?.variantId;
+  const variantIds = reference?.variantIds;
   const branchId = reference?.branchId;
   const customerUserId = reference?.customerUserId;
   const channel = reference?.channel ?? 'ONLINE';
-  if (!variantId || !branchId || !customerUserId)
+  if (!variantIds?.length || !branchId || !customerUserId)
     throw new ApiClientError(
       422,
       'API_CONTEXT_MISSING',
       'Thiếu khách, mẫu hoặc chi nhánh; hãy tải lại báo giá.',
     );
+  const currentIds = bookingItems(draft).flatMap((line) => {
+    const variant = resolveBookingVariant(line);
+    return Array.from({ length: line.quantity }, () => variant?.id);
+  });
+  if (quote.available === false || reference?.pickup !== draft.pickup ||
+      reference?.returnAt !== draft.returnAt ||
+      currentIds.length !== variantIds.length ||
+      currentIds.some((id, index) => id !== variantIds[index]))
+    throw new ApiClientError(409, 'QUOTE_STALE', 'Lựa chọn đã thay đổi. Hãy tải lại báo giá trước khi gửi.');
   const created = await request<ApiOrder>('/api/v1/rentals/orders', {
     method: 'POST',
     body: JSON.stringify({
@@ -1664,7 +1697,7 @@ export async function createOrder(
       plannedDueAt: new Date(draft.returnAt).toISOString(),
       customerNote: draft.note || undefined,
       promotionCode: reference.promotionCode,
-      items: Array.from({ length: draft.quantity }, () => ({ variantId, accessories: [] })),
+      items: variantIds.map((variantId) => ({ variantId, accessories: [] })),
     }),
   });
   quoteRefs.delete(quote.id);
@@ -1672,12 +1705,12 @@ export async function createOrder(
   orderRefs.set(orderCode, {
     id: created.id,
     itemIds: (created.items ?? []).map((item) => item.id),
-    itemVariantIds: (created.items ?? []).map((item) => item.variantId ?? variantId),
+    itemVariantIds: (created.items ?? []).map((item, index) => item.variantId ?? variantIds[index]),
     version: created.version,
   });
   if (assignedUnit) {
     unitRefs.set(orderCode, new Map([[assignedUnit.code, assignedUnit.id]]));
-    unitVariantRefs.set(orderCode, new Map([[assignedUnit.code, variantId]]));
+    unitVariantRefs.set(orderCode, new Map([[assignedUnit.code, variantIds[0]]]));
   }
   return orderCode;
 }
