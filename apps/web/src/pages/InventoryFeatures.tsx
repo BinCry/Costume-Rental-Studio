@@ -180,6 +180,12 @@ export function InventoryPage({
   const [editingBlock, setEditingBlock] = useState<ScheduledBlock>();
   const [issue, setIssue] = useState('');
   const [notice, setNotice] = useState('');
+  const [blockIssue, setBlockIssue] = useState('');
+  const [blockNotice, setBlockNotice] = useState('');
+  const [scheduleIssue, setScheduleIssue] = useState('');
+  const [scheduleNotice, setScheduleNotice] = useState('');
+  const [capacityIssue, setCapacityIssue] = useState('');
+  const [capacityNotice, setCapacityNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [showCreateUnit, setShowCreateUnit] = useState(false);
   const [inspectionGrade, setInspectionGrade] = useState<'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED'>('GOOD');
@@ -219,22 +225,28 @@ export function InventoryPage({
   const selectUnit = (unit: Unit) => {
     setIssue('');
     setNotice('');
+    setBlockIssue('');
+    setBlockNotice('');
+    setScheduleIssue('');
+    setScheduleNotice('');
     setSelected(unit);
     revealDetail();
     void refreshUnitDetail(unit);
   };
   const addBlock = async () => {
+    setBlockIssue('');
+    setBlockNotice('');
     if (!selected || !reason.trim() || until <= from) {
-      setIssue('Nhập lý do và khoảng block hợp lệ.');
+      setBlockIssue('Nhập lý do và khoảng block hợp lệ.');
       return;
     }
     if (!Number.isInteger(Number(effort)) || Number(effort) < 1 || (blockCost && (!Number.isSafeInteger(Number(blockCost)) || Number(blockCost) < 0))) {
-      setIssue('Kiểm tra số phút xử lý và chi phí dự kiến.');
+      setBlockIssue('Kiểm tra số phút xử lý và chi phí dự kiến.');
       return;
     }
     setBusy(true);
-    setIssue('');
-    setNotice('');
+    setBlockIssue('');
+    setBlockNotice('');
     try {
       if (editingBlock && realApiMode) {
         await updateUnitBlock(editingBlock.id, {
@@ -271,13 +283,13 @@ export function InventoryPage({
       }
       retry();
       setReason('');
-      setNotice(editingBlock
+      setBlockNotice(editingBlock
         ? `Đã cập nhật lịch ${blockTypeLabels[blockType]} cho ${selected.barcode}.`
         : realApiMode
           ? `Đã tạo lịch ${blockTypeLabels[blockType]} cho ${selected.barcode} trên hệ thống.`
           : `Đã tạo block ${blockTypeLabels[blockType]} cho ${selected.barcode} trong fixture.`);
     } catch (e) {
-      setIssue(e instanceof Error ? e.message : 'Không tạo được block.');
+      setBlockIssue(e instanceof Error ? e.message : 'Không tạo được block.');
     } finally {
       setBusy(false);
     }
@@ -302,17 +314,17 @@ export function InventoryPage({
   };
   const updateBlock = async (block: ScheduledBlock, action: 'start' | 'complete') => {
     setBusy(true);
-    setIssue('');
-    setNotice('');
+    setScheduleIssue('');
+    setScheduleNotice('');
     try {
       if (action === 'start') await startUnitBlock(block.id);
       else await completeUnitBlock(block.id);
       blocksResource.retry();
       retry();
       if (selected) await refreshUnitDetail(selected);
-      setNotice(action === 'start' ? 'Đã bắt đầu lịch xử lý.' : 'Đã hoàn tất lịch xử lý; bộ đã chuyển sang sẵn sàng.');
+      setScheduleNotice(action === 'start' ? 'Đã bắt đầu lịch xử lý.' : 'Đã hoàn tất lịch xử lý; bộ đã chuyển sang sẵn sàng.');
     } catch (error) {
-      setIssue(error instanceof Error ? error.message : 'Không cập nhật được lịch xử lý.');
+      setScheduleIssue(error instanceof Error ? error.message : 'Không cập nhật được lịch xử lý.');
     } finally {
       setBusy(false);
     }
@@ -320,7 +332,8 @@ export function InventoryPage({
   const confirmCancelBlock = async () => {
     if (!cancelTarget || !cancelReason.trim()) return;
     setBusy(true);
-    setIssue('');
+    setScheduleIssue('');
+    setScheduleNotice('');
     try {
       await cancelUnitBlock(cancelTarget.id, cancelReason.trim());
       setCancelTarget(undefined);
@@ -328,23 +341,25 @@ export function InventoryPage({
       blocksResource.retry();
       retry();
       if (selected) await refreshUnitDetail(selected);
-      setNotice('Đã hủy lịch; lịch sử vẫn được lưu.');
+      setScheduleNotice('Đã hủy lịch; lịch sử vẫn được lưu.');
     } catch (error) {
-      setIssue(error instanceof Error ? error.message : 'Không hủy được lịch xử lý.');
+      setScheduleIssue(error instanceof Error ? error.message : 'Không hủy được lịch xử lý.');
     } finally {
       setBusy(false);
     }
   };
   const addCapacityWindow = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setCapacityIssue('');
+    setCapacityNotice('');
     const availableMinutes = Number(windowMinutes);
     if (!branch || !windowStart || windowEnd <= windowStart || !Number.isInteger(availableMinutes) || availableMinutes < 1) {
-      setIssue('Kiểm tra khoảng thời gian và số phút năng lực.');
+      setCapacityIssue('Kiểm tra khoảng thời gian và số phút năng lực.');
       return;
     }
     setBusy(true);
-    setIssue('');
-    setNotice('');
+    setCapacityIssue('');
+    setCapacityNotice('');
     try {
       if (editingWindow) {
         await updateCapacityWindow(editingWindow.id, {
@@ -355,7 +370,7 @@ export function InventoryPage({
           expectedUpdatedAt: editingWindow.updatedAt,
         });
         setEditingWindow(undefined);
-        setNotice('Đã cập nhật năng lực xử lý.');
+        setCapacityNotice('Đã cập nhật năng lực xử lý.');
       } else {
         await createCapacityWindow(branch, {
           startsAt: windowStart,
@@ -363,12 +378,12 @@ export function InventoryPage({
           availableMinutes,
           notes: windowNotes.trim() || undefined,
         });
-        setNotice('Đã ghi nhận năng lực xử lý cho chi nhánh.');
+        setCapacityNotice('Đã ghi nhận năng lực xử lý cho chi nhánh.');
       }
       capacityResource.retry();
       setWindowNotes('');
     } catch (error) {
-      setIssue(error instanceof Error ? error.message : 'Không thể tạo khung năng lực.');
+      setCapacityIssue(error instanceof Error ? error.message : 'Không thể tạo khung năng lực.');
     } finally {
       setBusy(false);
     }
@@ -376,17 +391,17 @@ export function InventoryPage({
   const confirmDeleteCapacityWindow = async () => {
     if (!deleteWindowTarget) return;
     setBusy(true);
-    setIssue('');
-    setNotice('');
+    setCapacityIssue('');
+    setCapacityNotice('');
     try {
       await deleteCapacityWindow(deleteWindowTarget.id);
       setDeleteWindowTarget(undefined);
       if (editingWindow?.id === deleteWindowTarget.id) setEditingWindow(undefined);
       capacityResource.retry();
       blocksResource.retry();
-      setNotice('Đã xóa khung năng lực. Các lịch xử lý liên quan vẫn còn và không còn gắn với khung này.');
+      setCapacityNotice('Đã xóa khung năng lực. Các lịch xử lý liên quan vẫn còn và không còn gắn với khung này.');
     } catch (error) {
-      setIssue(error instanceof Error ? error.message : 'Không xóa được khung năng lực.');
+      setCapacityIssue(error instanceof Error ? error.message : 'Không xóa được khung năng lực.');
     } finally {
       setBusy(false);
     }
@@ -519,6 +534,8 @@ export function InventoryPage({
                   {!visible.length && <p className="muted">Không có bộ phù hợp bộ lọc.</p>}
                 </Panel>
                 <Panel title="Lịch xử lý tại chi nhánh" action={<Button type="button" variant="quiet" loading={blocksResource.loading} onClick={blocksResource.retry}>Tải lại</Button>}>
+                  <InlineIssue text={scheduleIssue} conflict={scenario === 'conflict' || scenario === 'version'} />
+                  {scheduleNotice && <Feedback tone="success" title="Đã cập nhật lịch xử lý">{scheduleNotice}</Feedback>}
                   {blocksResource.error && <Feedback tone="danger" title="Không tải được lịch xử lý">{String(blocksResource.error)} <button type="button" className="text-button" onClick={blocksResource.retry}>Thử lại</button></Feedback>}
                   {blocksResource.loading ? <p className="muted" role="status">Đang tải lịch…</p> : (
                     <div className="responsive-table" role="region" aria-label="Bảng lịch xử lý" tabIndex={0}>
@@ -530,7 +547,7 @@ export function InventoryPage({
                             <td>{blockTypeLabels[block.type]}<small>{block.reason}</small></td>
                             <td>{formatVietnamDateTime(block.from)}<small>đến {formatVietnamDateTime(block.until)}</small></td>
                             <td><StatusLabel text={blockStatusLabels[block.status]} tone={block.status === 'COMPLETED' ? 'success' : block.status === 'CANCELLED' ? 'neutral' : block.status === 'IN_PROGRESS' ? 'warning' : 'info'} /></td>
-                          <td>{canManage && block.status === 'PLANNED' && <div className="catalog-media-card__actions"><Button type="button" variant="quiet" disabled={busy} onClick={() => void updateBlock(block, 'start')}>Bắt đầu</Button><Button type="button" variant="quiet" disabled={busy} onClick={() => { const unit = units.find((candidate) => candidate.apiId === block.unitId); if (unit) selectUnit(unit); setEditingBlock(block); setBlockType(block.type); setFrom(toLocalDateTimeInput(block.from)); setUntil(toLocalDateTimeInput(block.until)); setReason(block.reason); setEffort(String(block.estimatedEffortMinutes ?? 60)); setBlockCost(block.costVnd === undefined ? '' : String(block.costVnd)); setCapacityWindowId(block.capacityWindowId ?? ''); }}>Chỉnh lịch</Button><Button type="button" variant="quiet" disabled={busy} onClick={() => { setCancelTarget(block); setCancelReason(''); }}>Hủy lịch</Button></div>}{canManage && block.status === 'IN_PROGRESS' && <Button type="button" variant="secondary" loading={busy} onClick={() => void updateBlock(block, 'complete')}>Hoàn tất</Button>}</td>
+                          <td>{canManage && block.status === 'PLANNED' && <div className="catalog-media-card__actions"><Button type="button" variant="quiet" disabled={busy} onClick={() => void updateBlock(block, 'start')}>Bắt đầu</Button><Button type="button" variant="quiet" disabled={busy} onClick={() => { const unit = units.find((candidate) => candidate.apiId === block.unitId); if (unit) selectUnit(unit); setBlockIssue(''); setBlockNotice(''); setEditingBlock(block); setBlockType(block.type); setFrom(toLocalDateTimeInput(block.from)); setUntil(toLocalDateTimeInput(block.until)); setReason(block.reason); setEffort(String(block.estimatedEffortMinutes ?? 60)); setBlockCost(block.costVnd === undefined ? '' : String(block.costVnd)); setCapacityWindowId(block.capacityWindowId ?? ''); }}>Chỉnh lịch</Button><Button type="button" variant="quiet" disabled={busy} onClick={() => { setScheduleIssue(''); setScheduleNotice(''); setCancelTarget(block); setCancelReason(''); }}>Hủy lịch</Button></div>}{canManage && block.status === 'IN_PROGRESS' && <Button type="button" variant="secondary" loading={busy} onClick={() => void updateBlock(block, 'complete')}>Hoàn tất</Button>}</td>
                           </tr>)}
                         </tbody>
                       </table>
@@ -610,7 +627,8 @@ export function InventoryPage({
                         <Button loading={busy} disabled={!canManage || (realApiMode && !selected.apiId)} onClick={() => void addBlock()}>
                           {editingBlock ? 'Lưu lịch xử lý' : realApiMode ? 'Tạo lịch xử lý' : 'Tạo block fixture'}
                         </Button>
-                        <InlineIssue text={issue} conflict={scenario === 'conflict' || scenario === 'version'} />
+                        <InlineIssue text={blockIssue} conflict={scenario === 'conflict' || scenario === 'version'} />
+                        {blockNotice && <Feedback tone="success" title="Đã lưu lịch xử lý">{blockNotice}</Feedback>}
                       </Panel>
                     )}
                   </>
@@ -622,6 +640,8 @@ export function InventoryPage({
               </div>
             </div>
             <Panel title={`Năng lực xử lý · ${branch}`}>
+              <InlineIssue text={capacityIssue} conflict={scenario === 'conflict' || scenario === 'version'} />
+              {capacityNotice && <Feedback tone="success" title="Đã cập nhật năng lực">{capacityNotice}</Feedback>}
               {capacityResource.error && <Feedback tone="danger" title="Không tải được năng lực xử lý">{String(capacityResource.error)} <button type="button" className="text-button" onClick={capacityResource.retry}>Thử lại</button></Feedback>}
               {capacityResource.loading ? <p className="muted" role="status">Đang tải khung năng lực…</p> : (
                 <div className="feature-card-list">

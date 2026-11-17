@@ -1,6 +1,5 @@
 // Mirrors apps/api/src/common/validation/phone.ts: the server stores every phone as E.164
 // (0123456789 becomes +84123456789), so the web must accept and compare that form too.
-
 export function normalizePhone(value: string): string {
   const compact = value.trim().replace(/[\s()-]/g, '');
   if (/^0\d{9}$/.test(compact)) return `+84${compact.slice(1)}`;

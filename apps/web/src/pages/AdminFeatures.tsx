@@ -1262,23 +1262,25 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                     </SelectField>
                   </div>
                   <h3>Vai trò theo chi nhánh</h3>
-                  {person.assignments.map((a, i) => (
-                    <div className="feature-list-row" key={i}>
-                      <strong>{a.branch}</strong>
-                      <span>{staffRoleLabels[a.roleCode] ?? a.roleCode}</span>
-                      <Button
-                        variant="quiet"
-                        onClick={() =>
-                          setEditing({
-                            ...person,
-                            assignments: person.assignments.filter((_, n) => n !== i),
-                          })
-                        }
-                      >
-                        Bỏ phân công
-                      </Button>
-                    </div>
-                  ))}
+                  <div className="employee-assignment-list">
+                    {person.assignments.map((a, i) => (
+                      <div className="feature-list-row" key={i}>
+                        <strong>{a.branch}</strong>
+                        <span>{staffRoleLabels[a.roleCode] ?? a.roleCode}</span>
+                        <Button
+                          variant="quiet"
+                          onClick={() =>
+                            setEditing({
+                              ...person,
+                              assignments: person.assignments.filter((_, n) => n !== i),
+                            })
+                          }
+                        >
+                          Bỏ phân công
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
                   <div className="feature-filters">
                     <BranchSelector
                       label="Chi nhánh phân công"

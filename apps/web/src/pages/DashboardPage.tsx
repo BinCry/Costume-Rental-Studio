@@ -76,7 +76,13 @@ export function DashboardPage({
   const effectivePriority = realApiMode && priority === 'Chờ xác nhận lâu' ? 'all' : priority;
   const scoped = (data ?? []).filter((task) => task.branch === branch && !stale.includes(task.id));
   const visibleForDate = workDateInputValid
-    ? scoped.filter((task) => !workDate || task.workDate === workDate || task.kind === 'overdue')
+    ? scoped.filter(
+        (task) =>
+          !workDate ||
+          task.kind === 'pending' ||
+          task.workDate === workDate ||
+          task.kind === 'overdue',
+      )
     : [];
   const visible = workDateInputValid
     ? scoped.filter(
@@ -84,7 +90,10 @@ export function DashboardPage({
           (effectiveKind === 'all' || task.kind === effectiveKind) &&
           (effectivePriority === 'all' || task.group === effectivePriority) &&
           (taskStatus === 'all' || task.status === taskStatus) &&
-          (!workDate || task.workDate === workDate || task.kind === 'overdue') &&
+          (!workDate ||
+            task.kind === 'pending' ||
+            task.workDate === workDate ||
+            task.kind === 'overdue') &&
           `${task.orderId} ${task.customer} ${task.phone} ${task.barcode ?? ''} ${task.task}`
             .toLocaleLowerCase('vi')
             .includes(search.toLocaleLowerCase('vi')),
