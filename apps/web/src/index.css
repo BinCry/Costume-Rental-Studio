@@ -3674,6 +3674,45 @@ small {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.promotion-admin-table table {
+  min-width: 880px;
+}
+.promotion-admin-identity {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.promotion-admin-name {
+  display: block;
+  color: var(--text-secondary);
+}
+.promotion-admin-conditions {
+  font-size: 12px;
+}
+.promotion-admin-conditions > summary {
+  cursor: pointer;
+}
+.promotion-admin-dates {
+  white-space: nowrap;
+}
+.promotion-admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.promotion-form-section-title {
+  grid-column: 1 / -1;
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+.promotion-form-section-title:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
 .report-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
@@ -4157,6 +4196,9 @@ small {
   }
   .employee-admin-email {
     max-width: none;
+    white-space: normal;
+  }
+  .promotion-admin-dates {
     white-space: normal;
   }
   .crm-case-table {

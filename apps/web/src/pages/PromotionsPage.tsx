@@ -310,6 +310,7 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
           >
             <fieldset disabled={!realApiMode || !canManage || busy}>
               <div className="promotion-form-grid">
+                <h3 className="promotion-form-section-title">Chương trình</h3>
                 <Field
                   label="Mã ưu đãi"
                   value={form.code}
@@ -356,6 +357,7 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
                   }
                   required
                 />
+                <h3 className="promotion-form-section-title">Điều kiện áp dụng</h3>
                 {form.discountType === 'PERCENT' && (
                   <Field
                     label="Giảm tối đa (đ, không bắt buộc)"
@@ -379,6 +381,7 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
                   }
                   required
                 />
+                <h3 className="promotion-form-section-title">Thời hạn & lượt sử dụng</h3>
                 <DateTimeField
                   label="Bắt đầu áp dụng"
                   value={form.startAt}
@@ -461,77 +464,63 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
             <EmptyState title={search ? 'Không tìm thấy mã phù hợp' : 'Chưa tạo mã ưu đãi'}>
               {search
                 ? 'Thử tìm theo mã hoặc tên chương trình khác.'
-                : 'Tạo mã đầu tiên ở biểu mẫu bên cạnh.'}
+                : 'Chọn “+ Tạo mã” để thêm chương trình đầu tiên.'}
             </EmptyState>
           ) : (
-            <div className="promotion-list">
-              {visibleItems.map((item) => {
-                const status = promotionStatus(item, now);
-                const expired = new Date(item.endAt).getTime() <= now;
-                return (
-                  <article className="promotion-item" key={item.id}>
-                    <div className="promotion-item__head">
-                      <div>
-                        <code>{item.code}</code>
-                        <h3>{item.name}</h3>
-                      </div>
-                      <StatusLabel text={status.label} tone={status.tone} />
-                    </div>
-                    <p className="promotion-item__discount">
-                      {item.discountType === 'PERCENT'
-                        ? `Giảm ${item.discountValue}%`
-                        : `Giảm ${money(item.discountValue)}`}
-                      {item.discountType === 'PERCENT' && item.maxDiscountVnd !== null
-                        ? ` · tối đa ${money(item.maxDiscountVnd)}`
-                        : ''}
-                    </p>
-                    <dl className="promotion-item__facts">
-                      <div>
-                        <dt>Đơn tối thiểu</dt>
-                        <dd>{money(item.minOrderAmountVnd)}</dd>
-                      </div>
-                      <div>
-                        <dt>Thời hạn</dt>
-                        <dd>
-                          {formatVietnamDateTime(item.startAt)} – {formatVietnamDateTime(item.endAt)}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Giới hạn</dt>
-                        <dd>
-                          {item.totalUsageLimit === null
-                            ? 'Không giới hạn tổng lượt'
-                            : `${item.totalUsageLimit} lượt tổng`}{' '}
-                          · {item.perCustomerLimit} lượt/khách
-                        </dd>
-                      </div>
-                    </dl>
-                    <div className="promotion-item__actions">
-                      <Button
-                        variant="secondary"
-                        disabled={!canManage || !realApiMode || busyId === item.id}
-                        onClick={() => {
-                          setEditing(item);
-                          setForm(promotionFormFromRecord(item));
-                          setShowForm(true);
-                          setIssue('');
-                          setNotice('');
-                        }}
-                      >
-                        Sửa
-                      </Button>
-                      <Button
-                        variant={item.isActive ? 'danger' : 'secondary'}
-                        loading={busyId === item.id}
-                        disabled={!canManage || !realApiMode || (!item.isActive && expired)}
-                        onClick={() => void changeStatus(item)}
-                      >
-                        {item.isActive ? 'Tắt mã' : expired ? 'Đã hết hạn' : 'Bật mã'}
-                      </Button>
-                    </div>
-                  </article>
-                );
-              })}
+            <div className="responsive-table catalog-admin-table promotion-admin-table" role="region" aria-label="Bảng mã ưu đãi" tabIndex={0}>
+              <table>
+                <thead><tr><th>Mã / chương trình</th><th>Mức giảm</th><th>Đơn tối thiểu</th><th>Hiệu lực</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+                <tbody>
+                  {visibleItems.map((item) => {
+                    const status = promotionStatus(item, now);
+                    const expired = new Date(item.endAt).getTime() <= now;
+                    return (
+                      <tr key={item.id}>
+                        <td data-label="Chương trình">
+                          <div className="promotion-admin-identity">
+                          <strong>{item.code}</strong>
+                          <span className="promotion-admin-name">{item.name}</span>
+                          <details className="promotion-admin-conditions">
+                            <summary>Giới hạn lượt</summary>
+                            {item.totalUsageLimit === null ? 'Không giới hạn tổng lượt' : `${item.totalUsageLimit} lượt tổng`} · {item.perCustomerLimit} lượt/khách
+                          </details>
+                          </div>
+                        </td>
+                        <td data-label="Mức giảm">
+                          <div className="promotion-admin-identity">
+                          {item.discountType === 'PERCENT' ? `${item.discountValue}%` : money(item.discountValue)}
+                          {item.discountType === 'PERCENT' && item.maxDiscountVnd !== null && <small className="promotion-admin-name">Tối đa {money(item.maxDiscountVnd)}</small>}
+                          </div>
+                        </td>
+                        <td data-label="Đơn tối thiểu">{money(item.minOrderAmountVnd)}</td>
+                        <td data-label="Hiệu lực" className="promotion-admin-dates">{formatVietnamDateTime(item.startAt)} – {formatVietnamDateTime(item.endAt)}</td>
+                        <td data-label="Trạng thái"><StatusLabel text={status.label} tone={status.tone} /></td>
+                        <td data-label="Thao tác">
+                          <div className="promotion-admin-actions">
+                            <Button
+                              variant="secondary"
+                              disabled={!canManage || !realApiMode || busyId === item.id}
+                              onClick={() => {
+                                setEditing(item);
+                                setForm(promotionFormFromRecord(item));
+                                setShowForm(true);
+                                setIssue('');
+                                setNotice('');
+                              }}
+                            >Sửa</Button>
+                            <Button
+                              variant={item.isActive ? 'danger' : 'secondary'}
+                              loading={busyId === item.id}
+                              disabled={!canManage || !realApiMode || (!item.isActive && expired)}
+                              onClick={() => void changeStatus(item)}
+                            >{item.isActive ? 'Tắt mã' : expired ? 'Đã hết hạn' : 'Bật mã'}</Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </Panel>
