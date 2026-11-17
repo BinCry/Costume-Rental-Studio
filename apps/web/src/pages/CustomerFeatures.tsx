@@ -377,7 +377,15 @@ export function CostumeDetailPage({
                     </Feedback>
                   )}
                   <Feedback
-                    tone={dateRangeIssue ? 'warning' : known ? (available ? 'success' : 'warning') : 'info'}
+                    tone={
+                      dateRangeIssue
+                        ? 'warning'
+                        : known
+                          ? available
+                            ? 'success'
+                            : 'warning'
+                          : 'info'
+                    }
                     action={
                       availability === 'error' ? (
                         <Button
@@ -392,19 +400,20 @@ export function CostumeDetailPage({
                       dateRangeIssue
                         ? 'Khoảng thuê chưa hợp lệ'
                         : availability === 'loading'
-                        ? 'Đang kiểm tra khả dụng'
-                        : availability === 'error'
-                          ? 'Chưa kiểm tra được khả dụng'
-                          : known
-                            ? available
-                              ? 'Biến thể này đang có bộ khả dụng theo kỳ đã chọn'
-                              : 'Không có bộ phù hợp theo kỳ mẫu'
-                            : 'Chưa có dữ liệu khả dụng cho kỳ này'
+                          ? 'Đang kiểm tra khả dụng'
+                          : availability === 'error'
+                            ? 'Chưa kiểm tra được khả dụng'
+                            : known
+                              ? available
+                                ? 'Biến thể này đang có bộ khả dụng theo kỳ đã chọn'
+                                : 'Không có bộ phù hợp theo kỳ mẫu'
+                              : 'Chưa có dữ liệu khả dụng cho kỳ này'
                     }
                   >
-                    {dateRangeIssue ?? (availability === 'error'
-                      ? 'Hãy thử lại hoặc tiếp tục gửi yêu cầu để nhân viên kiểm tra trong bước duyệt.'
-                      : 'Việc xem khả dụng không giữ bộ. Nhân viên sẽ duyệt và gán từng bộ sau khi bạn gửi yêu cầu.')}
+                    {dateRangeIssue ??
+                      (availability === 'error'
+                        ? 'Hãy thử lại hoặc tiếp tục gửi yêu cầu để nhân viên kiểm tra trong bước duyệt.'
+                        : 'Việc xem khả dụng không giữ bộ. Nhân viên sẽ duyệt và gán từng bộ sau khi bạn gửi yêu cầu.')}
                   </Feedback>
                 </Panel>
                 <div className="feature-actions">
@@ -612,27 +621,31 @@ export function MyRentalsPage({
                         key={order.id}
                         onClick={() => go('myRentalDetail', { order: order.id })}
                       >
-                        <span>
-                          <strong>
+                        <span className="rental-card-main">
+                          <small className="rental-card-code">{order.id}</small>
+                          <strong className="rental-card-title">
                             {order.items?.length
                               ? order.items.map((item) => item.costume).join(', ')
                               : order.costume}
                           </strong>
-                          <small>
-                            {order.id} ·{' '}
+                          <small className="rental-card-variant">
                             {order.items?.length
                               ? order.items
                                   .map((item) => `${item.costume} ${item.variant}`)
                                   .join(' / ')
                               : order.variant}
                           </small>
-                          <small>
-                            {order.branch} · {order.pickup}
+                          <small className="rental-card-meta">
+                            <span>{order.branch}</span>
+                            <span>Nhận đồ {order.pickup}</span>
                           </small>
                         </span>
                         <span className="rental-card-right">
                           <StatusLabel {...orderStatus[order.status]} />
-                          <strong>{money(order.rental)}</strong>
+                          <span className="rental-card-price">
+                            <small>Tiền thuê</small>
+                            <strong>{money(order.rental)}</strong>
+                          </span>
                           <small>Cọc {money(order.deposit)}</small>
                         </span>
                       </button>
