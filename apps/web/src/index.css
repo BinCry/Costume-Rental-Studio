@@ -4202,6 +4202,24 @@ small {
   align-items: start;
   gap: 10px;
 }
+.booking-promotion-details {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: #fff;
+}
+.booking-promotion-details > summary {
+  padding: 12px 16px;
+  color: var(--brand-primary);
+  font-weight: 600;
+  cursor: pointer;
+}
+.booking-promotion-details > summary:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.booking-promotion-details .promotion-entry {
+  padding: 0 16px 16px;
+}
 .promotion-entry__field {
   display: grid;
   min-width: 0;

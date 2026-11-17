@@ -742,8 +742,7 @@ export function BookingPage({
                         </div>
                       }
                     >
-                      Báo giá được tính theo phiên khách hàng. Lựa chọn của bạn sẽ được lưu để tiếp
-                      tục sau khi đăng nhập.
+                      Lựa chọn sẽ được giữ để tiếp tục sau khi đăng nhập.
                     </Feedback>
                   ) : (
                     <>
@@ -807,7 +806,9 @@ export function BookingPage({
                       )}
                     </>
                   )}
-                  {apiMode ? (
+                  {apiMode && customerAuthenticated && (
+                    <details className="booking-promotion-details">
+                      <summary>Mã ưu đãi {quote?.promotionCode ? `· ${quote.promotionCode}` : '(nếu có)'}</summary>
                     <div className="promotion-entry">
                       <div className="promotion-entry__field">
                         <Field
@@ -816,7 +817,6 @@ export function BookingPage({
                           maxLength={100}
                           placeholder="Nhập mã ưu đãi nếu có"
                           value={promotionCode}
-                          hint="Mã được xác minh trên máy chủ và tính vào báo giá."
                           onChange={(event) => {
                             setPromotionCode(event.target.value.toUpperCase());
                             setPromotionIssue('');
@@ -829,15 +829,12 @@ export function BookingPage({
                         )}
                         {quote?.promotionCode &&
                           appliedPromotionCode === promotionCode.trim().toUpperCase() && (
-                            <Feedback tone="success" title={`Đã áp dụng ${quote.promotionCode}`}>
-                              Đã giảm {money(quote.discount)} trên tiền thuê.
-                            </Feedback>
+                            <p className="field-hint">Đã giảm {money(quote.discount)}.</p>
                           )}
                         {promotionCode.trim() &&
                           promotionCode.trim().toUpperCase() !== appliedPromotionCode && (
                             <p className="field-hint" role="status">
-                              Áp dụng mã để lấy lại báo giá. Bạn chưa bị tính mức giảm cho đến khi
-                              máy chủ xác nhận.
+                              Áp dụng mã để cập nhật báo giá.
                             </p>
                           )}
                       </div>
@@ -866,11 +863,7 @@ export function BookingPage({
                               : 'Tính lại báo giá'}
                       </Button>
                     </div>
-                  ) : (
-                    <Feedback tone="info" title="Mã ưu đãi được kiểm tra trực tiếp">
-                      Bản xem thử không xác minh voucher. Hãy đăng nhập để lấy báo giá thật và áp
-                      dụng mã.
-                    </Feedback>
+                    </details>
                   )}
                   {quote && (
                     <div className="quote-card">
@@ -930,60 +923,11 @@ export function BookingPage({
               )}
               {step === 1 && (
                 <div className="form-stack">
-                  {!customerAuthenticated && (
-                    <div className="google-placeholder">
-                      <a
-                        className="button button-secondary"
-                        href="/dang-nhap?next=%2Fdat-thue%3Fresume%3D1"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          try {
-                            window.sessionStorage.setItem(
-                              bookingDraftStorageKey,
-                              JSON.stringify({ savedAt: Date.now(), draft: draftState }),
-                            );
-                            go('login', { next: '/dat-thue?resume=1' });
-                          } catch {
-                            setIssue(
-                              'Chưa thể lưu lựa chọn để tiếp tục sau khi đăng nhập. Hãy thử lại hoặc giữ nguyên trang này.',
-                            );
-                          }
-                        }}
-                      >
-                        Đăng nhập
-                      </a>
-                      <span>
-                        {apiMode
-                          ? 'Đăng nhập để tiếp tục gửi yêu cầu và theo dõi đơn thuê.'
-                          : 'Bạn có thể tiếp tục bản xem thử bằng thông tin liên hệ.'}{' '}
-                        <a
-                          href="/dang-ky?next=%2Fdat-thue%3Fresume%3D1"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            try {
-                              window.sessionStorage.setItem(
-                                bookingDraftStorageKey,
-                                JSON.stringify({ savedAt: Date.now(), draft: draftState }),
-                              );
-                              go('register', { next: '/dat-thue?resume=1' });
-                            } catch {
-                              setIssue(
-                                'Chưa thể lưu lựa chọn để tiếp tục sau khi đăng ký. Hãy thử lại hoặc giữ nguyên trang này.',
-                              );
-                            }
-                          }}
-                        >
-                          Tạo tài khoản
-                        </a>
-                      </span>
-                    </div>
-                  )}
                   <div className="two-fields">
                     <Field
                       label="Họ và tên người thuê"
                       placeholder="Ví dụ: Nguyễn An"
                       autoComplete="name"
-                      hint="Được điền từ hồ sơ của bạn nếu đã lưu; bạn có thể sửa cho riêng đơn này."
                       value={draft.name}
                       onChange={(event) => update('name', event.target.value)}
                       error={issue && !draft.name.trim() ? 'Nhập tên người thuê.' : undefined}
@@ -993,7 +937,6 @@ export function BookingPage({
                       placeholder="09xx xxx xxx"
                       type="tel"
                       autoComplete="tel"
-                      hint="Studio dùng số này để xác nhận đơn. Lưu trong Tài khoản để tự điền lần sau."
                       value={draft.phone}
                       onChange={(event) => update('phone', event.target.value)}
                       error={
@@ -1089,7 +1032,7 @@ export function BookingPage({
               {step === 0 ? 'Về catalog' : 'Quay lại'}
             </Button>
             {step < 2 ? (
-              <Button onClick={next} disabled={loading || !!error || scenario === 'empty'}>
+              <Button onClick={next} disabled={loading || !!error || scenario === 'empty' || (step === 1 && quote?.available === false)}>
                 Đi tiếp <Icon name="arrow" size={18} />
               </Button>
             ) : (
