@@ -26,6 +26,13 @@ import { useBranchOptions } from '../components/useBranchOptions';
 const steps = ['Thông tin thuê', 'Báo giá & liên hệ', 'Xem lại & gửi'];
 const bookingDraftStorageKey = 'costume-rental.booking-draft.v1';
 const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
+function toLocalDateTimeInput(value: Date) {
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
+}
+function minimumPickupDateTime(now: number) {
+  return toLocalDateTimeInput(new Date(now + 2 * 60_000));
+}
 function lateReturnPolicyText(quote: QuoteSnapshot | undefined, apiMode: boolean) {
   const dueRule =
     'Hạn trả là thời điểm ghi trên đơn; đệm lịch nội bộ không kéo dài thời gian thuê.';
@@ -151,7 +158,10 @@ export function BookingPage({
   const [promotionCode, setPromotionCode] = useState('');
   const [appliedPromotionCode, setAppliedPromotionCode] = useState('');
   const [promotionIssue, setPromotionIssue] = useState('');
+  const [quoteIssue, setQuoteIssue] = useState('');
+  const [quoteIssueCode, setQuoteIssueCode] = useState('');
   const [issue, setIssue] = useState('');
+  const [currentTime, setCurrentTime] = useState(0);
   const [busy, setBusy] = useState(false);
   const [submittedId, setSubmittedId] = useState('');
   const quoteRequestRef = useRef(0);
@@ -162,6 +172,15 @@ export function BookingPage({
   const issueRef = useRef<HTMLDivElement>(null);
   const previousStepRef = useRef(step);
   const resumeRequested = initialContext.get('resume') === '1';
+  useEffect(() => {
+    const updateTime = () => setCurrentTime(Date.now());
+    const initialTimer = window.setTimeout(updateTime, 0);
+    const interval = window.setInterval(updateTime, 60_000);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(interval);
+    };
+  }, []);
   useEffect(() => {
     if (!resumeRequested) return;
     try {
@@ -235,6 +254,8 @@ export function BookingPage({
     if (['costumeId', 'variant', 'quantity', 'branch', 'pickup', 'returnAt'].includes(key)) {
       quoteRequestRef.current += 1;
       setQuote(undefined);
+      setQuoteIssue('');
+      setQuoteIssueCode('');
       if (!submittingRef.current) setBusy(false);
     }
     setIssue('');
@@ -254,6 +275,8 @@ export function BookingPage({
         return 'Chọn size/màu và số bộ hợp lệ (1–2 bộ).';
       if (!draft.branch || !draft.pickup || !draft.returnAt)
         return 'Chọn cùng chi nhánh và kỳ nhận/trả hợp lệ.';
+      if (currentTime > 0 && new Date(draft.pickup).getTime() <= currentTime)
+        return 'Giờ nhận đã qua. Hãy chọn thời điểm nhận trong tương lai.';
     }
     if (step === 1 || step === 2) {
       if (!quote) return 'Cần tải báo giá còn hiệu lực để tiếp tục.';
@@ -273,6 +296,7 @@ export function BookingPage({
     setIssue('');
     if (step === 0) {
       setStep(1);
+      if (apiMode && !customerAuthenticated) return;
       void loadQuote();
       return;
     }
@@ -290,6 +314,8 @@ export function BookingPage({
     setBusy(true);
     setIssue('');
     setPromotionIssue('');
+    setQuoteIssue('');
+    setQuoteIssueCode('');
     setQuote(undefined);
     try {
       const result = await fixtureAdapter.getQuote(draft, scenario, {
@@ -319,7 +345,15 @@ export function BookingPage({
           } catch {
             // Keep the rejection reason; the quote stays empty when it cannot be loaded either.
           }
-        } else setIssue(message);
+        } else {
+          const caughtCode =
+            caught && typeof caught === 'object' && 'code' in caught
+              ? (caught as { code?: unknown }).code
+              : undefined;
+          const code = typeof caughtCode === 'string' ? caughtCode : '';
+          setQuoteIssue(message);
+          setQuoteIssueCode(code);
+        }
       }
       return false;
     } finally {
@@ -353,6 +387,20 @@ export function BookingPage({
       setBusy(false);
     }
   };
+  const continueToAuth = (destination: 'login' | 'register') => {
+    try {
+      window.sessionStorage.setItem(
+        bookingDraftStorageKey,
+        JSON.stringify({ savedAt: Date.now(), draft: draftState }),
+      );
+      go(destination, { next: '/dat-thue?resume=1' });
+    } catch {
+      setIssue(
+        `Chưa thể lưu lựa chọn để tiếp tục sau khi ${destination === 'login' ? 'đăng nhập' : 'đăng ký'}. Hãy thử lại hoặc giữ nguyên trang này.`,
+      );
+    }
+  };
+  const requiresAuthentication = /AUTH|SESSION|UNAUTHORIZED/i.test(quoteIssueCode);
   if (submittedId)
     return (
       <div className="page booking-page">
@@ -572,10 +620,18 @@ export function BookingPage({
                     <DateTimeField
                       label="Nhận đồ"
                       value={draft.pickup}
+                      min={currentTime > 0 ? minimumPickupDateTime(currentTime) : undefined}
                       onChange={(value) => update('pickup', value)}
                       error={
                         pickupIssue ??
-                        (issue && !draft.pickup ? 'Chọn thời điểm nhận đồ.' : undefined)
+                        (issue && !draft.pickup
+                          ? 'Chọn thời điểm nhận đồ.'
+                          : issue &&
+                              currentTime > 0 &&
+                              draft.pickup &&
+                              new Date(draft.pickup).getTime() <= currentTime
+                            ? 'Thời điểm này đã qua. Hãy chọn ngày giờ nhận trong tương lai.'
+                            : undefined)
                       }
                     />
                     <DateTimeField
@@ -626,22 +682,95 @@ export function BookingPage({
               )}
               {step === 1 && (
                 <div className="form-stack">
-                  <p className="inline-note">
-                    <strong>{apiMode ? 'Báo giá từ hệ thống' : 'Báo giá xem thử'}.</strong>{' '}
-                    {apiMode
-                      ? 'Số ngày, giá thuê, tiền cọc và thời hạn được tính theo chính sách hiện hành.'
-                      : 'Bản xem thử dùng dữ liệu mẫu; giá áp dụng thực tế cần được studio xác nhận.'}
-                  </p>
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      void loadQuote();
-                    }}
-                    loading={busy}
-                  >
-                    <Icon name="refresh" size={18} />{' '}
-                    {quote ? 'Cập nhật báo giá' : apiMode ? 'Tải báo giá' : 'Tải báo giá xem thử'}
-                  </Button>
+                  {apiMode && !customerAuthenticated ? (
+                    <Feedback
+                      tone="warning"
+                      title="Đăng nhập để tải báo giá"
+                      className="booking-auth-feedback"
+                      action={
+                        <div className="booking-auth-actions">
+                          <Button variant="secondary" onClick={() => continueToAuth('login')}>
+                            Đăng nhập
+                          </Button>
+                          <Button variant="quiet" onClick={() => continueToAuth('register')}>
+                            Tạo tài khoản
+                          </Button>
+                        </div>
+                      }
+                    >
+                      Báo giá được tính theo phiên khách hàng. Lựa chọn của bạn sẽ được lưu để tiếp
+                      tục sau khi đăng nhập.
+                    </Feedback>
+                  ) : (
+                    <>
+                      <Feedback
+                        tone="info"
+                        title={apiMode ? 'Báo giá từ hệ thống' : 'Báo giá xem thử'}
+                      >
+                        {apiMode
+                          ? 'Số ngày, giá thuê, tiền cọc và thời hạn được tính theo chính sách hiện hành.'
+                          : 'Bản xem thử dùng dữ liệu mẫu; giá áp dụng thực tế cần được studio xác nhận.'}
+                      </Feedback>
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          void loadQuote();
+                        }}
+                        loading={busy}
+                      >
+                        <Icon name="refresh" size={18} />{' '}
+                        {quote
+                          ? 'Cập nhật báo giá'
+                          : apiMode
+                            ? 'Tải báo giá'
+                            : 'Tải báo giá xem thử'}
+                      </Button>
+                      {quoteIssue && (
+                        <Feedback
+                          tone="danger"
+                          className="booking-quote-error"
+                          title={
+                            quoteIssueCode === 'RENTAL_START_IN_PAST'
+                              ? 'Giờ nhận không còn hợp lệ'
+                              : requiresAuthentication
+                                ? 'Phiên đăng nhập cần được làm mới'
+                                : 'Chưa tải được báo giá'
+                          }
+                          action={
+                            quoteIssueCode === 'RENTAL_START_IN_PAST' ? (
+                              <Button
+                                variant="secondary"
+                                onClick={() => {
+                                  setStep(0);
+                                  setIssue(
+                                    'Giờ nhận đã qua. Hãy chọn thời điểm nhận trong tương lai.',
+                                  );
+                                  setQuoteIssue('');
+                                  setQuoteIssueCode('');
+                                }}
+                              >
+                                Chọn lại giờ nhận
+                              </Button>
+                            ) : requiresAuthentication ? (
+                              <Button variant="secondary" onClick={() => continueToAuth('login')}>
+                                Đăng nhập lại
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="secondary"
+                                loading={busy}
+                                onClick={() => void loadQuote()}
+                              >
+                                Thử tải lại
+                              </Button>
+                            )
+                          }
+                        >
+                          {quoteIssue}
+                        </Feedback>
+                      )}
+                    </>
+                  )}
                   {apiMode ? (
                     <div className="promotion-entry">
                       <div className="promotion-entry__field">
@@ -888,7 +1017,8 @@ export function BookingPage({
                     tone="warning"
                     title="Yêu cầu chưa giữ trang phục cho đến khi studio xác nhận."
                   >
-                    Bạn chỉ trả tiền thuê và cọc khi nhận đồ tại chi nhánh.
+                    Sau khi Studio xác nhận, bạn có thể thanh toán qua payOS hoặc tại chi nhánh khi
+                    nhận đồ.
                   </Feedback>
                 </div>
               )}

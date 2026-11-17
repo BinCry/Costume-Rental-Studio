@@ -1694,6 +1694,16 @@ small {
 .form-stack > .button {
   justify-self: start;
 }
+.booking-auth-feedback,
+.booking-quote-error {
+  align-items: flex-start;
+}
+.booking-auth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
 .two-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2767,6 +2777,41 @@ small {
   gap: 20px;
   align-content: start;
 }
+.customer-payment-list {
+  display: grid;
+  gap: 12px;
+}
+.customer-payment-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.customer-payment-row:last-of-type {
+  border-bottom: 0;
+}
+.customer-payment-row__summary {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.customer-payment-row__summary span {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+.customer-payment-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+.customer-payment-row__actions .button {
+  white-space: nowrap;
+}
 .feature-panel {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -3748,6 +3793,16 @@ small {
   }
   .feature-panel {
     padding: 18px;
+  }
+  .customer-payment-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .customer-payment-row__actions {
+    justify-content: flex-start;
+  }
+  .customer-payment-row__actions .button {
+    flex: 1 1 100%;
   }
   .costume-detail-grid {
     gap: 20px;
@@ -4769,6 +4824,17 @@ small {
   }
   .two-fields {
     grid-template-columns: 1fr;
+  }
+  .booking-auth-feedback,
+  .booking-quote-error {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .booking-auth-actions {
+    width: 100%;
+  }
+  .booking-auth-actions .button {
+    flex: 1 1 auto;
   }
   .google-placeholder {
     display: block;

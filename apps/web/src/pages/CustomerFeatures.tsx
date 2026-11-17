@@ -32,10 +32,14 @@ import {
   ApiClientError,
   apiEnabled,
   checkPublicAvailability,
+  createPaymentCheckout,
+  getOrderSettlement,
   getOwnCustomerProfile,
   getPublicModelVariants,
   listCustomerOrders,
+  listOrderPayments,
   hasAccessToken,
+  type SettlementSnapshot,
   updateOwnCustomerProfile,
 } from '../api/client';
 import { useBranchOptions } from '../components/useBranchOptions';
@@ -433,8 +437,8 @@ export function CostumeDetailPage({
                   </Button>
                 </div>
                 <p className="muted small-note">
-                  Tiền thuê và cọc thu lúc nhận. Trả tại chính chi nhánh nhận; hoàn cọc sau kiểm tra
-                  tình trạng.
+                  Có thể thanh toán qua payOS sau khi đơn được xác nhận hoặc tại chi nhánh khi nhận.
+                  Tiền cọc được quyết toán sau khi kiểm tra đồ trả.
                 </p>
               </div>
             </div>
@@ -573,12 +577,19 @@ export function MyRentalsPage({
                   <Panel title="Lịch sử và biên nhận">
                     <Timeline items={selected.history} />
                     <p className="muted small-note">
-                      Biên nhận điện tử sẽ xuất hiện khi API giao dịch và lưu chứng từ được triển
-                      khai.
+                      Trạng thái thanh toán được xác nhận từ máy chủ. Nếu vừa thanh toán, hãy tải
+                      lại để cập nhật kết quả.
                     </p>
                   </Panel>
                 </div>
                 <div>
+                  <CustomerPaymentPanel
+                    orderId={selected.id}
+                    orderStatus={selected.status}
+                    payments={selected.apiPayments ?? []}
+                    realApiMode={apiEnabled && hasAccessToken()}
+                    onOrdersRefresh={retry}
+                  />
                   <MoneySummary
                     rental={selected.rental}
                     deposit={selected.deposit}
@@ -690,6 +701,322 @@ export function MyRentalsPage({
         );
       }}
     </StateGate>
+  );
+}
+
+function CustomerPaymentPanel({
+  orderId,
+  orderStatus,
+  payments,
+  realApiMode,
+  onOrdersRefresh,
+}: {
+  orderId: string;
+  orderStatus: string;
+  payments: NonNullable<CustomerOrder['apiPayments']>;
+  realApiMode: boolean;
+  onOrdersRefresh: () => void;
+}) {
+  const [settlement, setSettlement] = useState<SettlementSnapshot>();
+  const [paymentRecords, setPaymentRecords] = useState<
+    {
+      purpose: string;
+      amount: number | string;
+      status: string;
+      method?: string;
+      checkoutUrl?: string | null;
+    }[]
+  >(payments);
+  const [loading, setLoading] = useState(true);
+  const [busyPurpose, setBusyPurpose] = useState<'RENTAL' | 'DEPOSIT' | 'EXTRA' | ''>('');
+  const [loadError, setLoadError] = useState('');
+  const [checkoutError, setCheckoutError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+  const [checkout, setCheckout] = useState<{
+    purpose: 'RENTAL' | 'DEPOSIT' | 'EXTRA';
+    url: string;
+    amount: number;
+    expiresAt?: string | null;
+  }>();
+  const paymentReadyStatuses = [
+    'CONFIRMED',
+    'PREPARING',
+    'READY_FOR_PICKUP',
+    'ACTIVE',
+    'RETURN_INSPECTION',
+  ];
+  const paymentPendingConfirmation = orderStatus === 'PENDING_CONFIRMATION';
+  const canPay = paymentReadyStatuses.includes(orderStatus);
+  const retryPaymentState = () => {
+    setLoading(true);
+    setLoadError('');
+    setReloadKey((value) => value + 1);
+  };
+
+  useEffect(() => {
+    if (!realApiMode || !canPay) return;
+    let active = true;
+    void Promise.all([getOrderSettlement(orderId), listOrderPayments(orderId)])
+      .then(([result, records]) => {
+        if (!active) return;
+        setSettlement(result);
+        setPaymentRecords(
+          records.map((payment) => ({
+            purpose: payment.purpose,
+            amount: Number(payment.amountVnd),
+            status: payment.status,
+            method: payment.method,
+            checkoutUrl: payment.checkoutUrl,
+          })),
+        );
+      })
+      .catch((caught: unknown) => {
+        if (active)
+          setLoadError(
+            caught instanceof Error ? caught.message : 'Chưa tải được số dư. Hãy thử tải lại.',
+          );
+      })
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [canPay, orderId, realApiMode, reloadKey]);
+
+  if (!realApiMode || (!canPay && !paymentPendingConfirmation)) return null;
+  const moneyValue = (value?: string | number) => Number(value ?? 0);
+  const rows = settlement
+    ? [
+        {
+          purpose: 'RENTAL' as const,
+          label: 'Tiền thuê',
+          remaining: moneyValue(settlement.rental.remainingVnd),
+        },
+        {
+          purpose: 'DEPOSIT' as const,
+          label: 'Tiền cọc',
+          remaining: Math.max(
+            0,
+            moneyValue(settlement.deposit.dueVnd) - moneyValue(settlement.deposit.paidVnd),
+          ),
+        },
+        {
+          purpose: 'EXTRA' as const,
+          label: 'Phụ phí',
+          remaining: moneyValue(settlement.extra.remainingVnd),
+        },
+      ]
+    : [];
+  const pendingPayment = (purpose: 'RENTAL' | 'DEPOSIT' | 'EXTRA') =>
+    paymentRecords.find(
+      (payment) =>
+        payment.purpose === purpose &&
+        payment.method === 'PAYMENT_GATEWAY' &&
+        ['PENDING', 'PROCESSING'].includes(payment.status),
+    );
+  const safeCheckoutUrl = (value?: string | null) => {
+    if (!value) return undefined;
+    try {
+      const url = new URL(value);
+      return url.protocol === 'https:' ? url.toString() : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const startCheckout = async (purpose: 'RENTAL' | 'DEPOSIT' | 'EXTRA', amount: number) => {
+    if (busyPurpose || amount <= 0) return;
+    setBusyPurpose(purpose);
+    setCheckoutError('');
+    setCheckout(undefined);
+    try {
+      const result = await createPaymentCheckout(orderId, purpose, amount);
+      const url = safeCheckoutUrl(result.checkoutUrl);
+      if (!url) {
+        setCheckoutError(
+          'Máy chủ chưa trả về liên kết thanh toán an toàn. Hãy tải lại quyết toán.',
+        );
+        return;
+      }
+      setCheckout({ purpose, url, amount, expiresAt: result.expiresAt });
+      setPaymentRecords((current) => [
+        {
+          purpose,
+          amount,
+          status: result.payment.status,
+          method: result.payment.method,
+          checkoutUrl: url,
+        },
+        ...current.filter(
+          (payment) =>
+            payment.purpose !== purpose || !['PENDING', 'PROCESSING'].includes(payment.status),
+        ),
+      ]);
+    } catch (caught) {
+      setCheckoutError(
+        caught instanceof Error
+          ? caught.message
+          : 'Chưa tạo được phiên thanh toán. Hãy kiểm tra trạng thái rồi thử lại.',
+      );
+    } finally {
+      setBusyPurpose('');
+    }
+  };
+
+  return (
+    <Panel
+      title="Thanh toán"
+      action={
+        canPay ? (
+          <Button
+            type="button"
+            variant="quiet"
+            disabled={loading || !!busyPurpose}
+            onClick={() => {
+              setCheckout(undefined);
+              onOrdersRefresh();
+            }}
+          >
+            {loading ? 'Đang tải…' : 'Tải lại'}
+          </Button>
+        ) : undefined
+      }
+    >
+      {paymentPendingConfirmation ? (
+        <Feedback tone="info" title="Thanh toán mở sau khi Studio xác nhận">
+          Bạn chưa bị trừ tiền. Khi đơn được xác nhận, lựa chọn thanh toán sẽ hiện tại đây; bạn cũng
+          có thể thanh toán tại chi nhánh khi nhận đồ.
+        </Feedback>
+      ) : loading && !settlement ? (
+        <p className="muted" role="status">
+          Đang tải số dư thanh toán…
+        </p>
+      ) : loadError && !settlement ? (
+        <Feedback
+          tone="danger"
+          title="Chưa tải được số dư thanh toán"
+          action={
+            <Button variant="secondary" onClick={retryPaymentState}>
+              Thử lại
+            </Button>
+          }
+        >
+          {loadError}
+        </Feedback>
+      ) : (
+        <div className="customer-payment-list">
+          <p className="muted small-note">
+            Thanh toán qua payOS hoặc tại chi nhánh. Giao dịch online chỉ được xác nhận khi máy chủ
+            nhận kết quả từ cổng.
+          </p>
+          {rows.map((row) => {
+            if (row.purpose === 'EXTRA' && row.remaining <= 0) return null;
+            const activeCheckout = checkout?.purpose === row.purpose ? checkout : undefined;
+            const pending =
+              pendingPayment(row.purpose) ??
+              (activeCheckout
+                ? { amount: activeCheckout.amount, checkoutUrl: activeCheckout.url }
+                : undefined);
+            const pendingUrl = safeCheckoutUrl(pending?.checkoutUrl);
+            const paymentStatus = pending
+              ? 'Đang chờ xác nhận'
+              : row.remaining <= 0
+                ? 'Đã thanh toán đủ'
+                : 'Còn phải thanh toán';
+            return (
+              <div className="customer-payment-row" key={row.purpose}>
+                <div className="customer-payment-row__summary">
+                  <strong>{row.label}</strong>
+                  <span>
+                    {pending ? `Đang chờ ${money(Number(pending.amount))}` : money(row.remaining)}
+                  </span>
+                </div>
+                <div className="customer-payment-row__actions">
+                  <StatusLabel
+                    text={paymentStatus}
+                    tone={pending ? 'warning' : row.remaining <= 0 ? 'success' : 'neutral'}
+                  />
+                  {pendingUrl && !activeCheckout && (
+                    <a
+                      className="button button-secondary"
+                      href={pendingUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Tiếp tục thanh toán
+                    </a>
+                  )}
+                  {!pending && row.remaining > 0 && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      loading={busyPurpose === row.purpose}
+                      disabled={!!busyPurpose || loading}
+                      onClick={() => void startCheckout(row.purpose, row.remaining)}
+                    >
+                      Thanh toán online
+                    </Button>
+                  )}
+                  {activeCheckout && (
+                    <a
+                      className="button button-primary"
+                      href={activeCheckout.url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Mở cổng thanh toán
+                    </a>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {loadError && settlement && (
+            <Feedback
+              tone="danger"
+              title="Chưa làm mới được trạng thái thanh toán"
+              action={
+                <Button variant="secondary" onClick={retryPaymentState}>
+                  Thử lại
+                </Button>
+              }
+            >
+              {loadError} Trạng thái đang hiển thị có thể chưa phải dữ liệu mới nhất.
+            </Feedback>
+          )}
+          {checkoutError && (
+            <Feedback tone="danger" title="Chưa tạo được phiên thanh toán">
+              {checkoutError} Tải lại số dư trước khi thử lại để tránh tạo khoản trùng.
+            </Feedback>
+          )}
+          {rows.some((row) => {
+            const pending = pendingPayment(row.purpose);
+            return !!pending && !safeCheckoutUrl(pending.checkoutUrl);
+          }) && (
+            <p className="muted small-note" role="status">
+              Giao dịch đang chờ cổng xác nhận và chưa có liên kết tiếp tục. Hãy tải lại trạng thái;
+              đừng tạo khoản thanh toán khác.
+            </p>
+          )}
+          {settlement && settlement.canPickup && (
+            <Feedback tone="success" title="Đã thanh toán đủ tiền thuê và tiền cọc">
+              Studio có thể tiếp tục quy trình giao đồ sau khi xác minh đơn.
+            </Feedback>
+          )}
+          {checkout?.expiresAt && (
+            <p className="field-hint">
+              Liên kết hết hạn lúc{' '}
+              {new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(
+                new Date(checkout.expiresAt),
+              )}
+              .
+            </p>
+          )}
+          <p className="muted small-note">
+            Cổng chưa xác nhận thì trạng thái đơn chưa đổi. Sau khi trả tiền, quay lại đây và chọn
+            “Tải lại”.
+          </p>
+        </div>
+      )}
+    </Panel>
   );
 }
 

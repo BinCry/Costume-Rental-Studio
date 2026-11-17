@@ -42,7 +42,15 @@ export interface CatalogItem {
   imageUrl?: string;
   imageAlt?: string;
   /** Public variant IDs and price snapshots used by availability checks. */
-  apiVariants?: { id: string; code: string; size: string; color: string; edition?: string; price: number; deposit: number }[];
+  apiVariants?: {
+    id: string;
+    code: string;
+    size: string;
+    color: string;
+    edition?: string;
+    price: number;
+    deposit: number;
+  }[];
 }
 
 export interface UnitOption {
@@ -98,7 +106,16 @@ export interface Order {
   dayPolicy: string;
   items: OrderItem[];
   /** API payments used to distinguish recorded, pending, and remaining amounts at handover. */
-  apiPayments?: { purpose: string; amount: number; status: string; transactionReference?: string | null }[];
+  apiPayments?: {
+    purpose: string;
+    amount: number;
+    status: string;
+    transactionReference?: string | null;
+    method?: string;
+    checkoutUrl?: string | null;
+    qrCode?: string | null;
+    expiresAt?: string | null;
+  }[];
   money: MoneyLine[];
   history: string[];
   note: string;

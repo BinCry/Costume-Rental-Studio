@@ -144,6 +144,9 @@ interface ApiOrder {
     status: string;
     method?: string;
     transactionReference?: string | null;
+    checkoutUrl?: string | null;
+    qrCode?: string | null;
+    expiresAt?: string | null;
     refunds?: { amountVnd: string | number | bigint; status: string }[];
   }[];
   lateFeeVnd?: string | number | bigint;
@@ -463,6 +466,16 @@ export interface PaymentRecord {
   amountVnd: string | number;
   status: string;
   transactionReference?: string | null;
+  checkoutUrl?: string | null;
+  qrCode?: string | null;
+  expiresAt?: string | null;
+}
+
+export interface PaymentCheckout {
+  payment: PaymentRecord;
+  checkoutUrl: string | null;
+  qrCode: string | null;
+  expiresAt: string | null;
 }
 
 const configuredBaseUrl =
@@ -576,6 +589,12 @@ function apiErrorMessage(status: number, code: string) {
     UNIT_STILL_WITH_CUSTOMER: 'Bộ trang phục chưa được trả tại chi nhánh nhận.',
     UNIT_NOT_READY: 'Bộ được chọn chưa sẵn sàng để giao.',
     PAYMENT_AMOUNT_EXCEEDS_BALANCE: 'Số tiền vượt quá khoản còn phải thu. Hãy tải lại quyết toán.',
+    PAYMENT_NOT_ALLOWED:
+      'Đơn chưa ở trạng thái có thể thanh toán. Hãy tải lại đơn hoặc chờ Studio xác nhận.',
+    PAYMENT_GATEWAY_UNAVAILABLE:
+      'Cổng thanh toán đang tạm thời chưa sẵn sàng. Bạn có thể thử lại sau hoặc thanh toán tại chi nhánh.',
+    PAYMENT_GATEWAY_STATUS_UNKNOWN:
+      'Chưa xác minh được trạng thái cổng thanh toán. Hãy tải lại quyết toán trước khi thử lại.',
     PAYMENT_RECONCILIATION_REQUIRED:
       'Giao dịch đang cần đối soát. Không tạo khoản thu mới trước khi kiểm tra.',
     PROMOTION_INVALID:
@@ -583,6 +602,8 @@ function apiErrorMessage(status: number, code: string) {
     PROMOTION_LIMIT_REACHED: 'Mã ưu đãi đã hết lượt sử dụng cho bạn hoặc toàn hệ thống.',
     PROMOTION_CODE_CONFLICT: 'Mã ưu đãi này đã được sử dụng. Hãy chọn mã khác.',
     PROMOTION_EXPIRED: 'Mã ưu đãi đã hết hạn nên không thể bật lại.',
+    RENTAL_START_IN_PAST:
+      'Giờ nhận đã qua. Hãy chọn ngày giờ nhận trong tương lai rồi tải lại báo giá.',
     PROMOTION_IMMUTABLE:
       'Mã đã được dùng trên đơn thuê; không thể thay đổi mã hoặc điều kiện giảm giá đã chốt.',
     ASSESSMENT_REQUIRED:
@@ -1326,7 +1347,11 @@ function mapOrder(order: ApiOrder): Order {
       purpose: payment.purpose,
       amount: numberValue(payment.amountVnd),
       status: payment.status,
+      method: payment.method,
       transactionReference: payment.transactionReference,
+      checkoutUrl: payment.checkoutUrl,
+      qrCode: payment.qrCode,
+      expiresAt: payment.expiresAt,
     })),
     money: [
       {
@@ -1489,6 +1514,7 @@ function customerOrderFromOrder(order: Order, customerCode: string): CustomerOrd
     history: order.history,
     canCancel: order.status === 'PENDING_CONFIRMATION',
     version: order.version,
+    apiPayments: order.apiPayments,
   };
 }
 export async function listCustomerOrders(): Promise<CustomerOrder[]> {
@@ -3249,6 +3275,26 @@ export async function recordBankTransferPayment(
 export async function listOrderPayments(orderCode: string) {
   return request<PaymentRecord[]>(
     `/api/v1/payments/orders/${encodeURIComponent(orderApiId(orderCode))}`,
+  );
+}
+
+export async function createPaymentCheckout(
+  orderCode: string,
+  purpose: 'RENTAL' | 'DEPOSIT' | 'EXTRA',
+  amountVnd: number,
+): Promise<PaymentCheckout> {
+  const orderId = orderApiId(orderCode);
+  const amount = Math.round(amountVnd);
+  return request<PaymentCheckout>(
+    `/api/v1/payments/orders/${encodeURIComponent(orderId)}/checkout`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        purpose,
+        amountVnd: String(amount),
+        idempotencyKey: idempotencyKey('checkout', [orderId, purpose, amount].join(':')),
+      }),
+    },
   );
 }
 

@@ -243,6 +243,15 @@ export interface CustomerOrder {
   reason?: string;
   canCancel: boolean;
   version?: number;
+  apiPayments?: {
+    purpose: string;
+    amount: number;
+    status: string;
+    method?: string;
+    checkoutUrl?: string | null;
+    qrCode?: string | null;
+    expiresAt?: string | null;
+  }[];
 }
 
 const details: CostumeDetail[] = fixtureCatalog.map((item, index) => ({

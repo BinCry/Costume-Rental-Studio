@@ -344,6 +344,15 @@ async function pricedItems(tx: Prisma.TransactionClient, input: CreateOrderInput
   return { policy, days, variants, subtotalVnd, depositVnd, quantities };
 }
 
+function assertRentalStartsInFuture(plannedStartAt: Date) {
+  if (plannedStartAt.getTime() <= Date.now())
+    throw new AppError(
+      400,
+      'RENTAL_START_IN_PAST',
+      'Rental pickup must be scheduled for a future time',
+    );
+}
+
 async function availabilityForQuote(
   tx: Prisma.TransactionClient,
   input: QuoteInput,
@@ -399,6 +408,7 @@ async function availabilityForQuote(
 
 export async function createQuote(actor: AuthenticatedActor, input: QuoteInput) {
   requireActor(actor);
+  assertRentalStartsInFuture(input.plannedStartAt);
   if (actor.id !== input.customerUserId) {
     requireEmployee(actor);
     assertPermission(actor, {
@@ -705,6 +715,7 @@ export async function checkAvailability(
 }
 export async function createOrder(actor: AuthenticatedActor, input: CreateOrderInput) {
   requireActor(actor);
+  assertRentalStartsInFuture(input.plannedStartAt);
   if (actor.id !== input.customerUserId) {
     requireEmployee(actor);
     assertPermission(actor, {
