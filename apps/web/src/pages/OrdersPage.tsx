@@ -47,6 +47,25 @@ const groupDefs: { label: string; statuses: OrderStatus[] }[] = [
   { label: 'Cần kiểm tra', statuses: ['RETURN_INSPECTION'] },
   { label: 'Khác', statuses: ['DRAFT', 'COMPLETED', 'REJECTED', 'CANCELLED', 'NO_SHOW'] },
 ];
+type OrderSort = 'pickup-asc' | 'pickup-desc' | 'return-asc' | 'return-desc' | 'code-asc';
+const orderPageSize = 15;
+function orderTimestamp(value: string | undefined, fallback: string) {
+  if (value) return new Date(value).getTime();
+  const match = /(\d{2})\/(\d{2})\/(\d{4}).*?(\d{2}):(\d{2})/.exec(fallback);
+  return match
+    ? new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]), Number(match[4]), Number(match[5])).getTime()
+    : Number.POSITIVE_INFINITY;
+}
+function compareOrders(left: Order, right: Order, sort: OrderSort) {
+  if (sort === 'code-asc') return left.id.localeCompare(right.id, 'vi');
+  const pickup = sort.startsWith('pickup');
+  const leftTime = orderTimestamp(pickup ? left.apiPlannedStartAt : left.apiPlannedDueAt,
+    pickup ? left.pickup : left.returnAt);
+  const rightTime = orderTimestamp(pickup ? right.apiPlannedStartAt : right.apiPlannedDueAt,
+    pickup ? right.pickup : right.returnAt);
+  return (sort.endsWith('asc') ? leftTime - rightTime : rightTime - leftTime) ||
+    left.id.localeCompare(right.id, 'vi');
+}
 
 export function OrdersPage({
   scenario,
@@ -80,7 +99,16 @@ export function OrdersPage({
   const [branch, setBranch] = useState(initialBranch);
   const [selectedId, setSelectedId] = useState(initialOrderId ?? 'RT-1024');
   const [group, setGroup] = useState(initialFilter ?? 'Tất cả');
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('q') ?? '');
+  const [sort, setSort] = useState<OrderSort>(() => {
+    const value = new URLSearchParams(window.location.search).get('sort');
+    return ['pickup-asc', 'pickup-desc', 'return-asc', 'return-desc', 'code-asc'].includes(value ?? '')
+      ? value as OrderSort : 'pickup-asc';
+  });
+  const [page, setPage] = useState(() => {
+    const value = new URLSearchParams(window.location.search).get('page');
+    return value ? Math.max(1, Number(value) || 1) : initialOrderId ? 0 : 1;
+  });
   const [mobileDetail, setMobileDetail] = useState(!!initialOrderId);
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
   const [unavailableUnits, setUnavailableUnits] = useState<string[]>([]);
@@ -133,12 +161,27 @@ export function OrdersPage({
       `${order.id} ${order.customer} ${order.phone} ${order.items.map((item) => item.unitCode).join(' ')}`
         .toLocaleLowerCase('vi')
         .includes(search.toLocaleLowerCase('vi')),
-  );
+  ).sort((left, right) => compareOrders(left, right, sort));
+  const pageCount = Math.max(1, Math.ceil(visible.length / orderPageSize));
+  const deepLinkIndex = initialOrderId ? visible.findIndex((entry) => entry.id === initialOrderId) : -1;
+  const currentPage = page === 0 && deepLinkIndex >= 0
+    ? Math.floor(deepLinkIndex / orderPageSize) + 1
+    : Math.min(Math.max(page, 1), pageCount);
+  const pageItems = visible.slice((currentPage - 1) * orderPageSize, currentPage * orderPageSize);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (search) params.set('q', search); else params.delete('q');
+    if (group !== 'Tất cả') params.set('filter', group); else params.delete('filter');
+    if (sort !== 'pickup-asc') params.set('sort', sort); else params.delete('sort');
+    if (currentPage > 1) params.set('page', String(currentPage)); else params.delete('page');
+    const query = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+  }, [search, group, sort, currentPage]);
   const rawOrder =
-    visible.find((entry) => entry.id === selectedId) ??
+    pageItems.find((entry) => entry.id === selectedId) ??
     (initialOrderId && !search && group === 'Tất cả'
       ? scoped.find((entry) => entry.id === initialOrderId)
-      : visible[0]);
+      : pageItems[0]);
   const order: Order | undefined =
     rawOrder && localCancelled && scenario === 'cancelled' && rawOrder.id === 'RT-1024'
       ? {
@@ -198,13 +241,21 @@ export function OrdersPage({
     window.history.pushState(
       null,
       '',
-      `${adminRoute ? '/quan-tri' : '/van-hanh'}/don-thue/${encodeURIComponent(id)}`,
+      `${adminRoute ? '/quan-tri' : '/van-hanh'}/don-thue/${encodeURIComponent(id)}${window.location.search}`,
     );
     if (window.innerWidth >= 900) {
       window.requestAnimationFrame(() =>
         detailRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }),
       );
     }
+  };
+  const changePage = (nextPage: number) => {
+    const next = Math.max(1, Math.min(nextPage, pageCount));
+    setPage(next);
+    setSelectedId(visible[(next - 1) * orderPageSize]?.id ?? '');
+    setMobileDetail(false);
+    window.history.pushState(null, '',
+      `${adminRoute ? '/quan-tri' : '/van-hanh'}/don-thue${window.location.search}`);
   };
   const toggleUnit = (code: string) => {
     if (selectedUnits.includes(code)) {
@@ -451,7 +502,7 @@ export function OrdersPage({
           tone="neutral"
         />
       </div>
-      <div className="staff-toolbar">
+      <div className={`staff-toolbar orders-toolbar ${realApiMode ? '' : 'with-branch'}`}>
         {!realApiMode && (
           <SelectField
             label="Chi nhánh"
@@ -470,17 +521,28 @@ export function OrdersPage({
           label="Tìm mã đơn, khách hoặc barcode"
           placeholder="RT-1024, Nguyễn An, BC-..."
           value={search}
-          onChange={(event) => setSearch(event.target.value)}
+          onChange={(event) => { setSearch(event.target.value); setPage(1); }}
         />
         <SelectField
           label="Nhóm trạng thái"
           value={group}
-          onChange={(event) => setGroup(event.target.value)}
+          onChange={(event) => { setGroup(event.target.value); setPage(1); }}
         >
           <option>Tất cả</option>
           {groupDefs.map((entry) => (
             <option key={entry.label}>{entry.label}</option>
           ))}
+        </SelectField>
+        <SelectField
+          label="Sắp xếp"
+          value={sort}
+          onChange={(event) => { setSort(event.target.value as OrderSort); setPage(1); }}
+        >
+          <option value="pickup-asc">Nhận sớm nhất</option>
+          <option value="pickup-desc">Nhận muộn nhất</option>
+          <option value="return-asc">Trả sớm nhất</option>
+          <option value="return-desc">Trả muộn nhất</option>
+          <option value="code-asc">Mã đơn A–Z</option>
         </SelectField>
       </div>
       {notice && (
@@ -559,7 +621,7 @@ export function OrdersPage({
           <section className="order-list" aria-label="Danh sách đơn">
             <div className="order-list-head">
               <h2>{group === 'Tất cả' ? 'Tất cả đơn' : group}</h2>
-              <span>{visible.length} đơn</span>
+              <span>{visible.length} đơn · trang {currentPage}/{pageCount}</span>
             </div>
             {visible.length === 0 ? (
               <EmptyState title="Không có đơn phù hợp bộ lọc">
@@ -568,6 +630,7 @@ export function OrdersPage({
                   onClick={() => {
                     setGroup('Tất cả');
                     setSearch('');
+                    setPage(1);
                   }}
                 >
                   Xóa bộ lọc
@@ -587,7 +650,7 @@ export function OrdersPage({
                       </tr>
                     </thead>
                     <tbody>
-                      {visible.map((entry) => (
+                      {pageItems.map((entry) => (
                         <tr key={entry.id} className={order?.id === entry.id ? 'selected' : ''}>
                           <td>
                             <button
@@ -613,7 +676,7 @@ export function OrdersPage({
                   </table>
                 </div>
                 <div className="order-mobile-list">
-                  {visible.map((entry) => (
+                  {pageItems.map((entry) => (
                     <button
                       key={entry.id}
                       className={`order-list-row ${order?.id === entry.id ? 'selected' : ''}`}
@@ -632,6 +695,19 @@ export function OrdersPage({
                     </button>
                   ))}
                 </div>
+                {pageCount > 1 && (
+                  <nav className="order-pagination" aria-label="Trang danh sách đơn">
+                    <span>{(currentPage - 1) * orderPageSize + 1}–{Math.min(currentPage * orderPageSize, visible.length)} / {visible.length}</span>
+                    <div>
+                      <Button variant="secondary" disabled={currentPage === 1} onClick={() => changePage(currentPage - 1)}>
+                        Trước
+                      </Button>
+                      <Button variant="secondary" disabled={currentPage === pageCount} onClick={() => changePage(currentPage + 1)}>
+                        Tiếp
+                      </Button>
+                    </div>
+                  </nav>
+                )}
               </>
             )}
           </section>
