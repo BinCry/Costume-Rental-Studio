@@ -102,6 +102,7 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<PromotionRecord>();
   const [form, setForm] = useState<PromotionFormState>(newPromotionForm);
+  const [showForm, setShowForm] = useState(false);
   const [now, setNow] = useState(0);
 
   const reload = useCallback(async () => {
@@ -223,6 +224,7 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
       }
       setEditing(undefined);
       setForm(newPromotionForm());
+      setShowForm(false);
       await reload();
     } catch (caught) {
       setIssue(errorText(caught));
@@ -254,13 +256,16 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
   return (
     <div className="page">
       <PageHeading
-        eyebrow="QUẢN TRỊ / CHÍNH SÁCH & ƯU ĐÃI"
         title="Mã ưu đãi"
-        description="Tạo và quản lý mã giảm giá. Hệ thống kiểm tra thời hạn, điều kiện đơn và hạn mức khi lập báo giá."
         action={
-          <Button variant="secondary" onClick={() => void reload()} loading={loading}>
-            Tải lại danh sách
-          </Button>
+          <div className="feature-actions">
+            {canManage && realApiMode && (
+              <Button onClick={() => setShowForm((value) => !value)}>
+                {showForm ? 'Đóng biểu mẫu' : editing ? 'Tiếp tục sửa mã' : '+ Tạo mã'}
+              </Button>
+            )}
+            <Button variant="secondary" onClick={() => void reload()} loading={loading}>Tải lại</Button>
+          </div>
         }
       />
       {!realApiMode && (
@@ -293,7 +298,8 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
         </Feedback>
       )}
 
-      <div className="promotion-admin-layout">
+      <div className={`promotion-admin-layout ${showForm ? 'form-open' : ''}`}>
+        {showForm && (
         <Panel title={editing ? `Sửa ${editing.code}` : 'Tạo mã ưu đãi'}>
           <form
             className="promotion-form"
@@ -429,6 +435,7 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
             </fieldset>
           </form>
         </Panel>
+        )}
 
         <Panel
           title={`Danh sách · ${items.length}`}
@@ -506,6 +513,7 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
                         onClick={() => {
                           setEditing(item);
                           setForm(promotionFormFromRecord(item));
+                          setShowForm(true);
                           setIssue('');
                           setNotice('');
                         }}
