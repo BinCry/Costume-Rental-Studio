@@ -746,11 +746,14 @@ export function ActiveRentalsPage({
 }) {
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.activeUnits);
   const [query, setQuery] = useState('');
-  const [selected, setSelected] = useState<ActiveUnit>();
+  const [dueFilter, setDueFilter] = useState<'all' | 'overdue'>('all');
+  const [selectedBarcode, setSelectedBarcode] = useState('');
   const [issue, setIssue] = useState('');
   const { detailRef, revealDetail } = useMobileDetailReveal<HTMLDivElement>();
+  const selected = data?.find((unit) => unit.barcode === selectedBarcode && unit.branch === branch);
   const selectUnit = (unit: ActiveUnit) => {
-    setSelected(unit);
+    setIssue('');
+    setSelectedBarcode(unit.barcode);
     revealDetail();
   };
   const openActiveUnit = (code: string) => {
@@ -758,7 +761,7 @@ export function ActiveRentalsPage({
     const unit = data?.find((x) => x.barcode === code.toUpperCase() && x.branch === branch);
     if (unit) selectUnit(unit);
     else {
-      setSelected(undefined);
+      setSelectedBarcode('');
       setIssue('Barcode tồn tại nhưng không thuộc bộ đang thuê ACTIVE tại chi nhánh này.');
     }
   };
@@ -774,74 +777,70 @@ export function ActiveRentalsPage({
         const filtered = items.filter(
           (x) =>
             x.branch === branch &&
+            (dueFilter === 'all' || x.overdue) &&
             `${x.barcode} ${x.phone} ${x.orderId} ${x.customer}`
               .toLowerCase()
               .includes(query.toLowerCase()),
-        );
+        ).sort((left, right) => Number(right.overdue) - Number(left.overdue));
         return (
           <div className="page">
             <PageHeading
-              eyebrow="VẬN HÀNH / THEO DÕI BỘ"
               title="Đang thuê"
-              description="Mỗi dòng là một bộ từ dòng đơn có phân bổ ACTIVE; trạng thái vận hành kho được giữ riêng."
             />
             <div className="feature-two-column independent-scroll-workspace">
               <div role="region" aria-label="Cuộn danh sách bộ đang thuê" tabIndex={0}>
-                <Panel title="Tra cứu nhanh">
+                <Panel title="Tra bộ đang ở khách">
                   <BarcodeLookup
                     branch={branch}
                     scenario={scenario}
                     onFound={(unit) => openActiveUnit(unit.barcode)}
-                    onError={() => setSelected(undefined)}
+                    onError={() => setSelectedBarcode('')}
                     autoFocus
                   />
                   <FilterBar>
                     <SearchField
-                      label="Tìm barcode, điện thoại hoặc mã đơn"
+                      label="Lọc theo barcode, khách hoặc mã đơn"
                       value={query}
                       onChange={setQuery}
                     />
+                    <SelectField
+                      label="Hạn trả"
+                      value={dueFilter}
+                      onChange={(event) => setDueFilter(event.target.value as 'all' | 'overdue')}
+                    >
+                      <option value="all">Tất cả</option>
+                      <option value="overdue">Quá hạn</option>
+                    </SelectField>
                   </FilterBar>
                 </Panel>
-                <Panel title={`${filtered.length} bộ đang ở khách`}>
+                <Panel title={`${filtered.length} bộ`}>
                   <div className="responsive-table">
                     <table>
                       <thead>
                         <tr>
                           <th>Barcode</th>
-                          <th>Trang phục / size</th>
                           <th>Khách</th>
                           <th>Đơn</th>
-                          <th>Đã giao</th>
                           <th>Hạn trả</th>
-                          <th>Quá hạn</th>
-                          <th>Chi nhánh</th>
+                          <th>Trạng thái</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filtered.map((row) => (
-                          <tr key={row.barcode} onClick={() => selectUnit(row)}>
+                          <tr key={row.barcode}>
                             <td>
                               <button
                                 className="text-link"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  selectUnit(row);
-                                }}
+                                aria-pressed={selected?.barcode === row.barcode}
+                                onClick={() => selectUnit(row)}
                               >
                                 {row.barcode}
                               </button>
                             </td>
                             <td>
-                              {row.costume}
-                              <small>{row.variant}</small>
-                            </td>
-                            <td>
                               {row.customer}
-                              <small>{row.phone}</small>
                             </td>
                             <td>{row.orderId}</td>
-                            <td>{row.pickedUp}</td>
                             <td>{row.due}</td>
                             <td>
                               <StatusLabel
@@ -849,7 +848,6 @@ export function ActiveRentalsPage({
                                 tone={row.overdue ? 'danger' : 'success'}
                               />
                             </td>
-                            <td>{row.branch}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -879,6 +877,7 @@ export function ActiveRentalsPage({
                     />
                     <KeyFacts
                       rows={[
+                        { label: 'Trang phục / size', value: `${selected.costume} · ${selected.variant}` },
                         {
                           label: 'Người đang giữ',
                           value: `${selected.customer} · ${selected.phone}`,
