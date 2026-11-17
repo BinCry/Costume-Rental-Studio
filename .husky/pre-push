@@ -1,1 +1,1 @@
-pnpm typecheck && pnpm test:api
+pnpm typecheck && pnpm --filter @costume/web lint && pnpm --filter @costume/web test && pnpm test:api
