@@ -3501,11 +3501,20 @@ small {
 }
 .role-layout {
   display: grid;
-  grid-template-columns: minmax(210px, 280px) minmax(0, 1fr);
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
   gap: 20px;
 }
 .role-layout.has-unsaved-role {
   padding-bottom: 100px;
+}
+.editor-save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin-top: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
 }
 .role-save-bar {
   position: fixed;
@@ -3640,6 +3649,30 @@ small {
 }
 .catalog-admin-table tr.selected {
   background: var(--brand-tint);
+}
+.role-admin-table table {
+  min-width: 0;
+}
+.employee-admin-table table {
+  min-width: 640px;
+}
+.employee-admin-person {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.employee-admin-person .text-link {
+  text-align: left;
+}
+.employee-admin-code {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.employee-admin-email {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .report-grid {
   display: grid;
@@ -4121,6 +4154,10 @@ small {
     content: attr(data-label);
     flex: 0 0 auto;
     color: var(--text-secondary);
+  }
+  .employee-admin-email {
+    max-width: none;
+    white-space: normal;
   }
   .crm-case-table {
     display: none;

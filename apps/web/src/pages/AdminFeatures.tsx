@@ -1223,8 +1223,7 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                 <p className="muted small-note" role="status">
                   Hiển thị {visibleEmployees.length} / {items.length} nhân viên
                 </p>
-                <div className="feature-card-list">
-                  {visibleEmployees.length === 0 ? (
+                {visibleEmployees.length === 0 ? (
                     <div className="empty-filter-state">
                       <p>Không tìm thấy nhân viên phù hợp.</p>
                       <Button
@@ -1240,31 +1239,42 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                         Xóa bộ lọc
                       </Button>
                     </div>
-                  ) : visibleEmployees.map((x) => (
-                      <button
-                        className={`feature-list-row selectable ${person.code === x.code ? 'selected' : ''}`}
-                        key={x.code}
-                        onClick={() => {
-                          if (editing && selected !== x.code) {
-                            setPendingEmployee(x.code);
-                            return;
-                          }
-                          setSelected(x.code);
-                          setEditing(undefined);
-                          setCreatingEmployee(false);
-                          revealDetail();
-                        }}
-                      >
-                        <strong>{x.name}</strong>
-                        <span>{x.email}</span>
-                        <small>
-                          Mã nhân viên: {employeeDisplayCode(x)}
-                          {' · '}Tài khoản: {accountLabels[x.accountStatus]} · Việc làm:{' '}
-                          {employmentLabels[x.employmentStatus]}
-                        </small>
-                      </button>
-                    ))}
-                </div>
+                  ) : (
+                    <div className="responsive-table catalog-admin-table employee-admin-table" role="region" aria-label="Bảng nhân viên" tabIndex={0}>
+                      <table>
+                        <thead><tr><th>Nhân viên</th><th>Email</th><th>Tài khoản</th><th>Làm việc</th></tr></thead>
+                        <tbody>
+                          {visibleEmployees.map((employee) => (
+                            <tr key={employee.code} className={person.code === employee.code ? 'selected' : ''}>
+                              <td data-label="Nhân viên">
+                                <span className="employee-admin-person">
+                                <button
+                                  type="button"
+                                  className="text-link"
+                                  aria-pressed={person.code === employee.code}
+                                  onClick={() => {
+                                    if (editing && selected !== employee.code) {
+                                      setPendingEmployee(employee.code);
+                                      return;
+                                    }
+                                    setSelected(employee.code);
+                                    setEditing(undefined);
+                                    setCreatingEmployee(false);
+                                    revealDetail();
+                                  }}
+                                >{employee.name}</button>
+                                <small className="employee-admin-code">{employeeDisplayCode(employee)}</small>
+                                </span>
+                              </td>
+                              <td data-label="Email" title={employee.email} className="employee-admin-email">{employee.email}</td>
+                              <td data-label="Tài khoản">{accountLabels[employee.accountStatus]}</td>
+                              <td data-label="Làm việc">{employmentLabels[employee.employmentStatus]}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
               </Panel>
               <div
                 ref={detailRef}
@@ -1411,7 +1421,7 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                       <button type="button" className="text-button" onClick={retryBranches}>Thử lại</button>
                     </Feedback>
                   )}
-                  <div className="feature-actions">
+                  <div className={`feature-actions ${editing ? 'editor-save-bar' : ''}`}>
                     <Button disabled={!editing} loading={busy} onClick={() => void save()}>
                       Lưu hồ sơ & phân công
                     </Button>
@@ -1619,6 +1629,7 @@ export function BranchesPage({ scenario, canManage = true }: { scenario: DemoSce
                       Số liệu chi tiết không có trong API hiện tại. Máy chủ sẽ xác nhận điều kiện ngừng chi nhánh khi lưu.
                     </Feedback>
                   )}
+                  <div className={editing ? 'editor-save-bar' : undefined}>
                   <Button
                     disabled={closingExisting && hasObligations}
                     loading={busy}
@@ -1647,6 +1658,7 @@ export function BranchesPage({ scenario, canManage = true }: { scenario: DemoSce
                   </Button>
                   <InlineIssue text={issue} />
                   {editing && <p className="field-hint" role="status">Chi nhánh có thay đổi chưa lưu.</p>}
+                  </div>
                 </div>
                 </fieldset>
               </Panel>
@@ -1714,33 +1726,41 @@ export function RolesPage({ scenario, canManage = true }: { scenario: DemoScenar
             <PageHeading
               eyebrow="QUẢN TRỊ / PHÂN QUYỀN"
               title="Quyền theo vai trò"
-              description="Chọn một vai trò, tick mã quyền có sẵn. Scope thuộc định nghĩa quyền và không đổi tại màn hình này."
             />
             <div className={`role-layout independent-scroll-workspace ${changed ? 'has-unsaved-role' : ''}`}>
               <Panel title="Vai trò" scrollRegionLabel="Cuộn danh sách vai trò">
-                <div className="feature-card-list">
-                  {roles.map((r) => (
-                    <button
-                      className={`feature-list-row selectable ${role.code === r.code ? 'selected' : ''}`}
-                      key={r.code}
-                      onClick={() => {
-                        if (changed && r.code !== role.code) {
-                          setPendingRole(r.code);
-                          return;
-                        }
-                        setSelected(r.code);
-                        setDraft(undefined);
-                        setIssue('');
-                        revealDetail();
-                      }}
-                    >
-                      <strong>{r.name}</strong>
-                      <span>
-                        {r.code} · {r.group}
-                      </span>
-                      <small>{r.permissions.length} quyền</small>
-                    </button>
-                  ))}
+                <div className="responsive-table catalog-admin-table role-admin-table" role="region" aria-label="Bảng vai trò" tabIndex={0}>
+                  <table>
+                    <thead><tr><th>Vai trò</th><th>Nhóm</th><th>Số quyền</th></tr></thead>
+                    <tbody>
+                      {roles.map((item) => (
+                        <tr key={item.code} className={role.code === item.code ? 'selected' : ''}>
+                          <td data-label="Vai trò">
+                            <span className="employee-admin-person">
+                              <button
+                                type="button"
+                                className="text-link"
+                                aria-pressed={role.code === item.code}
+                                onClick={() => {
+                                  if (changed && item.code !== role.code) {
+                                    setPendingRole(item.code);
+                                    return;
+                                  }
+                                  setSelected(item.code);
+                                  setDraft(undefined);
+                                  setIssue('');
+                                  revealDetail();
+                                }}
+                              >{item.name}</button>
+                              <small className="employee-admin-code">{item.code}</small>
+                            </span>
+                          </td>
+                          <td data-label="Nhóm">{item.group}</td>
+                          <td data-label="Số quyền">{item.permissions.length}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </Panel>
               <div
