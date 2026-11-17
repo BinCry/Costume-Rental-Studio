@@ -520,9 +520,7 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
         return (
           <div className="page">
             <PageHeading
-              eyebrow="QUẢN TRỊ / DANH MỤC"
               title="Mẫu, biến thể & giá"
-              description="Giá thuê/ngày, cọc và giá thay thế được đặt trên biến thể, dùng chung toàn chuỗi."
               action={canManage ? (
                 <Button
                   variant="secondary"
@@ -553,26 +551,23 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
             <div className="feature-two-column">
               <div>
                 <Panel title="Danh mục mẫu">
-                  <div className="feature-card-list">
-                    {items.map((item) => (
-                      <button
-                        className={`feature-list-row selectable ${selected === item.id ? 'selected' : ''}`}
-                        key={item.id}
-                        disabled={mediaBusy}
-                        onClick={() => {
-                          resetMediaDraft();
-                          setSelected(item.id);
-                          setModel(undefined);
-                          setVariant(undefined);
-                        }}
-                      >
-                        <strong>{item.name}</strong>
-                        <span>
-                          {item.category} · {item.variants.length} biến thể
-                        </span>
-                        <small>{item.id}</small>
-                      </button>
-                    ))}
+                  {model && !items.some((item) => item.id === model.id) && (
+                    <p className="field-hint" role="status">Mẫu mới chưa được lưu.</p>
+                  )}
+                  <div className="responsive-table catalog-admin-table" role="region" aria-label="Danh sách mẫu trang phục" tabIndex={0}>
+                    <table>
+                      <thead><tr><th>Mã mẫu</th><th>Tên mẫu</th><th>Danh mục</th><th>Biến thể</th></tr></thead>
+                      <tbody>
+                        {items.map((item) => (
+                          <tr key={item.id} className={selected === item.id ? 'selected' : ''}>
+                            <td data-label="Mã mẫu"><button className="text-link" aria-pressed={selected === item.id} disabled={mediaBusy} onClick={() => { resetMediaDraft(); setSelected(item.id); setModel(undefined); setVariant(undefined); }}>{item.modelCode?.trim() ? item.modelCode : item.id}</button></td>
+                            <td data-label="Tên mẫu">{item.name}</td>
+                            <td data-label="Danh mục">{item.category}</td>
+                            <td data-label="Biến thể">{item.variants.length}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </Panel>
                 <Panel title="Thông tin mẫu">
@@ -658,14 +653,9 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                     <p className="muted small-note">Lưu mẫu trước để mở thư viện ảnh và tải ảnh lên.</p>
                   )}
                   {realApiMode && editing.modelCode && mediaOwnerId === editing.id && (
+                    <details className="catalog-media-disclosure">
+                      <summary>Ảnh sản phẩm · {mediaItems.length}{mediaOwnerErrorId === editing.id || mediaIssue ? ' · Cần kiểm tra' : ''}</summary>
                     <section className="catalog-media-manager" aria-label="Quản lý ảnh sản phẩm">
-                      <div>
-                        <h3>Ảnh sản phẩm</h3>
-                        <p className="muted small-note">
-                          Thêm ảnh, thay ảnh cũ, chọn ảnh đại diện hoặc gỡ ảnh khỏi mẫu.
-                          Ảnh đại diện xuất hiện trước trong danh mục khách hàng.
-                        </p>
-                      </div>
                       {mediaOwnerId === editing.id && mediaOwnerErrorId !== editing.id && (mediaLoading || mediaOwnerLoadedId !== editing.id) && (
                         <p className="muted" role="status">Đang tải thư viện ảnh…</p>
                       )}
@@ -850,6 +840,7 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                         <Feedback tone="success" title="Ảnh đã được cập nhật">{mediaNotice}</Feedback>
                       )}
                     </section>
+                    </details>
                   )}
                   <Button loading={busy} onClick={() => void saveModel()}>
                     Lưu mẫu

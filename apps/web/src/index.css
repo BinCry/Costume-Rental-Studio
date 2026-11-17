@@ -3140,6 +3140,25 @@ small {
   border-radius: var(--radius-md);
   background: var(--surface-muted);
 }
+.catalog-media-disclosure {
+  margin: 16px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.catalog-media-disclosure > summary {
+  padding: 14px 16px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.catalog-media-disclosure > summary:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.catalog-media-disclosure .catalog-media-manager {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
 .catalog-media-manager h3 {
   margin: 0 0 5px;
   font-size: 16px;
@@ -3586,6 +3605,12 @@ small {
 }
 .crm-case-mobile-list {
   display: none;
+}
+.catalog-admin-table table {
+  min-width: 520px;
+}
+.catalog-admin-table tr.selected {
+  background: var(--brand-tint);
 }
 .report-grid {
   display: grid;
@@ -4036,6 +4061,35 @@ small {
   }
 }
 @media (max-width: 767px) {
+  .catalog-admin-table table,
+  .catalog-admin-table tbody,
+  .catalog-admin-table tr,
+  .catalog-admin-table td {
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+  .catalog-admin-table thead {
+    display: none;
+  }
+  .catalog-admin-table tr {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .catalog-admin-table td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 0;
+    border: 0;
+    overflow-wrap: anywhere;
+  }
+  .catalog-admin-table td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    color: var(--text-secondary);
+  }
   .crm-case-table {
     display: none;
   }
