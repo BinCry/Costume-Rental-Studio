@@ -729,31 +729,6 @@ export function CatalogPage({
           </div>
         </div>
       </section>
-      <section className="rental-guide" aria-labelledby="rental-guide-title">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">CÁCH THUÊ</p>
-            <h2 id="rental-guide-title">Thuê trang phục trong 3 bước</h2>
-          </div>
-        </div>
-        <ol className="rental-guide-steps">
-          <li>
-            <span>01</span>
-            <h3>Chọn mẫu và lịch</h3>
-            <p>Chọn mẫu, size và ngày thuê.</p>
-          </li>
-          <li>
-            <span>02</span>
-            <h3>Studio xác nhận</h3>
-            <p>Studio kiểm tra lịch rồi xác nhận từng bộ.</p>
-          </li>
-          <li>
-            <span>03</span>
-            <h3>Nhận đồ và quyết toán cọc</h3>
-            <p>Thanh toán khi nhận; cọc được quyết toán sau khi trả đồ.</p>
-          </li>
-        </ol>
-      </section>
     </div>
   );
 }

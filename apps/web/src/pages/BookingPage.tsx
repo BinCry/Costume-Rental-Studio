@@ -437,9 +437,7 @@ export function BookingPage({
     <div className="page booking-page">
       <div className="booking-heading">
         <div>
-          <p className="eyebrow">ĐẶT THUÊ</p>
           <h1>Gửi yêu cầu thuê</h1>
-          <p>Chọn bộ, thời gian và xem báo giá trước khi gửi.</p>
         </div>
       </div>
       <div className="step-progress" aria-label="Tiến độ đặt thuê">
@@ -485,9 +483,7 @@ export function BookingPage({
           {step === 0 ? (
             <div className="booking-selection-card">
               <div className="booking-selection-heading">
-                <p className="eyebrow">CHỌN BỘ</p>
                 <h2>Trang phục thuê</h2>
-                <p>Chọn mẫu, size và số lượng.</p>
               </div>
               {loading ? (
                 <p className="booking-selection-status">Đang tải bộ sưu tập…</p>

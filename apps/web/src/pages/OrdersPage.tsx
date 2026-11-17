@@ -38,9 +38,7 @@ const toDateTimeLocal = (value?: string) => {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
-    .toISOString()
-    .slice(0, 16);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 };
 const groupDefs: { label: string; statuses: OrderStatus[] }[] = [
   { label: 'Chờ xác nhận', statuses: ['PENDING_CONFIRMATION'] },
@@ -74,6 +72,7 @@ export function OrdersPage({
   canReturn?: boolean;
 }) {
   const realApiMode = apiEnabled && hasAccessToken();
+  const adminRoute = window.location.pathname.startsWith('/quan-tri/');
   const canConfirmAction = canConfirm ?? canManage;
   const canPrepareAction = canPrepare ?? canManage;
   const canHandoverAction = canHandover ?? canManage;
@@ -136,7 +135,10 @@ export function OrdersPage({
         .includes(search.toLocaleLowerCase('vi')),
   );
   const rawOrder =
-    scoped.find((entry) => entry.id === selectedId) ?? (initialOrderId ? undefined : visible[0]);
+    visible.find((entry) => entry.id === selectedId) ??
+    (initialOrderId && !search && group === 'Tất cả'
+      ? scoped.find((entry) => entry.id === initialOrderId)
+      : visible[0]);
   const order: Order | undefined =
     rawOrder && localCancelled && scenario === 'cancelled' && rawOrder.id === 'RT-1024'
       ? {
@@ -145,10 +147,10 @@ export function OrdersPage({
           history: [...rawOrder.history, 'Phiên demo · Khách vừa hủy khi nhân viên đang duyệt'],
         }
       : !realApiMode &&
-        rawOrder &&
-        localConfirmed &&
-        rawOrder.status === 'PENDING_CONFIRMATION' &&
-        rawOrder.id === 'RT-1024'
+          rawOrder &&
+          localConfirmed &&
+          rawOrder.status === 'PENDING_CONFIRMATION' &&
+          rawOrder.id === 'RT-1024'
         ? {
             ...rawOrder,
             status: 'CONFIRMED',
@@ -193,7 +195,16 @@ export function OrdersPage({
     setChangeNote('');
     setPreparedCodes([]);
     setAccessoryCodes([]);
-    window.history.pushState(null, '', `/van-hanh/don-thue/${encodeURIComponent(id)}`);
+    window.history.pushState(
+      null,
+      '',
+      `${adminRoute ? '/quan-tri' : '/van-hanh'}/don-thue/${encodeURIComponent(id)}`,
+    );
+    if (window.innerWidth >= 900) {
+      window.requestAnimationFrame(() =>
+        detailRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }),
+      );
+    }
   };
   const toggleUnit = (code: string) => {
     if (selectedUnits.includes(code)) {
@@ -365,7 +376,10 @@ export function OrdersPage({
         ...current,
         [item.id]: current[item.id] ?? options[0]?.barcode ?? '',
       }));
-      if (!options.length) setNotice('Không còn bộ READY phù hợp trong khoảng thuê này. Hãy đề xuất lịch khác hoặc xử lý đơn theo chính sách đã duyệt.');
+      if (!options.length)
+        setNotice(
+          'Không còn bộ READY phù hợp trong khoảng thuê này. Hãy đề xuất lịch khác hoặc xử lý đơn theo chính sách đã duyệt.',
+        );
     } catch (caught) {
       setNotice(caught instanceof Error ? caught.message : 'Không tải được bộ thay thế.');
     } finally {
@@ -391,7 +405,9 @@ export function OrdersPage({
         candidate.apiId,
         'Thay bộ dự phòng trước khi bàn giao',
       );
-      setNotice(`Đã gán ${candidate.barcode} cho ${item.costume}. Quét lại barcode mới trước khi giao.`);
+      setNotice(
+        `Đã gán ${candidate.barcode} cho ${item.costume}. Quét lại barcode mới trước khi giao.`,
+      );
       setReplacementOptions({});
       setReplacementSelection({});
       retry();
@@ -428,9 +444,7 @@ export function OrdersPage({
     <div className="page staff-page orders-page">
       <div className="staff-page-heading">
         <div>
-          <p className="eyebrow">KHÔNG GIAN XỬ LÝ ĐƠN</p>
           <h1>Đơn thuê</h1>
-          <p>Đọc chi tiết, kiểm tra bộ và xử lý theo đúng trạng thái.</p>
         </div>
         <StatusLabel
           text={loading ? 'Đang tải đơn' : `${scoped.length} đơn tại chi nhánh`}
@@ -447,7 +461,9 @@ export function OrdersPage({
               setSelectedUnits([]);
             }}
           >
-            {branches.map((entry) => <option key={entry}>{entry}</option>)}
+            {branches.map((entry) => (
+              <option key={entry}>{entry}</option>
+            ))}
           </SelectField>
         )}
         <Field
@@ -532,7 +548,7 @@ export function OrdersPage({
         <EmptyState
           title="Chưa có đơn tại chi nhánh này"
           action={
-            <Button variant="secondary" onClick={() => go('dashboard')}>
+            <Button variant="secondary" onClick={() => go(adminRoute ? 'reports' : 'dashboard')}>
               Về bảng việc
             </Button>
           }
@@ -540,32 +556,9 @@ export function OrdersPage({
       )}
       {!loading && !error && scoped.length > 0 && (
         <div className={`orders-workspace ${mobileDetail ? 'show-detail' : ''}`}>
-          <aside className="order-groups">
-            <h2>Nhóm đơn</h2>
-            <button
-              className={group === 'Tất cả' ? 'active' : ''}
-              onClick={() => setGroup('Tất cả')}
-            >
-              <span>Tất cả</span>
-              <b>{scoped.length}</b>
-            </button>
-            {groupDefs.map((entry) => (
-              <button
-                key={entry.label}
-                className={group === entry.label ? 'active' : ''}
-                onClick={() => setGroup(entry.label)}
-              >
-                <span>{entry.label}</span>
-                <b>{scoped.filter((item) => entry.statuses.includes(item.status)).length}</b>
-              </button>
-            ))}
-          </aside>
           <section className="order-list" aria-label="Danh sách đơn">
             <div className="order-list-head">
-              <div>
-                <span className="eyebrow">DANH SÁCH</span>
-                <h2>{group}</h2>
-              </div>
+              <h2>{group === 'Tất cả' ? 'Tất cả đơn' : group}</h2>
               <span>{visible.length} đơn</span>
             </div>
             {visible.length === 0 ? (
@@ -581,24 +574,65 @@ export function OrdersPage({
                 </Button>
               </EmptyState>
             ) : (
-              visible.map((entry) => (
-                <button
-                  key={entry.id}
-                  className={`order-list-row ${selectedId === entry.id ? 'selected' : ''}`}
-                  ref={selectedId === entry.id ? selectedRowRef : undefined}
-                  onClick={() => chooseOrder(entry.id)}
-                >
-                  <div>
-                    <strong>{entry.id}</strong>
-                    <small>{entry.pickup}</small>
-                  </div>
-                  <span>{entry.customer}</span>
-                  <StatusLabel
-                    text={orderStatus[entry.status].text}
-                    tone={orderStatus[entry.status].tone}
-                  />
-                </button>
-              ))
+              <>
+                <div className="order-table-scroll">
+                  <table className="order-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Mã đơn</th>
+                        <th scope="col">Khách hàng</th>
+                        <th scope="col">Nhận đồ</th>
+                        <th scope="col">Trả đồ</th>
+                        <th scope="col">Trạng thái</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visible.map((entry) => (
+                        <tr key={entry.id} className={order?.id === entry.id ? 'selected' : ''}>
+                          <td>
+                            <button
+                              type="button"
+                              className="order-table-link"
+                              onClick={() => chooseOrder(entry.id)}
+                            >
+                              {entry.id}
+                            </button>
+                          </td>
+                          <td>{entry.customer}</td>
+                          <td>{entry.pickup}</td>
+                          <td>{entry.returnAt}</td>
+                          <td>
+                            <StatusLabel
+                              text={orderStatus[entry.status].text}
+                              tone={orderStatus[entry.status].tone}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="order-mobile-list">
+                  {visible.map((entry) => (
+                    <button
+                      key={entry.id}
+                      className={`order-list-row ${order?.id === entry.id ? 'selected' : ''}`}
+                      ref={order?.id === entry.id ? selectedRowRef : undefined}
+                      onClick={() => chooseOrder(entry.id)}
+                    >
+                      <div>
+                        <strong>{entry.id}</strong>
+                        <small>{entry.pickup}</small>
+                      </div>
+                      <span>{entry.customer}</span>
+                      <StatusLabel
+                        text={orderStatus[entry.status].text}
+                        tone={orderStatus[entry.status].tone}
+                      />
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
           </section>
           <section ref={detailRef} className="order-detail" aria-label="Chi tiết đơn đang chọn">
@@ -680,15 +714,17 @@ export function OrdersPage({
                   <div className="detail-section unit-selection">
                     <h3>Đổi bộ dự phòng trước khi giao</h3>
                     <p>
-                      Dùng khi barcode đã phân công chưa về hoặc chưa READY. Bộ thay thế phải cùng biến thể,
-                      chi nhánh và còn trống trong cả kỳ thuê.
+                      Dùng khi barcode đã phân công chưa về hoặc chưa READY. Bộ thay thế phải cùng
+                      biến thể, chi nhánh và còn trống trong cả kỳ thuê.
                     </p>
                     {order.items.map((item) => {
                       const options = replacementOptions[item.id] ?? [];
                       return (
                         <div className="check-unit" key={item.id}>
                           <div className="check-unit-head">
-                            <strong>{item.costume} · {item.variant}</strong>
+                            <strong>
+                              {item.costume} · {item.variant}
+                            </strong>
                             <span>Hiện gán: {item.unitCode ?? 'Chưa có bộ'}</span>
                           </div>
                           {!options.length ? (
@@ -759,11 +795,7 @@ export function OrdersPage({
                             ? 'Chọn đúng số bộ theo từng biến thể. Chỉ các bộ READY còn trống theo lịch máy chủ mới được gán.'
                             : `Chọn đúng ${order.items.length} mã khác nhau. Chỉ bộ READY và không vướng lịch trong dữ liệu demo mới chọn được.`}
                         </p>
-                        {realApiMode && (
-                          <p className="small-note">
-                            Cần: {apiVariantSummary}
-                          </p>
-                        )}
+                        {realApiMode && <p className="small-note">Cần: {apiVariantSummary}</p>}
                       </div>
                       <span className="selection-count">
                         {selectedUnits.length}/{order.items.length}
@@ -808,7 +840,8 @@ export function OrdersPage({
                                 unit.status !== 'READY' ||
                                 !unit.availableAtFixturePeriod ||
                                 unavailableUnits.includes(unit.code) ||
-                                (!selectedUnits.includes(unit.code) && !canSelectForRequiredVariant(unit)) ||
+                                (!selectedUnits.includes(unit.code) &&
+                                  !canSelectForRequiredVariant(unit)) ||
                                 (selectedUnits.length >= order.items.length &&
                                   !selectedUnits.includes(unit.code))
                               }
@@ -909,7 +942,11 @@ export function OrdersPage({
                 )}
                 {canHandoverAction && order.status === 'READY_FOR_PICKUP' && (
                   <div className="detail-actions">
-                    <Button onClick={() => go('handover', { order: order.id })}>
+                    <Button
+                      onClick={() =>
+                        go(adminRoute ? 'adminHandover' : 'handover', { order: order.id })
+                      }
+                    >
                       Mở luồng giao đồ <Icon name="arrow" size={18} />
                     </Button>
                   </div>
@@ -978,7 +1015,11 @@ export function OrdersPage({
                 {canReturnAction &&
                   (order.status === 'ACTIVE' || order.status === 'RETURN_INSPECTION') && (
                     <div className="detail-actions">
-                      <Button onClick={() => go('return', { order: order.id })}>
+                      <Button
+                        onClick={() =>
+                          go(adminRoute ? 'adminReturn' : 'return', { order: order.id })
+                        }
+                      >
                         Mở luồng nhận trả <Icon name="arrow" size={18} />
                       </Button>
                     </div>
@@ -1147,9 +1188,9 @@ export function OrdersPage({
             {order.items.length} bộ.
           </p>
           <p>
-            Máy chủ kiểm tra chính sách, giới hạn thời gian và lịch của các bộ đang thuê. Nếu hợp lệ,
-            hạn trả và phí phát sinh sẽ được cập nhật vào đơn; phần phí phát sinh cần thu theo luồng
-            thanh toán hiện có.
+            Máy chủ kiểm tra chính sách, giới hạn thời gian và lịch của các bộ đang thuê. Nếu hợp
+            lệ, hạn trả và phí phát sinh sẽ được cập nhật vào đơn; phần phí phát sinh cần thu theo
+            luồng thanh toán hiện có.
           </p>
           <p>
             <strong>Lý do:</strong> {changeNote.trim()}

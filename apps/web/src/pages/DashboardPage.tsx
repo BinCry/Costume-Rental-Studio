@@ -1,6 +1,14 @@
 import { useCallback, useState } from 'react';
 import type { Navigate } from '../App';
-import { Button, DateField, EmptyState, Feedback, Field, Icon, SelectField } from '../components/ui';
+import {
+  Button,
+  DateField,
+  EmptyState,
+  Feedback,
+  Field,
+  Icon,
+  SelectField,
+} from '../components/ui';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { WorkQueueItem } from '../components/WorkQueueItem';
 import { branches, fixtureAdapter, fixtureClock } from '../fixtures/adapter';
@@ -114,9 +122,7 @@ export function DashboardPage({
     <div className="page staff-page dashboard-page">
       <div className="staff-page-heading">
         <div>
-          <p className="eyebrow">BẢNG VIỆC NHÂN VIÊN</p>
-          <h1>Chào buổi làm việc 👋</h1>
-          <p>Những việc cần chú ý tại chi nhánh của bạn.</p>
+          <h1>Bảng việc</h1>
         </div>
         <div className="date-pill">
           <Icon name="calendar" size={18} />
@@ -168,9 +174,7 @@ export function DashboardPage({
         <summary>
           <span>Bộ lọc nâng cao</span>
           <span className="queue-filter-count">
-            {extraFilterCount
-              ? `${extraFilterCount} đang áp dụng`
-              : 'Mức ưu tiên · trạng thái'}
+            {extraFilterCount ? `${extraFilterCount} đang áp dụng` : 'Mức ưu tiên · trạng thái'}
           </span>
         </summary>
         <div className="queue-extra-filters">
