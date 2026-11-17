@@ -434,7 +434,7 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
                 <Button type="submit" loading={busy} disabled={!canManage}>
                   {editing ? 'Lưu thay đổi' : 'Tạo mã'}
                 </Button>
-                {(editing || formDirty) && (
+                {(Boolean(editing) || formDirty) && (
                   <Button
                     type="button"
                     variant="secondary"

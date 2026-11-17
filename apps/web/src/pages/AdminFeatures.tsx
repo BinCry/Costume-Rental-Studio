@@ -1159,7 +1159,6 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
             <PageHeading
               eyebrow="QUẢN TRỊ / NHÂN SỰ"
               title="Nhân viên & phân công"
-              description="Thông tin nhân viên tách khỏi role được gán tại từng chi nhánh."
               action={canManage ? (
                 <Button
                   variant="secondary"

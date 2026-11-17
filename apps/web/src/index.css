@@ -4183,6 +4183,14 @@ small {
     grid-template-columns: 1fr;
   }
 }
+@media (max-width: 1199px) {
+  .feature-two-column,
+  .feature-two-column.catalog-admin-layout,
+  .role-layout,
+  .crm-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 @media (max-width: 767px) {
   .catalog-admin-table table,
   .catalog-admin-table tbody,
