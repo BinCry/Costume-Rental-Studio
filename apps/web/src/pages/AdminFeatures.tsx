@@ -2261,6 +2261,35 @@ const inventoryStatusLabel = (status: string) =>
 const inventoryConditionLabel = (condition: string) =>
   ({ UNINSPECTED: 'Chưa kiểm tra', NEW: 'Mới', GOOD: 'Tốt', FAIR: 'Cần theo dõi', POOR: 'Kém', DAMAGED: 'Hư hỏng' })[condition] ?? condition;
 
+function downloadReportCsv(report: ReportSnapshot, range: Pick<ReportRange, 'from' | 'to'>) {
+  const rows: (string | number)[][] = [
+    ['Loại', 'Chi nhánh', 'Từ ngày', 'Đến ngày', 'Kỳ / trạng thái', 'Số lượng', 'Giá trị (VND)'],
+    ['Tổng quan', report.branch, range.from, range.to, 'Lượt thuê', report.rentalCount, ''],
+    ['Tổng quan', report.branch, range.from, range.to, 'Doanh thu thuê', '', report.rentalRevenue],
+    ['Tổng quan', report.branch, range.from, range.to, 'Cọc đang giữ', '', report.depositsHeld],
+    ['Tổng quan', report.branch, range.from, range.to, 'Quá hạn', report.overdueOrders ?? report.overdueUnits, ''],
+    ['Tổng quan', report.branch, range.from, range.to, 'Đã hoàn cọc', '', report.completedRefund ?? 0],
+    ...(report.revenuePeriods ?? []).map((period): (string | number)[] =>
+      ['Doanh thu theo kỳ', report.branch, range.from, range.to, period.period, '', period.rentalVnd]),
+    ...report.transactions.map((item): (string | number)[] =>
+      ['Giao dịch', report.branch, range.from, range.to, paymentStatusLabel(item.status), item.count, '']),
+    ...report.refunds.map((item): (string | number)[] =>
+      ['Hoàn cọc', report.branch, range.from, range.to, refundStatusLabel(item.status), item.count, '']),
+  ];
+  const csv = '\uFEFF' + rows.map((row) => row.map((value) => {
+    const raw = typeof value === 'string' && /^[=+\-@]/.test(value) ? `'${value}` : String(value);
+    return `"${raw.replaceAll('"', '""')}"`;
+  }).join(',')).join('\r\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `bao-cao-studio-${range.from}-${range.to}.csv`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 export function ReportsPage({
   scenario,
   branch,
@@ -2333,9 +2362,8 @@ export function ReportsPage({
         return (
           <div className="page">
             <PageHeading
-              eyebrow={audience === 'staff' ? 'VẬN HÀNH / BÁO CÁO' : 'QUẢN TRỊ / BÁO CÁO'}
-              title="Báo cáo vận hành"
-              description={`Theo dõi tình hình thuê và thu chi tại ${branch || 'chi nhánh đang chọn'}.`}
+              title={audience === 'staff' ? 'Báo cáo vận hành' : 'Báo cáo quản trị'}
+              action={report && !loading && !error ? <Button variant="secondary" onClick={() => downloadReportCsv(report, range)}>Tải CSV</Button> : undefined}
             />
             <section className="report-control-panel" aria-label="Bộ lọc báo cáo">
               <div className="report-control-heading">
@@ -2410,9 +2438,6 @@ export function ReportsPage({
               </EmptyState>
             ) : (
               <>
-                <p className="report-period-caption">
-                  Kỳ báo cáo: <strong>{periodLabel}</strong>
-                </p>
                 <div className="report-grid">
                   <Panel title="Lượt thuê">
                     <strong className="report-number">{report.rentalCount.toLocaleString('vi-VN')}</strong>
@@ -2434,8 +2459,6 @@ export function ReportsPage({
                       <p className="report-card-note">Hoàn tất trong kỳ báo cáo</p>
                     </Panel>
                   )}
-                </div>
-                <div className="report-grid">
                   <Panel title="Cọc đang giữ (số dư hiện tại)">
                     <strong className="report-number">{money(report.depositsHeld)}</strong>
                     <p className="report-card-note">Tính theo số dư hiện tại của chi nhánh.</p>
