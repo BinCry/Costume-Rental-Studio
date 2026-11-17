@@ -1406,15 +1406,7 @@ export function OrderDetailShell({
     <div className="page staff-page task-page">
       <div className="staff-page-heading">
         <div>
-          <p className="eyebrow">
-            {mode === 'handover' ? 'GIAO TRANG PHỤC' : 'NHẬN TRẢ TRANG PHỤC'}
-          </p>
           <h1>{mode === 'handover' ? 'Giao trang phục' : 'Nhận trả trang phục'}</h1>
-          <p>
-            {mode === 'handover'
-              ? 'Đối chiếu từng bộ và từng khoản thu trước khi giao.'
-              : 'Kiểm từng bộ, đối chiếu phí và quyết toán cọc.'}
-          </p>
         </div>
         <Button variant="secondary" onClick={() => go('orders', { order: order?.id ?? orderId })}>
           <Icon name="arrow" size={17} /> Về đơn thuê
@@ -1553,13 +1545,11 @@ export function OrderDetailShell({
               <div className="task-card-heading">
                 <span className="round-step">01</span>
                 <div>
-                  <p className="eyebrow">TRA CỨU BỘ VẬT LÝ</p>
                   <h2>Quét hoặc nhập barcode</h2>
                 </div>
               </div>
               <p className="section-help">
-                Quét chỉ tra cứu; không tự ghi nhận giao hoặc trả. Mã phải khớp đơn và chi nhánh
-                đang mở.
+                Quét để đối chiếu; chưa ghi giao hoặc trả.
               </p>
               <div className="scan-form">
                 <Field
@@ -1599,13 +1589,7 @@ export function OrderDetailShell({
                 </Feedback>
               )}
               {matchedCode && (
-                <Feedback tone="success" title={`${matchedCode} khớp đơn ${order.id}`}>
-                  <span>
-                    {order.items.find((item) => item.unitCode === matchedCode)?.costume} ·{' '}
-                    {order.items.find((item) => item.unitCode === matchedCode)?.variant} ·{' '}
-                    {order.customer} · hạn trả {order.returnAt}
-                  </span>
-                </Feedback>
+                <p className="field-hint" role="status">Đã đối chiếu {matchedCode} với đơn {order.id}.</p>
               )}
               <div
                 className="expected-units"
@@ -1633,8 +1617,7 @@ export function OrderDetailShell({
               </div>
               {mode === 'return' && returnableItems.length > 0 && (
                 <p className="section-help" role="status">
-                  Đã đối chiếu hoặc báo thất lạc {selectedReturnItems.length}/{returnableItems.length} bộ còn ở khách.
-                  Bộ đã ghi nhận ở lần trước không cần quét lại; cọc chỉ được quyết toán khi backend xác nhận điều kiện trả.
+                  Đã đối chiếu hoặc báo thất lạc {selectedReturnItems.length}/{returnableItems.length} bộ. Cọc chỉ quyết toán sau khi hệ thống xác nhận.
                 </p>
               )}
             </section>
@@ -1644,9 +1627,6 @@ export function OrderDetailShell({
               <div className="task-card-heading">
                 <span className="round-step">02</span>
                 <div>
-                  <p className="eyebrow">
-                    {mode === 'handover' ? 'TRƯỚC KHI GIAO' : 'KHI NHẬN TRẢ'}
-                  </p>
                   <h2>{mode === 'handover' ? 'Tình trạng và phụ kiện' : 'Kiểm tra từng bộ'}</h2>
                 </div>
               </div>
@@ -1887,7 +1867,6 @@ export function OrderDetailShell({
               <div className="task-card-heading">
                 <span className="round-step">03</span>
                 <div>
-                  <p className="eyebrow">{mode === 'handover' ? 'THU TẠI QUẦY' : 'QUYẾT TOÁN'}</p>
                   <h2>
                     {mode === 'handover' ? 'Tiền thuê và tiền cọc' : 'Phí, cấn trừ và hoàn cọc'}
                   </h2>
@@ -1896,9 +1875,7 @@ export function OrderDetailShell({
               {mode === 'handover' ? (
                 <>
                   {realApiMode && settlementLoading && (
-                    <Feedback title="Đang tải số dư thanh toán">
-                      Đang đối chiếu số phải thu, khoản đã ghi nhận và giao dịch chờ xác minh.
-                    </Feedback>
+                    <p className="field-hint" role="status">Đang tải số dư thanh toán…</p>
                   )}
                   {realApiMode && settlementError && (
                     <Feedback tone="danger" title="Không tải được số dư thanh toán"
