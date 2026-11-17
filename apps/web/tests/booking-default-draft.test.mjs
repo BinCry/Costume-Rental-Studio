@@ -40,7 +40,8 @@ describe('booking form before a costume is chosen (live API mode)', () => {
   it('does not preselect the sample costume that is not in the catalog', async () => {
     const html = await renderBooking(undefined);
 
-    expect(html).toContain('Chưa chọn trang phục');
+    expect(html).toContain('Chưa chọn mẫu');
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Đi tiếp/);
     expect(html).not.toContain('Áo dài Lina');
     expect(html).not.toContain('Hồng phấn');
   });
