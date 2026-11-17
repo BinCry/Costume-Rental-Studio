@@ -10,6 +10,7 @@ import {
 import {
   apiEnabled,
   cancelCustomerOrder as cancelApiCustomerOrder,
+  createCustomerWithResult as createApiCustomer,
   createUnitBlock as createApiUnitBlock,
   hasAccessToken,
   listActiveRentals as listApiActiveRentals,
@@ -36,6 +37,7 @@ import {
   saveTransfer as saveApiTransfer,
   advanceTransfer as advanceApiTransfer,
 } from '../api/client';
+import { normalizePhone } from '../utils/phone';
 
 export type UnitStatus = 'INBOUND' | 'READY' | 'CLEANING' | 'REPAIR' | 'IN_TRANSFER' | 'RETIRED';
 export type TransferStatus =
@@ -1736,6 +1738,22 @@ export const studioAdapter = {
       else customers[index] = value;
       window.dispatchEvent(new Event('fixture-access-updated'));
       return value;
+    });
+  },
+  async createCustomer(value: Customer, scenario: DemoScenario) {
+    if (apiEnabled && hasAccessToken()) return createApiCustomer(value);
+    return mutate(scenario, () => {
+      const email = value.email.trim().toLocaleLowerCase('vi');
+      const phone = normalizePhone(value.phone);
+      const existing = customers.find(
+        (customer) =>
+          (email && customer.email.trim().toLocaleLowerCase('vi') === email) ||
+          (phone && normalizePhone(customer.phone) === phone),
+      );
+      if (existing) return { customer: existing, created: false };
+      customers.unshift(value);
+      window.dispatchEvent(new Event('fixture-access-updated'));
+      return { customer: value, created: true };
     });
   },
   async cancelCustomerOrder(id: string, reason: string, scenario: DemoScenario) {

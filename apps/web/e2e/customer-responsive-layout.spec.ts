@@ -81,6 +81,66 @@ test('customer navigation menu supports keyboard dismissal and closes on outside
   await expect(navigation).toBeHidden();
 });
 
+test('guest navigation keeps private destinations out and shows one desktop auth pair', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.route('**/api/v1/auth/refresh', async (route) => {
+    await route.fulfill({ status: 401, body: 'unauthorized' });
+  });
+
+  await page.goto('/');
+  const navigation = page.getByRole('navigation', { name: 'Điều hướng chính' });
+  await expect(navigation.getByRole('link', { name: 'Khám phá', exact: true })).toBeVisible();
+  await expect(navigation.getByRole('link', { name: 'Đặt thuê', exact: true })).toBeVisible();
+  await expect(navigation.getByRole('link', { name: 'Đơn của tôi', exact: true })).toHaveCount(0);
+  await expect(navigation.getByRole('link', { name: 'Tài khoản', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Đăng nhập', exact: true })).toHaveCount(1);
+  await expect(page.getByRole('link', { name: 'Tạo tài khoản', exact: true })).toHaveCount(1);
+});
+
+test('signed-in desktop navigation removes auth calls to action', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.route('**/api/v1/auth/refresh', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: { accessToken: 'e2e-customer-token' } }),
+    });
+  });
+  await page.route('**/api/v1/auth/me', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          id: 'e2e-customer',
+          displayName: 'Khách thử nghiệm',
+          email: 'customer@example.test',
+          roles: [
+            {
+              roleCode: 'CUSTOMER',
+              name: 'Khách hàng',
+              actorGroup: 'CUSTOMER',
+              branchId: null,
+              permissions: [],
+            },
+          ],
+        },
+      }),
+    });
+  });
+
+  await page.goto('/');
+  const navigation = page.getByRole('navigation', { name: 'Điều hướng chính' });
+  await expect(navigation.getByRole('link', { name: 'Đơn của tôi', exact: true })).toHaveCount(1);
+  await expect(navigation.getByRole('link', { name: 'Tài khoản', exact: true })).toHaveCount(1);
+  await expect(page.getByRole('link', { name: 'Đăng nhập', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Tạo tài khoản', exact: true })).toHaveCount(0);
+  await expect(page.locator('.header-actions .header-logout')).toBeVisible();
+});
+
 test('does not show guest sign-in links while restoring a customer session', async ({ page }) => {
   await page.route('**/api/v1/auth/refresh', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 500));

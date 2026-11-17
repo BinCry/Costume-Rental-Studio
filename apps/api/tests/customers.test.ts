@@ -172,13 +172,14 @@ describe('POST /api/v1/customers', () => {
       customer: { create: { preferredBranchId: branchId } },
     });
   });
-  it('reuses customer by phone without updating identity or profile', async () => {
+  it('reuses customer by email without creating a duplicate profile', async () => {
     mocks.findUser.mockResolvedValue(existing);
     const response = await request(createApp())
       .post('/api/v1/customers')
       .auth(await token(), { type: 'bearer' })
       .send(input)
       .expect(200);
+    expect((response.body as ResultBody).data.created).toBe(false);
     expect((response.body as ResultBody).data.customer.displayName).toBe('Original name');
     expect(mocks.createUser).not.toHaveBeenCalled();
   });
@@ -233,7 +234,7 @@ describe('POST /api/v1/customers', () => {
       .send(input)
       .expect(400);
   });
-  it('does not attach an email owned by another user', async () => {
+  it('rejects a phone already owned by another account', async () => {
     mocks.findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(existing);
     await request(createApp())
       .post('/api/v1/customers')

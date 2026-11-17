@@ -20,8 +20,9 @@ import { branches, fixtureAdapter, fixtureCatalog, fixturePeriod } from '../fixt
 import { studioAdapter, type ActiveUnit, type Customer, type Unit } from '../fixtures/studio';
 import type { CatalogItem, DemoScenario, QuoteSnapshot } from '../fixtures/types';
 import { apiEnabled, hasAccessToken } from '../api/client';
-import { isValidPhone, matchesCustomerSearch, samePhone } from '../utils/phone';
+import { isValidPhone, samePhone } from '../utils/phone';
 import { rentalPeriodIssues } from '../utils/rental-period';
+import { matchesCustomerSearch } from '../utils/customer-search';
 
 interface CounterVariantOption {
   value: string;
@@ -51,12 +52,14 @@ export function CounterRentalPage({
   branch,
   canConfirm,
   canCreateCustomer,
+  canReadAllCustomers,
 }: {
   scenario: DemoScenario;
   go: Navigate;
   branch: string;
   canConfirm: boolean;
   canCreateCustomer: boolean;
+  canReadAllCustomers: boolean;
 }) {
   const realApiMode = apiEnabled && hasAccessToken();
   const [rentalBranch, setRentalBranch] = useState(branch);
@@ -68,13 +71,17 @@ export function CounterRentalPage({
         ? branch
         : branches[0] ?? rentalBranch;
   const loadCustomers = useCallback(
-    (currentScenario: DemoScenario) => studioAdapter.customers(currentScenario, selectedBranch),
-    [selectedBranch],
+    (currentScenario: DemoScenario) =>
+      studioAdapter.customers(
+        currentScenario,
+        realApiMode && canReadAllCustomers ? undefined : selectedBranch,
+      ),
+    [canReadAllCustomers, realApiMode, selectedBranch],
   );
   const { loading, error, data, retry } = useFixtureResource(
     scenario,
     loadCustomers,
-    `${selectedBranch}:${realApiMode ? 'api' : 'fixture'}`,
+    `${selectedBranch}:${realApiMode ? 'api' : 'fixture'}:${canReadAllCustomers ? 'all' : 'branch'}`,
   );
   const loadCatalog = useCallback(
     (currentScenario: DemoScenario) => fixtureAdapter.listCatalog(currentScenario),
@@ -96,6 +103,8 @@ export function CounterRentalPage({
   const [newName, setNewName] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [customerNotice, setCustomerNotice] = useState('');
+  const [resolvedCustomer, setResolvedCustomer] = useState<Customer | null>(null);
   const [costume, setCostume] = useState('ao-dai-lina');
   const [variant, setVariant] = useState('');
   const [pickup, setPickup] = useState(() => realApiMode ? defaultRentalDate(1) : fixturePeriod.pickup);
@@ -234,14 +243,34 @@ export function CounterRentalPage({
       setIssue('Nhập email hợp lệ để lưu hồ sơ khách trên hệ thống.');
       return;
     }
-    if (customers.some((customer) => samePhone(customer.phone, newPhone))) {
-      setIssue('Số điện thoại đã có hồ sơ. Chọn khách hiện có để tránh tạo trùng.');
+    const email = newEmail.trim().toLocaleLowerCase('vi');
+    const phoneMatch = customers.find(
+      (customer) => samePhone(customer.phone, newPhone),
+    );
+    const emailMatch = email
+      ? customers.find((customer) => customer.email.trim().toLocaleLowerCase('vi') === email)
+      : undefined;
+    if (phoneMatch && emailMatch && phoneMatch.code !== emailMatch.code) {
+      setIssue('Số điện thoại và email thuộc hai hồ sơ khác nhau. Kiểm tra thông tin trước khi tiếp tục.');
+      return;
+    }
+    const existing = emailMatch ?? phoneMatch;
+    if (existing) {
+      setCustomerCode(existing.code);
+      setCreating(false);
+      setCustomerSearch('');
+      setCustomerNotice('Thông tin này đã có hồ sơ. Đã chọn khách hiện có, không tạo hồ sơ trùng.');
+      setNewName('');
+      setNewPhone('');
+      setNewEmail('');
+      clearQuote();
+      setIssue('');
       return;
     }
     setBusy(true);
     setIssue('');
     try {
-      const saved = await studioAdapter.saveCustomer(
+      const result = await studioAdapter.createCustomer(
         {
           code: `KH-DEMO-${++newCustomerSequenceRef.current}`,
           name: newName.trim(),
@@ -253,12 +282,20 @@ export function CounterRentalPage({
         },
         scenario,
       );
+      const saved = result.customer;
+      setResolvedCustomer(saved);
       setCustomerCode(saved.code);
       setCreating(false);
+      setCustomerSearch('');
       setNewName('');
       setNewPhone('');
       setNewEmail('');
       clearQuote();
+      setCustomerNotice(
+        result.created
+          ? 'Đã lưu hồ sơ khách. Có thể tiếp tục tải báo giá.'
+          : 'Email hoặc số điện thoại đã thuộc hồ sơ có sẵn. Hệ thống không tạo trùng và đã chọn hồ sơ đó.',
+      );
       retry();
     } catch (caught) {
       setIssue(caught instanceof Error ? caught.message : 'Không lưu được hồ sơ khách.');
@@ -361,7 +398,12 @@ export function CounterRentalPage({
       allowEmpty
     >
       {(customers) => {
-        const matches = customers.filter((c) => matchesCustomerSearch(c, customerSearch));
+        const availableCustomers = resolvedCustomer && !customers.some((c) => c.code === resolvedCustomer.code)
+          ? [resolvedCustomer, ...customers]
+          : customers;
+        const matches = availableCustomers.filter((customer) =>
+          matchesCustomerSearch(customer, customerSearch),
+        );
         const customer = matches.find((c) => c.code === customerCode);
         return (
           <div className="page">
@@ -380,7 +422,7 @@ export function CounterRentalPage({
                     title="1. Khách thuê"
                     action={
                       canCreateCustomer ? (
-                        <Button variant="quiet" onClick={() => { setCreating(!creating); clearQuote(); setIssue(''); }}>
+                        <Button variant="quiet" onClick={() => { setCreating(!creating); setCustomerNotice(''); clearQuote(); setIssue(''); }}>
                           {creating ? 'Chọn khách có sẵn' : '+ Tạo hồ sơ'}
                         </Button>
                       ) : <span className="muted">Chỉ chọn hồ sơ có sẵn</span>
@@ -418,9 +460,12 @@ export function CounterRentalPage({
                     ) : (
                       <>
                         <SearchField
-                          label="Tìm tên, số điện thoại hoặc mã khách"
+                          label="Tìm tên, số điện thoại, email hoặc mã khách"
                           value={customerSearch}
-                          onChange={setCustomerSearch}
+                          onChange={(value) => {
+                            setCustomerSearch(value);
+                            setCustomerNotice('');
+                          }}
                         />
                         <SelectField
                           label="Chọn khách"
@@ -430,7 +475,9 @@ export function CounterRentalPage({
                           {!customer && <option value="">Chọn đúng khách trong kết quả</option>}
                           {matches.map((c) => (
                             <option value={c.code} key={c.code}>
-                              {c.name} · {c.phone}
+                              {[c.name, c.phone || c.email, canReadAllCustomers && c.preferredBranch]
+                                .filter(Boolean)
+                                .join(' · ')}
                             </option>
                           ))}
                         </SelectField>
@@ -443,7 +490,14 @@ export function CounterRentalPage({
                           <p className="field-hint" role="status">
                             {matches.length
                               ? 'Chọn một khách trong kết quả trước khi tạo yêu cầu.'
-                              : 'Không tìm thấy khách; có thể tạo hồ sơ mới.'}
+                              : canReadAllCustomers
+                                ? 'Không tìm thấy hồ sơ; có thể tạo hồ sơ mới sau khi kiểm tra thông tin.'
+                                : 'Không tìm thấy trong phạm vi chi nhánh được cấp quyền; có thể tạo hồ sơ mới sau khi kiểm tra thông tin.'}
+                          </p>
+                        )}
+                        {customerNotice && (
+                          <p className="field-hint" role="status">
+                            {customerNotice}
                           </p>
                         )}
                       </>

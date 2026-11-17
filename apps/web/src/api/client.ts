@@ -443,8 +443,7 @@ export interface ReturnSettlementOrderDetails {
 }
 
 export type RefundConfirmation =
-  | { method: 'CASH' }
-  | { method: 'BANK_TRANSFER'; transactionReference: string };
+  { method: 'CASH' } | { method: 'BANK_TRANSFER'; transactionReference: string };
 
 export interface OrderRefundRecord {
   id: string;
@@ -664,6 +663,8 @@ function apiErrorMessage(status: number, code: string) {
     POLICY_OVERLAP: 'Thời hạn chính sách bị trùng. Hãy kiểm tra lại thời điểm áp dụng.',
     STAFF_CONFLICT:
       'Không thể liên kết tài khoản này với nhân viên. Kiểm tra trạng thái và xác minh email của tài khoản, hoặc kiểm tra mã nhân viên và số điện thoại có bị trùng không.',
+    CUSTOMER_CONFLICT:
+      'Email này thuộc tài khoản không thể dùng làm hồ sơ khách. Hãy kiểm tra email hoặc liên hệ quản trị viên.',
     MEDIA_LIMIT_REACHED:
       'Mẫu đã đạt số ảnh tối đa. Hãy xóa ảnh không còn dùng hoặc thay ảnh hiện có.',
     INVALID_UPLOAD:
@@ -1341,7 +1342,9 @@ function mapOrder(order: ApiOrder): Order {
     returnAt: formatDate(order.plannedDueAt),
     apiPlannedStartAt: order.plannedStartAt,
     apiPlannedDueAt: order.plannedDueAt,
-    dayPolicy: policy ? `${billingMode} (${policy.versionCode})` : 'Chưa có dữ liệu chính sách của đơn',
+    dayPolicy: policy
+      ? `${billingMode} (${policy.versionCode})`
+      : 'Chưa có dữ liệu chính sách của đơn',
     items,
     apiPayments: (order.payments ?? []).map((payment) => ({
       purpose: payment.purpose,
@@ -1966,18 +1969,37 @@ export async function listRbacPermissions(): Promise<Permission[]> {
   };
   const modules: Record<string, string> = {
     ...groups,
-    branches: 'Chi nhánh', staff: 'Nhân sự', rbac: 'Vai trò và quyền',
-    catalog: 'Danh mục', reports: 'Báo cáo', customers: 'Khách hàng',
-    policies: 'Chính sách', promotions: 'Ưu đãi', transfers: 'Điều chuyển',
-    refunds: 'Hoàn tiền', knowledge: 'Kho tri thức', agents: 'Trợ lý vận hành',
+    branches: 'Chi nhánh',
+    staff: 'Nhân sự',
+    rbac: 'Vai trò và quyền',
+    catalog: 'Danh mục',
+    reports: 'Báo cáo',
+    customers: 'Khách hàng',
+    policies: 'Chính sách',
+    promotions: 'Ưu đãi',
+    transfers: 'Điều chuyển',
+    refunds: 'Hoàn tiền',
+    knowledge: 'Kho tri thức',
+    agents: 'Trợ lý vận hành',
   };
   const actions: Record<string, string> = {
-    read: 'Xem', manage: 'Quản lý', create: 'Tạo', update: 'Cập nhật',
-    confirm: 'Xác nhận', prepare: 'Chuẩn bị', handover: 'Giao', return: 'Nhận trả',
-    assessment: 'Đánh giá', settlement: 'Quyết toán', collect: 'Thu tiền', approve: 'Phê duyệt',
+    read: 'Xem',
+    manage: 'Quản lý',
+    create: 'Tạo',
+    update: 'Cập nhật',
+    confirm: 'Xác nhận',
+    prepare: 'Chuẩn bị',
+    handover: 'Giao',
+    return: 'Nhận trả',
+    assessment: 'Đánh giá',
+    settlement: 'Quyết toán',
+    collect: 'Thu tiền',
+    approve: 'Phê duyệt',
   };
   const scopes: Record<string, string> = {
-    ALL: 'Toàn hệ thống', BRANCH: 'Chi nhánh được phân công', OWN: 'Dữ liệu của chính mình',
+    ALL: 'Toàn hệ thống',
+    BRANCH: 'Chi nhánh được phân công',
+    OWN: 'Dữ liệu của chính mình',
   };
   return page.map((permission) => ({
     code: permission.code,
@@ -2393,27 +2415,31 @@ export async function saveCrmCase(value: Case): Promise<Case> {
   }
   return crmCaseFromApi(updated);
 }
-export async function saveCustomer(customer: Customer): Promise<Customer> {
+export async function createCustomerWithResult(
+  customer: Customer,
+): Promise<{ customer: Customer; created: boolean }> {
   if (!branchIds.has(customer.preferredBranch)) await listBranches();
   const branchId = branchIds.get(customer.preferredBranch);
   if (!branchId)
     throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không tìm thấy chi nhánh ưu tiên.');
+  const result = await request<{ created: boolean; customer: ApiCustomer }>('/api/v1/customers', {
+    method: 'POST',
+    body: JSON.stringify({
+      branchId,
+      displayName: customer.name,
+      phone: customer.phone,
+      email: customer.email,
+    }),
+  });
+  return { customer: customerFromApi(result.customer), created: result.created };
+}
+export async function saveCustomer(customer: Customer): Promise<Customer> {
   const reference = customerRefs.get(customer.code);
-  if (!reference) {
-    const created = await request<{ created: boolean; customer: ApiCustomer }>(
-      '/api/v1/customers',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          branchId,
-          displayName: customer.name,
-          phone: customer.phone,
-          email: customer.email,
-        }),
-      },
-    );
-    return customerFromApi(created.customer);
-  }
+  if (!reference) return (await createCustomerWithResult(customer)).customer;
+  if (!branchIds.has(customer.preferredBranch)) await listBranches();
+  const branchId = branchIds.get(customer.preferredBranch);
+  if (!branchId)
+    throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không tìm thấy chi nhánh ưu tiên.');
   const updated = await request<ApiCustomer>(
     `/api/v1/customers/${encodeURIComponent(reference.userId)}`,
     {
@@ -2779,7 +2805,11 @@ export async function listInventoryUnits(branchName?: string, search?: string): 
   const query = new URLSearchParams({ sortBy: 'unitCode', sortOrder: 'asc' });
   const branchId = branchName ? branchIds.get(branchName) : undefined;
   if (branchName && !branchId) {
-    throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không xác định được chi nhánh để tải tồn kho.');
+    throw new ApiClientError(
+      422,
+      'BRANCH_CONTEXT_MISSING',
+      'Không xác định được chi nhánh để tải tồn kho.',
+    );
   }
   if (branchId) query.set('branchId', branchId);
   if (search?.trim()) query.set('search', search.trim());
@@ -2821,23 +2851,31 @@ function blockFromApi(block: ApiUnitBlock): ScheduledBlock {
     notes: block.notes ?? undefined,
   };
 }
-export async function listUnitBlocks(options: {
-  branchName?: string;
-  unitId?: string;
-  from?: string;
-  to?: string;
-} = {}): Promise<ScheduledBlock[]> {
+export async function listUnitBlocks(
+  options: {
+    branchName?: string;
+    unitId?: string;
+    from?: string;
+    to?: string;
+  } = {},
+): Promise<ScheduledBlock[]> {
   if (options.branchName && !branchIds.has(options.branchName)) await listBranches();
   const query = new URLSearchParams({ pageSize: '100' });
   const branchId = options.branchName ? branchIds.get(options.branchName) : undefined;
   if (options.branchName && !branchId) {
-    throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không xác định được chi nhánh để tải lịch xử lý.');
+    throw new ApiClientError(
+      422,
+      'BRANCH_CONTEXT_MISSING',
+      'Không xác định được chi nhánh để tải lịch xử lý.',
+    );
   }
   if (branchId) query.set('branchId', branchId);
   if (options.unitId) query.set('unitId', options.unitId);
   if (options.from) query.set('from', new Date(options.from).toISOString());
   if (options.to) query.set('to', new Date(options.to).toISOString());
-  return (await requestAllPages<ApiUnitBlock>('/api/v1/scheduling/unit-blocks', query)).map(blockFromApi);
+  return (await requestAllPages<ApiUnitBlock>('/api/v1/scheduling/unit-blocks', query)).map(
+    blockFromApi,
+  );
 }
 export async function createUnitBlock(
   unitId: string,
@@ -2882,41 +2920,57 @@ export async function updateUnitBlock(
     expectedUpdatedAt: string;
   },
 ): Promise<ScheduledBlock> {
-  const item = await request<ApiUnitBlock>(`/api/v1/scheduling/unit-blocks/${encodeURIComponent(blockId)}`, {
-    method: 'PATCH',
-    body: JSON.stringify({
-      ...input,
-      blockedFrom: input.blockedFrom ? new Date(input.blockedFrom).toISOString() : undefined,
-      blockedUntil: input.blockedUntil ? new Date(input.blockedUntil).toISOString() : undefined,
-      expectedUpdatedAt: new Date(input.expectedUpdatedAt).toISOString(),
-    }),
-  });
+  const item = await request<ApiUnitBlock>(
+    `/api/v1/scheduling/unit-blocks/${encodeURIComponent(blockId)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({
+        ...input,
+        blockedFrom: input.blockedFrom ? new Date(input.blockedFrom).toISOString() : undefined,
+        blockedUntil: input.blockedUntil ? new Date(input.blockedUntil).toISOString() : undefined,
+        expectedUpdatedAt: new Date(input.expectedUpdatedAt).toISOString(),
+      }),
+    },
+  );
   return blockFromApi(item);
 }
 export async function startUnitBlock(blockId: string): Promise<ScheduledBlock> {
   return blockFromApi(
-    await request<ApiUnitBlock>(`/api/v1/scheduling/unit-blocks/${encodeURIComponent(blockId)}/start`, {
-      method: 'POST',
-    }),
+    await request<ApiUnitBlock>(
+      `/api/v1/scheduling/unit-blocks/${encodeURIComponent(blockId)}/start`,
+      {
+        method: 'POST',
+      },
+    ),
   );
 }
 export async function completeUnitBlock(
   blockId: string,
-  input: { notes?: string; costVnd?: number; nextOperationalStatus?: 'READY' | 'REPAIR' | 'RETIRED' } = {},
+  input: {
+    notes?: string;
+    costVnd?: number;
+    nextOperationalStatus?: 'READY' | 'REPAIR' | 'RETIRED';
+  } = {},
 ): Promise<ScheduledBlock> {
   return blockFromApi(
-    await request<ApiUnitBlock>(`/api/v1/scheduling/unit-blocks/${encodeURIComponent(blockId)}/complete`, {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
+    await request<ApiUnitBlock>(
+      `/api/v1/scheduling/unit-blocks/${encodeURIComponent(blockId)}/complete`,
+      {
+        method: 'POST',
+        body: JSON.stringify(input),
+      },
+    ),
   );
 }
 export async function cancelUnitBlock(blockId: string, reason: string): Promise<ScheduledBlock> {
   return blockFromApi(
-    await request<ApiUnitBlock>(`/api/v1/scheduling/unit-blocks/${encodeURIComponent(blockId)}/cancel`, {
-      method: 'POST',
-      body: JSON.stringify({ reason }),
-    }),
+    await request<ApiUnitBlock>(
+      `/api/v1/scheduling/unit-blocks/${encodeURIComponent(blockId)}/cancel`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      },
+    ),
   );
 }
 export async function listCapacityWindows(
@@ -2926,11 +2980,15 @@ export async function listCapacityWindows(
 ): Promise<CapacityWindowRecord[]> {
   if (!branchIds.has(branchName)) await listBranches();
   const branchId = branchIds.get(branchName);
-  if (!branchId) throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không xác định được chi nhánh.');
+  if (!branchId)
+    throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không xác định được chi nhánh.');
   const query = new URLSearchParams({ branchId, pageSize: '100' });
   if (from) query.set('from', new Date(from).toISOString());
   if (to) query.set('to', new Date(to).toISOString());
-  const items = await requestAllPages<ApiCapacityWindow>('/api/v1/scheduling/capacity-windows', query);
+  const items = await requestAllPages<ApiCapacityWindow>(
+    '/api/v1/scheduling/capacity-windows',
+    query,
+  );
   return items.map((item) => ({
     id: item.id,
     startsAt: item.startsAt,
@@ -2946,7 +3004,8 @@ export async function createCapacityWindow(
 ): Promise<CapacityWindowRecord> {
   if (!branchIds.has(branchName)) await listBranches();
   const branchId = branchIds.get(branchName);
-  if (!branchId) throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không xác định được chi nhánh.');
+  if (!branchId)
+    throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không xác định được chi nhánh.');
   const item = await request<ApiCapacityWindow>('/api/v1/scheduling/capacity-windows', {
     method: 'POST',
     body: JSON.stringify({
@@ -2968,18 +3027,27 @@ export async function createCapacityWindow(
 }
 export async function updateCapacityWindow(
   capacityWindowId: string,
-  input: { startsAt?: string; endsAt?: string; availableMinutes?: number; notes?: string | null; expectedUpdatedAt: string },
+  input: {
+    startsAt?: string;
+    endsAt?: string;
+    availableMinutes?: number;
+    notes?: string | null;
+    expectedUpdatedAt: string;
+  },
 ): Promise<CapacityWindowRecord> {
-  const item = await request<ApiCapacityWindow>(`/api/v1/scheduling/capacity-windows/${encodeURIComponent(capacityWindowId)}`, {
-    method: 'PATCH',
-    body: JSON.stringify({
-      startsAt: input.startsAt ? new Date(input.startsAt).toISOString() : undefined,
-      endsAt: input.endsAt ? new Date(input.endsAt).toISOString() : undefined,
-      availableMinutes: input.availableMinutes,
-      notes: input.notes,
-      expectedUpdatedAt: new Date(input.expectedUpdatedAt).toISOString(),
-    }),
-  });
+  const item = await request<ApiCapacityWindow>(
+    `/api/v1/scheduling/capacity-windows/${encodeURIComponent(capacityWindowId)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({
+        startsAt: input.startsAt ? new Date(input.startsAt).toISOString() : undefined,
+        endsAt: input.endsAt ? new Date(input.endsAt).toISOString() : undefined,
+        availableMinutes: input.availableMinutes,
+        notes: input.notes,
+        expectedUpdatedAt: new Date(input.expectedUpdatedAt).toISOString(),
+      }),
+    },
+  );
   return {
     id: item.id,
     startsAt: item.startsAt,
@@ -2990,33 +3058,55 @@ export async function updateCapacityWindow(
   };
 }
 export async function deleteCapacityWindow(capacityWindowId: string): Promise<void> {
-  await request<{ id: string }>(`/api/v1/scheduling/capacity-windows/${encodeURIComponent(capacityWindowId)}`, {
-    method: 'DELETE',
-  });
+  await request<{ id: string }>(
+    `/api/v1/scheduling/capacity-windows/${encodeURIComponent(capacityWindowId)}`,
+    {
+      method: 'DELETE',
+    },
+  );
 }
 export async function inspectInventoryUnit(
   unitId: string,
-  input: { conditionGrade: 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED'; nextStatus: 'READY' | 'REPAIR'; notes?: string },
+  input: {
+    conditionGrade: 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED';
+    nextStatus: 'READY' | 'REPAIR';
+    notes?: string;
+  },
 ) {
-  return inventoryUnitFromApi(await request<ApiInventoryUnit>(`/api/v1/inventory/units/${encodeURIComponent(unitId)}/inspect`, {
-    method: 'POST',
-    body: JSON.stringify(input),
-  }));
+  return inventoryUnitFromApi(
+    await request<ApiInventoryUnit>(
+      `/api/v1/inventory/units/${encodeURIComponent(unitId)}/inspect`,
+      {
+        method: 'POST',
+        body: JSON.stringify(input),
+      },
+    ),
+  );
 }
 export async function changeInventoryUnitStatus(
   unitId: string,
   input: { targetStatus: 'READY' | 'CLEANING' | 'REPAIR'; notes?: string },
 ) {
-  return inventoryUnitFromApi(await request<ApiInventoryUnit>(`/api/v1/inventory/units/${encodeURIComponent(unitId)}/status`, {
-    method: 'POST',
-    body: JSON.stringify(input),
-  }));
+  return inventoryUnitFromApi(
+    await request<ApiInventoryUnit>(
+      `/api/v1/inventory/units/${encodeURIComponent(unitId)}/status`,
+      {
+        method: 'POST',
+        body: JSON.stringify(input),
+      },
+    ),
+  );
 }
 export async function retireInventoryUnit(unitId: string, notes: string) {
-  return inventoryUnitFromApi(await request<ApiInventoryUnit>(`/api/v1/inventory/units/${encodeURIComponent(unitId)}/retire`, {
-    method: 'POST',
-    body: JSON.stringify({ notes }),
-  }));
+  return inventoryUnitFromApi(
+    await request<ApiInventoryUnit>(
+      `/api/v1/inventory/units/${encodeURIComponent(unitId)}/retire`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ notes }),
+      },
+    ),
+  );
 }
 export async function createInventoryUnit(input: {
   unitCode: string;
@@ -3028,7 +3118,8 @@ export async function createInventoryUnit(input: {
 }) {
   if (!branchIds.has(input.branchName)) await listBranches();
   const branchId = branchIds.get(input.branchName);
-  if (!branchId) throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không xác định được chi nhánh.');
+  if (!branchId)
+    throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không xác định được chi nhánh.');
   const created = await request<ApiInventoryUnit>('/api/v1/inventory/units', {
     method: 'POST',
     body: JSON.stringify({
@@ -3058,12 +3149,20 @@ const inventoryUnitEventLabels = new Map([
 ]);
 
 export async function listInventoryUnitEvents(unitId: string): Promise<string[]> {
-  const events = await requestAllPages<{ occurredAt: string; eventType: string; notes?: string | null }>(
+  const events = await requestAllPages<{
+    occurredAt: string;
+    eventType: string;
+    notes?: string | null;
+  }>(
     `/api/v1/inventory/units/${encodeURIComponent(unitId)}/events`,
     new URLSearchParams({ sortBy: 'occurredAt', sortOrder: 'desc', pageSize: '100' }),
   );
   return events.map((event) =>
-    [formatDate(event.occurredAt), inventoryUnitEventLabels.get(event.eventType) ?? 'Cập nhật bộ', event.notes]
+    [
+      formatDate(event.occurredAt),
+      inventoryUnitEventLabels.get(event.eventType) ?? 'Cập nhật bộ',
+      event.notes,
+    ]
       .filter(Boolean)
       .join(' · '),
   );
@@ -3326,14 +3425,17 @@ export async function listOrderRefunds(orderCode: string) {
 export async function createDepositRefund(
   paymentId: string,
   amountVnd: number,
-  attempt: { method: 'CASH'; attemptId: string } | Extract<RefundConfirmation, { method: 'BANK_TRANSFER' }>,
+  attempt:
+    | { method: 'CASH'; attemptId: string }
+    | Extract<RefundConfirmation, { method: 'BANK_TRANSFER' }>,
 ) {
   // Bank transfers reuse a key across sessions. Cash retries reuse the current attempt ID.
-  const source = attempt.method === 'BANK_TRANSFER'
-    ? attempt.transactionReference.trim()
-    : attempt.attemptId;
+  const source =
+    attempt.method === 'BANK_TRANSFER' ? attempt.transactionReference.trim() : attempt.attemptId;
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(source));
-  const key = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  const key = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join(
+    '',
+  );
   const prefix = attempt.method === 'CASH' ? 'cash-deposit-refund' : 'deposit-refund';
   return request<OrderRefundRecord>(`/api/v1/payments/${encodeURIComponent(paymentId)}/refunds`, {
     method: 'POST',

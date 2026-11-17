@@ -22,7 +22,6 @@ import { formatLocalDateTime } from '../utils/date-format';
 import { isValidPhone } from '../utils/phone';
 import { rentalPeriodIssues } from '../utils/rental-period';
 import { useBranchOptions } from '../components/useBranchOptions';
-import { isValidPhone } from '../utils/phone';
 
 const steps = ['Thông tin thuê', 'Báo giá & liên hệ', 'Xem lại & gửi'];
 const bookingDraftStorageKey = 'costume-rental.booking-draft.v1';

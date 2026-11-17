@@ -209,7 +209,7 @@ small {
 .top-nav .mobile-extra-nav {
   display: none;
 }
-.mobile-auth-entry {
+.top-nav .mobile-auth-entry {
   display: none;
 }
 .header-actions {
@@ -266,8 +266,7 @@ small {
   font-weight: 600;
   white-space: nowrap;
 }
-.auth-header-link:hover,
-.header-account:hover {
+.auth-header-link:hover {
   text-decoration: underline;
 }
 .auth-header-register {
@@ -275,6 +274,9 @@ small {
 }
 .header-account {
   min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   display: inline-flex;
   align-items: center;
   color: var(--text-primary);
@@ -4284,6 +4286,9 @@ small {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .header-logout {
+    display: none;
   }
 }
 @media (max-width: 767px) {

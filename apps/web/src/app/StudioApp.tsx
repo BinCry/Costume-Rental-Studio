@@ -69,6 +69,10 @@ const customerNav: { screen: Screen; label: string }[] = [
   { screen: 'myRentals', label: 'Đơn của tôi' },
   { screen: 'account', label: 'Tài khoản' },
 ];
+const guestCustomerNav: { screen: Screen; label: string }[] = [
+  { screen: 'catalog', label: 'Khám phá' },
+  { screen: 'booking', label: 'Đặt thuê' },
+];
 const staffNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
   { screen: 'dashboard', label: 'Bảng việc', roles: ['SALES_STAFF', 'INVENTORY_STAFF'] },
   { screen: 'orders', label: 'Đơn thuê', roles: ['SALES_STAFF', 'INVENTORY_STAFF'] },
@@ -652,7 +656,11 @@ export default function StudioApp() {
         ? (actorGroup === 'ADMIN' ? adminNav : actorGroup === 'STAFF' ? staffNav : []).filter(
             (item) => canOpen(item.screen),
           )
-        : customerNav;
+        : apiIdentity
+          ? actorGroup === 'CUSTOMER'
+            ? customerNav
+            : [{ screen: 'account' as Screen, label: 'Tài khoản' }]
+          : guestCustomerNav;
   const navGroups = actorGroup === 'ADMIN' ? adminNavGroups : staffNavGroups;
   const shellActorGroup = apiIdentity || staff ? actorGroup : 'CUSTOMER';
   const actorLabel = staffNavigationPending
@@ -851,16 +859,9 @@ export default function StudioApp() {
             ) : apiIdentity ? (
               actorGroup === 'CUSTOMER' ? (
                 <>
-                  <a
-                    className="header-account"
-                    href={pathFor('account')}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      go('account');
-                    }}
-                  >
+                  <span className="header-account">
                     {apiIdentity.displayName || 'Tài khoản'}
-                  </a>
+                  </span>
                   <button
                     type="button"
                     className="button button-secondary header-logout"
@@ -1397,6 +1398,7 @@ export default function StudioApp() {
                   effectivePermissions.includes('customers.create.branch') ||
                   effectivePermissions.includes('customers.create.all')
                 }
+                canReadAllCustomers={effectivePermissions.includes('customers.read.all')}
               />
             )}
             {(route.screen === 'active' || route.screen === 'adminActive') && (
