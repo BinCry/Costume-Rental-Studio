@@ -496,9 +496,7 @@ export function MyRentalsPage({
         return (
           <div className="page">
             <PageHeading
-              eyebrow="TÀI KHOẢN / ĐƠN THUÊ"
               title={selected ? selected.id : 'Đơn của tôi'}
-              description="Theo dõi đơn, từng khoản tiền và tiến độ hoàn cọc."
               action={
                 selected ? (
                   <Button variant="secondary" onClick={() => go('myRentals')}>
@@ -510,6 +508,13 @@ export function MyRentalsPage({
             {selected ? (
               <div className="feature-two-column">
                 <div>
+                  <CustomerPaymentPanel
+                    orderId={selected.id}
+                    orderStatus={selected.status}
+                    payments={selected.apiPayments ?? []}
+                    realApiMode={apiEnabled && hasAccessToken()}
+                    onOrdersRefresh={retry}
+                  />
                   <Panel title="Thông tin thuê">
                     <div className="feature-status-row">
                       <StatusLabel {...orderStatus[selected.status]} />
@@ -553,38 +558,21 @@ export function MyRentalsPage({
                       </div>
                     )}
                   </Panel>
-                  <Panel title="Lịch sử và biên nhận">
+                  <details className="customer-order-history">
+                    <summary>Lịch sử đơn</summary>
                     <Timeline items={selected.history} />
-                    <p className="muted small-note">
-                      Trạng thái thanh toán được xác nhận từ máy chủ. Nếu vừa thanh toán, hãy tải
-                      lại để cập nhật kết quả.
-                    </p>
-                  </Panel>
+                  </details>
                 </div>
                 <div>
-                  <CustomerPaymentPanel
-                    orderId={selected.id}
-                    orderStatus={selected.status}
-                    payments={selected.apiPayments ?? []}
-                    realApiMode={apiEnabled && hasAccessToken()}
-                    onOrdersRefresh={retry}
-                  />
                   <MoneySummary
                     rental={selected.rental}
                     deposit={selected.deposit}
                     extra={selected.extra}
                     refund={selected.refund}
                   />
-                  <Panel title="Trạng thái quyết toán">
-                    <KeyFacts
-                      rows={[
-                        { label: 'Thanh toán thuê', value: selected.rentalStatus },
-                        { label: 'Tiền cọc', value: selected.depositStatus },
-                        { label: 'Hoàn cọc', value: selected.refundStatus },
-                        { label: 'Nhận trả', value: selected.returnStatus },
-                      ]}
-                    />
-                  </Panel>
+                  {selected.refundStatus !== 'Chưa phát sinh' && (
+                    <Panel title="Hoàn cọc"><KeyFacts rows={[{ label: 'Trạng thái', value: selected.refundStatus }]} /></Panel>
+                  )}
                 </div>
               </div>
             ) : (
@@ -604,42 +592,34 @@ export function MyRentalsPage({
                   </SelectField>
                 </FilterBar>
                 {visible.length ? (
-                  <div className="feature-card-list">
-                    {visible.map((order) => (
-                      <button
-                        className="rental-card"
-                        key={order.id}
-                        onClick={() => go('myRentalDetail', { order: order.id })}
-                      >
-                        <span className="rental-card-main">
-                          <small className="rental-card-code">{order.id}</small>
-                          <strong className="rental-card-title">
-                            {order.items?.length
-                              ? order.items.map((item) => item.costume).join(', ')
-                              : order.costume}
-                          </strong>
-                          <small className="rental-card-variant">
-                            {order.items?.length
-                              ? order.items
-                                  .map((item) => `${item.costume} ${item.variant}`)
-                                  .join(' / ')
-                              : order.variant}
-                          </small>
-                          <small className="rental-card-meta">
-                            <span>{order.branch}</span>
-                            <span>Nhận đồ {order.pickup}</span>
-                          </small>
-                        </span>
-                        <span className="rental-card-right">
-                          <StatusLabel {...orderStatus[order.status]} />
-                          <span className="rental-card-price">
-                            <small>Tiền thuê</small>
-                            <strong>{money(order.rental)}</strong>
-                          </span>
-                          <small>Cọc {money(order.deposit)}</small>
-                        </span>
-                      </button>
-                    ))}
+                  <div className="customer-order-list">
+                    <div className="order-table-scroll customer-order-table">
+                      <table className="order-table">
+                        <thead><tr>
+                          <th scope="col">Mã đơn</th><th scope="col">Trang phục</th>
+                          <th scope="col">Nhận</th><th scope="col">Hạn trả</th>
+                          <th scope="col">Trạng thái</th><th scope="col">Tiền thuê</th>
+                        </tr></thead>
+                        <tbody>{visible.map((order) => (
+                          <tr key={order.id}>
+                            <td><button type="button" className="order-table-link" onClick={() => go('myRentalDetail', { order: order.id })}>{order.id}</button></td>
+                            <td>{order.items?.length ? order.items.map((item) => item.costume).join(', ') : order.costume}</td>
+                            <td>{order.pickup}</td><td>{order.due}</td>
+                            <td><StatusLabel {...orderStatus[order.status]} /></td>
+                            <td>{money(order.rental)}</td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                    <div className="customer-order-mobile-list">
+                      {visible.map((order) => (
+                        <button key={order.id} type="button" className="customer-order-card" onClick={() => go('myRentalDetail', { order: order.id })}>
+                          <span><strong>{order.id}</strong><StatusLabel {...orderStatus[order.status]} /></span>
+                          <span>{order.items?.length ? order.items.map((item) => item.costume).join(', ') : order.costume}</span>
+                          <small>Nhận {order.pickup} · Trả {order.due}</small>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 ) : (
                   <EmptyState
@@ -861,8 +841,7 @@ function CustomerPaymentPanel({
     >
       {paymentPendingConfirmation ? (
         <Feedback tone="info" title="Thanh toán mở sau khi Studio xác nhận">
-          Bạn chưa bị trừ tiền. Khi đơn được xác nhận, lựa chọn thanh toán sẽ hiện tại đây; bạn cũng
-          có thể thanh toán tại chi nhánh khi nhận đồ.
+          Chưa thu tiền. Sau khi xác nhận, bạn có thể thanh toán online hoặc tại chi nhánh.
         </Feedback>
       ) : loading && !settlement ? (
         <p className="muted" role="status">
@@ -883,8 +862,7 @@ function CustomerPaymentPanel({
       ) : (
         <div className="customer-payment-list">
           <p className="muted small-note">
-            Thanh toán qua payOS hoặc tại chi nhánh. Giao dịch online chỉ được xác nhận khi máy chủ
-            nhận kết quả từ cổng.
+            Thanh toán online được xác nhận sau khi cổng phản hồi.
           </p>
           {rows.map((row) => {
             if (row.purpose === 'EXTRA' && row.remaining <= 0) return null;
@@ -975,11 +953,6 @@ function CustomerPaymentPanel({
               đừng tạo khoản thanh toán khác.
             </p>
           )}
-          {settlement && settlement.canPickup && (
-            <Feedback tone="success" title="Đã thanh toán đủ tiền thuê và tiền cọc">
-              Studio có thể tiếp tục quy trình giao đồ sau khi xác minh đơn.
-            </Feedback>
-          )}
           {checkout?.expiresAt && (
             <p className="field-hint">
               Liên kết hết hạn lúc{' '}
@@ -990,8 +963,7 @@ function CustomerPaymentPanel({
             </p>
           )}
           <p className="muted small-note">
-            Cổng chưa xác nhận thì trạng thái đơn chưa đổi. Sau khi trả tiền, quay lại đây và chọn
-            “Tải lại”.
+            Sau khi trả tiền, chọn “Tải lại” để kiểm tra trạng thái.
           </p>
         </div>
       )}
