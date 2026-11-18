@@ -23,10 +23,10 @@ import { isValidPhone } from '../utils/phone';
 import { rentalPeriodIssues } from '../utils/rental-period';
 import { useBranchOptions } from '../components/useBranchOptions';
 import { quoteNeedsConfirmation } from './quoteConfirmation';
+import { bookingDraftStorageKey, readResumedBooking, type ResumedBooking } from './bookingResume';
 
 const steps = ['Chọn bộ, lịch & báo giá', 'Liên hệ & gửi'];
 type BookingLine = NonNullable<BookingDraft['items']>[number];
-const bookingDraftStorageKey = 'costume-rental.booking-draft.v1';
 function storeBookingDraft(draft: BookingDraft) {
   window.sessionStorage.setItem(
     bookingDraftStorageKey,
@@ -68,48 +68,11 @@ const baseDraft: BookingDraft = {
   note: '',
 };
 
-function resumedDraft(context?: URLSearchParams): BookingDraft | undefined {
-  if (context?.get('resume') !== '1' || typeof window === 'undefined') return undefined;
-  try {
-    const stored: unknown = JSON.parse(
-      window.sessionStorage.getItem(bookingDraftStorageKey) ?? 'null',
-    );
-    if (!stored || typeof stored !== 'object') return undefined;
-    const envelope = stored as { savedAt?: unknown; draft?: unknown };
-    if (
-      typeof envelope.savedAt !== 'number' ||
-      Date.now() - envelope.savedAt > 24 * 60 * 60 * 1000 ||
-      !envelope.draft ||
-      typeof envelope.draft !== 'object'
-    )
-      return undefined;
-    const value = envelope.draft as Partial<BookingDraft>;
-    if (
-      typeof value.costumeId !== 'string' ||
-      typeof value.variant !== 'string' ||
-      typeof value.branch !== 'string' ||
-      typeof value.pickup !== 'string' ||
-      typeof value.returnAt !== 'string' ||
-      !Number.isInteger(value.quantity) ||
-      (value.quantity ?? 0) < 1 || (value.quantity ?? 0) > 50 ||
-      typeof value.name !== 'string' ||
-      typeof value.phone !== 'string' ||
-      typeof value.note !== 'string'
-    )
-      return undefined;
-    const savedItems = value.items;
-    const items = Array.isArray(savedItems) && savedItems.length > 0 &&
-      savedItems.length <= 50 && savedItems.every((line) =>
-        typeof line.costumeId === 'string' && typeof line.variant === 'string' &&
-        Number.isInteger(line.quantity) && line.quantity > 0)
-      ? savedItems
-      : [{ costumeId: value.costumeId, variant: value.variant, quantity: value.quantity! }];
-    return { ...baseDraft, ...value, quantity: value.quantity!, items };
-  } catch {
-    return undefined;
-  }
-}
-const initialDraft = (costumeId?: string, context?: URLSearchParams): BookingDraft => {
+const initialDraft = (
+  costumeId?: string,
+  context?: URLSearchParams,
+  resumed?: ResumedBooking,
+): BookingDraft => {
   const selected = fixtureCatalog.find((entry) => entry.id === costumeId);
   const variants = selected?.sizes.map((size) => `${size} / ${selected.colors[0]}`) ?? [];
   const requestedVariant = context?.get('variant') ?? '';
@@ -117,33 +80,35 @@ const initialDraft = (costumeId?: string, context?: URLSearchParams): BookingDra
   const requestedPickup = context?.get('pickup');
   const requestedReturn = context?.get('returnAt');
   const apiMode = apiEnabled && (hasAccessToken() || !import.meta.env.DEV);
-  const resume = resumedDraft(context);
-  if (resume) return resume;
+  if (resumed) return resumed.draft;
   const selectedVariant = variants.includes(requestedVariant)
     ? requestedVariant
     : apiMode
-      ? costumeId ? requestedVariant : ''
+      ? costumeId
+        ? requestedVariant
+        : ''
       : (variants[0] ?? baseDraft.variant);
   return {
-      ...baseDraft,
-      // Live mode must never start from the sample costume: it is not in the real catalog.
-      costumeId: costumeId ?? (apiMode ? '' : baseDraft.costumeId),
-      variant: selectedVariant,
-      items: costumeId || !apiMode
+    ...baseDraft,
+    // Live mode must never start from the sample costume: it is not in the real catalog.
+    costumeId: costumeId ?? (apiMode ? '' : baseDraft.costumeId),
+    variant: selectedVariant,
+    items:
+      costumeId || !apiMode
         ? [{ costumeId: costumeId ?? baseDraft.costumeId, variant: selectedVariant, quantity: 1 }]
         : [],
-      branch: requestedBranch?.trim() ? requestedBranch : apiMode ? '' : baseDraft.branch,
-      pickup: requestedPickup?.trim()
-        ? requestedPickup
-        : apiMode
-          ? defaultRentalDate(1)
-          : baseDraft.pickup,
-      returnAt: requestedReturn?.trim()
-        ? requestedReturn
-        : apiMode
-          ? defaultRentalDate(3)
-          : baseDraft.returnAt,
-    };
+    branch: requestedBranch?.trim() ? requestedBranch : apiMode ? '' : baseDraft.branch,
+    pickup: requestedPickup?.trim()
+      ? requestedPickup
+      : apiMode
+        ? defaultRentalDate(1)
+        : baseDraft.pickup,
+    returnAt: requestedReturn?.trim()
+      ? requestedReturn
+      : apiMode
+        ? defaultRentalDate(3)
+        : baseDraft.returnAt,
+  };
 };
 
 export function BookingPage({
@@ -169,8 +134,9 @@ export function BookingPage({
     retry: retryBranches,
   } = useBranchOptions();
   const [step, setStep] = useState(0);
+  const [resumed] = useState(() => readResumedBooking(initialContext, baseDraft));
   const [draftState, setDraft] = useState<BookingDraft>(() =>
-    initialDraft(costumeId, initialContext),
+    initialDraft(costumeId, initialContext, resumed),
   );
   const [quote, setQuote] = useState<QuoteSnapshot>();
   const [promotionCode, setPromotionCode] = useState('');
@@ -182,6 +148,7 @@ export function BookingPage({
   const [currentTime, setCurrentTime] = useState(0);
   const [busy, setBusy] = useState(false);
   const [submittedId, setSubmittedId] = useState('');
+  const [copyIssue, setCopyIssue] = useState('');
   const quoteRequestRef = useRef(0);
   const submittingRef = useRef(false);
   const panelRef = useRef<HTMLElement>(null);
@@ -236,32 +203,45 @@ export function BookingPage({
   const choicesFor = (costumeId: string) => {
     const costume = catalog.find((entry) => entry.id === costumeId);
     return costume?.apiVariants?.length
-    ? costume.apiVariants.map((variant) => ({
-        value: variant.code,
-        label: `${variant.size} / ${variant.color}${variant.edition ? ` · ${variant.edition}` : ''}`,
-      }))
-    : costume
-      ? costume.sizes.map((size) => ({
-          value: `${size} / ${costume.colors[0]}`,
-          label: `${size} / ${costume.colors[0]}`,
+      ? costume.apiVariants.map((variant) => ({
+          value: variant.code,
+          label: `${variant.size} / ${variant.color}${variant.edition ? ` · ${variant.edition}` : ''}`,
         }))
-      : [];
+      : costume
+        ? costume.sizes.map((size) => ({
+            value: `${size} / ${costume.colors[0]}`,
+            label: `${size} / ${costume.colors[0]}`,
+          }))
+        : [];
   };
-  const rawLines = draftState.items ?? (draftState.costumeId
-    ? [{ costumeId: draftState.costumeId, variant: draftState.variant, quantity: draftState.quantity }]
-    : []);
+  const rawLines =
+    draftState.items ??
+    (draftState.costumeId
+      ? [
+          {
+            costumeId: draftState.costumeId,
+            variant: draftState.variant,
+            quantity: draftState.quantity,
+          },
+        ]
+      : []);
   const lines = rawLines.map((line) => {
     const options = choicesFor(line.costumeId);
     return {
       ...line,
-      variant: options.length && !options.some((option) => option.value === line.variant)
-        ? (apiMode ? '' : options[0].value) : line.variant,
+      variant:
+        options.length && !options.some((option) => option.value === line.variant)
+          ? apiMode
+            ? ''
+            : options[0].value
+          : line.variant,
     };
   });
   const totalQuantity = lines.reduce((sum, line) => sum + line.quantity, 0);
   const summaryLines = lines.map((line) => ({
     name: catalog.find((entry) => entry.id === line.costumeId)?.name ?? 'Mẫu chưa tải',
-    variant: choicesFor(line.costumeId).find((option) => option.value === line.variant)?.label ??
+    variant:
+      choicesFor(line.costumeId).find((option) => option.value === line.variant)?.label ??
       (line.variant || 'Chưa chọn size/màu'),
     quantity: line.quantity,
   }));
@@ -275,15 +255,17 @@ export function BookingPage({
       ? draftState.branch
       : (branchOptions[0] ?? (apiMode ? '' : draftState.branch)),
   };
-  const backToCatalog = () => go('catalog', {
-    ...Object.fromEntries(
-      [...initialContext.entries()].filter(([key]) =>
-        ['category', 'size', 'color', 'search', 'sort'].includes(key)),
-    ),
-    branch: draft.branch,
-    pickup: draft.pickup,
-    returnAt: draft.returnAt,
-  });
+  const backToCatalog = () =>
+    go('catalog', {
+      ...Object.fromEntries(
+        [...initialContext.entries()].filter(([key]) =>
+          ['category', 'size', 'color', 'search', 'sort'].includes(key),
+        ),
+      ),
+      branch: draft.branch,
+      pickup: draft.pickup,
+      returnAt: draft.returnAt,
+    });
   const invalidateQuote = () => {
     quoteRequestRef.current += 1;
     setQuote(undefined);
@@ -315,10 +297,17 @@ export function BookingPage({
     if (step === 0 || step === 1) {
       if (!lines.length) return 'Hãy thêm ít nhất một mẫu trang phục.';
       if (lines.some((line) => !line.variant)) return 'Chọn size và màu cho từng bộ.';
-      if (totalQuantity < 1 || totalQuantity > 50 || lines.some((line) =>
-        !Number.isInteger(line.quantity) || line.quantity < 1 ||
-        !catalog.some((entry) => entry.id === line.costumeId) ||
-        !choicesFor(line.costumeId).some((choice) => choice.value === line.variant)))
+      if (
+        totalQuantity < 1 ||
+        totalQuantity > 50 ||
+        lines.some(
+          (line) =>
+            !Number.isInteger(line.quantity) ||
+            line.quantity < 1 ||
+            !catalog.some((entry) => entry.id === line.costumeId) ||
+            !choicesFor(line.costumeId).some((choice) => choice.value === line.variant),
+        )
+      )
         return 'Kiểm tra mẫu, size và số bộ ở từng dòng (tối đa 50 bộ).';
       if (!draft.branch || !draft.pickup || !draft.returnAt)
         return 'Chọn cùng chi nhánh và kỳ nhận/trả hợp lệ.';
@@ -331,7 +320,8 @@ export function BookingPage({
       return 'Áp dụng mã ưu đãi để cập nhật báo giá trước khi tiếp tục.';
     if (step === 1) {
       if (!quote) return 'Cần xem báo giá trước khi tiếp tục.';
-      if (quote.available === false) return 'Không đủ bộ cho kỳ thuê này. Hãy đổi size, mẫu, chi nhánh hoặc thời gian.';
+      if (quote.available === false)
+        return 'Không đủ bộ cho kỳ thuê này. Hãy đổi size, mẫu, chi nhánh hoặc thời gian.';
       if (promotionCode.trim().toUpperCase() !== appliedPromotionCode)
         return 'Hãy áp dụng hoặc bỏ mã ưu đãi để cập nhật báo giá trước khi tiếp tục.';
       if (!draft.name.trim() || !isValidPhone(draft.phone))
@@ -439,9 +429,11 @@ export function BookingPage({
         setAppliedPromotionCode(refreshedQuote.promotionCode ?? '');
         setPromotionCode(refreshedQuote.promotionCode ?? '');
         setStep(0);
-        setIssue(refreshedQuote.available === false
-          ? 'Một bộ đã hết trong kỳ thuê này. Hãy đổi size, mẫu, chi nhánh hoặc lịch.'
-          : 'Báo giá hoặc điều kiện thuê đã đổi. Hãy xem lại trước khi gửi.');
+        setIssue(
+          refreshedQuote.available === false
+            ? 'Một bộ đã hết trong kỳ thuê này. Hãy đổi size, mẫu, chi nhánh hoặc lịch.'
+            : 'Báo giá hoặc điều kiện thuê đã đổi. Hãy xem lại trước khi gửi.',
+        );
         return;
       }
       const id = await fixtureAdapter.submitBooking(draft, refreshedQuote, scenario);
@@ -454,8 +446,12 @@ export function BookingPage({
       else onCustomerCreated?.(studioAdapter.recordBooking(id, draft, quote));
       setSubmittedId(id);
     } catch (caught) {
-      if (caught && typeof caught === 'object' && 'code' in caught &&
-          caught.code === 'QUOTE_CHANGED') {
+      if (
+        caught &&
+        typeof caught === 'object' &&
+        'code' in caught &&
+        caught.code === 'QUOTE_CHANGED'
+      ) {
         setStep(0);
         await loadQuote();
         setIssue('Báo giá đã đổi trước khi tạo yêu cầu. Hãy xem lại giá mới rồi gửi lại.');
@@ -491,19 +487,59 @@ export function BookingPage({
           </h1>
           <p className="success-code">
             Mã yêu cầu <strong>{submittedId}</strong>
+            {apiMode && (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  if (!navigator.clipboard?.writeText) {
+                    setCopyIssue('Bạn có thể chọn và sao chép mã yêu cầu bên cạnh.');
+                    return;
+                  }
+                  void navigator.clipboard
+                    .writeText(submittedId)
+                    .then(() => setCopyIssue('Đã sao chép mã yêu cầu.'))
+                    .catch(() =>
+                      setCopyIssue('Chưa sao chép được. Bạn có thể chọn và sao chép mã bên cạnh.'),
+                    );
+                }}
+              >
+                Sao chép mã
+              </Button>
+            )}
           </p>
+          {copyIssue && (
+            <p role="status" className="field-hint">
+              {copyIssue}
+            </p>
+          )}
           <Feedback
             tone={apiMode ? 'info' : 'warning'}
             title={
-              apiMode
-                ? 'Studio sẽ duyệt yêu cầu và xác nhận từng bộ.'
-                : 'Đây là bản xem thử; studio chưa nhận yêu cầu này.'
+              apiMode ? 'Chờ Studio xác nhận' : 'Đây là bản xem thử; studio chưa nhận yêu cầu này.'
             }
           >
             {apiMode
-              ? 'Tình trạng trang phục sẽ được studio xác nhận trước khi giữ lịch.'
+              ? 'Chưa giữ bộ hoặc thu tiền. Theo dõi yêu cầu để biết bước tiếp theo.'
               : 'Thông tin chỉ được lưu tạm trong trình duyệt này, không tạo đơn thật.'}
           </Feedback>
+          <div className="booking-success-details">
+            <div>
+              <span>Chi nhánh</span>
+              <strong>{draft.branch}</strong>
+            </div>
+            <div>
+              <span>Nhận</span>
+              <strong>{formatLocalDateTime(draft.pickup)}</strong>
+            </div>
+            <div>
+              <span>Trả</span>
+              <strong>{formatLocalDateTime(draft.returnAt)}</strong>
+            </div>
+            <div>
+              <span>Trang phục</span>
+              <strong>{totalQuantity} bộ</strong>
+            </div>
+          </div>
           <Button onClick={() => go('myRentalDetail', { order: submittedId })}>
             Theo dõi yêu cầu <Icon name="arrow" size={18} />
           </Button>
@@ -515,6 +551,11 @@ export function BookingPage({
       <div className="booking-heading">
         <div>
           <h1>Gửi yêu cầu thuê</h1>
+          {resumed?.expired && (
+            <p className="booking-resume-notice" role="status">
+              Đã khôi phục lựa chọn cũ. Kiểm tra lại lịch, xem báo giá mới và nhập lại liên hệ.
+            </p>
+          )}
         </div>
       </div>
       <div className="step-progress" aria-label="Tiến độ đặt thuê">
@@ -540,7 +581,9 @@ export function BookingPage({
       <div className="booking-layout">
         <details className="booking-mobile-summary">
           <summary>
-            <span>{totalQuantity} bộ · {lines.length} lựa chọn</span>
+            <span>
+              {totalQuantity} bộ · {lines.length} lựa chọn
+            </span>
             <strong>{quote ? money(quote.amountDueAtPickup) : 'Chưa có báo giá'}</strong>
           </summary>
           <BookingSummaryContent
@@ -576,11 +619,14 @@ export function BookingPage({
                       aria-label={`Thêm ${entry.name} vào yêu cầu`}
                       disabled={totalQuantity >= 50}
                       onClick={() => {
-                        updateLines([...lines, {
-                          costumeId: entry.id,
-                          variant: apiMode ? '' : `${entry.sizes[0]} / ${entry.colors[0]}`,
-                          quantity: 1,
-                        }]);
+                        updateLines([
+                          ...lines,
+                          {
+                            costumeId: entry.id,
+                            variant: apiMode ? '' : `${entry.sizes[0]} / ${entry.colors[0]}`,
+                            quantity: 1,
+                          },
+                        ]);
                       }}
                     >
                       <span
@@ -602,7 +648,9 @@ export function BookingPage({
                           {entry.category} · Từ {money(entry.priceFrom)}/ngày
                         </small>
                       </span>
-                      <span className="booking-add-icon" aria-hidden="true">+</span>
+                      <span className="booking-add-icon" aria-hidden="true">
+                        +
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -722,15 +770,25 @@ export function BookingPage({
                         <div className="booking-lines">
                           {lines.map((line, index) => {
                             const costume = catalog.find((entry) => entry.id === line.costumeId);
-                            const quotedLine = quote?.lines?.find((entry) =>
-                              entry.variantId === `${line.costumeId}:${line.variant}` ||
-                              costume?.apiVariants?.some((variant) =>
-                                variant.code === line.variant && variant.id === entry.variantId));
+                            const quotedLine = quote?.lines?.find(
+                              (entry) =>
+                                entry.variantId === `${line.costumeId}:${line.variant}` ||
+                                costume?.apiVariants?.some(
+                                  (variant) =>
+                                    variant.code === line.variant && variant.id === entry.variantId,
+                                ),
+                            );
                             return (
                               <div className="booking-line" key={`${line.costumeId}-${index}`}>
                                 <div className="booking-line-title">
                                   <strong>{costume?.name ?? 'Mẫu chưa tải'}</strong>
-                                  <button type="button" className="text-button" onClick={() => updateLines(lines.filter((_, row) => row !== index))}>
+                                  <button
+                                    type="button"
+                                    className="text-button"
+                                    onClick={() =>
+                                      updateLines(lines.filter((_, row) => row !== index))
+                                    }
+                                  >
                                     Xóa
                                   </button>
                                 </div>
@@ -738,13 +796,26 @@ export function BookingPage({
                                   <SelectField
                                     label={`Size / màu · dòng ${index + 1}`}
                                     value={line.variant}
-                                    error={issue && !line.variant ? 'Chọn size và màu cho bộ này.' : undefined}
-                                    onChange={(event) => updateLines(lines.map((entry, row) => row === index
-                                      ? { ...entry, variant: event.target.value } : entry))}
+                                    error={
+                                      issue && !line.variant
+                                        ? 'Chọn size và màu cho bộ này.'
+                                        : undefined
+                                    }
+                                    onChange={(event) =>
+                                      updateLines(
+                                        lines.map((entry, row) =>
+                                          row === index
+                                            ? { ...entry, variant: event.target.value }
+                                            : entry,
+                                        ),
+                                      )
+                                    }
                                   >
                                     {apiMode && <option value="">Chọn size / màu</option>}
                                     {choicesFor(line.costumeId).map((choice) => (
-                                      <option key={choice.value} value={choice.value}>{choice.label}</option>
+                                      <option key={choice.value} value={choice.value}>
+                                        {choice.label}
+                                      </option>
                                     ))}
                                   </SelectField>
                                   <Field
@@ -754,20 +825,32 @@ export function BookingPage({
                                     max={String(50 - totalQuantity + line.quantity)}
                                     step="1"
                                     value={line.quantity}
-                                    onChange={(event) => updateLines(lines.map((entry, row) => row === index
-                                      ? { ...entry, quantity: Number(event.target.value) } : entry))}
+                                    onChange={(event) =>
+                                      updateLines(
+                                        lines.map((entry, row) =>
+                                          row === index
+                                            ? { ...entry, quantity: Number(event.target.value) }
+                                            : entry,
+                                        ),
+                                      )
+                                    }
                                   />
                                 </div>
-                                {quote?.available === false && quotedLine && quotedLine.availableUnits < quotedLine.quantity && (
-                                  <p className="field-error" role="status">
-                                    Cần {quotedLine.quantity} bộ, hiện còn {quotedLine.availableUnits} bộ cho kỳ thuê này.
-                                  </p>
-                                )}
+                                {quote?.available === false &&
+                                  quotedLine &&
+                                  quotedLine.availableUnits < quotedLine.quantity && (
+                                    <p className="field-error" role="status">
+                                      Cần {quotedLine.quantity} bộ, hiện còn{' '}
+                                      {quotedLine.availableUnits} bộ cho kỳ thuê này.
+                                    </p>
+                                  )}
                               </div>
                             );
                           })}
                         </div>
-                      ) : <p className="inline-note">Chọn mẫu ở cột bên phải để thêm vào yêu cầu.</p>}
+                      ) : (
+                        <p className="inline-note">Chọn mẫu ở cột bên phải để thêm vào yêu cầu.</p>
+                      )}
                     </>
                   )}
                 </div>
@@ -775,138 +858,154 @@ export function BookingPage({
               {step === 0 && (
                 <div className="form-stack">
                   <div className="booking-quote-status" aria-live="polite">
-                      {quoteIssue ? (
-                        <Feedback
-                          tone="danger"
-                          className="booking-quote-error"
-                          title={
-                            quoteIssueCode === 'RENTAL_START_IN_PAST'
-                              ? 'Giờ nhận không còn hợp lệ'
-                              : requiresAuthentication
-                                ? 'Phiên đăng nhập cần được làm mới'
-                                : 'Chưa tải được báo giá'
-                          }
-                          action={
-                            quoteIssueCode === 'RENTAL_START_IN_PAST' ? (
-                              <Button
-                                variant="secondary"
-                                onClick={() => {
-                                  setStep(0);
-                                  setIssue(
-                                    'Giờ nhận đã qua. Hãy chọn thời điểm nhận trong tương lai.',
-                                  );
-                                  setQuoteIssue('');
-                                  setQuoteIssueCode('');
-                                }}
-                              >
-                                Chọn lại giờ nhận
-                              </Button>
-                            ) : requiresAuthentication ? (
-                              <Button variant="secondary" onClick={() => continueToAuth('login')}>
-                                Đăng nhập lại
-                              </Button>
-                            ) : (
-                              <Button
-                                variant="secondary"
-                                loading={busy}
-                                onClick={() => void loadQuote()}
-                              >
-                                Thử tải lại
-                              </Button>
-                            )
-                          }
-                        >
-                          {quoteIssue}
-                        </Feedback>
-                      ) : (
-                        <div className="booking-quote-status__summary">
-                          <div>
-                            <span>Dự kiến thu khi nhận</span>
-                            <strong>
-                              {quote?.available === false
-                                ? 'Không đủ bộ'
-                                : quote
-                                  ? money(quote.amountDueAtPickup)
-                                  : busy
-                                    ? 'Đang tải báo giá…'
-                                    : 'Chưa có báo giá'}
-                            </strong>
-                          </div>
-                          {quote && (
-                            <Button variant="secondary" onClick={() => void loadQuote()} loading={busy}>
-                              <Icon name="refresh" size={18} /> Cập nhật báo giá
+                    {quoteIssue ? (
+                      <Feedback
+                        tone="danger"
+                        className="booking-quote-error"
+                        title={
+                          quoteIssueCode === 'RENTAL_START_IN_PAST'
+                            ? 'Giờ nhận không còn hợp lệ'
+                            : requiresAuthentication
+                              ? 'Phiên đăng nhập cần được làm mới'
+                              : 'Chưa tải được báo giá'
+                        }
+                        action={
+                          quoteIssueCode === 'RENTAL_START_IN_PAST' ? (
+                            <Button
+                              variant="secondary"
+                              onClick={() => {
+                                setStep(0);
+                                setIssue(
+                                  'Giờ nhận đã qua. Hãy chọn thời điểm nhận trong tương lai.',
+                                );
+                                setQuoteIssue('');
+                                setQuoteIssueCode('');
+                              }}
+                            >
+                              Chọn lại giờ nhận
                             </Button>
-                          )}
+                          ) : requiresAuthentication ? (
+                            <Button variant="secondary" onClick={() => continueToAuth('login')}>
+                              Đăng nhập lại
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="secondary"
+                              loading={busy}
+                              onClick={() => void loadQuote()}
+                            >
+                              Thử tải lại
+                            </Button>
+                          )
+                        }
+                      >
+                        {quoteIssue}
+                      </Feedback>
+                    ) : (
+                      <div className="booking-quote-status__summary">
+                        <div>
+                          <span>Dự kiến thu khi nhận</span>
+                          <strong>
+                            {quote?.available === false
+                              ? 'Không đủ bộ'
+                              : quote
+                                ? money(quote.amountDueAtPickup)
+                                : busy
+                                  ? 'Đang tải báo giá…'
+                                  : 'Chưa có báo giá'}
+                          </strong>
                         </div>
-                      )}
+                        {quote && (
+                          <Button
+                            variant="secondary"
+                            onClick={() => void loadQuote()}
+                            loading={busy}
+                          >
+                            <Icon name="refresh" size={18} /> Cập nhật báo giá
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </div>
                   {apiMode && customerAuthenticated && (
                     <details className="booking-promotion-details">
-                      <summary>Mã ưu đãi {quote?.promotionCode ? `· ${quote.promotionCode}` : '(nếu có)'}</summary>
-                    <div className="promotion-entry">
-                      <div className="promotion-entry__field">
-                        <Field
-                          label="Mã ưu đãi"
-                          autoCapitalize="characters"
-                          maxLength={100}
-                          placeholder="Nhập mã ưu đãi nếu có"
-                          value={promotionCode}
-                          onChange={(event) => {
-                            setPromotionCode(event.target.value.toUpperCase());
-                            setPromotionIssue('');
-                          }}
-                        />
-                        {promotionIssue && (
-                          <p className="field-error" role="alert">
-                            {promotionIssue}
-                          </p>
-                        )}
-                        {quote?.promotionCode &&
-                          appliedPromotionCode === promotionCode.trim().toUpperCase() && (
-                            <p className="field-hint">Đã giảm {money(quote.discount)}.</p>
-                          )}
-                        {promotionCode.trim() &&
-                          promotionCode.trim().toUpperCase() !== appliedPromotionCode && (
-                            <p className="field-hint" role="status">
-                              Áp dụng mã để cập nhật báo giá.
+                      <summary>
+                        Mã ưu đãi {quote?.promotionCode ? `· ${quote.promotionCode}` : '(nếu có)'}
+                      </summary>
+                      <div className="promotion-entry">
+                        <div className="promotion-entry__field">
+                          <Field
+                            label="Mã ưu đãi"
+                            autoCapitalize="characters"
+                            maxLength={100}
+                            placeholder="Nhập mã ưu đãi nếu có"
+                            value={promotionCode}
+                            onChange={(event) => {
+                              setPromotionCode(event.target.value.toUpperCase());
+                              setPromotionIssue('');
+                            }}
+                          />
+                          {promotionIssue && (
+                            <p className="field-error" role="alert">
+                              {promotionIssue}
                             </p>
                           )}
+                          {quote?.promotionCode &&
+                            appliedPromotionCode === promotionCode.trim().toUpperCase() && (
+                              <p className="field-hint">Đã giảm {money(quote.discount)}.</p>
+                            )}
+                          {promotionCode.trim() &&
+                            promotionCode.trim().toUpperCase() !== appliedPromotionCode && (
+                              <p className="field-hint" role="status">
+                                Áp dụng mã để cập nhật báo giá.
+                              </p>
+                            )}
+                        </div>
+                        <Button
+                          variant="secondary"
+                          type="button"
+                          loading={busy}
+                          disabled={
+                            busy ||
+                            (promotionCode.trim().toUpperCase() === appliedPromotionCode &&
+                              Boolean(quote) &&
+                              !promotionIssue) ||
+                            (!promotionCode.trim() &&
+                              !appliedPromotionCode &&
+                              Boolean(quote) &&
+                              !promotionIssue)
+                          }
+                          onClick={() => void loadQuote(promotionCode.trim().toUpperCase())}
+                        >
+                          {!promotionCode.trim() && appliedPromotionCode
+                            ? 'Bỏ mã'
+                            : promotionCode.trim().toUpperCase() === appliedPromotionCode && quote
+                              ? 'Đã cập nhật'
+                              : promotionCode.trim()
+                                ? 'Áp dụng mã'
+                                : 'Tính lại báo giá'}
+                        </Button>
                       </div>
-                      <Button
-                        variant="secondary"
-                        type="button"
-                        loading={busy}
-                        disabled={
-                          busy ||
-                          (promotionCode.trim().toUpperCase() === appliedPromotionCode &&
-                            Boolean(quote) &&
-                            !promotionIssue) ||
-                          (!promotionCode.trim() &&
-                            !appliedPromotionCode &&
-                            Boolean(quote) &&
-                            !promotionIssue)
-                        }
-                        onClick={() => void loadQuote(promotionCode.trim().toUpperCase())}
-                      >
-                        {!promotionCode.trim() && appliedPromotionCode
-                          ? 'Bỏ mã'
-                          : promotionCode.trim().toUpperCase() === appliedPromotionCode && quote
-                            ? 'Đã cập nhật'
-                            : promotionCode.trim()
-                              ? 'Áp dụng mã'
-                              : 'Tính lại báo giá'}
-                      </Button>
-                    </div>
                     </details>
                   )}
                   {quote && (
                     <div className="quote-card">
                       {quote.available === false && (
-                        <Feedback tone="danger" title="Không đủ bộ trong kỳ thuê này" action={
-                          <Button variant="secondary" onClick={() => setStep(0)}>Đổi lựa chọn</Button>
-                        }>
-                          {quote.lines?.filter((line) => line.availableUnits < line.quantity)
-                            .map((line) => `${line.variantLabel}: cần ${line.quantity}, còn ${line.availableUnits}`)
+                        <Feedback
+                          tone="danger"
+                          title="Không đủ bộ trong kỳ thuê này"
+                          action={
+                            <Button variant="secondary" onClick={() => setStep(0)}>
+                              Đổi lựa chọn
+                            </Button>
+                          }
+                        >
+                          {quote.lines
+                            ?.filter((line) => line.availableUnits < line.quantity)
+                            .map(
+                              (line) =>
+                                `${line.variantLabel}: cần ${line.quantity}, còn ${line.availableUnits}`,
+                            )
                             .join(' · ') ?? 'Hãy đổi size, mẫu, chi nhánh hoặc thời gian.'}
                         </Feedback>
                       )}
@@ -916,13 +1015,19 @@ export function BookingPage({
                       </div>
                       {quote.lines?.map((line) => (
                         <div key={line.variantId}>
-                          <span>{line.variantLabel} · {line.quantity} bộ</span>
+                          <span>
+                            {line.variantLabel} · {line.quantity} bộ
+                          </span>
                           <strong>{money(line.pricePerDay)}/ngày mỗi bộ</strong>
                         </div>
-                      )) ?? <div>
-                        <span>Giá/ngày × số bộ</span>
-                        <strong>{money(quote.pricePerDay)} × {quote.quantity}</strong>
-                      </div>}
+                      )) ?? (
+                        <div>
+                          <span>Giá/ngày × số bộ</span>
+                          <strong>
+                            {money(quote.pricePerDay)} × {quote.quantity}
+                          </strong>
+                        </div>
+                      )}
                       <div>
                         <span>Tiền thuê</span>
                         <strong>{money(quote.rental)}</strong>
@@ -959,8 +1064,13 @@ export function BookingPage({
                 <div className="form-stack">
                   {apiMode && !customerAuthenticated && (
                     <Feedback tone="info" title="Đăng nhập để gửi yêu cầu">
-                      Lựa chọn và thông tin đã nhập được giữ lại. Giá sẽ được xác nhận lại sau khi đăng nhập.{' '}
-                      <button type="button" className="text-button" onClick={() => continueToAuth('register')}>
+                      Lựa chọn và thông tin đã nhập được giữ lại. Giá sẽ được xác nhận lại sau khi
+                      đăng nhập.{' '}
+                      <button
+                        type="button"
+                        className="text-button"
+                        onClick={() => continueToAuth('register')}
+                      >
                         Tạo tài khoản
                       </button>
                     </Feedback>
@@ -1005,7 +1115,11 @@ export function BookingPage({
                   <h3>Phiếu tạm tính</h3>
                   <div>
                     <span>Trang phục · {totalQuantity} bộ</span>
-                    <strong>{summaryLines.map((line) => `${line.name} · ${line.variant} × ${line.quantity}`).join('; ')}</strong>
+                    <strong>
+                      {summaryLines
+                        .map((line) => `${line.name} · ${line.variant} × ${line.quantity}`)
+                        .join('; ')}
+                    </strong>
                   </div>
                   <div>
                     <span>Chi nhánh</span>
@@ -1018,7 +1132,7 @@ export function BookingPage({
                     </strong>
                   </div>
                   <div>
-                      <span>Liên hệ</span>
+                    <span>Liên hệ</span>
                     <strong>
                       {draft.name} · {draft.phone}
                     </strong>
@@ -1052,7 +1166,8 @@ export function BookingPage({
                     tone="warning"
                     title="Yêu cầu chưa giữ trang phục cho đến khi studio xác nhận."
                   >
-                    Đây là số tiền dự kiến. Studio xác nhận đơn trước khi phát hành chứng từ và thu tiền.
+                    Đây là số tiền dự kiến. Studio xác nhận đơn trước khi phát hành chứng từ và thu
+                    tiền.
                   </Feedback>
                 </div>
               )}
@@ -1077,7 +1192,17 @@ export function BookingPage({
               {step === 0 ? 'Về catalog' : 'Quay lại'}
             </Button>
             {step === 0 ? (
-              <Button onClick={next} loading={busy} disabled={loading || !!error || scenario === 'empty' || !lines.length || quote?.available === false}>
+              <Button
+                onClick={next}
+                loading={busy}
+                disabled={
+                  loading ||
+                  !!error ||
+                  scenario === 'empty' ||
+                  !lines.length ||
+                  quote?.available === false
+                }
+              >
                 {quote ? 'Liên hệ & gửi' : 'Xem báo giá'} <Icon name="arrow" size={18} />
               </Button>
             ) : (
@@ -1089,7 +1214,8 @@ export function BookingPage({
                 loading={busy}
                 disabled={!quote}
               >
-                {apiMode && !customerAuthenticated ? 'Đăng nhập để gửi' : 'Gửi yêu cầu thuê'} <Icon name="arrow" size={18} />
+                {apiMode && !customerAuthenticated ? 'Đăng nhập để gửi' : 'Gửi yêu cầu thuê'}{' '}
+                <Icon name="arrow" size={18} />
               </Button>
             )}
           </div>
@@ -1126,9 +1252,15 @@ function BookingSummaryContent({
   return (
     <div className="sidebar-note">
       <span className="eyebrow">TÓM TẮT YÊU CẦU</span>
-      <h3>{lines.length ? `${lines.reduce((sum, line) => sum + line.quantity, 0)} bộ đã chọn` : 'Chưa chọn mẫu'}</h3>
+      <h3>
+        {lines.length
+          ? `${lines.reduce((sum, line) => sum + line.quantity, 0)} bộ đã chọn`
+          : 'Chưa chọn mẫu'}
+      </h3>
       {lines.map((line, index) => (
-        <p key={`${line.name}-${index}`}>{line.name} · {line.variant} × {line.quantity}</p>
+        <p key={`${line.name}-${index}`}>
+          {line.name} · {line.variant} × {line.quantity}
+        </p>
       ))}
       <div className="sidebar-divider" />
       <p>
