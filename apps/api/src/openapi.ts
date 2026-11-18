@@ -994,16 +994,25 @@ export const openApiDocument = {
         summary: 'Check up to 50 public variants for one branch and rental period',
         requestBody: {
           required: true,
-          content: { 'application/json': { schema: {
-            type: 'object',
-            required: ['variantIds', 'pickupBranchId', 'plannedStartAt', 'plannedDueAt'],
-            properties: {
-              variantIds: { type: 'array', minItems: 1, maxItems: 50, items: { type: 'string', format: 'uuid' } },
-              pickupBranchId: { type: 'string', format: 'uuid' },
-              plannedStartAt: { type: 'string', format: 'date-time' },
-              plannedDueAt: { type: 'string', format: 'date-time' },
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['variantIds', 'pickupBranchId', 'plannedStartAt', 'plannedDueAt'],
+                properties: {
+                  variantIds: {
+                    type: 'array',
+                    minItems: 1,
+                    maxItems: 50,
+                    items: { type: 'string', format: 'uuid' },
+                  },
+                  pickupBranchId: { type: 'string', format: 'uuid' },
+                  plannedStartAt: { type: 'string', format: 'date-time' },
+                  plannedDueAt: { type: 'string', format: 'date-time' },
+                },
+              },
             },
-          } } },
+          },
         },
         responses: {
           '200': { description: 'Availability summaries returned without physical unit ids' },
@@ -1017,21 +1026,32 @@ export const openApiDocument = {
         summary: 'Calculate a guest rental estimate without customer identity or promotion',
         requestBody: {
           required: true,
-          content: { 'application/json': { schema: {
-            type: 'object',
-            required: ['pickupBranchId', 'plannedStartAt', 'plannedDueAt', 'items'],
-            properties: {
-              pickupBranchId: { type: 'string', format: 'uuid' },
-              plannedStartAt: { type: 'string', format: 'date-time' },
-              plannedDueAt: { type: 'string', format: 'date-time' },
-              items: { type: 'array', minItems: 1, maxItems: 50, items: {
-                type: 'object', required: ['variantId'], properties: {
-                  variantId: { type: 'string', format: 'uuid' },
-                  accessories: { type: 'array', items: { type: 'object' } },
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['pickupBranchId', 'plannedStartAt', 'plannedDueAt', 'items'],
+                properties: {
+                  pickupBranchId: { type: 'string', format: 'uuid' },
+                  plannedStartAt: { type: 'string', format: 'date-time' },
+                  plannedDueAt: { type: 'string', format: 'date-time' },
+                  items: {
+                    type: 'array',
+                    minItems: 1,
+                    maxItems: 50,
+                    items: {
+                      type: 'object',
+                      required: ['variantId'],
+                      properties: {
+                        variantId: { type: 'string', format: 'uuid' },
+                        accessories: { type: 'array', items: { type: 'object' } },
+                      },
+                    },
+                  },
                 },
-              } },
+              },
             },
-          } } },
+          },
         },
         responses: {
           '200': { description: 'Guest estimate and availability calculated; no inventory held' },
@@ -1327,11 +1347,22 @@ export const openApiDocument = {
         security: [{ bearerAuth: [] }],
         summary: 'Create a rental order in PENDING_CONFIRMATION',
         description:
-          'Optional contactName and contactPhone record the contact chosen for this order. When omitted, the current customer profile is copied. Later profile edits do not alter the order snapshot. Optional expectedQuote rejects changed prices or policy with QUOTE_CHANGED (409).',
+          'Optional contactName and contactPhone record the contact chosen for this order. When omitted, the current customer profile is copied. Later profile edits do not alter the order snapshot. Optional expectedQuote rejects changed prices or policy with QUOTE_CHANGED (409). Optional clientRequestId makes retries idempotent; reuse the same UUID and request body after an uncertain network response.',
         responses: {
           '201': { description: 'Rental order created' },
           '400': { $ref: '#/components/responses/BadRequest' },
           '409': { $ref: '#/components/responses/Conflict' },
+        },
+      },
+    },
+    '/rentals/orders/by-request/{requestId}': {
+      get: {
+        tags: ['Rentals'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Find a rental order by client request id after an uncertain response',
+        responses: {
+          '200': { description: 'Rental order loaded' },
+          '404': { $ref: '#/components/responses/NotFound' },
         },
       },
     },

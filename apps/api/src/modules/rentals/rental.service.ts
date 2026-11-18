@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { AppError, type ErrorDetails } from '../../common/errors/app-error.js';
 import { pageResult, pagination } from '../../common/http/query.js';
@@ -664,6 +664,15 @@ export async function getOrder(actor: AuthenticatedActor, id: string) {
   assertRead(actor, order);
   return order;
 }
+export async function getOrderByClientRequest(actor: AuthenticatedActor, requestId: string) {
+  const order = await prisma.rentalOrder.findUnique({
+    where: { clientRequestId: requestId },
+    include: includeOrder(),
+  });
+  if (!order) throw new AppError(404, 'RENTAL_ORDER_NOT_FOUND', 'Rental order not found');
+  assertRead(actor, order);
+  return order;
+}
 export async function checkAvailability(
   actor: AuthenticatedActor,
   input: { variantId: string; pickupBranchId: string; plannedStartAt: Date; plannedDueAt: Date },
@@ -728,7 +737,6 @@ export async function checkAvailability(
 }
 export async function createOrder(actor: AuthenticatedActor, input: CreateOrderInput) {
   requireActor(actor);
-  assertRentalStartsInFuture(input.plannedStartAt);
   if (actor.id !== input.customerUserId) {
     requireEmployee(actor);
     assertPermission(actor, {
@@ -737,14 +745,51 @@ export async function createOrder(actor: AuthenticatedActor, input: CreateOrderI
       branchId: input.pickupBranchId,
     });
   } else assertPermission(actor, { module: 'rentals', action: 'manage', scope: 'OWN' });
+  const fingerprint = input.clientRequestId
+    ? createHash('sha256')
+        .update(
+          JSON.stringify(input, (_key, value: unknown) =>
+            typeof value === 'bigint' ? value.toString() : value,
+          ),
+        )
+        .digest('hex')
+    : null;
   return prisma.$transaction(async (tx) => {
+    if (input.clientRequestId) {
+      // Serialize retries even if a client accidentally changes branches between requests.
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${input.clientRequestId}))) AS request_lock`;
+      const existing = await tx.rentalOrder.findUnique({
+        where: { clientRequestId: input.clientRequestId },
+        include: includeOrder(),
+      });
+      if (existing) {
+        if (
+          existing.requestFingerprint !== fingerprint ||
+          existing.customerUserId !== input.customerUserId
+        )
+          throw new AppError(
+            409,
+            'IDEMPOTENCY_CONFLICT',
+            'Client request id was used for a different order',
+          );
+        assertManage(actor, existing);
+        return existing;
+      }
+    }
+    assertRentalStartsInFuture(input.plannedStartAt);
     await lockActiveBranch(tx, input.pickupBranchId);
     const customer = await tx.customer.findUnique({
       where: { userId: input.customerUserId },
       select: { userId: true, user: { select: { displayName: true, phone: true } } },
     });
     if (!customer) throw new AppError(404, 'CUSTOMER_NOT_FOUND', 'Customer not found');
-    const { policy, days, variants, subtotalVnd: subtotal, depositVnd } = await pricedItems(tx, input);
+    const {
+      policy,
+      days,
+      variants,
+      subtotalVnd: subtotal,
+      depositVnd,
+    } = await pricedItems(tx, input);
     const { promotion, discount } = await resolvePromotion(
       tx,
       input,
@@ -752,23 +797,28 @@ export async function createOrder(actor: AuthenticatedActor, input: CreateOrderI
       subtotal,
     );
     const expected = input.expectedQuote;
-    if (expected && (
-      expected.policyVersionId !== policy.id ||
-      expected.subtotalVnd !== subtotal ||
-      expected.depositVnd !== depositVnd ||
-      expected.discountVnd !== discount ||
-      expected.totalDueVnd !== subtotal - discount + depositVnd ||
-      expected.items.length !== variants.length ||
-      variants.some((variant) => {
-        const line = expected.items.find((item) => item.variantId === variant.id);
-        return line?.dailyRentalPriceVnd !== variant.dailyRentalPriceVnd ||
-          line?.depositAmountVnd !== variant.depositAmountVnd;
-      })
-    ))
+    if (
+      expected &&
+      (expected.policyVersionId !== policy.id ||
+        expected.subtotalVnd !== subtotal ||
+        expected.depositVnd !== depositVnd ||
+        expected.discountVnd !== discount ||
+        expected.totalDueVnd !== subtotal - discount + depositVnd ||
+        expected.items.length !== variants.length ||
+        variants.some((variant) => {
+          const line = expected.items.find((item) => item.variantId === variant.id);
+          return (
+            line?.dailyRentalPriceVnd !== variant.dailyRentalPriceVnd ||
+            line?.depositAmountVnd !== variant.depositAmountVnd
+          );
+        }))
+    )
       throw new AppError(409, 'QUOTE_CHANGED', 'Rental quote changed before order creation');
     const created = await tx.rentalOrder.create({
       data: {
         orderCode: orderCode(),
+        clientRequestId: input.clientRequestId ?? null,
+        requestFingerprint: fingerprint,
         customerUserId: input.customerUserId,
         pickupBranchId: input.pickupBranchId,
         channel: input.channel,

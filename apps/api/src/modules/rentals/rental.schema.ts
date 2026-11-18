@@ -23,6 +23,7 @@ const activeStatuses = [
 ] as const;
 
 export const orderIdSchema = z.object({ orderId: z.uuid() });
+export const clientRequestIdSchema = z.object({ requestId: z.uuid() });
 export const rentalPickupDateSchema = z.coerce
   .date()
   .refine((date) => date.getTime() >= Date.now(), {
@@ -54,19 +55,41 @@ const orderBase = z
   });
 
 export const quoteSchema = orderBase.safeExtend({ plannedStartAt: rentalPickupDateSchema });
-const expectedQuoteSchema = z.object({
-  policyVersionId: z.uuid(),
-  subtotalVnd: z.coerce.bigint().nonnegative(),
-  depositVnd: z.coerce.bigint().nonnegative(),
-  discountVnd: z.coerce.bigint().nonnegative(),
-  totalDueVnd: z.coerce.bigint().nonnegative(),
-  items: z.array(z.object({
-    variantId: z.uuid(),
-    dailyRentalPriceVnd: z.coerce.bigint().nonnegative(),
-    depositAmountVnd: z.coerce.bigint().nonnegative(),
-  }).strict()).min(1).max(50),
-}).strict();
-export const createOrderSchema = quoteSchema.safeExtend({ expectedQuote: expectedQuoteSchema.optional() });
+const expectedQuoteSchema = z
+  .object({
+    policyVersionId: z.uuid(),
+    subtotalVnd: z.coerce.bigint().nonnegative(),
+    depositVnd: z.coerce.bigint().nonnegative(),
+    discountVnd: z.coerce.bigint().nonnegative(),
+    totalDueVnd: z.coerce.bigint().nonnegative(),
+    items: z
+      .array(
+        z
+          .object({
+            variantId: z.uuid(),
+            dailyRentalPriceVnd: z.coerce.bigint().nonnegative(),
+            depositAmountVnd: z.coerce.bigint().nonnegative(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(50),
+  })
+  .strict();
+export const createOrderSchema = orderBase
+  .safeExtend({
+    expectedQuote: expectedQuoteSchema.optional(),
+    clientRequestId: z.uuid().optional(),
+  })
+  .superRefine((value, context) => {
+    // A replay can arrive after pickup time; the service checks the date for new orders.
+    if (!value.clientRequestId && value.plannedStartAt.getTime() < Date.now())
+      context.addIssue({
+        code: 'custom',
+        path: ['plannedStartAt'],
+        message: 'Thời điểm nhận đồ không được ở quá khứ.',
+      });
+  });
 export const updateOrderSchema = orderBase.extend({
   expectedVersion: z.coerce.number().int().positive(),
 });

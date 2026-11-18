@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   availability: vi.fn(),
   get: vi.fn(),
+  getByClientRequest: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
   confirm: vi.fn(),
@@ -42,6 +43,7 @@ vi.mock('../src/modules/rentals/rental.service.js', () => ({
   listOrders: mocks.list,
   checkAvailability: mocks.availability,
   getOrder: mocks.get,
+  getOrderByClientRequest: mocks.getByClientRequest,
   createOrder: mocks.create,
   updateOrder: mocks.update,
   confirmOrder: mocks.confirm,
@@ -112,7 +114,12 @@ describe('Rental order HTTP routes', () => {
     };
     await request(createApp())
       .get('/api/v1/rentals/availability')
-      .query({ variantId, pickupBranchId: branchId, plannedStartAt: order.plannedStartAt, plannedDueAt: order.plannedDueAt })
+      .query({
+        variantId,
+        pickupBranchId: branchId,
+        plannedStartAt: order.plannedStartAt,
+        plannedDueAt: order.plannedDueAt,
+      })
       .set(auth(bearer))
       .expect(200);
     await request(createApp())
@@ -120,6 +127,15 @@ describe('Rental order HTTP routes', () => {
       .set(auth(bearer))
       .send(order)
       .expect(201);
+    const clientRequestId = '10000000-0000-4000-8000-000000000008';
+    await request(createApp())
+      .get(`/api/v1/rentals/orders/by-request/${clientRequestId}`)
+      .set(auth(bearer))
+      .expect(200);
+    expect(mocks.getByClientRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ id: actorId }),
+      clientRequestId,
+    );
     await request(createApp())
       .patch(`/api/v1/rentals/orders/${orderId}`)
       .set(auth(bearer))

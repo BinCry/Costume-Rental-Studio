@@ -79,7 +79,11 @@ function transaction(availableUnits: Record<string, number>) {
         Promise.resolve(availableUnits[where.variantId] ?? 0),
       ),
     },
-    rentalOrder: { create: vi.fn((args: unknown) => Promise.resolve(args)) },
+    rentalOrder: {
+      create: vi.fn((args: unknown) => Promise.resolve(args)),
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
+    $queryRaw: vi.fn().mockResolvedValue([]),
     rentalOrderEvent: { create: vi.fn().mockResolvedValue({}) },
   };
   mocks.transaction.mockImplementation((callback: (client: typeof tx) => Promise<unknown>) =>
@@ -194,10 +198,64 @@ describe('renting several units of the same variant', () => {
     expect(tx.rentalOrder.create).toHaveBeenCalledOnce();
 
     tx.rentalOrder.create.mockClear();
-    await expect(service.createOrder(actor, {
-      ...input([variantId]), expectedQuote: { ...expectedQuote, totalDueVnd: 600_000n },
-    })).rejects.toMatchObject({ code: 'QUOTE_CHANGED', statusCode: 409 });
+    await expect(
+      service.createOrder(actor, {
+        ...input([variantId]),
+        expectedQuote: { ...expectedQuote, totalDueVnd: 600_000n },
+      }),
+    ).rejects.toMatchObject({ code: 'QUOTE_CHANGED', statusCode: 409 });
     expect(tx.rentalOrder.create).not.toHaveBeenCalled();
+  });
+
+  it('returns the original order for a retry with the same client request id', async () => {
+    const tx = transaction({ [variantId]: 1 });
+    const clientRequestId = '10000000-0000-4000-8000-000000000008';
+    const request = { ...input([variantId]), clientRequestId };
+    await service.createOrder(actor, request);
+    const stored = tx.rentalOrder.create.mock.calls[0]![0] as {
+      data: { requestFingerprint: string };
+    };
+    const original = {
+      id: '10000000-0000-4000-8000-000000000009',
+      customerUserId,
+      pickupBranchId: branchId,
+      requestFingerprint: stored.data.requestFingerprint,
+    };
+    tx.rentalOrder.findUnique.mockResolvedValue(original);
+
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-12-05T00:00:00Z').getTime());
+    let retried: unknown;
+    try {
+      retried = await service.createOrder(actor, request);
+    } finally {
+      clock.mockRestore();
+    }
+    expect(retried).toBe(original);
+    expect(tx.rentalOrder.create).toHaveBeenCalledOnce();
+    expect(tx.customer.findUnique).toHaveBeenCalledOnce();
+  });
+
+  it('rejects reuse of a client request id with different order details', async () => {
+    const tx = transaction({ [variantId]: 1 });
+    const clientRequestId = '10000000-0000-4000-8000-000000000008';
+    await service.createOrder(actor, { ...input([variantId]), clientRequestId });
+    const stored = tx.rentalOrder.create.mock.calls[0]![0] as {
+      data: { requestFingerprint: string };
+    };
+    tx.rentalOrder.findUnique.mockResolvedValue({
+      customerUserId,
+      pickupBranchId: branchId,
+      requestFingerprint: stored.data.requestFingerprint,
+    });
+
+    await expect(
+      service.createOrder(actor, {
+        ...input([variantId]),
+        clientRequestId,
+        contactName: 'Người khác',
+      }),
+    ).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT', statusCode: 409 });
+    expect(tx.rentalOrder.create).toHaveBeenCalledOnce();
   });
 
   it('still rejects an unknown variant', async () => {

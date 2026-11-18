@@ -9,6 +9,7 @@ import {
   amendOrderItemSchema,
   assessmentSchema,
   completeSchema,
+  clientRequestIdSchema,
   confirmSchema,
   createOrderSchema,
   quoteSchema,
@@ -75,6 +76,16 @@ rentalRouter.post('/orders', async (req, res) =>
     ),
     'Rental order created',
     201,
+  ),
+);
+rentalRouter.get('/orders/by-request/:requestId', async (req, res) =>
+  sendSuccess(
+    res,
+    await service.getOrderByClientRequest(
+      res.locals.actor,
+      parse(clientRequestIdSchema.safeParse(req.params), 'Invalid client request id').requestId,
+    ),
+    'Rental order loaded',
   ),
 );
 rentalRouter.get('/orders/:orderId', async (req, res) =>

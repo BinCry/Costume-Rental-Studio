@@ -63,6 +63,21 @@ describe('rental order schemas', () => {
     expect(quoteSchema.safeParse({ ...order, expectedQuote }).success).toBe(false);
   });
 
+  it('accepts a client request id for safe retries but rejects a malformed key', () => {
+    const clientRequestId = '10000000-0000-4000-8000-000000000008';
+    expect(createOrderSchema.safeParse({ ...order, clientRequestId }).success).toBe(true);
+    expect(createOrderSchema.safeParse({ ...order, clientRequestId: 'same-order' }).success).toBe(
+      false,
+    );
+    expect(
+      createOrderSchema.safeParse({
+        ...order,
+        plannedStartAt: new Date(Date.now() - 86_400_000).toISOString(),
+        clientRequestId,
+      }).success,
+    ).toBe(true);
+  });
+
   it('rejects a past pickup for orders, quotes and both availability endpoints', () => {
     const plannedStartAt = new Date(Date.now() - 86_400_000).toISOString();
     const availability = {

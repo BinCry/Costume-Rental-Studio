@@ -798,6 +798,8 @@ model Promotion {
 model RentalOrder {
   id                     String                @id @default(uuid()) @db.Uuid
   orderCode              String                @unique @map("order_code") @db.VarChar(50)
+  clientRequestId         String?               @unique @map("client_request_id") @db.Uuid
+  requestFingerprint     String?               @map("request_fingerprint") @db.VarChar(64)
   customerUserId         String                @map("customer_user_id") @db.Uuid
   pickupBranchId         String                @map("pickup_branch_id") @db.Uuid
   channel                String                @db.VarChar(30)
