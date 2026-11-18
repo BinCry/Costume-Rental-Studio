@@ -44,6 +44,7 @@ const groupDefs: { label: string; statuses: OrderStatus[] }[] = [
   { label: 'Chờ xác nhận', statuses: ['PENDING_CONFIRMATION'] },
   { label: 'Sắp giao', statuses: ['CONFIRMED', 'PREPARING', 'READY_FOR_PICKUP'] },
   { label: 'Đang thuê', statuses: ['ACTIVE'] },
+  { label: 'Quá hạn', statuses: ['ACTIVE'] },
   { label: 'Cần kiểm tra', statuses: ['RETURN_INSPECTION'] },
   { label: 'Khác', statuses: ['DRAFT', 'COMPLETED', 'REJECTED', 'CANCELLED', 'NO_SHOW'] },
 ];
@@ -65,6 +66,10 @@ function compareOrders(left: Order, right: Order, sort: OrderSort) {
     pickup ? right.pickup : right.returnAt);
   return (sort.endsWith('asc') ? leftTime - rightTime : rightTime - leftTime) ||
     left.id.localeCompare(right.id, 'vi');
+}
+function isOverdueRental(order: Order) {
+  return order.status === 'ACTIVE' &&
+    orderTimestamp(order.apiPlannedDueAt, order.returnAt) < Date.now();
 }
 
 export function OrdersPage({
@@ -131,6 +136,7 @@ export function OrdersPage({
   const detailRef = useRef<HTMLElement>(null);
   const selectedRowRef = useRef<HTMLButtonElement>(null);
   const noticeRef = useRef<HTMLDivElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
   const unitSelectionRef = useRef<HTMLDivElement>(null);
   const previousMobileViewRef = useRef<boolean | null>(null);
   useEffect(() => {
@@ -157,7 +163,8 @@ export function OrdersPage({
   const visible = scoped.filter(
     (order) =>
       (group === 'Tất cả' ||
-        groupDefs.find((entry) => entry.label === group)?.statuses.includes(order.status)) &&
+        (group === 'Quá hạn' ? isOverdueRental(order) :
+          groupDefs.find((entry) => entry.label === group)?.statuses.includes(order.status))) &&
       `${order.id} ${order.customer} ${order.phone} ${order.items.map((item) => item.unitCode).join(' ')}`
         .toLocaleLowerCase('vi')
         .includes(search.toLocaleLowerCase('vi')),
@@ -497,12 +504,19 @@ export function OrdersPage({
         <div>
           <h1>Đơn thuê</h1>
         </div>
-        <StatusLabel
-          text={loading ? 'Đang tải đơn' : `${scoped.length} đơn tại chi nhánh`}
-          tone="neutral"
-        />
+        <div className="feature-actions">
+          <StatusLabel
+            text={loading ? 'Đang tải đơn' : `${scoped.length} đơn tại chi nhánh`}
+            tone="neutral"
+          />
+          <Button variant="secondary" onClick={() => {
+            setGroup('Đang thuê');
+            setPage(1);
+            window.requestAnimationFrame(() => toolbarRef.current?.querySelector<HTMLInputElement>('input')?.focus());
+          }}>Tra barcode</Button>
+        </div>
       </div>
-      <div className={`staff-toolbar orders-toolbar ${realApiMode ? '' : 'with-branch'}`}>
+      <div ref={toolbarRef} className={`staff-toolbar orders-toolbar ${realApiMode ? '' : 'with-branch'}`}>
         {!realApiMode && (
           <SelectField
             label="Chi nhánh"
@@ -666,8 +680,8 @@ export function OrdersPage({
                           <td>{entry.returnAt}</td>
                           <td>
                             <StatusLabel
-                              text={orderStatus[entry.status].text}
-                              tone={orderStatus[entry.status].tone}
+                              text={isOverdueRental(entry) ? 'Quá hạn' : orderStatus[entry.status].text}
+                              tone={isOverdueRental(entry) ? 'warning' : orderStatus[entry.status].tone}
                             />
                           </td>
                         </tr>
@@ -689,8 +703,8 @@ export function OrdersPage({
                       </div>
                       <span>{entry.customer}</span>
                       <StatusLabel
-                        text={orderStatus[entry.status].text}
-                        tone={orderStatus[entry.status].tone}
+                        text={isOverdueRental(entry) ? 'Quá hạn' : orderStatus[entry.status].text}
+                        tone={isOverdueRental(entry) ? 'warning' : orderStatus[entry.status].tone}
                       />
                     </button>
                   ))}

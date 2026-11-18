@@ -2775,7 +2775,7 @@ small {
   gap: 8px;
   margin: 0 0 18px;
 }
-.task-jump-nav a {
+.task-jump-nav button {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
@@ -2788,8 +2788,24 @@ small {
   font-weight: 600;
   text-decoration: none;
 }
-.task-jump-nav a:hover {
+.task-jump-nav button:hover:not(:disabled) {
   background: var(--surface-hover);
+}
+.task-jump-nav button.active {
+  border-color: var(--brand-primary);
+  color: var(--brand-primary);
+  background: var(--brand-surface, #fdf2f8);
+}
+.task-jump-nav button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+.task-card[hidden] {
+  display: none;
+}
+.crm-case-overdue {
+  color: var(--danger, #b91c1c);
+  font-weight: 700;
 }
 #task-scan,
 #task-check,

@@ -3,6 +3,7 @@ import {
   Button,
   ConfirmDialog,
   Feedback,
+  DateTimeField,
   Field,
   SelectField,
   TextAreaField,
@@ -33,7 +34,7 @@ import { studioAdapter, type Case, type Customer } from '../fixtures/studio';
 import type { DemoScenario } from '../fixtures/types';
 import { nextCaseStatuses } from '../utils/crm-cases';
 import { caseStatusLabels } from '../utils/crm-labels';
-import { formatVietnamDateTime } from '../utils/date-format';
+import { formatLocalDateTime, formatVietnamDateTime } from '../utils/date-format';
 import { visibleBranchCustomers } from '../utils/crm-customers';
 import { isValidPhone, samePhone } from '../utils/phone';
 
@@ -43,6 +44,10 @@ const priorityLabels: Record<Case['priority'], string> = {
   HIGH: 'Cao',
   URGENT: 'Khẩn',
 };
+function caseIsOverdue(value: Case) {
+  return !!value.dueAt && Date.parse(value.dueAt) < Date.now() &&
+    (value.status === 'OPEN' || value.status === 'IN_PROGRESS');
+}
 
 export function CrmPage({
   scenario,
@@ -179,6 +184,15 @@ export function CrmPage({
       setIssue('Nhập tiêu đề case trước khi lưu hoặc nhận xử lý.');
       return;
     }
+    const isNewCase = !(casesResource.data ?? []).some((item) => item.code === value.code);
+    if (isNewCase && (!value.dueAt || !Number.isFinite(Date.parse(value.dueAt)) || Date.parse(value.dueAt) <= Date.now())) {
+      setIssue('Chọn hạn xử lý trong tương lai cho case mới.');
+      return;
+    }
+    if (value.dueAt && !Number.isFinite(Date.parse(value.dueAt))) {
+      setIssue('Hạn xử lý chưa hợp lệ.');
+      return;
+    }
     if (
       value.owner &&
       !employeesResource.data?.some(
@@ -258,7 +272,11 @@ export function CrmPage({
       {(customers) => {
         const visible = visibleBranchCustomers(customers, branch, search, realApiMode);
         const person = visible.find((c) => c.code === activeCustomerCode) ?? visible[0];
-        const related = (casesResource.data ?? []).filter((c) => c.customerCode === person?.code);
+        const related = (casesResource.data ?? [])
+          .filter((c) => c.customerCode === person?.code)
+          .sort((left, right) =>
+            (left.dueAt ? Date.parse(left.dueAt) : Number.POSITIVE_INFINITY) -
+              (right.dueAt ? Date.parse(right.dueAt) : Number.POSITIVE_INFINITY));
         const current = related.find((c) => c.code === activeCaseCode) ?? related[0];
         const editing = draft ?? current;
         const personInteractions = person
@@ -452,13 +470,17 @@ export function CrmPage({
                   >
                     <div className="responsive-table crm-case-table" role="region" aria-label="Danh sách case của khách" tabIndex={0}>
                       <table>
-                        <thead><tr><th>Mã</th><th>Nội dung</th><th>Ưu tiên</th><th>Trạng thái</th><th>Người xử lý</th></tr></thead>
+                        <thead><tr><th>Mã</th><th>Nội dung</th><th>Ưu tiên</th><th>Hạn xử lý</th><th>Trạng thái</th><th>Người xử lý</th></tr></thead>
                         <tbody>
                           {related.map((item) => (
                             <tr key={item.code}>
                               <td><button className="text-link" aria-pressed={current?.code === item.code} onClick={() => switchView('case', item.code)}>{item.code}</button></td>
                               <td className="crm-case-subject" title={item.subject}>{item.subject}</td>
                               <td>{priorityLabels[item.priority]}</td>
+                              <td className={caseIsOverdue(item) ? 'crm-case-overdue' : undefined}>
+                                {item.dueAt ? formatLocalDateTime(item.dueAt) : 'Chưa đặt'}
+                                {caseIsOverdue(item) && <small> · Quá hạn</small>}
+                              </td>
                               <td>{caseStatusLabels[item.status]}</td>
                               <td>{item.owner ?? 'Chưa phân công'}</td>
                             </tr>
@@ -480,7 +502,10 @@ export function CrmPage({
                           <span>
                             {caseStatusLabels[c.status]} · {priorityLabels[c.priority]}
                           </span>
-                          <small>{c.owner ?? 'Chưa phân công'}</small>
+                          <small>
+                            {caseIsOverdue(c) ? 'Quá hạn' : 'Hạn'}{' '}
+                            {c.dueAt ? formatLocalDateTime(c.dueAt) : 'chưa đặt'} · {c.owner ?? 'Chưa phân công'}
+                          </small>
                         </button>
                       ))}
                     </div>
@@ -534,6 +559,16 @@ export function CrmPage({
                           </option>
                         ))}
                       </SelectField>
+                      <DateTimeField
+                        label="Hạn xử lý"
+                        value={editing.dueAt ?? ''}
+                        required={current?.code !== editing.code}
+                        onChange={(value) => {
+                          setIssue('');
+                          setDraft({ ...editing, dueAt: value || undefined });
+                        }}
+                        error={issue.startsWith('Chọn hạn xử lý') || issue.startsWith('Hạn xử lý') ? issue : undefined}
+                      />
                       <SelectField
                         label="Người phụ trách tại chi nhánh"
                         value={editing.owner ?? ''}

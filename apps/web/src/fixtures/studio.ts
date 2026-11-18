@@ -162,6 +162,7 @@ export interface Case {
   priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
   status: CaseStatus;
   owner?: string;
+  dueAt?: string;
   history: string[];
 }
 export interface Policy {

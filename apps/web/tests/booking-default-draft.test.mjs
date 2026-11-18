@@ -41,7 +41,7 @@ describe('booking form before a costume is chosen (live API mode)', () => {
     const html = await renderBooking(undefined);
 
     expect(html).toContain('Chưa chọn mẫu');
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>Đi tiếp/);
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Xem báo giá/);
     expect(html).not.toContain('Áo dài Lina');
     expect(html).not.toContain('Hồng phấn');
   });

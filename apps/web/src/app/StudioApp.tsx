@@ -19,7 +19,7 @@ import { DashboardPage } from '../pages/DashboardPage';
 import { OrdersPage } from '../pages/OrdersPage';
 import { OrderDetailShell } from '../pages/OrderDetailShell';
 import { AccountPage, CostumeDetailPage, MyRentalsPage } from '../pages/CustomerFeatures';
-import { ActiveRentalsPage, CounterRentalPage } from '../pages/StaffFeatures';
+import { CounterRentalPage } from '../pages/StaffFeatures';
 import { InventoryPage, TransfersPage } from '../pages/InventoryFeatures';
 import { CrmPage } from '../pages/CrmFeatures';
 import { AuthPage } from '../pages/AuthPage';
@@ -77,7 +77,6 @@ const staffNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
   { screen: 'dashboard', label: 'Bảng việc', roles: ['SALES_STAFF', 'INVENTORY_STAFF'] },
   { screen: 'orders', label: 'Đơn thuê', roles: ['SALES_STAFF', 'INVENTORY_STAFF'] },
   { screen: 'counter', label: 'Tạo tại quầy', roles: ['SALES_STAFF'] },
-  { screen: 'active', label: 'Đang thuê', roles: ['SALES_STAFF', 'INVENTORY_STAFF'] },
   { screen: 'inventory', label: 'Kho', roles: ['SALES_STAFF', 'INVENTORY_STAFF'] },
   { screen: 'transfers', label: 'Điều chuyển', roles: ['INVENTORY_STAFF'] },
   { screen: 'crm', label: 'Khách hàng', roles: ['SALES_STAFF'] },
@@ -87,7 +86,6 @@ const adminNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
   { screen: 'reports', label: 'Tổng quan', roles: ['ADMIN'] },
   { screen: 'adminOrders', label: 'Đơn thuê', roles: ['ADMIN'] },
   { screen: 'adminCounter', label: 'Tạo tại quầy', roles: ['ADMIN'] },
-  { screen: 'adminActive', label: 'Đang thuê', roles: ['ADMIN'] },
   { screen: 'adminInventory', label: 'Kho', roles: ['ADMIN'] },
   { screen: 'adminTransfers', label: 'Điều chuyển', roles: ['ADMIN'] },
   { screen: 'adminCrm', label: 'Khách hàng', roles: ['ADMIN'] },
@@ -102,7 +100,6 @@ const staffNavGroups: { id: string; label: string; screens: Screen[] }[] = [
   { id: 'overview', label: 'Tổng quan', screens: ['dashboard'] },
   { id: 'orders', label: 'Đơn thuê', screens: ['orders'] },
   { id: 'counter', label: 'Tạo tại quầy', screens: ['counter'] },
-  { id: 'active', label: 'Đang thuê', screens: ['active'] },
   { id: 'inventory', label: 'Kho', screens: ['inventory'] },
   { id: 'transfers', label: 'Điều chuyển', screens: ['transfers'] },
   { id: 'customers', label: 'Khách hàng', screens: ['crm'] },
@@ -112,7 +109,6 @@ const adminNavGroups: { id: string; label: string; screens: Screen[] }[] = [
   { id: 'overview', label: 'Tổng quan', screens: ['reports'] },
   { id: 'orders', label: 'Đơn thuê', screens: ['adminOrders'] },
   { id: 'counter', label: 'Tạo tại quầy', screens: ['adminCounter'] },
-  { id: 'active', label: 'Đang thuê', screens: ['adminActive'] },
   { id: 'inventory', label: 'Kho', screens: ['adminInventory'] },
   { id: 'transfers', label: 'Điều chuyển', screens: ['adminTransfers'] },
   { id: 'customers', label: 'Khách hàng', screens: ['adminCrm'] },
@@ -1335,7 +1331,7 @@ export default function StudioApp() {
             {route.screen === 'dashboard' && (
               <DashboardPage scenario={scenario} go={go} initialBranch={activeBranch} />
             )}
-            {(route.screen === 'orders' || route.screen === 'adminOrders') && (
+            {(route.screen === 'orders' || route.screen === 'adminOrders' || route.screen === 'active' || route.screen === 'adminActive') && (
               <OrdersPage
                 scenario={scenario}
                 go={actorGroup === 'ADMIN' ? adminGo : go}
@@ -1369,7 +1365,7 @@ export default function StudioApp() {
                   'rentals.manage.all',
                 ].some((permission) => effectivePermissions.includes(permission))}
                 initialOrderId={p.get('order') ?? undefined}
-                initialFilter={p.get('filter') ?? undefined}
+                initialFilter={p.get('filter') ?? (route.screen === 'active' || route.screen === 'adminActive' ? 'Đang thuê' : undefined)}
                 initialBranch={activeBranch}
               />
             )}
@@ -1416,13 +1412,6 @@ export default function StudioApp() {
                   effectivePermissions.includes('customers.create.all')
                 }
                 canReadAllCustomers={effectivePermissions.includes('customers.read.all')}
-              />
-            )}
-            {(route.screen === 'active' || route.screen === 'adminActive') && (
-              <ActiveRentalsPage
-                scenario={scenario}
-                go={actorGroup === 'ADMIN' ? adminGo : go}
-                branch={activeBranch}
               />
             )}
             {(route.screen === 'inventory' || route.screen === 'adminInventory') && (

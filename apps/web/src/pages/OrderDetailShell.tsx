@@ -858,6 +858,7 @@ export function OrderDetailShell({
   const [matchedCodes, setMatchedCodes] = useState<string[]>([]);
   const [scanIssue, setScanIssue] = useState('');
   const [scanBusy, setScanBusy] = useState(false);
+  const [reviewStep, setReviewStep] = useState<number | null>(null);
   const [checks, setChecks] = useState<Record<string, boolean>>({});
   const [returnConditions, setReturnConditions] = useState<
     Record<string, 'PASSED' | 'PENDING_ASSESSMENT' | 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED'>
@@ -1162,6 +1163,18 @@ export function OrderDetailShell({
       : realApiMode
         ? selectedReturnItems.length > 0
         : scannedItems.length > 0;
+  const currentTaskStep = backendReturnReady ? 2 : !scannedEnough ? 0 :
+    !allChecked || !allEvidenceSelected || needsAssessmentNote || !repairScheduleComplete ? 1 : 2;
+  const displayedTaskStep = !backendReturnReady && reviewStep !== null && reviewStep < currentTaskStep
+    ? reviewStep : currentTaskStep;
+  const previousTaskStep = useRef(currentTaskStep);
+  useEffect(() => {
+    if (previousTaskStep.current === currentTaskStep) return;
+    previousTaskStep.current = currentTaskStep;
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>('.task-jump-nav button[aria-current="step"]')?.focus();
+    });
+  }, [currentTaskStep]);
   const previewSignature = JSON.stringify([
     scenario,
     mode,
@@ -1447,13 +1460,22 @@ export function OrderDetailShell({
       </div>
       {order && (
         <nav className="task-jump-nav" aria-label="Các bước xử lý đơn">
-          {!backendReturnReady && (
-            <>
-              <a href="#task-scan">1. Quét mã · {matchedCodes.length}/{operationItems.length}</a>
-              <a href="#task-check">2. Kiểm tình trạng</a>
-            </>
-          )}
-          <a href="#task-money">{backendReturnReady ? 'Quyết toán' : `3. ${mode === 'handover' ? 'Thu tiền' : 'Quyết toán'}`}</a>
+          {(backendReturnReady ? [{ label: 'Quyết toán', step: 2 }] : [
+            { label: `Quét mã · ${matchedCodes.length}/${operationItems.length}`, step: 0 },
+            { label: 'Kiểm tình trạng', step: 1 },
+            { label: mode === 'handover' ? 'Thu tiền & giao' : 'Quyết toán', step: 2 },
+          ]).map(({ label, step: targetStep }) => (
+            <button
+              type="button"
+              key={targetStep}
+              className={displayedTaskStep === targetStep ? 'active' : ''}
+              aria-current={displayedTaskStep === targetStep ? 'step' : undefined}
+              disabled={targetStep > currentTaskStep}
+              onClick={() => setReviewStep(targetStep === currentTaskStep ? null : targetStep)}
+            >
+              {backendReturnReady ? label : `${targetStep + 1}. ${label}`}
+            </button>
+          ))}
         </nav>
       )}
       {scenario === 'permission' && (
@@ -1543,7 +1565,7 @@ export function OrderDetailShell({
               </div>
             </section>
             {!backendReturnReady && (
-            <section className="task-card" id="task-scan">
+            <section className="task-card" id="task-scan" hidden={displayedTaskStep !== 0}>
               <div className="task-card-heading">
                 <span className="round-step">01</span>
                 <div>
@@ -1625,7 +1647,7 @@ export function OrderDetailShell({
             </section>
             )}
             {!backendReturnReady && (
-            <section className="task-card" id="task-check">
+            <section className="task-card" id="task-check" hidden={displayedTaskStep !== 1}>
               <div className="task-card-heading">
                 <span className="round-step">02</span>
                 <div>
@@ -1865,7 +1887,7 @@ export function OrderDetailShell({
               </p>
             </section>
             )}
-            <section className="task-card" id="task-money">
+            <section className="task-card" id="task-money" hidden={displayedTaskStep !== 2}>
               <div className="task-card-heading">
                 <span className="round-step">03</span>
                 <div>

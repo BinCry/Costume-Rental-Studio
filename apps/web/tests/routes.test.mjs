@@ -42,6 +42,18 @@ describe('customer and application route resolution', () => {
     expect(route.params.get('id')).toBe('ao-dai-lina');
     expect(route.params.get('size')).toBe('M');
   });
+
+  it('opens old active-rental links in the Orders view with the active filter', () => {
+    for (const [pathname, screen] of [
+      ['/van-hanh/dang-thue', 'orders'],
+      ['/quan-tri/dang-thue', 'adminOrders'],
+    ]) {
+      vi.stubGlobal('window', { location: { pathname, search: '' } });
+      const route = readRoute();
+      expect(route.screen).toBe(screen);
+      expect(route.params.get('filter')).toBe('Đang thuê');
+    }
+  });
 });
 
 describe('role-specific portal routing', () => {

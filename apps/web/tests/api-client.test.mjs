@@ -1000,6 +1000,7 @@ describe('web API client session and error handling', () => {
       subject: 'Hỏi lịch thử đồ',
       priority: 'NORMAL',
       status: 'IN_PROGRESS',
+      dueAt: '2026-11-19T03:00:00.000Z',
     };
     globalThis.fetch.mockImplementation(async (url) => {
       const { pathname } = new URL(url);
@@ -1011,6 +1012,7 @@ describe('web API client session and error handling', () => {
     });
     const { listCrmCases, saveCrmCase } = await import('../src/api/client.ts');
     const [current] = await listCrmCases('Quận 1');
+    expect(new Date(current.dueAt).toISOString()).toBe(apiCase.dueAt);
 
     await saveCrmCase({
       ...current,
@@ -1020,6 +1022,9 @@ describe('web API client session and error handling', () => {
 
     const statusCall = globalThis.fetch.mock.calls.find(([url]) => url.endsWith('/status'));
     expect(JSON.parse(statusCall[1].body)).toEqual({ status: 'RESOLVED' });
+    const casePatch = globalThis.fetch.mock.calls.find(([url, init]) =>
+      url.endsWith(`/crm/cases/${caseId}`) && init?.method === 'PATCH');
+    expect(JSON.parse(casePatch[1].body).dueAt).toBe(apiCase.dueAt);
     for (const [, init] of globalThis.fetch.mock.calls)
       expect(String(init?.body ?? '')).not.toContain('03/10');
   });

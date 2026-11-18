@@ -258,6 +258,7 @@ interface ApiCrmCase {
   priority: Case['priority'];
   status: Case['status'];
   ownerUserId?: string | null;
+  dueAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
   customer?: {
@@ -2216,6 +2217,12 @@ function historyLine(entry: ApiCaseHistory) {
 function interactionLine(entry: ApiInteraction) {
   return interactionText(entry, formatDate(entry.occurredAt) || 'Vừa cập nhật');
 }
+function localDateTimeInput(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
 function crmCaseFromApi(crmCase: ApiCrmCase): Case {
   const customerCode = crmCase.customer?.customerCode ?? crmCase.customerUserId;
   const branch = crmCase.branch?.name ?? branchNameById(crmCase.branchId);
@@ -2244,6 +2251,7 @@ function crmCaseFromApi(crmCase: ApiCrmCase): Case {
     priority: crmCase.priority,
     status: crmCase.status,
     owner: crmCase.owner?.user?.displayName ?? undefined,
+    dueAt: crmCase.dueAt ? localDateTimeInput(crmCase.dueAt) : undefined,
     history,
   };
 }
@@ -2405,6 +2413,7 @@ export async function saveCrmCase(value: Case): Promise<Case> {
         caseType: 'SUPPORT',
         priority: value.priority,
         ownerUserId: optionalText(await ownerUserId(value.owner, value.branch)),
+        dueAt: value.dueAt ? new Date(value.dueAt).toISOString() : undefined,
       }),
     });
     return crmCaseFromApi(created);
@@ -2421,6 +2430,7 @@ export async function saveCrmCase(value: Case): Promise<Case> {
       subject: value.subject,
       description: value.description || null,
       priority: value.priority,
+      dueAt: value.dueAt ? new Date(value.dueAt).toISOString() : null,
     }),
   });
   const nextOwnerId = await ownerUserId(value.owner, value.branch);

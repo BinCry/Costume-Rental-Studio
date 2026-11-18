@@ -23,7 +23,7 @@ import { isValidPhone } from '../utils/phone';
 import { rentalPeriodIssues } from '../utils/rental-period';
 import { useBranchOptions } from '../components/useBranchOptions';
 
-const steps = ['Thông tin thuê', 'Báo giá & liên hệ', 'Xem lại & gửi'];
+const steps = ['Chọn bộ, lịch & báo giá', 'Liên hệ & gửi'];
 type BookingLine = NonNullable<BookingDraft['items']>[number];
 const bookingDraftStorageKey = 'costume-rental.booking-draft.v1';
 const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
@@ -304,7 +304,7 @@ export function BookingPage({
     const dates = rentalPeriodIssues(draft.pickup, draft.returnAt);
     const dateIssue = dates.pickupIssue ?? dates.returnIssue;
     if (dateIssue) return dateIssue;
-    if (step === 0 || step === 2) {
+    if (step === 0 || step === 1) {
       if (!lines.length) return 'Hãy thêm ít nhất một mẫu trang phục.';
       if (totalQuantity < 1 || totalQuantity > 50 || lines.some((line) =>
         !Number.isInteger(line.quantity) || line.quantity < 1 ||
@@ -316,8 +316,12 @@ export function BookingPage({
       if (currentTime > 0 && new Date(draft.pickup).getTime() <= currentTime)
         return 'Giờ nhận đã qua. Hãy chọn thời điểm nhận trong tương lai.';
     }
-    if (step === 1 || step === 2) {
-      if (!quote) return 'Cần tải báo giá còn hiệu lực để tiếp tục.';
+    if (step === 0 && quote?.available === false)
+      return 'Không đủ bộ cho kỳ thuê này. Hãy đổi size, mẫu, chi nhánh hoặc thời gian.';
+    if (step === 0 && quote && promotionCode.trim().toUpperCase() !== appliedPromotionCode)
+      return 'Áp dụng mã ưu đãi để cập nhật báo giá trước khi tiếp tục.';
+    if (step === 1) {
+      if (!quote) return 'Cần xem báo giá trước khi tiếp tục.';
       if (quote.available === false) return 'Không đủ bộ cho kỳ thuê này. Hãy đổi size, mẫu, chi nhánh hoặc thời gian.';
       if (promotionCode.trim().toUpperCase() !== appliedPromotionCode)
         return 'Hãy áp dụng hoặc bỏ mã ưu đãi để cập nhật báo giá trước khi tiếp tục.';
@@ -334,12 +338,17 @@ export function BookingPage({
     }
     setIssue('');
     if (step === 0) {
+      if (apiMode && !customerAuthenticated) {
+        setIssue('Đăng nhập để xem báo giá và tiếp tục đặt thuê.');
+        return;
+      }
+      if (!quote) {
+        void loadQuote();
+        return;
+      }
       setStep(1);
-      if (apiMode && !customerAuthenticated) return;
-      void loadQuote();
       return;
     }
-    setStep((current) => Math.min(current + 1, 5));
   };
   const loadQuote = async (requestedPromotionCode = appliedPromotionCode) => {
     const dates = rentalPeriodIssues(draft.pickup, draft.returnAt);
@@ -588,7 +597,7 @@ export function BookingPage({
           <div className="panel-intro">
             <span className="step-number">0{step + 1}</span>
             <div>
-              <p className="eyebrow">CHẶNG {step + 1} / 3</p>
+              <p className="eyebrow">CHẶNG {step + 1} / 2</p>
               <h2 ref={stepHeadingRef} tabIndex={-1} className="booking-step-heading">
                 {steps[step]}
               </h2>
@@ -733,12 +742,12 @@ export function BookingPage({
                   )}
                 </div>
               )}
-              {step === 1 && (
+              {step === 0 && (
                 <div className="form-stack">
                   {apiMode && !customerAuthenticated ? (
                     <Feedback
                       tone="warning"
-                      title="Đăng nhập để tải báo giá"
+                      title="Đăng nhập để xem báo giá"
                       className="booking-auth-feedback"
                       action={
                         <div className="booking-auth-actions">
@@ -973,8 +982,9 @@ export function BookingPage({
                   />
                 </div>
               )}
-              {step === 2 && (
+              {step === 1 && (
                 <div className="confirm-summary">
+                  <h3>Phiếu tạm tính</h3>
                   <div>
                     <span>Trang phục · {totalQuantity} bộ</span>
                     <strong>{summaryLines.map((line) => `${line.name} · ${line.variant} × ${line.quantity}`).join('; ')}</strong>
@@ -1024,8 +1034,7 @@ export function BookingPage({
                     tone="warning"
                     title="Yêu cầu chưa giữ trang phục cho đến khi studio xác nhận."
                   >
-                    Sau khi Studio xác nhận, bạn có thể thanh toán qua payOS hoặc tại chi nhánh khi
-                    nhận đồ.
+                    Đây là số tiền dự kiến. Studio xác nhận đơn trước khi phát hành chứng từ và thu tiền.
                   </Feedback>
                 </div>
               )}
@@ -1049,9 +1058,9 @@ export function BookingPage({
             >
               {step === 0 ? 'Về catalog' : 'Quay lại'}
             </Button>
-            {step < 2 ? (
-              <Button onClick={next} disabled={loading || !!error || scenario === 'empty' || (step === 1 && quote?.available === false)}>
-                Đi tiếp <Icon name="arrow" size={18} />
+            {step === 0 ? (
+              <Button onClick={next} loading={busy} disabled={loading || !!error || scenario === 'empty' || !lines.length || quote?.available === false}>
+                {quote ? 'Liên hệ & gửi' : 'Xem báo giá'} <Icon name="arrow" size={18} />
               </Button>
             ) : (
               <Button

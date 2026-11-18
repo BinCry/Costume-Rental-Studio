@@ -182,6 +182,10 @@ export function readRoute(): Route {
     return { screen: 'notFound', params };
   }
   if (path === '/auth/google/callback') return { screen: 'login', params };
+  if (path === paths.active || path === paths.adminActive) {
+    if (!params.has('filter')) params.set('filter', 'Đang thuê');
+    return { screen: path === paths.adminActive ? 'adminOrders' : 'orders', params };
+  }
   if (path.startsWith('/don-cua-toi/')) {
     params.set('order', path.split('/')[2] ?? '');
     return { screen: 'myRentalDetail', params };
