@@ -42,3 +42,5 @@ Demo seed tạo hai chi nhánh, quyền/vai trò, 6 mẫu và 12 biến thể tr
 ```
 
 `down` giữ nguyên volume và dữ liệu. `seed` chỉ nạp demo khi database rỗng và luôn đồng bộ lại mật khẩu test cho 10 tài khoản mẫu. Container `migrate`, `seed` và `s3-init` ở trạng thái `Exited (0)` sau khi hoàn thành là bình thường. Script chỉ áp dụng mật khẩu nếu database URL trỏ chính xác tới `db/costume_local_test` trong mạng Docker local.
+
+Kế hoạch phạm vi, điều kiện bắt đầu và checklist automation: [kiểm thử web trên Docker local](../docs/qa/ke-hoach-kiem-thu-local-automation-2026-11-19.md).
