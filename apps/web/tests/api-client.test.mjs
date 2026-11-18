@@ -103,6 +103,7 @@ function stubQuoteApi() {
         success({ id: 'user-1', displayName: 'Chou', email: 'chou@example.test', roles: [] }),
       );
     if (path.includes('/api/v1/rentals/quotes')) return Promise.resolve(state.quote());
+    if (path.includes('/api/v1/public/rental-estimate')) return Promise.resolve(state.quote());
     throw new Error('Unexpected request ' + path);
   });
   return state;
@@ -1496,6 +1497,31 @@ describe('web API client session and error handling', () => {
     expect(quote.deposit).toBe(1250000);
     expect(quote.amountDueAtPickup).toBe(2060000);
     expect(quote.rental - quote.discount + quote.deposit).toBe(quote.amountDueAtPickup);
+  });
+
+  it('lets a guest see a server estimate without attaching customer identity', async () => {
+    const api = stubQuoteApi();
+    api.quote = () => success({
+      quoteExpiresAt: '2099-11-13T15:38:00.000Z',
+      policy: { versionCode: 'POLICY-2026-BUFFER-01', billingDayMode: 'ROLLING_24_HOURS' },
+      period: { billableDays: 2 },
+      items: [{ variantId: 'variant-pearl-l', dailyRentalPriceVnd: '450000',
+        depositAmountVnd: '1250000', rentalAmountVnd: '900000', availableUnits: 2 }],
+      promotion: null, subtotalVnd: '900000', discountVnd: '0',
+      rentalAmountVnd: '900000', depositVnd: '1250000', totalDueVnd: '2150000', available: true,
+    });
+    const { getQuote, listCatalog, createOrder } = await import('../src/api/client.ts');
+    await listCatalog();
+    const quote = await getQuote(quoteDraft, { publicEstimate: true });
+    expect(quote.amountDueAtPickup).toBe(2150000);
+    const request = globalThis.fetch.mock.calls.find(([url]) =>
+      String(url).includes('/api/v1/public/rental-estimate'));
+    expect(request).toBeDefined();
+    const body = JSON.parse(request[1].body);
+    expect(body).not.toHaveProperty('customerUserId');
+    expect(body).not.toHaveProperty('promotionCode');
+    expect(globalThis.fetch.mock.calls.some(([url]) => String(url).includes('/api/v1/auth/me'))).toBe(false);
+    await expect(createOrder(quoteDraft, quote)).rejects.toMatchObject({ code: 'API_CONTEXT_MISSING' });
   });
 
   it('tells the customer why a promotion code was rejected', async () => {

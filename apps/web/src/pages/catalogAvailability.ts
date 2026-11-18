@@ -1,4 +1,4 @@
-import { checkPublicAvailability } from '../api/client';
+import { checkPublicAvailabilityBatch } from '../api/client';
 import type { CatalogItem } from '../fixtures/types';
 
 export type CatalogAvailability = 'loading' | 'available' | 'unavailable' | 'error';
@@ -30,25 +30,33 @@ export async function checkCatalogAvailability(
       })),
   );
   const checks: { modelId: string; label: string; available: boolean | null }[] = [];
-  let cursor = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(5, variants.length) }, async () => {
-      while (cursor < variants.length) {
-        const index = cursor++;
-        const variant = variants[index];
-        try {
-          const result = await checkPublicAvailability(variant.variantId, branch, pickup, returnAt);
-          checks[index] = {
-            modelId: variant.modelId,
-            label: variant.label,
-            available: result.available,
-          };
-        } catch {
-          checks[index] = { modelId: variant.modelId, label: variant.label, available: null };
-        }
-      }
-    }),
-  );
+  for (let offset = 0; offset < variants.length; offset += 50) {
+    const batch = variants.slice(offset, offset + 50);
+    try {
+      const results = await checkPublicAvailabilityBatch(
+        batch.map((variant) => variant.variantId),
+        branch,
+        pickup,
+        returnAt,
+      );
+      const availability = new Map(results.map((result) => [result.variantId, result.available]));
+      checks.push(
+        ...batch.map((variant) => ({
+          modelId: variant.modelId,
+          label: variant.label,
+          available: availability.get(variant.variantId) ?? null,
+        })),
+      );
+    } catch {
+      checks.push(
+        ...batch.map((variant) => ({
+          modelId: variant.modelId,
+          label: variant.label,
+          available: null,
+        })),
+      );
+    }
+  }
 
   const values: Record<string, CatalogAvailability> = {};
   const availableVariants: Record<string, string[]> = {};

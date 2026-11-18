@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { rentalPickupDateSchema } from '../rentals/rental.schema.js';
+import { quoteSchema } from '../rentals/rental.schema.js';
 
 export const publicBranchListSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -36,6 +37,34 @@ export const publicAvailabilitySchema = z
     message: 'plannedDueAt must be after plannedStartAt',
   });
 
+export const publicAvailabilityBatchSchema = z
+  .object({
+    variantIds: z.array(z.uuid()).min(1).max(50),
+    pickupBranchId: z.uuid(),
+    plannedStartAt: rentalPickupDateSchema,
+    plannedDueAt: z.coerce.date(),
+  })
+  .strict()
+  .refine((value) => value.plannedDueAt > value.plannedStartAt, {
+    path: ['plannedDueAt'],
+    message: 'plannedDueAt must be after plannedStartAt',
+  });
+
+export const publicRentalEstimateSchema = z
+  .object({
+    pickupBranchId: z.uuid(),
+    plannedStartAt: rentalPickupDateSchema,
+    plannedDueAt: z.coerce.date(),
+    items: quoteSchema.shape.items,
+  })
+  .strict()
+  .refine((value) => value.plannedDueAt > value.plannedStartAt, {
+    path: ['plannedDueAt'],
+    message: 'plannedDueAt must be after plannedStartAt',
+  });
+
 export type PublicBranchListInput = z.infer<typeof publicBranchListSchema>;
 export type PublicCatalogListInput = z.infer<typeof publicCatalogListSchema>;
 export type PublicAvailabilityInput = z.infer<typeof publicAvailabilitySchema>;
+export type PublicAvailabilityBatchInput = z.infer<typeof publicAvailabilityBatchSchema>;
+export type PublicRentalEstimateInput = z.infer<typeof publicRentalEstimateSchema>;

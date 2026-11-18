@@ -380,7 +380,7 @@ export function CatalogPage({
   const dateRangeIssue = pickupIssue ?? returnIssue;
   const availabilityRequestEnabled =
     apiMode && !!branch && periodSelected && !dateRangeIssue && Boolean(data?.length);
-  const availabilityKey = JSON.stringify([branch, pickup, returnAt, size, color]);
+  const availabilityKey = JSON.stringify([branch, pickup, returnAt, category, size, color, search]);
   const currentApiAvailability =
     availabilityRequestEnabled && apiAvailability?.key === availabilityKey
       ? apiAvailability.values
@@ -394,11 +394,18 @@ export function CatalogPage({
   useEffect(() => {
     if (!availabilityRequestEnabled || !data?.length) return;
     let cancelled = false;
-    void checkCatalogAvailability(data, branch, pickup, returnAt, size, color).then((values) => {
-      if (!cancelled) setApiAvailability({ key: availabilityKey, ...values });
-    });
+    const visible = data.filter((item) =>
+      (category === 'Tất cả' || item.category === category) &&
+      item.name.toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi')),
+    );
+    const timer = window.setTimeout(() => {
+      void checkCatalogAvailability(visible, branch, pickup, returnAt, size, color).then((values) => {
+        if (!cancelled) setApiAvailability({ key: availabilityKey, ...values });
+      });
+    }, 350);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [
     apiMode,
@@ -406,10 +413,12 @@ export function CatalogPage({
     availabilityRequestEnabled,
     availabilityRetry,
     branch,
+    category,
     color,
     data,
     pickup,
     returnAt,
+    search,
     size,
   ]);
   const fixtureAvailabilityKnown =

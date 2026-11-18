@@ -674,7 +674,7 @@ export default function StudioApp() {
               ? 'Khách hàng'
               : 'Chưa được phân quyền';
   const requiresCustomerSession =
-    route.screen === 'booking' || route.screen === 'myRentals' || route.screen === 'myRentalDetail';
+    route.screen === 'myRentals' || route.screen === 'myRentalDetail';
   const requiresSession = productionApiMode && (staff || requiresCustomerSession);
   const sessionPending =
     requiresSession && (!apiSessionReady || (!!apiIdentity && !apiBranchesReady));

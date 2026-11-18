@@ -17,7 +17,7 @@ import { useFixtureResource } from '../components/useFixtureResource';
 import { branches, fixtureAdapter, fixtureCatalog, fixturePeriod } from '../fixtures/adapter';
 import { studioAdapter } from '../fixtures/studio';
 import type { BookingDraft, DemoScenario, QuoteSnapshot } from '../fixtures/types';
-import { apiEnabled, getOwnCustomerProfile, hasAccessToken } from '../api/client';
+import { apiEnabled, getOwnCustomerProfile, hasAccessToken, updateOwnCustomerProfile } from '../api/client';
 import { formatLocalDateTime } from '../utils/date-format';
 import { isValidPhone } from '../utils/phone';
 import { rentalPeriodIssues } from '../utils/rental-period';
@@ -26,6 +26,12 @@ import { useBranchOptions } from '../components/useBranchOptions';
 const steps = ['Chọn bộ, lịch & báo giá', 'Liên hệ & gửi'];
 type BookingLine = NonNullable<BookingDraft['items']>[number];
 const bookingDraftStorageKey = 'costume-rental.booking-draft.v1';
+function storeBookingDraft(draft: BookingDraft) {
+  window.sessionStorage.setItem(
+    bookingDraftStorageKey,
+    JSON.stringify({ savedAt: Date.now(), draft }),
+  );
+}
 const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
 function toLocalDateTimeInput(value: Date) {
   const pad = (part: number) => String(part).padStart(2, '0');
@@ -177,6 +183,7 @@ export function BookingPage({
   const [submittedId, setSubmittedId] = useState('');
   const quoteRequestRef = useRef(0);
   const submittingRef = useRef(false);
+  const savedContactRef = useRef<{ name: string; phone: string } | null>(null);
   const panelRef = useRef<HTMLElement>(null);
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
   const successHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -221,6 +228,7 @@ export function BookingPage({
     void getOwnCustomerProfile()
       .then((profile) => {
         if (!active) return;
+        savedContactRef.current = { name: profile.displayName, phone: profile.phone ?? '' };
         setDraft((current) => ({
           ...current,
           name: current.name.trim() ? current.name : profile.displayName,
@@ -257,13 +265,14 @@ export function BookingPage({
     return {
       ...line,
       variant: options.length && !options.some((option) => option.value === line.variant)
-        ? options[0].value : line.variant,
+        ? (apiMode ? '' : options[0].value) : line.variant,
     };
   });
   const totalQuantity = lines.reduce((sum, line) => sum + line.quantity, 0);
   const summaryLines = lines.map((line) => ({
     name: catalog.find((entry) => entry.id === line.costumeId)?.name ?? 'Mẫu chưa tải',
-    variant: choicesFor(line.costumeId).find((option) => option.value === line.variant)?.label ?? line.variant,
+    variant: choicesFor(line.costumeId).find((option) => option.value === line.variant)?.label ??
+      (line.variant || 'Chưa chọn size/màu'),
     quantity: line.quantity,
   }));
   const draft = {
@@ -306,6 +315,7 @@ export function BookingPage({
     if (dateIssue) return dateIssue;
     if (step === 0 || step === 1) {
       if (!lines.length) return 'Hãy thêm ít nhất một mẫu trang phục.';
+      if (lines.some((line) => !line.variant)) return 'Chọn size và màu cho từng bộ.';
       if (totalQuantity < 1 || totalQuantity > 50 || lines.some((line) =>
         !Number.isInteger(line.quantity) || line.quantity < 1 ||
         !catalog.some((entry) => entry.id === line.costumeId) ||
@@ -338,10 +348,6 @@ export function BookingPage({
     }
     setIssue('');
     if (step === 0) {
-      if (apiMode && !customerAuthenticated) {
-        setIssue('Đăng nhập để xem báo giá và tiếp tục đặt thuê.');
-        return;
-      }
       if (!quote) {
         void loadQuote();
         return;
@@ -368,6 +374,7 @@ export function BookingPage({
     try {
       const result = await fixtureAdapter.getQuote(draft, scenario, {
         promotionCode: normalizedCode || undefined,
+        publicEstimate: apiMode && !customerAuthenticated,
       });
       if (requestId === quoteRequestRef.current) {
         setQuote(result);
@@ -388,7 +395,9 @@ export function BookingPage({
         if (normalizedCode) {
           setPromotionIssue(message);
           try {
-            const withoutCode = await fixtureAdapter.getQuote(draft, scenario, {});
+            const withoutCode = await fixtureAdapter.getQuote(draft, scenario, {
+              publicEstimate: apiMode && !customerAuthenticated,
+            });
             if (requestId === quoteRequestRef.current) setQuote(withoutCode);
           } catch {
             // Keep the rejection reason; the quote stays empty when it cannot be loaded either.
@@ -410,6 +419,10 @@ export function BookingPage({
   };
   const submit = async () => {
     if (submittingRef.current || submittedId) return;
+    if (apiMode && !customerAuthenticated) {
+      continueToAuth('login');
+      return;
+    }
     const message = canContinue();
     if (message || !quote) {
       setIssue(message || 'Cần báo giá hợp lệ.');
@@ -419,6 +432,22 @@ export function BookingPage({
     setBusy(true);
     setIssue('');
     try {
+      if (apiMode) {
+        const contact = { name: draft.name.trim(), phone: draft.phone.trim() };
+        const saved = savedContactRef.current;
+        if (saved?.name !== contact.name || saved?.phone !== contact.phone) {
+          try {
+            await updateOwnCustomerProfile({
+              displayName: contact.name,
+              phone: contact.phone,
+            });
+            savedContactRef.current = contact;
+          } catch {
+            setIssue('Chưa lưu được thông tin liên hệ. Yêu cầu chưa được gửi; hãy thử lại.');
+            return;
+          }
+        }
+      }
       const id = await fixtureAdapter.submitBooking(draft, quote, scenario);
       try {
         window.sessionStorage.removeItem(bookingDraftStorageKey);
@@ -437,10 +466,7 @@ export function BookingPage({
   };
   const continueToAuth = (destination: 'login' | 'register') => {
     try {
-      window.sessionStorage.setItem(
-        bookingDraftStorageKey,
-        JSON.stringify({ savedAt: Date.now(), draft: draftState }),
-      );
+      storeBookingDraft(draftState);
       go(destination, { next: '/dat-thue?resume=1' });
     } catch {
       setIssue(
@@ -549,8 +575,7 @@ export function BookingPage({
                       onClick={() => {
                         updateLines([...lines, {
                           costumeId: entry.id,
-                          variant: entry.apiVariants?.[0]?.code ??
-                            `${entry.sizes[0]} / ${entry.colors[0]}`,
+                          variant: apiMode ? '' : `${entry.sizes[0]} / ${entry.colors[0]}`,
                           quantity: 1,
                         }]);
                       }}
@@ -710,9 +735,11 @@ export function BookingPage({
                                   <SelectField
                                     label={`Size / màu · dòng ${index + 1}`}
                                     value={line.variant}
+                                    error={issue && !line.variant ? 'Chọn size và màu cho bộ này.' : undefined}
                                     onChange={(event) => updateLines(lines.map((entry, row) => row === index
                                       ? { ...entry, variant: event.target.value } : entry))}
                                   >
+                                    {apiMode && <option value="">Chọn size / màu</option>}
                                     {choicesFor(line.costumeId).map((choice) => (
                                       <option key={choice.value} value={choice.value}>{choice.label}</option>
                                     ))}
@@ -744,26 +771,7 @@ export function BookingPage({
               )}
               {step === 0 && (
                 <div className="form-stack">
-                  {apiMode && !customerAuthenticated ? (
-                    <Feedback
-                      tone="warning"
-                      title="Đăng nhập để xem báo giá"
-                      className="booking-auth-feedback"
-                      action={
-                        <div className="booking-auth-actions">
-                          <Button variant="secondary" onClick={() => continueToAuth('login')}>
-                            Đăng nhập
-                          </Button>
-                          <Button variant="quiet" onClick={() => continueToAuth('register')}>
-                            Tạo tài khoản
-                          </Button>
-                        </div>
-                      }
-                    >
-                      Lựa chọn sẽ được giữ để tiếp tục sau khi đăng nhập.
-                    </Feedback>
-                  ) : (
-                    <div className="booking-quote-status" aria-live="polite">
+                  <div className="booking-quote-status" aria-live="polite">
                       {quoteIssue ? (
                         <Feedback
                           tone="danger"
@@ -821,18 +829,14 @@ export function BookingPage({
                                     : 'Chưa có báo giá'}
                             </strong>
                           </div>
-                          <Button
-                            variant="secondary"
-                            onClick={() => void loadQuote()}
-                            loading={busy}
-                          >
-                            <Icon name="refresh" size={18} />{' '}
-                            {quote ? 'Cập nhật báo giá' : apiMode ? 'Tải báo giá' : 'Tải báo giá xem thử'}
-                          </Button>
+                          {quote && (
+                            <Button variant="secondary" onClick={() => void loadQuote()} loading={busy}>
+                              <Icon name="refresh" size={18} /> Cập nhật báo giá
+                            </Button>
+                          )}
                         </div>
                       )}
-                    </div>
-                  )}
+                  </div>
                   {apiMode && customerAuthenticated && (
                     <details className="booking-promotion-details">
                       <summary>Mã ưu đãi {quote?.promotionCode ? `· ${quote.promotionCode}` : '(nếu có)'}</summary>
@@ -950,9 +954,17 @@ export function BookingPage({
               )}
               {step === 1 && (
                 <div className="form-stack">
+                  {apiMode && !customerAuthenticated && (
+                    <Feedback tone="info" title="Đăng nhập để gửi yêu cầu">
+                      Lựa chọn và thông tin đã nhập được giữ lại. Giá sẽ được xác nhận lại sau khi đăng nhập.{' '}
+                      <button type="button" className="text-button" onClick={() => continueToAuth('register')}>
+                        Tạo tài khoản
+                      </button>
+                    </Feedback>
+                  )}
                   <div className="two-fields">
                     <Field
-                      label="Họ và tên người thuê"
+                      label="Tên liên hệ"
                       placeholder="Ví dụ: Nguyễn An"
                       autoComplete="name"
                       value={draft.name}
@@ -973,6 +985,9 @@ export function BookingPage({
                       }
                     />
                   </div>
+                  {apiMode && customerAuthenticated && (
+                    <p className="inline-note">Tên và số điện thoại sẽ được lưu vào hồ sơ khi gửi yêu cầu.</p>
+                  )}
                   <TextAreaField
                     label="Ghi chú cho studio (không bắt buộc)"
                     rows={4}
@@ -1000,7 +1015,7 @@ export function BookingPage({
                     </strong>
                   </div>
                   <div>
-                    <span>Người thuê</span>
+                      <span>Liên hệ</span>
                     <strong>
                       {draft.name} · {draft.phone}
                     </strong>
@@ -1065,12 +1080,13 @@ export function BookingPage({
             ) : (
               <Button
                 onClick={() => {
-                  void submit();
+                  if (apiMode && !customerAuthenticated) continueToAuth('login');
+                  else void submit();
                 }}
                 loading={busy}
                 disabled={!quote}
               >
-                Gửi yêu cầu thuê <Icon name="arrow" size={18} />
+                {apiMode && !customerAuthenticated ? 'Đăng nhập để gửi' : 'Gửi yêu cầu thuê'} <Icon name="arrow" size={18} />
               </Button>
             )}
           </div>

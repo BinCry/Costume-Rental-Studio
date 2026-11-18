@@ -1,10 +1,10 @@
 const { afterEach, describe, expect, it, vi } = globalThis;
 
 vi.mock('../src/api/client.ts', () => ({
-  checkPublicAvailability: vi.fn(),
+  checkPublicAvailabilityBatch: vi.fn(),
 }));
 
-const { checkPublicAvailability } = await import('../src/api/client.ts');
+const { checkPublicAvailabilityBatch } = await import('../src/api/client.ts');
 const { checkCatalogAvailability } = await import('../src/pages/catalogAvailability.ts');
 
 afterEach(() => vi.resetAllMocks());
@@ -19,9 +19,10 @@ const catalogItem = {
 
 describe('catalog variant availability', () => {
   it('shows only the size and color variants confirmed for the selected period', async () => {
-    vi.mocked(checkPublicAvailability)
-      .mockResolvedValueOnce({ available: true })
-      .mockResolvedValueOnce({ available: false });
+    vi.mocked(checkPublicAvailabilityBatch).mockResolvedValue([
+      { variantId: 'variant-m-pink', available: true },
+      { variantId: 'variant-s-pink', available: false },
+    ]);
 
     const result = await checkCatalogAvailability(
       [catalogItem],
@@ -34,10 +35,13 @@ describe('catalog variant availability', () => {
 
     expect(result.values[catalogItem.id]).toBe('available');
     expect(result.availableVariants[catalogItem.id]).toEqual(['M / Hồng phấn']);
+    expect(checkPublicAvailabilityBatch).toHaveBeenCalledTimes(1);
   });
 
   it('filters the availability requests by selected size and color', async () => {
-    vi.mocked(checkPublicAvailability).mockResolvedValue({ available: true });
+    vi.mocked(checkPublicAvailabilityBatch).mockResolvedValue([
+      { variantId: 'variant-s-pink', available: true },
+    ]);
 
     const result = await checkCatalogAvailability(
       [catalogItem],
@@ -48,9 +52,9 @@ describe('catalog variant availability', () => {
       'Hồng phấn',
     );
 
-    expect(checkPublicAvailability).toHaveBeenCalledTimes(1);
-    expect(checkPublicAvailability).toHaveBeenCalledWith(
-      'variant-s-pink',
+    expect(checkPublicAvailabilityBatch).toHaveBeenCalledTimes(1);
+    expect(checkPublicAvailabilityBatch).toHaveBeenCalledWith(
+      ['variant-s-pink'],
       'Chi nhánh Quận 1',
       '2026-10-18T09:00',
       '2026-10-20T09:00',
@@ -69,11 +73,11 @@ describe('catalog variant availability', () => {
     );
 
     expect(result.values['model-without-variants']).toBe('error');
-    expect(checkPublicAvailability).not.toHaveBeenCalled();
+    expect(checkPublicAvailabilityBatch).not.toHaveBeenCalled();
   });
 
   it('keeps availability unknown when every variant check fails', async () => {
-    vi.mocked(checkPublicAvailability).mockRejectedValue(new Error('network error'));
+    vi.mocked(checkPublicAvailabilityBatch).mockRejectedValue(new Error('network error'));
 
     const result = await checkCatalogAvailability(
       [catalogItem],
@@ -86,5 +90,21 @@ describe('catalog variant availability', () => {
 
     expect(result.values[catalogItem.id]).toBe('error');
     expect(result.availableVariants[catalogItem.id]).toBeUndefined();
+  });
+
+  it('splits large catalogs into batches of at most 50 variants', async () => {
+    const apiVariants = Array.from({ length: 51 }, (_, index) => ({
+      id: `variant-${index}`, size: 'M', color: 'Đỏ',
+    }));
+    vi.mocked(checkPublicAvailabilityBatch).mockImplementation(async (ids) =>
+      ids.map((variantId) => ({ variantId, available: true })));
+
+    const result = await checkCatalogAvailability(
+      [{ id: 'large-model', apiVariants }],
+      'Chi nhánh Quận 1', '2026-10-18T09:00', '2026-10-20T09:00', 'Tất cả', 'Tất cả',
+    );
+    expect(checkPublicAvailabilityBatch).toHaveBeenCalledTimes(2);
+    expect(checkPublicAvailabilityBatch.mock.calls.map(([ids]) => ids.length)).toEqual([50, 1]);
+    expect(result.availableVariants['large-model']).toHaveLength(51);
   });
 });

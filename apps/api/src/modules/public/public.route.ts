@@ -2,11 +2,14 @@ import { Router } from 'express';
 
 import { AppError } from '../../common/errors/app-error.js';
 import { sendSuccess } from '../../common/http/response.js';
+import * as rentalService from '../rentals/rental.service.js';
 import {
   publicBranchListSchema,
+  publicAvailabilityBatchSchema,
   publicAvailabilitySchema,
   publicCatalogListSchema,
   publicResourceIdSchema,
+  publicRentalEstimateSchema,
 } from './public.schema.js';
 import * as service from './public.service.js';
 
@@ -44,6 +47,26 @@ publicRouter.get('/catalog/availability', async (req, res) =>
       parse(publicAvailabilitySchema.safeParse(req.query), 'Invalid public availability query'),
     ),
     'Public availability loaded',
+  ),
+);
+
+publicRouter.post('/catalog/availability/batch', async (req, res) =>
+  sendSuccess(
+    res,
+    await service.checkPublicAvailabilityBatch(
+      parse(publicAvailabilityBatchSchema.safeParse(req.body), 'Invalid public availability batch'),
+    ),
+    'Public availability loaded',
+  ),
+);
+
+publicRouter.post('/rental-estimate', async (req, res) =>
+  sendSuccess(
+    res,
+    await rentalService.createPublicRentalEstimate(
+      parse(publicRentalEstimateSchema.safeParse(req.body), 'Invalid public rental estimate'),
+    ),
+    'Rental estimate calculated',
   ),
 );
 

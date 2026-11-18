@@ -4,6 +4,7 @@ import { publicObjectUrl } from '../../common/storage/s3.js';
 import { prisma } from '../../database/prisma.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import type {
+  PublicAvailabilityBatchInput,
   PublicAvailabilityInput,
   PublicBranchListInput,
   PublicCatalogListInput,
@@ -25,7 +26,14 @@ export async function listPublicBranches(query: PublicBranchListInput) {
   const [items, totalItems] = await prisma.$transaction([
     prisma.branch.findMany({
       where,
-      select: { id: true, branchCode: true, name: true, address: true, phone: true, timezone: true },
+      select: {
+        id: true,
+        branchCode: true,
+        name: true,
+        address: true,
+        phone: true,
+        timezone: true,
+      },
       orderBy: [orderBy, { id: 'asc' }],
       ...pagination(query),
     }),
@@ -70,7 +78,17 @@ export async function listPublicVariants(query: PublicCatalogListInput) {
     status: 'ACTIVE',
     model: { is: { status: 'ACTIVE', category: { is: { status: 'ACTIVE' } } } },
     ...(query.modelId ? { modelId: query.modelId } : {}),
-    ...(query.categoryId ? { model: { is: { categoryId: query.categoryId, status: 'ACTIVE', category: { is: { status: 'ACTIVE' } } } } } : {}),
+    ...(query.categoryId
+      ? {
+          model: {
+            is: {
+              categoryId: query.categoryId,
+              status: 'ACTIVE',
+              category: { is: { status: 'ACTIVE' } },
+            },
+          },
+        }
+      : {}),
     ...(query.sizeCode ? { sizeCode: query.sizeCode } : {}),
     ...(query.colorCode ? { colorCode: query.colorCode } : {}),
     ...(query.search
@@ -150,12 +168,27 @@ export async function getPublicVariant(id: string) {
  * a concrete unit to an order.
  */
 export async function checkPublicAvailability(input: PublicAvailabilityInput) {
+  const [result] = await checkPublicAvailabilityBatch({
+    variantIds: [input.variantId],
+    pickupBranchId: input.pickupBranchId,
+    plannedStartAt: input.plannedStartAt,
+    plannedDueAt: input.plannedDueAt,
+  });
+  return result;
+}
+
+/** One request checks the visible variants using one branch/policy lookup. */
+export async function checkPublicAvailabilityBatch(input: PublicAvailabilityBatchInput) {
   const now = new Date();
-  const [branch, variant, policy] = await prisma.$transaction([
-    prisma.branch.findFirst({ where: { id: input.pickupBranchId, status: 'ACTIVE' }, select: { id: true } }),
-    prisma.costumeVariant.findFirst({
+  const variantIds = [...new Set(input.variantIds)];
+  const [branch, variants, policy] = await prisma.$transaction([
+    prisma.branch.findFirst({
+      where: { id: input.pickupBranchId, status: 'ACTIVE' },
+      select: { id: true },
+    }),
+    prisma.costumeVariant.findMany({
       where: {
-        id: input.variantId,
+        id: { in: variantIds },
         status: 'ACTIVE',
         model: { is: { status: 'ACTIVE', category: { is: { status: 'ACTIVE' } } } },
       },
@@ -171,51 +204,70 @@ export async function checkPublicAvailability(input: PublicAvailabilityInput) {
     }),
   ]);
   if (!branch) throw new AppError(404, 'BRANCH_NOT_FOUND', 'Branch not found');
-  if (!variant) throw new AppError(404, 'VARIANT_NOT_FOUND', 'Variant not found');
+  if (variants.length !== variantIds.length)
+    throw new AppError(404, 'VARIANT_NOT_FOUND', 'Variant not found');
   if (!policy) throw new AppError(404, 'POLICY_NOT_FOUND', 'No active rental policy');
-  const protectedUntil = new Date(
-    input.plannedDueAt.getTime() +
-      (Math.max(0, policy.lateReturnBufferMinutes) +
-        Math.max(
-          0,
-          variant.cleaningBufferMinutes ?? policy.defaultCleaningBufferMinutes,
-        )) *
-        60_000,
-  );
-
-  const availableUnits = await prisma.costumeUnit.count({
-    where: {
-      variantId: input.variantId,
-      currentBranchId: input.pickupBranchId,
-      operationalStatus: 'READY',
-      orderItems: {
-        none: {
-          OR: [
-            {
-              order: {
-                status: { in: ['CONFIRMED', 'PREPARING', 'READY_FOR_PICKUP', 'ACTIVE', 'RETURN_INSPECTION'] },
+  const countFor = (variant: (typeof variants)[number]) => {
+    const protectedUntil = new Date(
+      input.plannedDueAt.getTime() +
+        (Math.max(0, policy.lateReturnBufferMinutes) +
+          Math.max(0, variant.cleaningBufferMinutes ?? policy.defaultCleaningBufferMinutes)) *
+          60_000,
+    );
+    return prisma.costumeUnit.count({
+      where: {
+        variantId: variant.id,
+        currentBranchId: input.pickupBranchId,
+        operationalStatus: 'READY',
+        orderItems: {
+          none: {
+            OR: [
+              {
+                order: {
+                  status: {
+                    in: [
+                      'CONFIRMED',
+                      'PREPARING',
+                      'READY_FOR_PICKUP',
+                      'ACTIVE',
+                      'RETURN_INSPECTION',
+                    ],
+                  },
+                },
+                occupiedFrom: { lt: protectedUntil },
+                occupiedUntil: { gt: input.plannedStartAt },
               },
-              occupiedFrom: { lt: protectedUntil },
-              occupiedUntil: { gt: input.plannedStartAt },
-            },
-            {
-              allocationStatus: 'ACTIVE',
-              order: { status: { in: ['ACTIVE', 'RETURN_INSPECTION'] } },
-            },
-          ],
+              {
+                allocationStatus: 'ACTIVE',
+                order: { status: { in: ['ACTIVE', 'RETURN_INSPECTION'] } },
+              },
+            ],
+          },
+        },
+        blocks: {
+          none: {
+            status: { in: ['PLANNED', 'IN_PROGRESS'] },
+            blockedFrom: { lt: protectedUntil },
+            blockedUntil: { gt: input.plannedStartAt },
+          },
+        },
+        transferItems: {
+          none: { transfer: { status: { in: ['REQUESTED', 'APPROVED', 'IN_TRANSIT'] } } },
         },
       },
-      blocks: {
-        none: {
-          status: { in: ['PLANNED', 'IN_PROGRESS'] },
-          blockedFrom: { lt: protectedUntil },
-          blockedUntil: { gt: input.plannedStartAt },
-        },
-      },
-      transferItems: {
-        none: { transfer: { status: { in: ['REQUESTED', 'APPROVED', 'IN_TRANSIT'] } } },
-      },
-    },
+    });
+  };
+  const counts: number[] = [];
+  for (let offset = 0; offset < variants.length; offset += 10)
+    counts.push(...(await Promise.all(variants.slice(offset, offset + 10).map(countFor))));
+  const countById = new Map(variants.map((variant, index) => [variant.id, counts[index]]));
+  return variantIds.map((variantId) => {
+    const availableUnits = countById.get(variantId) ?? 0;
+    return {
+      variantId,
+      pickupBranchId: input.pickupBranchId,
+      available: availableUnits > 0,
+      availableUnits,
+    };
   });
-  return { variantId: input.variantId, pickupBranchId: input.pickupBranchId, available: availableUnits > 0, availableUnits };
 }

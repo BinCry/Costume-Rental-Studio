@@ -1270,6 +1270,31 @@ export async function checkPublicAvailability(
     availableUnits: number;
   }>('/api/v1/public/catalog/availability?' + query.toString());
 }
+export async function checkPublicAvailabilityBatch(
+  variantIds: string[],
+  branchName: string,
+  plannedStartAt: string,
+  plannedDueAt: string,
+) {
+  if (!branchIds.has(branchName)) await listBranches();
+  const pickupBranchId = branchIds.get(branchName);
+  if (!pickupBranchId)
+    throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không tìm thấy chi nhánh');
+  return request<{
+    variantId: string;
+    pickupBranchId: string;
+    available: boolean;
+    availableUnits: number;
+  }[]>('/api/v1/public/catalog/availability/batch', {
+    method: 'POST',
+    body: JSON.stringify({
+      variantIds,
+      pickupBranchId,
+      plannedStartAt: new Date(plannedStartAt).toISOString(),
+      plannedDueAt: new Date(plannedDueAt).toISOString(),
+    }),
+  });
+}
 function mapOrder(order: ApiOrder): Order {
   const branch = order.pickupBranch?.name ?? 'Chi nhánh chưa xác định';
   const orderItems = order.items ?? [];
@@ -1581,7 +1606,7 @@ function resolveBookingVariant(line: { costumeId: string; variant: string }) {
 
 export async function getQuote(
   draft: BookingDraft,
-  options: { customerCode?: string; channel?: string; promotionCode?: string } = {},
+  options: { customerCode?: string; channel?: string; promotionCode?: string; publicEstimate?: boolean } = {},
 ): Promise<QuoteSnapshot> {
   if (!branchIds.has(draft.branch)) await listBranches();
   const branchId = branchIds.get(draft.branch);
@@ -1595,10 +1620,12 @@ export async function getQuote(
   const variantIds = requestedLines.flatMap((line, index) =>
     Array.from({ length: line.quantity }, () => selectedVariants[index]!.id),
   );
-  const customerUserId = options.customerCode
-    ? customerRefs.get(options.customerCode)?.userId
-    : (await currentUser()).id;
-  if (!customerUserId)
+  const customerUserId = options.publicEstimate
+    ? undefined
+    : options.customerCode
+      ? customerRefs.get(options.customerCode)?.userId
+      : (await currentUser()).id;
+  if (!customerUserId && !options.publicEstimate)
     throw new ApiClientError(
       422,
       'CUSTOMER_CONTEXT_MISSING',
@@ -1606,15 +1633,16 @@ export async function getQuote(
     );
   const channel = options.channel ?? 'ONLINE';
   const promotionCode = options.promotionCode?.trim().toUpperCase();
-  const response = await request<ApiQuote>('/api/v1/rentals/quotes', {
+  const response = await request<ApiQuote>(
+    options.publicEstimate ? '/api/v1/public/rental-estimate' : '/api/v1/rentals/quotes', {
     method: 'POST',
     body: JSON.stringify({
-      customerUserId,
+      ...(customerUserId ? { customerUserId } : {}),
       pickupBranchId: branchId,
-      channel,
+      ...(options.publicEstimate ? {} : { channel }),
       plannedStartAt: new Date(draft.pickup).toISOString(),
       plannedDueAt: new Date(draft.returnAt).toISOString(),
-      ...(promotionCode ? { promotionCode } : {}),
+      ...(!options.publicEstimate && promotionCode ? { promotionCode } : {}),
       items: variantIds.map((variantId) => ({ variantId, accessories: [] })),
     }),
   });
@@ -1622,14 +1650,10 @@ export async function getQuote(
   const pricePerDay = numberValue(response.items[0]?.dailyRentalPriceVnd);
   const billingMode =
     response.policy.billingDayMode === 'ROLLING_24_HOURS' ? 'chu kỳ 24 giờ' : 'ngày lịch';
-  quoteRefs.set(quoteId, {
-    variantIds,
-    branchId,
-    customerUserId,
-    channel,
+  if (customerUserId) quoteRefs.set(quoteId, {
+    variantIds, branchId, customerUserId, channel,
     promotionCode: response.promotion?.code,
-    pickup: draft.pickup,
-    returnAt: draft.returnAt,
+    pickup: draft.pickup, returnAt: draft.returnAt,
   });
   return {
     id: quoteId,

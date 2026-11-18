@@ -31,16 +31,11 @@ test('public catalog stays usable at phone width without horizontal overflow', a
   await expect(page.getByRole('button', { name: 'Xem nhanh' }).first()).toBeVisible();
 });
 
-test('guest is routed from booking to account access before creating an order', async ({
+test('guest can open the rental estimate before account access', async ({
   page,
 }) => {
   await page.goto('/dat-thue');
-  await expect(page.getByText('Đăng nhập để tiếp tục')).toBeVisible();
-
-  await page.getByRole('link', { name: 'Tạo tài khoản' }).first().click();
-  await expect(page).toHaveURL(/\/dang-ky/);
-  await expect(page.getByRole('heading', { name: 'Tạo tài khoản khách' })).toBeVisible();
-  await expect(page.getByLabel('Email')).toBeVisible();
-  await expect(page.getByRole('textbox', { name: 'Mật khẩu', exact: true })).toBeVisible();
-  await expect(page.getByLabel('Nhập lại mật khẩu')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Gửi yêu cầu thuê' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Chọn bộ, lịch & báo giá' })).toBeVisible();
+  await expect(page.getByText('Đăng nhập để tiếp tục')).toHaveCount(0);
 });

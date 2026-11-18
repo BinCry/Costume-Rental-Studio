@@ -404,10 +404,10 @@ export const fixtureAdapter = {
   async getQuote(
     draft: BookingDraft,
     scenario: DemoScenario,
-    options: { customerCode?: string; channel?: string; promotionCode?: string } = {},
+    options: { customerCode?: string; channel?: string; promotionCode?: string; publicEstimate?: boolean } = {},
   ): Promise<QuoteSnapshot> {
     if (apiEnabled && (hasAccessToken() || !import.meta.env.DEV)) {
-      if (!hasAccessToken())
+      if (!hasAccessToken() && !options.publicEstimate)
         throw new FixtureIssue('AUTH_REQUIRED', 'Đăng nhập để lấy báo giá thuê từ máy chủ.');
       try {
         return await getApiQuote(draft, options);

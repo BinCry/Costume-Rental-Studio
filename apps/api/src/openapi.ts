@@ -988,6 +988,57 @@ export const openApiDocument = {
         },
       },
     },
+    '/public/catalog/availability/batch': {
+      post: {
+        tags: ['Catalog'],
+        summary: 'Check up to 50 public variants for one branch and rental period',
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: {
+            type: 'object',
+            required: ['variantIds', 'pickupBranchId', 'plannedStartAt', 'plannedDueAt'],
+            properties: {
+              variantIds: { type: 'array', minItems: 1, maxItems: 50, items: { type: 'string', format: 'uuid' } },
+              pickupBranchId: { type: 'string', format: 'uuid' },
+              plannedStartAt: { type: 'string', format: 'date-time' },
+              plannedDueAt: { type: 'string', format: 'date-time' },
+            },
+          } } },
+        },
+        responses: {
+          '200': { description: 'Availability summaries returned without physical unit ids' },
+          '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+    },
+    '/public/rental-estimate': {
+      post: {
+        tags: ['Rentals'],
+        summary: 'Calculate a guest rental estimate without customer identity or promotion',
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: {
+            type: 'object',
+            required: ['pickupBranchId', 'plannedStartAt', 'plannedDueAt', 'items'],
+            properties: {
+              pickupBranchId: { type: 'string', format: 'uuid' },
+              plannedStartAt: { type: 'string', format: 'date-time' },
+              plannedDueAt: { type: 'string', format: 'date-time' },
+              items: { type: 'array', minItems: 1, maxItems: 50, items: {
+                type: 'object', required: ['variantId'], properties: {
+                  variantId: { type: 'string', format: 'uuid' },
+                  accessories: { type: 'array', items: { type: 'object' } },
+                },
+              } },
+            },
+          } } },
+        },
+        responses: {
+          '200': { description: 'Guest estimate and availability calculated; no inventory held' },
+          '404': { $ref: '#/components/responses/NotFound' },
+        },
+      },
+    },
     '/rentals/quotes': {
       post: {
         tags: ['Rentals'],

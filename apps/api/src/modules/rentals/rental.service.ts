@@ -13,6 +13,7 @@ import {
   type AuthenticatedActor,
 } from '../auth/authorization.js';
 import { lockActiveBranch } from '../branches/branch.service.js';
+import type { PublicRentalEstimateInput } from '../public/public.schema.js';
 import {
   damageDueVnd,
   depositDueVnd,
@@ -44,6 +45,7 @@ const occupiedStatuses = [
   'RETURN_INSPECTION',
 ] satisfies OrderStatus[];
 const mutableStatus: OrderStatus = 'PENDING_CONFIRMATION';
+type PricingInput = Pick<CreateOrderInput, 'pickupBranchId' | 'plannedStartAt' | 'plannedDueAt' | 'items'>;
 
 function includeOrder() {
   return {
@@ -310,7 +312,7 @@ async function assertUnitAvailableForPeriod(
   if (overlap || blocked || transfer || activeAllocation)
     throw new AppError(409, 'UNIT_UNAVAILABLE', 'Unit is already reserved or unavailable');
 }
-async function pricedItems(tx: Prisma.TransactionClient, input: CreateOrderInput) {
+async function pricedItems(tx: Prisma.TransactionClient, input: PricingInput) {
   // Each order item is one physical unit, so the same variant may repeat to rent several units.
   const ids = [...new Set(input.items.map((item) => item.variantId))];
   const variants = await tx.costumeVariant.findMany({
@@ -355,7 +357,7 @@ function assertRentalStartsInFuture(plannedStartAt: Date) {
 
 async function availabilityForQuote(
   tx: Prisma.TransactionClient,
-  input: QuoteInput,
+  input: PricingInput,
   variants: Awaited<ReturnType<typeof pricedItems>>['variants'],
   lateReturnBufferMinutes: number,
   defaultCleaningBufferMinutes: number,
@@ -418,23 +420,31 @@ export async function createQuote(actor: AuthenticatedActor, input: QuoteInput) 
     });
   } else assertPermission(actor, { module: 'rentals', action: 'manage', scope: 'OWN' });
 
+  return calculateQuote(input, input);
+}
+
+export async function createPublicRentalEstimate(input: PublicRentalEstimateInput) {
+  assertRentalStartsInFuture(input.plannedStartAt);
+  return calculateQuote(input);
+}
+
+async function calculateQuote(input: PricingInput, promotionInput?: QuoteInput) {
   return prisma.$transaction(async (tx) => {
     await lockActiveBranch(tx, input.pickupBranchId);
-    const customer = await tx.customer.findUnique({
-      where: { userId: input.customerUserId },
-      select: { userId: true },
-    });
-    if (!customer) throw new AppError(404, 'CUSTOMER_NOT_FOUND', 'Customer not found');
+    if (promotionInput) {
+      const customer = await tx.customer.findUnique({
+        where: { userId: promotionInput.customerUserId },
+        select: { userId: true },
+      });
+      if (!customer) throw new AppError(404, 'CUSTOMER_NOT_FOUND', 'Customer not found');
+    }
     const { policy, days, variants, subtotalVnd, depositVnd, quantities } = await pricedItems(
       tx,
       input,
     );
-    const { promotion, discount } = await resolvePromotion(
-      tx,
-      input,
-      input.customerUserId,
-      subtotalVnd,
-    );
+    const { promotion, discount } = promotionInput
+      ? await resolvePromotion(tx, promotionInput, promotionInput.customerUserId, subtotalVnd)
+      : { promotion: null, discount: 0n };
     const availability = await availabilityForQuote(
       tx,
       input,

@@ -1,5 +1,7 @@
 # Audit UI/UX toàn web — giảm thao tác và ưu tiên nội dung công việc
 
+Xem thêm [audit hành trình khách thuê ngày 18/11](audit-hanh-trinh-khach-thue-2026-11-18.md) cho các ca khách chưa đăng nhập, báo giá, nhiều size, liên hệ và thanh toán.
+
 Ngày: 17/11/2026 · Phạm vi: web khách hàng, nhân viên, quản trị. Đây là audit mới trên mã nguồn `main` sau tích hợp API và ảnh màn Đơn thuê do người dùng cung cấp. Báo cáo nghiệm thu fixture ngày 04/10/2026 không được dùng làm bằng chứng rằng bản production hiện tại đã đạt UX.
 
 ## Phương pháp và giới hạn
