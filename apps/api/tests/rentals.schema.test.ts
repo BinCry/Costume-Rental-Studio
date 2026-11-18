@@ -48,6 +48,21 @@ describe('rental order schemas', () => {
     expect(createOrderSchema.safeParse({ ...order, contactPhone: '123' }).success).toBe(false);
   });
 
+  it('accepts the quote values a customer confirmed on order creation', () => {
+    const expectedQuote = {
+      policyVersionId: '10000000-0000-4000-8000-000000000006',
+      subtotalVnd: 200000,
+      depositVnd: 300000,
+      discountVnd: 0,
+      totalDueVnd: 500000,
+      items: [{ variantId, dailyRentalPriceVnd: 100000, depositAmountVnd: 300000 }],
+    };
+    const parsed = createOrderSchema.safeParse({ ...order, expectedQuote });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.expectedQuote?.totalDueVnd).toBe(500000n);
+    expect(quoteSchema.safeParse({ ...order, expectedQuote }).success).toBe(false);
+  });
+
   it('rejects a past pickup for orders, quotes and both availability endpoints', () => {
     const plannedStartAt = new Date(Date.now() - 86_400_000).toISOString();
     const availability = {

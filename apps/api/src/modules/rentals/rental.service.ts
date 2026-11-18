@@ -744,13 +744,28 @@ export async function createOrder(actor: AuthenticatedActor, input: CreateOrderI
       select: { userId: true, user: { select: { displayName: true, phone: true } } },
     });
     if (!customer) throw new AppError(404, 'CUSTOMER_NOT_FOUND', 'Customer not found');
-    const { policy, days, variants, subtotalVnd: subtotal } = await pricedItems(tx, input);
+    const { policy, days, variants, subtotalVnd: subtotal, depositVnd } = await pricedItems(tx, input);
     const { promotion, discount } = await resolvePromotion(
       tx,
       input,
       input.customerUserId,
       subtotal,
     );
+    const expected = input.expectedQuote;
+    if (expected && (
+      expected.policyVersionId !== policy.id ||
+      expected.subtotalVnd !== subtotal ||
+      expected.depositVnd !== depositVnd ||
+      expected.discountVnd !== discount ||
+      expected.totalDueVnd !== subtotal - discount + depositVnd ||
+      expected.items.length !== variants.length ||
+      variants.some((variant) => {
+        const line = expected.items.find((item) => item.variantId === variant.id);
+        return line?.dailyRentalPriceVnd !== variant.dailyRentalPriceVnd ||
+          line?.depositAmountVnd !== variant.depositAmountVnd;
+      })
+    ))
+      throw new AppError(409, 'QUOTE_CHANGED', 'Rental quote changed before order creation');
     const created = await tx.rentalOrder.create({
       data: {
         orderCode: orderCode(),

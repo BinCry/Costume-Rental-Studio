@@ -1327,7 +1327,7 @@ export const openApiDocument = {
         security: [{ bearerAuth: [] }],
         summary: 'Create a rental order in PENDING_CONFIRMATION',
         description:
-          'Optional contactName and contactPhone record the contact chosen for this order. When omitted, the current customer profile is copied. Later profile edits do not alter the order snapshot.',
+          'Optional contactName and contactPhone record the contact chosen for this order. When omitted, the current customer profile is copied. Later profile edits do not alter the order snapshot. Optional expectedQuote rejects changed prices or policy with QUOTE_CHANGED (409).',
         responses: {
           '201': { description: 'Rental order created' },
           '400': { $ref: '#/components/responses/BadRequest' },

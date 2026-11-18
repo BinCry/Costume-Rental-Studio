@@ -180,6 +180,26 @@ describe('renting several units of the same variant', () => {
     expect(created.data.contactPhone).toBe('+84901234567');
   });
 
+  it('creates an order only when the price and policy still match the confirmed quote', async () => {
+    const tx = transaction({ [variantId]: 1 });
+    const expectedQuote = {
+      policyVersionId: '10000000-0000-4000-8000-000000000007',
+      subtotalVnd: 200_000n,
+      depositVnd: 300_000n,
+      discountVnd: 0n,
+      totalDueVnd: 500_000n,
+      items: [{ variantId, dailyRentalPriceVnd: 100_000n, depositAmountVnd: 300_000n }],
+    };
+    await service.createOrder(actor, { ...input([variantId]), expectedQuote });
+    expect(tx.rentalOrder.create).toHaveBeenCalledOnce();
+
+    tx.rentalOrder.create.mockClear();
+    await expect(service.createOrder(actor, {
+      ...input([variantId]), expectedQuote: { ...expectedQuote, totalDueVnd: 600_000n },
+    })).rejects.toMatchObject({ code: 'QUOTE_CHANGED', statusCode: 409 });
+    expect(tx.rentalOrder.create).not.toHaveBeenCalled();
+  });
+
   it('still rejects an unknown variant', async () => {
     const tx = transaction({});
     tx.costumeVariant.findMany.mockResolvedValue([]);

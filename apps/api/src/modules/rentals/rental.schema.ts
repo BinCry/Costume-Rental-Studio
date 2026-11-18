@@ -53,8 +53,20 @@ const orderBase = z
     message: 'plannedDueAt must be after plannedStartAt',
   });
 
-export const createOrderSchema = orderBase.safeExtend({ plannedStartAt: rentalPickupDateSchema });
-export const quoteSchema = createOrderSchema;
+export const quoteSchema = orderBase.safeExtend({ plannedStartAt: rentalPickupDateSchema });
+const expectedQuoteSchema = z.object({
+  policyVersionId: z.uuid(),
+  subtotalVnd: z.coerce.bigint().nonnegative(),
+  depositVnd: z.coerce.bigint().nonnegative(),
+  discountVnd: z.coerce.bigint().nonnegative(),
+  totalDueVnd: z.coerce.bigint().nonnegative(),
+  items: z.array(z.object({
+    variantId: z.uuid(),
+    dailyRentalPriceVnd: z.coerce.bigint().nonnegative(),
+    depositAmountVnd: z.coerce.bigint().nonnegative(),
+  }).strict()).min(1).max(50),
+}).strict();
+export const createOrderSchema = quoteSchema.safeExtend({ expectedQuote: expectedQuoteSchema.optional() });
 export const updateOrderSchema = orderBase.extend({
   expectedVersion: z.coerce.number().int().positive(),
 });
