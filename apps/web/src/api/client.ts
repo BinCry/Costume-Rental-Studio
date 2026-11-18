@@ -83,6 +83,7 @@ interface ApiBranch {
 interface ApiQuote {
   quoteExpiresAt: string;
   policy: {
+    id?: string;
     versionCode?: string;
     billingDayMode?: string;
     quoteValidHours?: number;
@@ -660,6 +661,8 @@ function apiErrorMessage(status: number, code: string) {
 
     IDEMPOTENCY_CONFLICT:
       'Yêu cầu đã thay đổi so với lần gửi trước. Hãy tải lại đơn và kiểm tra giao dịch.',
+    QUOTE_CHANGED: 'Báo giá đã đổi trước khi tạo yêu cầu. Hãy xem lại giá mới rồi gửi lại.',
+    QUOTE_CONTEXT_MISSING: 'Hãy tải lại báo giá trước khi gửi yêu cầu.',
     INVALID_ORDER_TRANSITION: 'Đơn đã chuyển sang trạng thái khác. Hãy tải lại trước khi thao tác.',
     CONTACT_CONFLICT:
       'Số điện thoại hoặc email này đã được dùng cho tài khoản khác. Hãy tìm hồ sơ khách sẵn có hoặc nhập thông tin khác.',
@@ -1687,6 +1690,7 @@ export async function getQuote(
     promotionCode: response.promotion?.code,
     amountDueAtPickup: numberValue(response.totalDueVnd),
     policy: 'Chính sách ' + (response.policy.versionCode ?? 'hiện hành') + ' · do máy chủ tính',
+    policyVersionId: response.policy.id,
     lateGraceMinutes: response.policy.lateGraceMinutes ?? 0,
     lateFeePercentPerDay: Number(response.policy.lateFeePercentPerDay ?? 0),
   };
@@ -1707,6 +1711,8 @@ export async function createOrder(
       'API_CONTEXT_MISSING',
       'Thiếu khách, mẫu hoặc chi nhánh; hãy tải lại báo giá.',
     );
+  if (!quote.policyVersionId || !quote.lines?.length)
+    throw new ApiClientError(422, 'QUOTE_CONTEXT_MISSING', 'Hãy tải lại báo giá trước khi gửi.');
   const currentIds = bookingItems(draft).flatMap((line) => {
     const variant = resolveBookingVariant(line);
     return Array.from({ length: line.quantity }, () => variant?.id);
@@ -1727,6 +1733,18 @@ export async function createOrder(
       customerNote: draft.note || undefined,
       contactName: draft.name.trim(),
       contactPhone: draft.phone.trim(),
+      expectedQuote: {
+        policyVersionId: quote.policyVersionId,
+        subtotalVnd: quote.rental,
+        depositVnd: quote.deposit,
+        discountVnd: quote.discount,
+        totalDueVnd: quote.amountDueAtPickup,
+        items: quote.lines.map((line) => ({
+          variantId: line.variantId,
+          dailyRentalPriceVnd: line.pricePerDay,
+          depositAmountVnd: line.deposit,
+        })),
+      },
       promotionCode: reference.promotionCode,
       items: variantIds.map((variantId) => ({ variantId, accessories: [] })),
     }),

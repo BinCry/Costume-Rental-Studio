@@ -28,6 +28,7 @@ describe('reconfirming a rental quote before sending', () => {
     ['availability', { available: false }],
     ['promotion', { discount: 30000, amountDueAtPickup: 470000, promotionCode: 'SALE' }],
     ['policy', { policy: 'V2' }],
+    ['policy version', { policyVersionId: 'policy-id-2' }],
     ['late fee', { lateFeePercentPerDay: 30 }],
     ['per-size price', { lines: [{ ...baseline.lines[0], pricePerDay: 160000 }] }],
   ])('requires review when %s changes', (_label, change) => {

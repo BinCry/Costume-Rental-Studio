@@ -182,6 +182,7 @@ export interface QuoteSnapshot {
   promotionCode?: string;
   amountDueAtPickup: number;
   policy: string;
+  policyVersionId?: string;
   lateGraceMinutes?: number;
   lateFeePercentPerDay?: number;
 }

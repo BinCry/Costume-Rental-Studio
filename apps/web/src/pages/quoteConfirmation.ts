@@ -19,6 +19,7 @@ export function quoteNeedsConfirmation(previous: QuoteSnapshot, current: QuoteSn
     previous.amountDueAtPickup !== current.amountDueAtPickup ||
     previous.daysLabel !== current.daysLabel ||
     previous.policy !== current.policy ||
+    previous.policyVersionId !== current.policyVersionId ||
     previous.lateGraceMinutes !== current.lateGraceMinutes ||
     previous.lateFeePercentPerDay !== current.lateFeePercentPerDay ||
     previous.promotionCode !== current.promotionCode ||

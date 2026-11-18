@@ -1535,24 +1535,39 @@ describe('web API client session and error handling', () => {
     const api = stubQuoteApi();
     api.quote = () => success({
       quoteExpiresAt: '2099-11-13T15:38:00.000Z',
-      policy: { versionCode: 'POLICY-1', billingDayMode: 'ROLLING_24_HOURS' },
+      policy: { id: '10000000-0000-4000-8000-000000000006',
+        versionCode: 'POLICY-1', billingDayMode: 'ROLLING_24_HOURS' },
       period: { billableDays: 2 },
       items: [{ variantId: 'variant-pearl-l', dailyRentalPriceVnd: '450000',
         depositAmountVnd: '1250000', rentalAmountVnd: '900000', availableUnits: 1 }],
       promotion: null, subtotalVnd: '900000', discountVnd: '0',
       rentalAmountVnd: '900000', depositVnd: '1250000', totalDueVnd: '2150000', available: true,
     });
-    api.order = () => success({ id: 'order-id', orderCode: 'ORD-CONTACT-1', items: [] });
+    api.order = () => error(409, 'QUOTE_CHANGED', 'Rental quote changed before order creation');
     const { getQuote, listCatalog, createOrder } = await import('../src/api/client.ts');
     await listCatalog();
     const quote = await getQuote(quoteDraft);
-    await expect(createOrder({ ...quoteDraft, name: 'Người nhận', phone: '0909 998 877' }, quote))
+    const draft = { ...quoteDraft, name: 'Người nhận', phone: '0909 998 877' };
+    await expect(createOrder(draft, quote)).rejects.toMatchObject({
+      code: 'QUOTE_CHANGED',
+      message: 'Báo giá đã đổi trước khi tạo yêu cầu. Hãy xem lại giá mới rồi gửi lại.',
+    });
+    api.order = () => success({ id: 'order-id', orderCode: 'ORD-CONTACT-1', items: [] });
+    await expect(createOrder(draft, quote))
       .resolves.toBe('ORD-CONTACT-1');
     const request = globalThis.fetch.mock.calls.find(([url]) =>
       String(url).includes('/api/v1/rentals/orders'));
     expect(JSON.parse(request[1].body)).toMatchObject({
       contactName: 'Người nhận',
       contactPhone: '0909 998 877',
+      expectedQuote: {
+        policyVersionId: '10000000-0000-4000-8000-000000000006',
+        subtotalVnd: 900000,
+        depositVnd: 1250000,
+        totalDueVnd: 2150000,
+        items: [{ variantId: 'variant-pearl-l', dailyRentalPriceVnd: 450000,
+          depositAmountVnd: 1250000 }],
+      },
     });
   });
 

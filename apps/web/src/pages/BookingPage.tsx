@@ -454,7 +454,14 @@ export function BookingPage({
       else onCustomerCreated?.(studioAdapter.recordBooking(id, draft, quote));
       setSubmittedId(id);
     } catch (caught) {
-      setIssue(caught instanceof Error ? caught.message : 'Chưa gửi được yêu cầu.');
+      if (caught && typeof caught === 'object' && 'code' in caught &&
+          caught.code === 'QUOTE_CHANGED') {
+        setStep(0);
+        await loadQuote();
+        setIssue('Báo giá đã đổi trước khi tạo yêu cầu. Hãy xem lại giá mới rồi gửi lại.');
+      } else {
+        setIssue(caught instanceof Error ? caught.message : 'Chưa gửi được yêu cầu.');
+      }
     } finally {
       submittingRef.current = false;
       setBusy(false);
