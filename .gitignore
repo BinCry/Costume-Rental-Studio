@@ -8,4 +8,5 @@ apps/try-on/node_modules/
 apps/web/public/try-on/
 .env
 .env.local
+local-test/.env
 *.log

@@ -2,13 +2,20 @@
 .github
 .husky
 .vscode
+**/node_modules
 **/.env
 **/.env.*
 !**/.env.example
-**/node_modules
 **/dist
 **/coverage
 **/test-results
+**/.cache
+**/__pycache__
+apps/web/public/try-on
+output
+tmp
 docs
+plans
+Tài liệu
+local-test/.env
 *.log
-
