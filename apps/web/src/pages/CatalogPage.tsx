@@ -23,6 +23,11 @@ import { rentalPeriodIssues } from '../utils/rental-period';
 import { checkCatalogAvailability, type CatalogAvailability } from './catalogAvailability';
 
 const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
+type CatalogSort = 'default' | 'price-asc' | 'price-desc' | 'name';
+function catalogSortFromUrl(value: string | null): CatalogSort {
+  return value === 'price-asc' || value === 'price-desc' || value === 'name'
+    ? value : 'default';
+}
 
 interface AvailabilitySnapshot {
   key: string;
@@ -355,6 +360,8 @@ export function CatalogPage({
   const [size, setSize] = useState(initialContext.get('size') ?? 'Tất cả');
   const [color, setColor] = useState(initialContext.get('color') ?? 'Tất cả');
   const [search, setSearch] = useState(initialContext.get('search') ?? '');
+  const [sort, setSort] = useState<CatalogSort>(() => catalogSortFromUrl(initialContext.get('sort')));
+  const normalizedSearch = search.trim().toLocaleLowerCase('vi');
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<CatalogItem | null>(null);
   const [apiAvailability, setApiAvailability] = useState<AvailabilitySnapshot>();
@@ -362,7 +369,7 @@ export function CatalogPage({
   const previewRef = useRef<HTMLElement>(null);
   const previewTriggerRef = useRef<HTMLButtonElement>(null);
   const { loading, data, error, retry } = useFixtureResource(scenario, loadCatalog);
-  const context = { branch, pickup, returnAt, category, size, color, search };
+  const context = { branch, pickup, returnAt, category, size, color, search, sort };
   useEffect(() => {
     if (window.location.pathname !== '/') return;
     const params = new URLSearchParams();
@@ -372,15 +379,16 @@ export function CatalogPage({
     if (category !== 'Tất cả') params.set('category', category);
     if (size !== 'Tất cả') params.set('size', size);
     if (color !== 'Tất cả') params.set('color', color);
-    if (search) params.set('search', search);
+    if (normalizedSearch) params.set('search', search.trim());
+    if (sort !== 'default') params.set('sort', sort);
     window.history.replaceState(null, '', `/${params.toString() ? `?${params}` : ''}`);
-  }, [branch, pickup, returnAt, category, size, color, search]);
+  }, [branch, pickup, returnAt, category, size, color, search, normalizedSearch, sort]);
   const periodSelected = !!pickup && !!returnAt;
   const { pickupIssue, returnIssue } = rentalPeriodIssues(pickup, returnAt);
   const dateRangeIssue = pickupIssue ?? returnIssue;
   const availabilityRequestEnabled =
     apiMode && !!branch && periodSelected && !dateRangeIssue && Boolean(data?.length);
-  const availabilityKey = JSON.stringify([branch, pickup, returnAt, category, size, color, search]);
+  const availabilityKey = JSON.stringify([branch, pickup, returnAt, category, size, color, normalizedSearch]);
   const currentApiAvailability =
     availabilityRequestEnabled && apiAvailability?.key === availabilityKey
       ? apiAvailability.values
@@ -396,7 +404,7 @@ export function CatalogPage({
     let cancelled = false;
     const visible = data.filter((item) =>
       (category === 'Tất cả' || item.category === category) &&
-      item.name.toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi')),
+      item.name.toLocaleLowerCase('vi').includes(normalizedSearch),
     );
     const timer = window.setTimeout(() => {
       void checkCatalogAvailability(visible, branch, pickup, returnAt, size, color).then((values) => {
@@ -418,7 +426,7 @@ export function CatalogPage({
     data,
     pickup,
     returnAt,
-    search,
+    normalizedSearch,
     size,
   ]);
   const fixtureAvailabilityKnown =
@@ -441,8 +449,18 @@ export function CatalogPage({
             (color === 'Tất cả' || variant.color === color))
         : (size === 'Tất cả' || item.sizes.includes(size)) &&
           (color === 'Tất cả' || item.colors.includes(color))) &&
-      item.name.toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi')),
+      item.name.toLocaleLowerCase('vi').includes(normalizedSearch),
   );
+  if (sort !== 'default') {
+    filtered.sort((first, second) => {
+      const difference = sort === 'name'
+        ? first.name.localeCompare(second.name, 'vi')
+        : sort === 'price-desc'
+          ? second.priceFrom - first.priceFrom
+          : first.priceFrom - second.priceFrom;
+      return difference || first.name.localeCompare(second.name, 'vi') || first.id.localeCompare(second.id);
+    });
+  }
   const hasActiveFilters = category !== 'Tất cả' || size !== 'Tất cả' ||
     color !== 'Tất cả' || Boolean(search.trim());
   const reset = () => {
@@ -540,12 +558,6 @@ export function CatalogPage({
             <div className="filter-heading">
               <h3>Bộ lọc</h3>
             </div>
-            <Field
-              label="Tìm trang phục"
-              placeholder="Tên mẫu bạn thích"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
             <SelectField
               label="Loại trang phục"
               value={category}
@@ -575,7 +587,38 @@ export function CatalogPage({
             </SelectField>
           </aside>
           <div className="catalog-results">
+            <div className="catalog-controls">
+              <Field
+                label="Tìm trang phục"
+                type="search"
+                placeholder="Tên mẫu trang phục"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+              <SelectField
+                label="Sắp xếp"
+                value={sort}
+                onChange={(event) => setSort(event.target.value as CatalogSort)}
+              >
+                <option value="default">Mặc định</option>
+                <option value="price-asc">Giá thấp trước</option>
+                <option value="price-desc">Giá cao trước</option>
+                <option value="name">Tên A–Z</option>
+              </SelectField>
+              <Button
+                variant="secondary"
+                className="filter-toggle"
+                aria-expanded={filterOpen}
+                aria-controls="catalog-filters"
+                onClick={() => setFilterOpen(!filterOpen)}
+              >
+                <Icon name="filter" size={18} /> Bộ lọc
+              </Button>
+            </div>
             <div className="result-toolbar">
+              <span className="catalog-mobile-count" role="status">
+                {loading ? 'Đang tải mẫu…' : `${filtered.length} mẫu trang phục`}
+              </span>
               <div className="active-chips">
                 <span className="chip">
                   <Icon name="pin" size={15} />
@@ -595,15 +638,6 @@ export function CatalogPage({
                 {search.trim() && <button type="button" className="chip chip-filter" onClick={() => setSearch('')} aria-label={`Xóa từ khóa ${search}`}>Tìm: {search} <span aria-hidden="true">×</span></button>}
                 {hasActiveFilters && <button type="button" className="text-button" onClick={reset}>Xóa lọc</button>}
               </div>
-              <Button
-                variant="secondary"
-                className="filter-toggle"
-                aria-expanded={filterOpen}
-                aria-controls="catalog-filters"
-                onClick={() => setFilterOpen(!filterOpen)}
-              >
-                <Icon name="filter" size={18} /> Bộ lọc
-              </Button>
             </div>
             {selectedItem &&
               !loading &&
