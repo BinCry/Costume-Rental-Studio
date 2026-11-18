@@ -1287,12 +1287,14 @@ export async function checkPublicAvailabilityBatch(
   const pickupBranchId = branchIds.get(branchName);
   if (!pickupBranchId)
     throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không tìm thấy chi nhánh');
-  return request<{
-    variantId: string;
-    pickupBranchId: string;
-    available: boolean;
-    availableUnits: number;
-  }[]>('/api/v1/public/catalog/availability/batch', {
+  return request<
+    {
+      variantId: string;
+      pickupBranchId: string;
+      available: boolean;
+      availableUnits: number;
+    }[]
+  >('/api/v1/public/catalog/availability/batch', {
     method: 'POST',
     body: JSON.stringify({
       variantIds,
@@ -1603,26 +1605,39 @@ export async function getOrder(orderId: string) {
   return enrichOrder(order, await availableForOrder(order));
 }
 function resolveBookingVariant(line: { costumeId: string; variant: string }) {
-  const variant = variants.get(line.variant) ?? [...variants.values()].find(
-    (entry) => entry.modelId === line.costumeId &&
-      (entry.variantCode === line.variant ||
-        `${entry.sizeCode} / ${entry.colorCode}` === line.variant),
-  );
+  const variant =
+    variants.get(line.variant) ??
+    [...variants.values()].find(
+      (entry) =>
+        entry.modelId === line.costumeId &&
+        (entry.variantCode === line.variant ||
+          `${entry.sizeCode} / ${entry.colorCode}` === line.variant),
+    );
   return variant?.modelId === line.costumeId ? variant : undefined;
 }
 
 export async function getQuote(
   draft: BookingDraft,
-  options: { customerCode?: string; channel?: string; promotionCode?: string; publicEstimate?: boolean } = {},
+  options: {
+    customerCode?: string;
+    channel?: string;
+    promotionCode?: string;
+    publicEstimate?: boolean;
+  } = {},
 ): Promise<QuoteSnapshot> {
   if (!branchIds.has(draft.branch)) await listBranches();
   const branchId = branchIds.get(draft.branch);
   const requestedLines = bookingItems(draft);
   const selectedVariants = requestedLines.map(resolveBookingVariant);
   const totalQuantity = requestedLines.reduce((sum, line) => sum + line.quantity, 0);
-  if (!branchId || selectedVariants.some((variant) => !variant) ||
-      requestedLines.length === 0 || totalQuantity < 1 || totalQuantity > 50 ||
-      requestedLines.some((line) => !Number.isInteger(line.quantity) || line.quantity < 1))
+  if (
+    !branchId ||
+    selectedVariants.some((variant) => !variant) ||
+    requestedLines.length === 0 ||
+    totalQuantity < 1 ||
+    totalQuantity > 50 ||
+    requestedLines.some((line) => !Number.isInteger(line.quantity) || line.quantity < 1)
+  )
     throw new ApiClientError(422, 'API_CONTEXT_MISSING', 'Cần tải lại chi nhánh và mẫu trang phục');
   const variantIds = requestedLines.flatMap((line, index) =>
     Array.from({ length: line.quantity }, () => selectedVariants[index]!.id),
@@ -1641,27 +1656,34 @@ export async function getQuote(
   const channel = options.channel ?? 'ONLINE';
   const promotionCode = options.promotionCode?.trim().toUpperCase();
   const response = await request<ApiQuote>(
-    options.publicEstimate ? '/api/v1/public/rental-estimate' : '/api/v1/rentals/quotes', {
-    method: 'POST',
-    body: JSON.stringify({
-      ...(customerUserId ? { customerUserId } : {}),
-      pickupBranchId: branchId,
-      ...(options.publicEstimate ? {} : { channel }),
-      plannedStartAt: new Date(draft.pickup).toISOString(),
-      plannedDueAt: new Date(draft.returnAt).toISOString(),
-      ...(!options.publicEstimate && promotionCode ? { promotionCode } : {}),
-      items: variantIds.map((variantId) => ({ variantId, accessories: [] })),
-    }),
-  });
+    options.publicEstimate ? '/api/v1/public/rental-estimate' : '/api/v1/rentals/quotes',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        ...(customerUserId ? { customerUserId } : {}),
+        pickupBranchId: branchId,
+        ...(options.publicEstimate ? {} : { channel }),
+        plannedStartAt: new Date(draft.pickup).toISOString(),
+        plannedDueAt: new Date(draft.returnAt).toISOString(),
+        ...(!options.publicEstimate && promotionCode ? { promotionCode } : {}),
+        items: variantIds.map((variantId) => ({ variantId, accessories: [] })),
+      }),
+    },
+  );
   const quoteId = 'api-quote-' + (globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36));
   const pricePerDay = numberValue(response.items[0]?.dailyRentalPriceVnd);
   const billingMode =
     response.policy.billingDayMode === 'ROLLING_24_HOURS' ? 'chu kỳ 24 giờ' : 'ngày lịch';
-  if (customerUserId) quoteRefs.set(quoteId, {
-    variantIds, branchId, customerUserId, channel,
-    promotionCode: response.promotion?.code,
-    pickup: draft.pickup, returnAt: draft.returnAt,
-  });
+  if (customerUserId)
+    quoteRefs.set(quoteId, {
+      variantIds,
+      branchId,
+      customerUserId,
+      channel,
+      promotionCode: response.promotion?.code,
+      pickup: draft.pickup,
+      returnAt: draft.returnAt,
+    });
   return {
     id: quoteId,
     expiresAt: formatDate(response.quoteExpiresAt),
@@ -1700,6 +1722,12 @@ export async function createOrder(
   quote: QuoteSnapshot,
   assignedUnit?: { code: string; id: string },
 ) {
+  if (hasPendingRentalOrder())
+    throw new ApiClientError(
+      409,
+      'PENDING_RENTAL_ORDER',
+      'Lần gửi trước chưa rõ kết quả. Hãy kiểm tra yêu cầu đó trước khi gửi yêu cầu khác.',
+    );
   const reference = quoteRefs.get(quote.id);
   const variantIds = reference?.variantIds;
   const branchId = reference?.branchId;
@@ -1717,51 +1745,193 @@ export async function createOrder(
     const variant = resolveBookingVariant(line);
     return Array.from({ length: line.quantity }, () => variant?.id);
   });
-  if (quote.available === false || reference?.pickup !== draft.pickup ||
-      reference?.returnAt !== draft.returnAt ||
-      currentIds.length !== variantIds.length ||
-      currentIds.some((id, index) => id !== variantIds[index]))
-    throw new ApiClientError(409, 'QUOTE_STALE', 'Lựa chọn đã thay đổi. Hãy tải lại báo giá trước khi gửi.');
-  const created = await request<ApiOrder>('/api/v1/rentals/orders', {
-    method: 'POST',
-    body: JSON.stringify({
-      customerUserId,
-      pickupBranchId: branchId,
-      channel,
-      plannedStartAt: new Date(draft.pickup).toISOString(),
-      plannedDueAt: new Date(draft.returnAt).toISOString(),
-      customerNote: draft.note || undefined,
-      contactName: draft.name.trim(),
-      contactPhone: draft.phone.trim(),
-      expectedQuote: {
-        policyVersionId: quote.policyVersionId,
-        subtotalVnd: quote.rental,
-        depositVnd: quote.deposit,
-        discountVnd: quote.discount,
-        totalDueVnd: quote.amountDueAtPickup,
-        items: quote.lines.map((line) => ({
-          variantId: line.variantId,
-          dailyRentalPriceVnd: line.pricePerDay,
-          depositAmountVnd: line.deposit,
-        })),
-      },
-      promotionCode: reference.promotionCode,
-      items: variantIds.map((variantId) => ({ variantId, accessories: [] })),
-    }),
+  if (
+    quote.available === false ||
+    reference?.pickup !== draft.pickup ||
+    reference?.returnAt !== draft.returnAt ||
+    currentIds.length !== variantIds.length ||
+    currentIds.some((id, index) => id !== variantIds[index])
+  )
+    throw new ApiClientError(
+      409,
+      'QUOTE_STALE',
+      'Lựa chọn đã thay đổi. Hãy tải lại báo giá trước khi gửi.',
+    );
+  const clientRequestId = crypto.randomUUID();
+  const body = JSON.stringify({
+    clientRequestId,
+    customerUserId,
+    pickupBranchId: branchId,
+    channel,
+    plannedStartAt: new Date(draft.pickup).toISOString(),
+    plannedDueAt: new Date(draft.returnAt).toISOString(),
+    customerNote: draft.note || undefined,
+    contactName: draft.name.trim(),
+    contactPhone: draft.phone.trim(),
+    expectedQuote: {
+      policyVersionId: quote.policyVersionId,
+      subtotalVnd: quote.rental,
+      depositVnd: quote.deposit,
+      discountVnd: quote.discount,
+      totalDueVnd: quote.amountDueAtPickup,
+      items: quote.lines.map((line) => ({
+        variantId: line.variantId,
+        dailyRentalPriceVnd: line.pricePerDay,
+        depositAmountVnd: line.deposit,
+      })),
+    },
+    promotionCode: reference.promotionCode,
+    items: variantIds.map((variantId) => ({ variantId, accessories: [] })),
   });
+  const pending: PendingRentalOrder = {
+    clientRequestId,
+    customerUserId,
+    body,
+    summary: {
+      branch: draft.branch,
+      pickup: draft.pickup,
+      returnAt: draft.returnAt,
+      quantity: variantIds.length,
+    },
+  };
+  try {
+    window.sessionStorage.setItem(pendingRentalOrderKey, JSON.stringify(pending));
+  } catch {
+    throw new ApiClientError(
+      0,
+      'BOOKING_STORAGE_UNAVAILABLE',
+      'Trình duyệt chưa thể lưu lần gửi. Hãy bật lưu trữ phiên hoặc thử trình duyệt khác.',
+    );
+  }
+  let created: ApiOrder;
+  try {
+    created = await request<ApiOrder>('/api/v1/rentals/orders', {
+      method: 'POST',
+      body,
+    });
+  } catch (error) {
+    clearPendingRentalOrderOnDefiniteFailure(error);
+    throw error;
+  }
+  clearPendingRentalOrder();
   quoteRefs.delete(quote.id);
-  const orderCode = created.orderCode || created.id;
-  orderRefs.set(orderCode, {
-    id: created.id,
-    itemIds: (created.items ?? []).map((item) => item.id),
-    itemVariantIds: (created.items ?? []).map((item, index) => item.variantId ?? variantIds[index]),
-    version: created.version,
-  });
+  const orderCode = rememberCreatedOrder(created, variantIds);
   if (assignedUnit) {
     unitRefs.set(orderCode, new Map([[assignedUnit.code, assignedUnit.id]]));
     unitVariantRefs.set(orderCode, new Map([[assignedUnit.code, variantIds[0]]]));
   }
   return orderCode;
+}
+
+const pendingRentalOrderKey = 'costume-rental.pending-order.v1';
+interface PendingRentalOrder {
+  clientRequestId: string;
+  customerUserId: string;
+  body: string;
+  summary: { branch: string; pickup: string; returnAt: string; quantity: number };
+}
+export interface RecoveredRentalOrder {
+  code: string;
+  branch: string;
+  pickup: string;
+  returnAt: string;
+  quantity: number;
+}
+function readPendingRentalOrder(): PendingRentalOrder | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    const value: unknown = JSON.parse(
+      window.sessionStorage.getItem(pendingRentalOrderKey) ?? 'null',
+    );
+    if (!value || typeof value !== 'object') return undefined;
+    const pending = value as Partial<PendingRentalOrder>;
+    if (
+      !pending.clientRequestId ||
+      !pending.customerUserId ||
+      !pending.body ||
+      !pending.summary ||
+      typeof pending.summary.branch !== 'string' ||
+      typeof pending.summary.pickup !== 'string' ||
+      typeof pending.summary.returnAt !== 'string' ||
+      typeof pending.summary.quantity !== 'number'
+    )
+      return undefined;
+    return pending as PendingRentalOrder;
+  } catch {
+    return undefined;
+  }
+}
+export function hasPendingRentalOrder() {
+  return Boolean(readPendingRentalOrder());
+}
+export function pendingRentalSummary() {
+  return readPendingRentalOrder()?.summary;
+}
+function clearPendingRentalOrder() {
+  try {
+    window.sessionStorage.removeItem(pendingRentalOrderKey);
+  } catch {
+    /* No browser storage. */
+  }
+}
+function clearPendingRentalOrderOnDefiniteFailure(error: unknown) {
+  if (
+    error instanceof ApiClientError &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    ![401, 408, 429].includes(error.status)
+  )
+    clearPendingRentalOrder();
+}
+function rememberCreatedOrder(created: ApiOrder, variantIds?: string[]) {
+  const orderCode = created.orderCode || created.id;
+  orderRefs.set(orderCode, {
+    id: created.id,
+    itemIds: (created.items ?? []).map((item) => item.id),
+    itemVariantIds: (created.items ?? []).map(
+      (item, index) => item.variantId ?? variantIds?.[index] ?? '',
+    ),
+    version: created.version,
+  });
+  return orderCode;
+}
+export async function recoverPendingRentalOrder(): Promise<RecoveredRentalOrder | undefined> {
+  const pending = readPendingRentalOrder();
+  if (!pending) return undefined;
+  const identity = await currentUser();
+  if (identity.id !== pending.customerUserId) {
+    clearPendingRentalOrder();
+    throw new ApiClientError(
+      409,
+      'PENDING_ORDER_ACCOUNT_CHANGED',
+      'Lần gửi trước thuộc tài khoản khác. Hãy mở Đơn của tôi trong tài khoản đó để kiểm tra.',
+    );
+  }
+  let order: ApiOrder;
+  try {
+    order = await request<ApiOrder>(
+      `/api/v1/rentals/orders/by-request/${encodeURIComponent(pending.clientRequestId)}`,
+    );
+  } catch (error) {
+    if (!(error instanceof ApiClientError && error.status === 404)) throw error;
+    try {
+      order = await request<ApiOrder>('/api/v1/rentals/orders', {
+        method: 'POST',
+        body: pending.body,
+      });
+    } catch (retryError) {
+      clearPendingRentalOrderOnDefiniteFailure(retryError);
+      throw retryError;
+    }
+  }
+  clearPendingRentalOrder();
+  return {
+    code: rememberCreatedOrder(order),
+    branch: order.pickupBranch?.name ?? pending.summary.branch,
+    pickup: formatDate(order.plannedStartAt),
+    returnAt: formatDate(order.plannedDueAt),
+    quantity: order.items?.length ?? pending.summary.quantity,
+  };
 }
 export async function confirmOrder(orderCode: string, version: number, unitCodes: string[]) {
   const reference = orderRefs.get(orderCode);

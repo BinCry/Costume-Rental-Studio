@@ -17,7 +17,15 @@ import { useFixtureResource } from '../components/useFixtureResource';
 import { branches, fixtureAdapter, fixtureCatalog, fixturePeriod } from '../fixtures/adapter';
 import { studioAdapter } from '../fixtures/studio';
 import type { BookingDraft, DemoScenario, QuoteSnapshot } from '../fixtures/types';
-import { apiEnabled, getOwnCustomerProfile, hasAccessToken } from '../api/client';
+import {
+  apiEnabled,
+  getOwnCustomerProfile,
+  hasAccessToken,
+  hasPendingRentalOrder,
+  pendingRentalSummary,
+  recoverPendingRentalOrder,
+  type RecoveredRentalOrder,
+} from '../api/client';
 import { formatLocalDateTime } from '../utils/date-format';
 import { isValidPhone } from '../utils/phone';
 import { rentalPeriodIssues } from '../utils/rental-period';
@@ -134,7 +142,14 @@ export function BookingPage({
     retry: retryBranches,
   } = useBranchOptions();
   const [step, setStep] = useState(0);
-  const [resumed] = useState(() => readResumedBooking(initialContext, baseDraft));
+  const [resumed] = useState(() =>
+    readResumedBooking(
+      customerAuthenticated && hasPendingRentalOrder()
+        ? new URLSearchParams('resume=1')
+        : initialContext,
+      baseDraft,
+    ),
+  );
   const [draftState, setDraft] = useState<BookingDraft>(() =>
     initialDraft(costumeId, initialContext, resumed),
   );
@@ -148,7 +163,9 @@ export function BookingPage({
   const [currentTime, setCurrentTime] = useState(0);
   const [busy, setBusy] = useState(false);
   const [submittedId, setSubmittedId] = useState('');
+  const [submittedDetails, setSubmittedDetails] = useState<RecoveredRentalOrder>();
   const [copyIssue, setCopyIssue] = useState('');
+  const [pendingRequest, setPendingRequest] = useState(hasPendingRentalOrder);
   const quoteRequestRef = useRef(0);
   const submittingRef = useRef(false);
   const panelRef = useRef<HTMLElement>(null);
@@ -408,6 +425,10 @@ export function BookingPage({
   };
   const submit = async () => {
     if (submittingRef.current || submittedId) return;
+    if (pendingRequest) {
+      void recoverPending();
+      return;
+    }
     if (apiMode && !customerAuthenticated) {
       continueToAuth('login');
       return;
@@ -436,6 +457,16 @@ export function BookingPage({
         );
         return;
       }
+      if (apiMode) {
+        try {
+          storeBookingDraft(draft);
+        } catch {
+          setIssue(
+            'Trình duyệt chưa lưu được lần gửi. Hãy bật lưu trữ phiên hoặc thử trình duyệt khác.',
+          );
+          return;
+        }
+      }
       const id = await fixtureAdapter.submitBooking(draft, refreshedQuote, scenario);
       try {
         window.sessionStorage.removeItem(bookingDraftStorageKey);
@@ -456,7 +487,63 @@ export function BookingPage({
         await loadQuote();
         setIssue('Báo giá đã đổi trước khi tạo yêu cầu. Hãy xem lại giá mới rồi gửi lại.');
       } else {
-        setIssue(caught instanceof Error ? caught.message : 'Chưa gửi được yêu cầu.');
+        const uncertain = hasPendingRentalOrder();
+        setPendingRequest(uncertain);
+        setIssue(
+          uncertain
+            ? 'Chưa xác nhận được kết quả gửi. Hãy kiểm tra lần gửi này trước khi tạo yêu cầu khác.'
+            : caught instanceof Error
+              ? caught.message
+              : 'Chưa gửi được yêu cầu.',
+        );
+      }
+    } finally {
+      submittingRef.current = false;
+      setBusy(false);
+    }
+  };
+  const recoverPending = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setBusy(true);
+    setIssue('');
+    try {
+      const result = await recoverPendingRentalOrder();
+      setPendingRequest(false);
+      if (result) {
+        setSubmittedDetails(result);
+        setSubmittedId(result.code);
+        try {
+          window.sessionStorage.removeItem(bookingDraftStorageKey);
+        } catch {
+          /* Completed. */
+        }
+        onCustomerCreated?.('');
+      }
+    } catch (caught) {
+      const code =
+        caught && typeof caught === 'object' && 'code' in caught
+          ? (caught as { code?: unknown }).code
+          : undefined;
+      if (code === 'QUOTE_CHANGED') {
+        setPendingRequest(false);
+        setStep(0);
+        await loadQuote();
+        setIssue('Báo giá đã đổi. Hãy xem lại giá mới trước khi gửi.');
+      } else if (code === 'PENDING_ORDER_ACCOUNT_CHANGED') {
+        setPendingRequest(false);
+        setDraft(initialDraft(costumeId, initialContext));
+        try {
+          window.sessionStorage.removeItem(bookingDraftStorageKey);
+        } catch {
+          /* No draft. */
+        }
+        setIssue(
+          caught instanceof Error ? caught.message : 'Hãy kiểm tra tài khoản đang đăng nhập.',
+        );
+      } else {
+        setPendingRequest(hasPendingRentalOrder());
+        setIssue(caught instanceof Error ? caught.message : 'Chưa kiểm tra được lần gửi trước.');
       }
     } finally {
       submittingRef.current = false;
@@ -525,19 +612,19 @@ export function BookingPage({
           <div className="booking-success-details">
             <div>
               <span>Chi nhánh</span>
-              <strong>{draft.branch}</strong>
+              <strong>{submittedDetails?.branch ?? draft.branch}</strong>
             </div>
             <div>
               <span>Nhận</span>
-              <strong>{formatLocalDateTime(draft.pickup)}</strong>
+              <strong>{submittedDetails?.pickup ?? formatLocalDateTime(draft.pickup)}</strong>
             </div>
             <div>
               <span>Trả</span>
-              <strong>{formatLocalDateTime(draft.returnAt)}</strong>
+              <strong>{submittedDetails?.returnAt ?? formatLocalDateTime(draft.returnAt)}</strong>
             </div>
             <div>
               <span>Trang phục</span>
-              <strong>{totalQuantity} bộ</strong>
+              <strong>{submittedDetails?.quantity ?? totalQuantity} bộ</strong>
             </div>
           </div>
           <Button onClick={() => go('myRentalDetail', { order: submittedId })}>
@@ -546,6 +633,39 @@ export function BookingPage({
         </div>
       </div>
     );
+  if (pendingRequest) {
+    const summary = pendingRentalSummary();
+    return (
+      <div className="page booking-page">
+        <div className="booking-success booking-pending">
+          <h1>Kiểm tra yêu cầu vừa gửi</h1>
+          <p>Máy chủ chưa xác nhận kết quả. Lần gửi trước được giữ trong phiên này.</p>
+          {summary && customerAuthenticated && (
+            <p className="booking-pending-summary">
+              {summary.quantity} bộ · {summary.branch} · Nhận {formatLocalDateTime(summary.pickup)}
+            </p>
+          )}
+          {issue && (
+            <Feedback tone="warning" title="Chưa rõ kết quả">
+              {issue}
+            </Feedback>
+          )}
+          {customerAuthenticated ? (
+            <Button onClick={() => void recoverPending()} loading={busy}>
+              Kiểm tra và tiếp tục lần gửi trước
+            </Button>
+          ) : (
+            <Button onClick={() => go('login', { next: '/dat-thue' })}>
+              Đăng nhập để kiểm tra
+            </Button>
+          )}
+          <Button variant="secondary" onClick={() => go('myRentals')}>
+            Đơn của tôi
+          </Button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="page booking-page">
       <div className="booking-heading">

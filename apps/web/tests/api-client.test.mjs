@@ -92,7 +92,11 @@ function stubQuoteApi() {
   };
   const page = (items) =>
     success({ items, pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 } });
-  const state = { quote: () => jsonResponse({}), order: () => jsonResponse({}) };
+  const state = {
+    quote: () => jsonResponse({}),
+    order: () => jsonResponse({}),
+    orderLookup: () => error(404, 'RENTAL_ORDER_NOT_FOUND', 'Rental order not found'),
+  };
   globalThis.fetch.mockImplementation((url) => {
     const path = String(url);
     if (path.includes('/api/v1/public/catalog/variants')) return Promise.resolve(page([variant]));
@@ -104,6 +108,8 @@ function stubQuoteApi() {
       );
     if (path.includes('/api/v1/rentals/quotes')) return Promise.resolve(state.quote());
     if (path.includes('/api/v1/public/rental-estimate')) return Promise.resolve(state.quote());
+    if (path.includes('/api/v1/rentals/orders/by-request/'))
+      return Promise.resolve(state.orderLookup());
     if (path.includes('/api/v1/rentals/orders')) return Promise.resolve(state.order());
     throw new Error('Unexpected request ' + path);
   });
@@ -1569,6 +1575,108 @@ describe('web API client session and error handling', () => {
           depositAmountVnd: 1250000 }],
       },
     });
+  });
+
+  it('recovers an order from its request id after an uncertain response without posting twice', async () => {
+    values.set(accessTokenKey, 'studio-access-token');
+    const api = stubQuoteApi();
+    api.quote = () =>
+      success({
+        quoteExpiresAt: '2099-11-13T15:38:00.000Z',
+        policy: { id: '10000000-0000-4000-8000-000000000006', versionCode: 'P1' },
+        period: { billableDays: 2 },
+        items: [
+          {
+            variantId: 'variant-pearl-l',
+            dailyRentalPriceVnd: '450000',
+            depositAmountVnd: '1250000',
+            rentalAmountVnd: '900000',
+            availableUnits: 1,
+          },
+        ],
+        subtotalVnd: '900000',
+        discountVnd: '0',
+        depositVnd: '1250000',
+        totalDueVnd: '2150000',
+        available: true,
+      });
+    const created = {
+      id: 'order-1',
+      orderCode: 'ORD-RETRIED',
+      plannedStartAt: '2026-11-20T03:00:00.000Z',
+      plannedDueAt: '2026-11-22T03:00:00.000Z',
+      pickupBranch: { name: 'Costume Studio Quận 3' },
+      items: [{ id: 'item-1' }],
+    };
+    api.order = () => error(500, 'INTERNAL_ERROR', 'Response lost after creation');
+    api.orderLookup = () => success(created);
+    const { getQuote, listCatalog, createOrder, hasPendingRentalOrder, recoverPendingRentalOrder } =
+      await import('../src/api/client.ts');
+    await listCatalog();
+    const quote = await getQuote(quoteDraft);
+    await expect(createOrder(quoteDraft, quote)).rejects.toMatchObject({ status: 500 });
+    expect(hasPendingRentalOrder()).toBe(true);
+    await expect(recoverPendingRentalOrder()).resolves.toMatchObject({
+      code: 'ORD-RETRIED',
+      branch: 'Costume Studio Quận 3',
+      quantity: 1,
+    });
+    expect(hasPendingRentalOrder()).toBe(false);
+    const posts = globalThis.fetch.mock.calls.filter(
+      ([url, init]) => String(url).endsWith('/api/v1/rentals/orders') && init?.method === 'POST',
+    );
+    expect(posts).toHaveLength(1);
+  });
+
+  it('retries the exact original body when the first POST never reached the API', async () => {
+    values.set(accessTokenKey, 'studio-access-token');
+    const api = stubQuoteApi();
+    api.quote = () =>
+      success({
+        quoteExpiresAt: '2099-11-13T15:38:00.000Z',
+        policy: { id: '10000000-0000-4000-8000-000000000006', versionCode: 'P1' },
+        period: { billableDays: 2 },
+        items: [
+          {
+            variantId: 'variant-pearl-l',
+            dailyRentalPriceVnd: '450000',
+            depositAmountVnd: '1250000',
+            rentalAmountVnd: '900000',
+            availableUnits: 1,
+          },
+        ],
+        subtotalVnd: '900000',
+        discountVnd: '0',
+        depositVnd: '1250000',
+        totalDueVnd: '2150000',
+        available: true,
+      });
+    let posts = 0;
+    api.order = () => {
+      posts += 1;
+      if (posts === 1) throw new Error('network disconnected');
+      return success({
+        id: 'order-2',
+        orderCode: 'ORD-ONCE',
+        plannedStartAt: '2026-11-20T03:00:00.000Z',
+        plannedDueAt: '2026-11-22T03:00:00.000Z',
+        items: [],
+      });
+    };
+    const { getQuote, listCatalog, createOrder, recoverPendingRentalOrder } =
+      await import('../src/api/client.ts');
+    await listCatalog();
+    const quote = await getQuote(quoteDraft);
+    await expect(createOrder(quoteDraft, quote)).rejects.toMatchObject({ status: 0 });
+    await expect(recoverPendingRentalOrder()).resolves.toMatchObject({ code: 'ORD-ONCE' });
+    const requestBodies = globalThis.fetch.mock.calls
+      .filter(
+        ([url, init]) => String(url).endsWith('/api/v1/rentals/orders') && init?.method === 'POST',
+      )
+      .map(([, init]) => init.body);
+    expect(requestBodies).toHaveLength(2);
+    expect(requestBodies[1]).toBe(requestBodies[0]);
+    expect(JSON.parse(requestBodies[0]).clientRequestId).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it('tells the customer why a promotion code was rejected', async () => {
