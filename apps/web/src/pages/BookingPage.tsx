@@ -275,6 +275,15 @@ export function BookingPage({
       ? draftState.branch
       : (branchOptions[0] ?? (apiMode ? '' : draftState.branch)),
   };
+  const backToCatalog = () => go('catalog', {
+    ...Object.fromEntries(
+      [...initialContext.entries()].filter(([key]) =>
+        ['category', 'size', 'color', 'search', 'sort'].includes(key)),
+    ),
+    branch: draft.branch,
+    pickup: draft.pickup,
+    returnAt: draft.returnAt,
+  });
   const invalidateQuote = () => {
     quoteRequestRef.current += 1;
     setQuote(undefined);
@@ -632,7 +641,7 @@ export function BookingPage({
             <EmptyState
               title="Chưa có trang phục để hiển thị"
               action={
-                <Button variant="secondary" onClick={() => go('catalog')}>
+                <Button variant="secondary" onClick={backToCatalog}>
                   Về bộ sưu tập
                 </Button>
               }
@@ -1054,7 +1063,7 @@ export function BookingPage({
               variant="secondary"
               onClick={() => {
                 setIssue('');
-                if (step === 0) go('catalog');
+                if (step === 0) backToCatalog();
                 else setStep(step - 1);
               }}
             >

@@ -147,18 +147,9 @@ export function CostumeDetailPage({
     return {
       pickup: requestedPickup ?? saved?.pickup ?? defaultPickup,
       due: requestedReturn ?? saved?.due ?? defaultReturn,
-      remember: fromCatalog,
     };
   });
   const { pickup, due } = period;
-  useEffect(() => {
-    if (!period.remember) return;
-    try {
-      window.sessionStorage.setItem(periodKey, JSON.stringify({ pickup, due }));
-    } catch {
-      // Keep the selected period in memory when session storage is unavailable.
-    }
-  }, [period.remember, periodKey, pickup, due]);
   const [photo, setPhoto] = useState(0);
   const selectedVariant =
     data?.find((value) => value.id === id)?.variants.find((value) => value.code === variantCode) ??
@@ -172,10 +163,12 @@ export function CostumeDetailPage({
     const before = url.href;
     url.searchParams.set('variantCode', selectedVariantCode);
     if (branch) url.searchParams.set('branch', branch);
-    url.searchParams.delete('pickup');
-    url.searchParams.delete('returnAt');
+    if (pickup) url.searchParams.set('pickup', pickup);
+    else url.searchParams.delete('pickup');
+    if (due) url.searchParams.set('returnAt', due);
+    else url.searchParams.delete('returnAt');
     if (url.href !== before) window.history.replaceState(window.history.state, '', url);
-  }, [branch, id, selectedVariantCode]);
+  }, [branch, due, id, pickup, selectedVariantCode]);
 
   const { pickupIssue, returnIssue } = rentalPeriodIssues(pickup, due);
   const dateRangeIssue = pickupIssue ?? returnIssue;
@@ -332,7 +325,7 @@ export function CostumeDetailPage({
                       value={pickup}
                       error={pickupIssue}
                       onChange={(next) =>
-                        setPeriod((current) => ({ ...current, pickup: next, remember: true }))
+                        setPeriod((current) => ({ ...current, pickup: next }))
                       }
                     />
                     <DateTimeField
@@ -340,7 +333,7 @@ export function CostumeDetailPage({
                       value={due}
                       error={returnIssue}
                       onChange={(next) =>
-                        setPeriod((current) => ({ ...current, due: next, remember: true }))
+                        setPeriod((current) => ({ ...current, due: next }))
                       }
                     />
                   </div>
@@ -397,6 +390,7 @@ export function CostumeDetailPage({
                     disabled={!!dateRangeIssue}
                     onClick={() =>
                       go('booking', {
+                        ...catalogContext,
                         costume: item.id,
                         variant: variant.code,
                         branch,
