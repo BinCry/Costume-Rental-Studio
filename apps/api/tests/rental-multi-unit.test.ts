@@ -45,7 +45,12 @@ function variant(id: string, price: bigint, deposit: bigint) {
 
 function transaction(availableUnits: Record<string, number>) {
   const tx = {
-    customer: { findUnique: vi.fn().mockResolvedValue({ userId: customerUserId }) },
+    customer: {
+      findUnique: vi.fn().mockResolvedValue({
+        userId: customerUserId,
+        user: { displayName: 'Khách mẫu', phone: '+84901234567' },
+      }),
+    },
     costumeVariant: {
       findMany: vi.fn(({ where }: { where: { id: { in: string[] } } }) =>
         Promise.resolve(
@@ -148,6 +153,31 @@ describe('renting several units of the same variant', () => {
     };
     expect(created.data.items.create).toHaveLength(2);
     expect(created.data.items.create.map((item) => item.variantId)).toEqual([variantId, variantId]);
+  });
+
+  it('stores contact details on this order without changing the customer profile', async () => {
+    const tx = transaction({ [variantId]: 1 });
+    await service.createOrder(actor, {
+      ...input([variantId]),
+      contactName: 'Người nhận đồ',
+      contactPhone: '+84909998877',
+    });
+    const created = tx.rentalOrder.create.mock.calls[0]![0] as {
+      data: { contactName: string; contactPhone: string };
+    };
+    expect(created.data.contactName).toBe('Người nhận đồ');
+    expect(created.data.contactPhone).toBe('+84909998877');
+    expect(tx.customer.findUnique).toHaveBeenCalledOnce();
+  });
+
+  it('copies profile contact when a staff order omits contact fields', async () => {
+    const tx = transaction({ [variantId]: 1 });
+    await service.createOrder(actor, input([variantId]));
+    const created = tx.rentalOrder.create.mock.calls[0]![0] as {
+      data: { contactName: string; contactPhone: string };
+    };
+    expect(created.data.contactName).toBe('Khách mẫu');
+    expect(created.data.contactPhone).toBe('+84901234567');
   });
 
   it('still rejects an unknown variant', async () => {

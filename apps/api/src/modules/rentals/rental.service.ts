@@ -45,7 +45,10 @@ const occupiedStatuses = [
   'RETURN_INSPECTION',
 ] satisfies OrderStatus[];
 const mutableStatus: OrderStatus = 'PENDING_CONFIRMATION';
-type PricingInput = Pick<CreateOrderInput, 'pickupBranchId' | 'plannedStartAt' | 'plannedDueAt' | 'items'>;
+type PricingInput = Pick<
+  CreateOrderInput,
+  'pickupBranchId' | 'plannedStartAt' | 'plannedDueAt' | 'items'
+>;
 
 function includeOrder() {
   return {
@@ -738,7 +741,7 @@ export async function createOrder(actor: AuthenticatedActor, input: CreateOrderI
     await lockActiveBranch(tx, input.pickupBranchId);
     const customer = await tx.customer.findUnique({
       where: { userId: input.customerUserId },
-      select: { userId: true },
+      select: { userId: true, user: { select: { displayName: true, phone: true } } },
     });
     if (!customer) throw new AppError(404, 'CUSTOMER_NOT_FOUND', 'Customer not found');
     const { policy, days, variants, subtotalVnd: subtotal } = await pricedItems(tx, input);
@@ -757,6 +760,8 @@ export async function createOrder(actor: AuthenticatedActor, input: CreateOrderI
         plannedStartAt: input.plannedStartAt,
         plannedDueAt: input.plannedDueAt,
         customerNote: input.customerNote ?? null,
+        contactName: input.contactName ?? customer.user.displayName,
+        contactPhone: input.contactPhone ?? customer.user.phone,
         status: mutableStatus,
         policyVersionId: policy.id,
         promotionId: promotion?.id,
@@ -820,6 +825,8 @@ export async function updateOrder(actor: AuthenticatedActor, id: string, input: 
         plannedStartAt: input.plannedStartAt,
         plannedDueAt: input.plannedDueAt,
         customerNote: input.customerNote ?? null,
+        ...(input.contactName ? { contactName: input.contactName } : {}),
+        ...(input.contactPhone ? { contactPhone: input.contactPhone } : {}),
         policyVersionId: policy.id,
         promotionId: promotion?.id ?? null,
         promotionCode: promotion?.code ?? null,

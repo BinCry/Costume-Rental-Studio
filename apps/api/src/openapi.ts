@@ -1326,6 +1326,8 @@ export const openApiDocument = {
         tags: ['Rentals'],
         security: [{ bearerAuth: [] }],
         summary: 'Create a rental order in PENDING_CONFIRMATION',
+        description:
+          'Optional contactName and contactPhone record the contact chosen for this order. When omitted, the current customer profile is copied. Later profile edits do not alter the order snapshot.',
         responses: {
           '201': { description: 'Rental order created' },
           '400': { $ref: '#/components/responses/BadRequest' },
@@ -1347,7 +1349,8 @@ export const openApiDocument = {
         tags: ['Rentals'],
         security: [{ bearerAuth: [] }],
         summary: 'Edit a pending rental order',
-        description: 'Requires expectedVersion and is allowed only while PENDING_CONFIRMATION.',
+        description:
+          'Requires expectedVersion and is allowed only while PENDING_CONFIRMATION. Optional contactName/contactPhone update this order contact without editing the customer profile.',
         responses: {
           '200': { description: 'Rental order updated' },
           '409': { $ref: '#/components/responses/Conflict' },

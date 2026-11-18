@@ -161,6 +161,14 @@ export async function listActiveRentals(actor: AuthenticatedActor, query: Active
       ? {
           OR: [
             { order: { is: { orderCode: { contains: query.search, mode: 'insensitive' } } } },
+            { order: { is: { contactName: { contains: query.search, mode: 'insensitive' } } } },
+            {
+              order: {
+                is: {
+                  contactPhone: { contains: phoneDigits || query.search, mode: 'insensitive' },
+                },
+              },
+            },
             {
               order: {
                 is: {
@@ -200,8 +208,14 @@ export async function listActiveRentals(actor: AuthenticatedActor, query: Active
             status: true,
             plannedStartAt: true,
             plannedDueAt: true,
+            contactName: true,
+            contactPhone: true,
             pickupBranch: true,
-            customer: { include: { user: { select: { id: true, displayName: true, phone: true, email: true } } } },
+            customer: {
+              include: {
+                user: { select: { id: true, displayName: true, phone: true, email: true } },
+              },
+            },
           },
         },
       },

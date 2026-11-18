@@ -114,6 +114,8 @@ interface ApiOrder {
   plannedStartAt: string;
   plannedDueAt: string;
   customerNote?: string | null;
+  contactName?: string | null;
+  contactPhone?: string | null;
   policyVersion?: { versionCode: string; billingDayMode: Policy['billingMode'] } | null;
   promotionDiscountVnd?: string | number | bigint;
   additionalRentalFeeVnd?: string | number | bigint;
@@ -176,6 +178,8 @@ interface ApiActiveRental {
   } | null;
   order: {
     orderCode: string;
+    contactName?: string | null;
+    contactPhone?: string | null;
     plannedStartAt: string;
     plannedDueAt: string;
     pickupBranch?: { name?: string } | null;
@@ -1365,8 +1369,8 @@ function mapOrder(order: ApiOrder): Order {
     id: order.orderCode || order.id,
     status: order.status,
     version: order.version,
-    customer: order.customer?.user?.displayName ?? 'Khách hàng',
-    phone: order.customer?.user?.phone ?? '',
+    customer: order.contactName ?? order.customer?.user?.displayName ?? 'Khách hàng',
+    phone: order.contactPhone ?? order.customer?.user?.phone ?? '',
     branch,
     pickup: formatDate(order.plannedStartAt),
     returnAt: formatDate(order.plannedDueAt),
@@ -1579,8 +1583,8 @@ export async function listActiveRentals(branchName?: string): Promise<ActiveUnit
         variant: [item.unit?.variant?.sizeCode, item.unit?.variant?.colorCode]
           .filter(Boolean)
           .join(' / '),
-        customer: item.order.customer?.user?.displayName ?? 'Khách hàng',
-        phone: item.order.customer?.user?.phone ?? '',
+        customer: item.order.contactName ?? item.order.customer?.user?.displayName ?? 'Khách hàng',
+        phone: item.order.contactPhone ?? item.order.customer?.user?.phone ?? '',
         orderId: item.order.orderCode,
         pickedUp: formatDate(item.order.plannedStartAt),
         due: formatDate(item.order.plannedDueAt),
@@ -1721,6 +1725,8 @@ export async function createOrder(
       plannedStartAt: new Date(draft.pickup).toISOString(),
       plannedDueAt: new Date(draft.returnAt).toISOString(),
       customerNote: draft.note || undefined,
+      contactName: draft.name.trim(),
+      contactPhone: draft.phone.trim(),
       promotionCode: reference.promotionCode,
       items: variantIds.map((variantId) => ({ variantId, accessories: [] })),
     }),
@@ -1961,8 +1967,8 @@ export async function listDashboardTasks(branchName?: string): Promise<QueueTask
         id: order.id,
         orderId: order.orderCode,
         due: formatDate(isActive ? order.plannedDueAt : order.plannedStartAt),
-        customer: order.customer?.user?.displayName ?? 'Khách hàng',
-        phone: order.customer?.user?.phone ?? '',
+        customer: order.contactName ?? order.customer?.user?.displayName ?? 'Khách hàng',
+        phone: order.contactPhone ?? order.customer?.user?.phone ?? '',
         barcode: firstItem?.unit?.unitCode,
         task,
         urgency: overdue ? 'Quá hạn' : group,

@@ -92,7 +92,7 @@ function stubQuoteApi() {
   };
   const page = (items) =>
     success({ items, pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 } });
-  const state = { quote: () => jsonResponse({}) };
+  const state = { quote: () => jsonResponse({}), order: () => jsonResponse({}) };
   globalThis.fetch.mockImplementation((url) => {
     const path = String(url);
     if (path.includes('/api/v1/public/catalog/variants')) return Promise.resolve(page([variant]));
@@ -104,6 +104,7 @@ function stubQuoteApi() {
       );
     if (path.includes('/api/v1/rentals/quotes')) return Promise.resolve(state.quote());
     if (path.includes('/api/v1/public/rental-estimate')) return Promise.resolve(state.quote());
+    if (path.includes('/api/v1/rentals/orders')) return Promise.resolve(state.order());
     throw new Error('Unexpected request ' + path);
   });
   return state;
@@ -610,6 +611,9 @@ describe('web API client session and error handling', () => {
           {
             id: 'order-1',
             orderCode: 'RT-TEST-01',
+            contactName: 'Người nhận đồ',
+            contactPhone: '+84909998877',
+            customer: { user: { displayName: 'Tên hồ sơ mới', phone: '+84901111111' } },
             policyVersion: { versionCode: 'V2', billingDayMode: 'ROLLING_24_HOURS' },
             status: 'ACTIVE',
             version: 3,
@@ -649,6 +653,8 @@ describe('web API client session and error handling', () => {
     const [order] = await listOrders({ loadPendingAvailability: false });
 
     expect(order.dayPolicy).toBe('Chu kỳ 24 giờ (V2)');
+    expect(order.customer).toBe('Người nhận đồ');
+    expect(order.phone).toBe('+84909998877');
     expect(order.items[0]).toMatchObject({
       id: 'order-item-1',
       apiAllocationStatus: 'ACTIVE',
@@ -1522,6 +1528,32 @@ describe('web API client session and error handling', () => {
     expect(body).not.toHaveProperty('promotionCode');
     expect(globalThis.fetch.mock.calls.some(([url]) => String(url).includes('/api/v1/auth/me'))).toBe(false);
     await expect(createOrder(quoteDraft, quote)).rejects.toMatchObject({ code: 'API_CONTEXT_MISSING' });
+  });
+
+  it('sends the chosen contact with this rental order', async () => {
+    values.set(accessTokenKey, 'studio-access-token');
+    const api = stubQuoteApi();
+    api.quote = () => success({
+      quoteExpiresAt: '2099-11-13T15:38:00.000Z',
+      policy: { versionCode: 'POLICY-1', billingDayMode: 'ROLLING_24_HOURS' },
+      period: { billableDays: 2 },
+      items: [{ variantId: 'variant-pearl-l', dailyRentalPriceVnd: '450000',
+        depositAmountVnd: '1250000', rentalAmountVnd: '900000', availableUnits: 1 }],
+      promotion: null, subtotalVnd: '900000', discountVnd: '0',
+      rentalAmountVnd: '900000', depositVnd: '1250000', totalDueVnd: '2150000', available: true,
+    });
+    api.order = () => success({ id: 'order-id', orderCode: 'ORD-CONTACT-1', items: [] });
+    const { getQuote, listCatalog, createOrder } = await import('../src/api/client.ts');
+    await listCatalog();
+    const quote = await getQuote(quoteDraft);
+    await expect(createOrder({ ...quoteDraft, name: 'Người nhận', phone: '0909 998 877' }, quote))
+      .resolves.toBe('ORD-CONTACT-1');
+    const request = globalThis.fetch.mock.calls.find(([url]) =>
+      String(url).includes('/api/v1/rentals/orders'));
+    expect(JSON.parse(request[1].body)).toMatchObject({
+      contactName: 'Người nhận',
+      contactPhone: '0909 998 877',
+    });
   });
 
   it('tells the customer why a promotion code was rejected', async () => {

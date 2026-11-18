@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { phoneSchema } from '../../common/validation/phone.js';
 
 const statuses = [
   'PENDING_CONFIRMATION',
@@ -22,9 +23,11 @@ const activeStatuses = [
 ] as const;
 
 export const orderIdSchema = z.object({ orderId: z.uuid() });
-export const rentalPickupDateSchema = z.coerce.date().refine((date) => date.getTime() >= Date.now(), {
-  message: 'Thời điểm nhận đồ không được ở quá khứ.',
-});
+export const rentalPickupDateSchema = z.coerce
+  .date()
+  .refine((date) => date.getTime() >= Date.now(), {
+    message: 'Thời điểm nhận đồ không được ở quá khứ.',
+  });
 const accessorySchema = z
   .object({ modelAccessoryId: z.uuid(), quantity: z.coerce.number().int().min(1).max(20) })
   .strict();
@@ -39,6 +42,8 @@ const orderBase = z
     plannedStartAt: z.coerce.date(),
     plannedDueAt: z.coerce.date(),
     customerNote: z.string().trim().max(10_000).nullable().optional(),
+    contactName: z.string().trim().min(1).max(255).optional(),
+    contactPhone: phoneSchema.optional(),
     promotionCode: z.string().trim().min(1).max(100).optional(),
     items: z.array(itemSchema).min(1).max(50),
   })

@@ -34,6 +34,20 @@ describe('rental order schemas', () => {
     ).toBe(false);
   });
 
+  it('accepts a per-order contact snapshot and normalizes the phone', () => {
+    const result = createOrderSchema.safeParse({
+      ...order,
+      contactName: ' Người nhận ',
+      contactPhone: '0901 234 567',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.contactName).toBe('Người nhận');
+      expect(result.data.contactPhone).toBe('+84901234567');
+    }
+    expect(createOrderSchema.safeParse({ ...order, contactPhone: '123' }).success).toBe(false);
+  });
+
   it('rejects a past pickup for orders, quotes and both availability endpoints', () => {
     const plannedStartAt = new Date(Date.now() - 86_400_000).toISOString();
     const availability = {
@@ -49,7 +63,9 @@ describe('rental order schemas', () => {
       publicAvailabilitySchema.safeParse(availability),
     ];
     for (const result of results) {
-      expect(result.error?.issues).toContainEqual(expect.objectContaining({ path: ['plannedStartAt'] }));
+      expect(result.error?.issues).toContainEqual(
+        expect.objectContaining({ path: ['plannedStartAt'] }),
+      );
     }
   });
 
@@ -103,7 +119,9 @@ describe('rental order schemas', () => {
             orderItemId: itemId,
             isMissing: true,
             damageNotes: 'Khách báo thất lạc; đã xác minh qua cuộc gọi.',
-            evidence: [{ uploadKey: 'rental-staging/report.jpg', contentType: 'image/jpeg', size: 10 }],
+            evidence: [
+              { uploadKey: 'rental-staging/report.jpg', contentType: 'image/jpeg', size: 10 },
+            ],
           },
         ],
       }).success,
@@ -115,7 +133,9 @@ describe('rental order schemas', () => {
           {
             orderItemId: itemId,
             isMissing: false,
-            evidence: [{ uploadKey: 'rental-staging/return.jpg', contentType: 'image/jpeg', size: 10 }],
+            evidence: [
+              { uploadKey: 'rental-staging/return.jpg', contentType: 'image/jpeg', size: 10 },
+            ],
           },
         ],
       }).success,

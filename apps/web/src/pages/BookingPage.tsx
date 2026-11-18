@@ -17,11 +17,12 @@ import { useFixtureResource } from '../components/useFixtureResource';
 import { branches, fixtureAdapter, fixtureCatalog, fixturePeriod } from '../fixtures/adapter';
 import { studioAdapter } from '../fixtures/studio';
 import type { BookingDraft, DemoScenario, QuoteSnapshot } from '../fixtures/types';
-import { apiEnabled, getOwnCustomerProfile, hasAccessToken, updateOwnCustomerProfile } from '../api/client';
+import { apiEnabled, getOwnCustomerProfile, hasAccessToken } from '../api/client';
 import { formatLocalDateTime } from '../utils/date-format';
 import { isValidPhone } from '../utils/phone';
 import { rentalPeriodIssues } from '../utils/rental-period';
 import { useBranchOptions } from '../components/useBranchOptions';
+import { quoteNeedsConfirmation } from './quoteConfirmation';
 
 const steps = ['Chọn bộ, lịch & báo giá', 'Liên hệ & gửi'];
 type BookingLine = NonNullable<BookingDraft['items']>[number];
@@ -77,7 +78,7 @@ function resumedDraft(context?: URLSearchParams): BookingDraft | undefined {
     const envelope = stored as { savedAt?: unknown; draft?: unknown };
     if (
       typeof envelope.savedAt !== 'number' ||
-      Date.now() - envelope.savedAt > 15 * 60 * 1000 ||
+      Date.now() - envelope.savedAt > 24 * 60 * 60 * 1000 ||
       !envelope.draft ||
       typeof envelope.draft !== 'object'
     )
@@ -183,13 +184,11 @@ export function BookingPage({
   const [submittedId, setSubmittedId] = useState('');
   const quoteRequestRef = useRef(0);
   const submittingRef = useRef(false);
-  const savedContactRef = useRef<{ name: string; phone: string } | null>(null);
   const panelRef = useRef<HTMLElement>(null);
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
   const successHeadingRef = useRef<HTMLHeadingElement>(null);
   const issueRef = useRef<HTMLDivElement>(null);
   const previousStepRef = useRef(step);
-  const resumeRequested = initialContext.get('resume') === '1';
   useEffect(() => {
     const updateTime = () => setCurrentTime(Date.now());
     const initialTimer = window.setTimeout(updateTime, 0);
@@ -199,14 +198,6 @@ export function BookingPage({
       window.clearInterval(interval);
     };
   }, []);
-  useEffect(() => {
-    if (!resumeRequested) return;
-    try {
-      window.sessionStorage.removeItem(bookingDraftStorageKey);
-    } catch {
-      // The booking form remains editable if session storage is unavailable.
-    }
-  }, [resumeRequested]);
   useEffect(() => {
     if (previousStepRef.current === step) return;
     previousStepRef.current = step;
@@ -228,7 +219,6 @@ export function BookingPage({
     void getOwnCustomerProfile()
       .then((profile) => {
         if (!active) return;
-        savedContactRef.current = { name: profile.displayName, phone: profile.phone ?? '' };
         setDraft((current) => ({
           ...current,
           name: current.name.trim() ? current.name : profile.displayName,
@@ -432,23 +422,20 @@ export function BookingPage({
     setBusy(true);
     setIssue('');
     try {
-      if (apiMode) {
-        const contact = { name: draft.name.trim(), phone: draft.phone.trim() };
-        const saved = savedContactRef.current;
-        if (saved?.name !== contact.name || saved?.phone !== contact.phone) {
-          try {
-            await updateOwnCustomerProfile({
-              displayName: contact.name,
-              phone: contact.phone,
-            });
-            savedContactRef.current = contact;
-          } catch {
-            setIssue('Chưa lưu được thông tin liên hệ. Yêu cầu chưa được gửi; hãy thử lại.');
-            return;
-          }
-        }
+      const refreshedQuote = await fixtureAdapter.getQuote(draft, scenario, {
+        promotionCode: appliedPromotionCode || undefined,
+      });
+      if (quoteNeedsConfirmation(quote, refreshedQuote)) {
+        setQuote(refreshedQuote);
+        setAppliedPromotionCode(refreshedQuote.promotionCode ?? '');
+        setPromotionCode(refreshedQuote.promotionCode ?? '');
+        setStep(0);
+        setIssue(refreshedQuote.available === false
+          ? 'Một bộ đã hết trong kỳ thuê này. Hãy đổi size, mẫu, chi nhánh hoặc lịch.'
+          : 'Báo giá hoặc điều kiện thuê đã đổi. Hãy xem lại trước khi gửi.');
+        return;
       }
-      const id = await fixtureAdapter.submitBooking(draft, quote, scenario);
+      const id = await fixtureAdapter.submitBooking(draft, refreshedQuote, scenario);
       try {
         window.sessionStorage.removeItem(bookingDraftStorageKey);
       } catch {
@@ -986,7 +973,7 @@ export function BookingPage({
                     />
                   </div>
                   {apiMode && customerAuthenticated && (
-                    <p className="inline-note">Tên và số điện thoại sẽ được lưu vào hồ sơ khi gửi yêu cầu.</p>
+                    <p className="inline-note">Liên hệ này chỉ áp dụng cho yêu cầu đang gửi.</p>
                   )}
                   <TextAreaField
                     label="Ghi chú cho studio (không bắt buộc)"

@@ -804,6 +804,8 @@ model RentalOrder {
   plannedStartAt         DateTime              @map("planned_start_at") @db.Timestamptz(6)
   plannedDueAt           DateTime              @map("planned_due_at") @db.Timestamptz(6)
   customerNote           String?               @map("customer_note") @db.Text
+  contactName            String?               @map("contact_name") @db.VarChar(255)
+  contactPhone           String?               @map("contact_phone") @db.VarChar(30)
   status                 OrderStatus           @default(DRAFT)
   policyVersionId        String                @map("policy_version_id") @db.Uuid
   promotionId            String?               @map("promotion_id") @db.Uuid
