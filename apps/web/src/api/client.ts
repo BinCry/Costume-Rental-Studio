@@ -152,7 +152,13 @@ interface ApiOrder {
     checkoutUrl?: string | null;
     qrCode?: string | null;
     expiresAt?: string | null;
-    refunds?: { amountVnd: string | number | bigint; status: string }[];
+    refunds?: {
+      amountVnd: string | number | bigint;
+      status: string;
+      createdAt?: string;
+      updatedAt?: string;
+      completedAt?: string | null;
+    }[];
   }[];
   lateFeeVnd?: string | number | bigint;
   otherFeeVnd?: string | number | bigint;
@@ -1364,10 +1370,27 @@ function mapOrder(order: ApiOrder): Order {
   const refunded = refunds
     .filter((refund) => refund.status === 'COMPLETED' || refund.status === 'SUCCEEDED')
     .reduce((sum, refund) => sum + numberValue(refund.amountVnd), 0);
-  const refundPending = refunds.some(
-    (refund) => refund.status === 'PENDING' || refund.status === 'PROCESSING',
+  const refundPending = refunds.some((refund) =>
+    ['REQUESTED', 'PENDING', 'PROCESSING'].includes(refund.status),
   );
-  const refundStatus = refundPending ? 'Đang xử lý' : refunded > 0 ? 'Đã hoàn' : 'Chưa phát sinh';
+  const refundPendingAmount = refunds
+    .filter((refund) => ['REQUESTED', 'PENDING', 'PROCESSING'].includes(refund.status))
+    .reduce((sum, refund) => sum + numberValue(refund.amountVnd), 0);
+  const refundFailed = refunds.some((refund) => ['REJECTED', 'FAILED'].includes(refund.status));
+  const refundStatus = refundPending
+    ? 'Đang xử lý'
+    : refundFailed
+      ? 'Cần kiểm tra'
+      : refunded > 0
+        ? 'Đã hoàn'
+        : 'Chưa phát sinh';
+  const latestRefund = [...refunds].sort((left, right) =>
+    (right.updatedAt ?? right.createdAt ?? '').localeCompare(
+      left.updatedAt ?? left.createdAt ?? '',
+    ),
+  )[0];
+  const refundUpdatedAt =
+    latestRefund?.completedAt ?? latestRefund?.updatedAt ?? latestRefund?.createdAt;
   const policy = order.policyVersion;
   const billingMode = policy?.billingDayMode === 'ROLLING_24_HOURS' ? 'Chu kỳ 24 giờ' : 'Ngày lịch';
   return {
@@ -1381,6 +1404,8 @@ function mapOrder(order: ApiOrder): Order {
     returnAt: formatDate(order.plannedDueAt),
     apiPlannedStartAt: order.plannedStartAt,
     apiPlannedDueAt: order.plannedDueAt,
+    refundUpdatedAt: refundUpdatedAt ? formatDate(refundUpdatedAt) : undefined,
+    refundPendingAmount,
     dayPolicy: policy
       ? `${billingMode} (${policy.versionCode})`
       : 'Chưa có dữ liệu chính sách của đơn',
@@ -1423,7 +1448,7 @@ function mapOrder(order: ApiOrder): Order {
         label: 'Đã hoàn',
         amount: refunded,
         status: refundStatus,
-        tone: refundPending ? 'warning' : 'info',
+        tone: refundPending || refundFailed ? 'warning' : 'info',
       },
     ],
     history: (order.events ?? []).map(
@@ -1543,6 +1568,8 @@ function customerOrderFromOrder(order: Order, customerCode: string): CustomerOrd
     rentalStatus: rental?.status ?? 'Chưa có dữ liệu',
     depositStatus: deposit?.status ?? 'Chưa có dữ liệu',
     refundStatus: refund?.status ?? 'Chưa có dữ liệu',
+    refundUpdatedAt: order.refundUpdatedAt,
+    refundPendingAmount: order.refundPendingAmount,
     returnStatus:
       order.status === 'ACTIVE'
         ? 'Đang ở khách'
@@ -1565,6 +1592,20 @@ export async function listCustomerOrders(): Promise<CustomerOrder[]> {
     request<{ customerCode: string }>('/api/v1/customers/me'),
   ]);
   return orders.map((order) => customerOrderFromOrder(order, profile.customerCode));
+}
+export async function getCustomerOrderEndReason(orderCode: string): Promise<string | undefined> {
+  const orderId = orderRefs.get(orderCode)?.id;
+  if (!orderId) return undefined;
+  const result = await request<{
+    items: {
+      eventType: string;
+      metadataJson?: { reason?: unknown } | null;
+    }[];
+  }>(`/api/v1/rentals/orders/${encodeURIComponent(orderId)}/events?page=1&pageSize=1`);
+  const event = result.items[0];
+  if (!event || !['REJECTED', 'CANCELLED', 'NO_SHOW'].includes(event.eventType)) return undefined;
+  const reason = event.metadataJson?.reason;
+  return typeof reason === 'string' && reason.trim() ? reason.trim() : undefined;
 }
 export async function listActiveRentals(branchName?: string): Promise<ActiveUnit[]> {
   const query = new URLSearchParams({

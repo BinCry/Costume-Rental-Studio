@@ -33,6 +33,7 @@ import {
   apiEnabled,
   checkPublicAvailability,
   createPaymentCheckout,
+  getCustomerOrderEndReason,
   getOrderSettlement,
   getOwnCustomerProfile,
   getPublicModelVariants,
@@ -324,17 +325,13 @@ export function CostumeDetailPage({
                       label="Nhận"
                       value={pickup}
                       error={pickupIssue}
-                      onChange={(next) =>
-                        setPeriod((current) => ({ ...current, pickup: next }))
-                      }
+                      onChange={(next) => setPeriod((current) => ({ ...current, pickup: next }))}
                     />
                     <DateTimeField
                       label="Trả"
                       value={due}
                       error={returnIssue}
-                      onChange={(next) =>
-                        setPeriod((current) => ({ ...current, due: next }))
-                      }
+                      onChange={(next) => setPeriod((current) => ({ ...current, due: next }))}
                     />
                   </div>
                   {branchOptionsError && (
@@ -403,15 +400,32 @@ export function CostumeDetailPage({
                   </Button>
                 </div>
                 <p className="muted small-note">
-                  Thanh toán qua payOS hoặc tại chi nhánh sau khi xác nhận; cọc quyết toán khi trả đồ.
+                  Thanh toán qua payOS hoặc tại chi nhánh sau khi xác nhận; cọc quyết toán khi trả
+                  đồ.
                 </p>
                 <details className="costume-detail-extra">
                   <summary>Chi tiết trang phục</summary>
                   {item.description && <p>{item.description}</p>}
-                  {item.material && <p><strong>Chất liệu:</strong> {item.material}</p>}
-                  {variant.fit.trim() && <p><strong>Phom dáng:</strong> {variant.fit}</p>}
-                  {item.accessories.length > 0 && <p><strong>Phụ kiện:</strong> {item.accessories.join(' · ')}</p>}
-                  {variant.replacement && <p><strong>Giá thay thế:</strong> {money(variant.replacement)}</p>}
+                  {item.material && (
+                    <p>
+                      <strong>Chất liệu:</strong> {item.material}
+                    </p>
+                  )}
+                  {variant.fit.trim() && (
+                    <p>
+                      <strong>Phom dáng:</strong> {variant.fit}
+                    </p>
+                  )}
+                  {item.accessories.length > 0 && (
+                    <p>
+                      <strong>Phụ kiện:</strong> {item.accessories.join(' · ')}
+                    </p>
+                  )}
+                  {variant.replacement && (
+                    <p>
+                      <strong>Giá thay thế:</strong> {money(variant.replacement)}
+                    </p>
+                  )}
                 </details>
               </div>
             </div>
@@ -420,6 +434,36 @@ export function CostumeDetailPage({
       }}
     </StateGate>
   );
+}
+
+function customerOrderNextStep(order: CustomerOrder) {
+  switch (order.status) {
+    case 'DRAFT':
+      return 'Hoàn tất yêu cầu thuê để Studio kiểm tra lịch.';
+    case 'PENDING_CONFIRMATION':
+      return 'Chờ Studio xác nhận; chưa cần thanh toán.';
+    case 'CONFIRMED':
+    case 'PREPARING':
+      return 'Kiểm tra số dư và lịch nhận đồ.';
+    case 'READY_FOR_PICKUP':
+      return 'Đến chi nhánh đúng giờ và mang theo mã đơn.';
+    case 'ACTIVE':
+      return 'Trả đồ trước hạn ghi trên đơn.';
+    case 'RETURN_INSPECTION':
+      return 'Chờ Studio kiểm tra đồ và quyết toán cọc.';
+    case 'COMPLETED':
+    case 'CANCELLED':
+      if (order.refundStatus === 'Đang xử lý') return 'Theo dõi khoản hoàn tiền.';
+      if (order.refundStatus === 'Cần kiểm tra') return 'Liên hệ Studio để đối chiếu khoản hoàn.';
+      return 'Không cần thao tác.';
+    case 'REJECTED':
+      if (order.refundStatus === 'Đang xử lý') return 'Xem lý do và theo dõi khoản hoàn tiền.';
+      if (order.refundStatus === 'Cần kiểm tra')
+        return 'Xem lý do và liên hệ Studio về khoản hoàn.';
+      return 'Xem lý do bên dưới và chọn mẫu khác nếu cần.';
+    case 'NO_SHOW':
+      return 'Liên hệ Studio nếu cần đối chiếu phí.';
+  }
 }
 
 export function MyRentalsPage({
@@ -440,6 +484,27 @@ export function MyRentalsPage({
   const [issue, setIssue] = useState('');
   const [busy, setBusy] = useState(false);
   const [local, setLocal] = useState<CustomerOrder>();
+  const [endReason, setEndReason] = useState<{ orderId: string; text?: string; error?: boolean }>();
+  const [reasonRetry, setReasonRetry] = useState(0);
+  const reasonOrder = useMemo(
+    () => (id ? (local?.id === id ? local : data?.find((order) => order.id === id)) : undefined),
+    [id, local, data],
+  );
+  useEffect(() => {
+    if (!id || !reasonOrder || reasonOrder.reason || !apiEnabled || !hasAccessToken()) return;
+    if (!['REJECTED', 'CANCELLED', 'NO_SHOW'].includes(reasonOrder.status)) return;
+    let active = true;
+    void getCustomerOrderEndReason(id)
+      .then((text) => {
+        if (active) setEndReason({ orderId: id, text });
+      })
+      .catch(() => {
+        if (active) setEndReason({ orderId: id, error: true });
+      });
+    return () => {
+      active = false;
+    };
+  }, [id, reasonOrder, reasonRetry]);
   return (
     <StateGate
       loading={loading}
@@ -471,10 +536,11 @@ export function MyRentalsPage({
           setIssue('');
           try {
             setLocal(await studioAdapter.cancelCustomerOrder(selected.id, reason, scenario));
+            setEndReason({ orderId: selected.id, text: reason.trim() });
             setDialog(false);
+            retry();
           } catch (e) {
             setIssue(e instanceof Error ? e.message : 'Không thể hủy đơn.');
-            setDialog(false);
           } finally {
             setBusy(false);
           }
@@ -502,6 +568,9 @@ export function MyRentalsPage({
             {selected ? (
               <div className="feature-two-column">
                 <div>
+                  <p className="customer-next-step">
+                    <strong>Tiếp theo:</strong> {customerOrderNextStep(selected)}
+                  </p>
                   <CustomerPaymentPanel
                     orderId={selected.id}
                     orderStatus={selected.status}
@@ -539,14 +608,36 @@ export function MyRentalsPage({
                         { label: 'Hạn trả', value: selected.due },
                       ]}
                     />
-                    {selected.reason && (
-                      <Feedback tone="warning" title="Lý do hủy / từ chối">
-                        {selected.reason}
+                    {(selected.reason ??
+                      (endReason?.orderId === selected.id ? endReason.text : undefined)) && (
+                      <Feedback tone="warning" title="Lý do kết thúc đơn">
+                        {selected.reason ?? endReason?.text}
                       </Feedback>
+                    )}
+                    {endReason?.orderId === selected.id && endReason.error && (
+                      <Feedback
+                        tone="warning"
+                        title="Chưa tải được lý do"
+                        action={
+                          <Button
+                            variant="secondary"
+                            onClick={() => setReasonRetry((value) => value + 1)}
+                          >
+                            Thử lại
+                          </Button>
+                        }
+                      />
                     )}
                     {selected.canCancel && (
                       <div className="destructive-area">
-                        <Button variant="danger" onClick={() => setDialog(true)}>
+                        <Button
+                          variant="danger"
+                          onClick={() => {
+                            setReason('');
+                            setIssue('');
+                            setDialog(true);
+                          }}
+                        >
                           Hủy yêu cầu
                         </Button>
                       </div>
@@ -564,9 +655,28 @@ export function MyRentalsPage({
                     extra={selected.extra}
                     refund={selected.refund}
                   />
-                  {selected.refundStatus !== 'Chưa phát sinh' && (
-                    <Panel title="Hoàn cọc"><KeyFacts rows={[{ label: 'Trạng thái', value: selected.refundStatus }]} /></Panel>
-                  )}
+                  {selected.refundStatus !== 'Chưa phát sinh' &&
+                    selected.refundStatus !== 'Chưa có dữ liệu' && (
+                      <Panel title="Hoàn tiền">
+                        <KeyFacts
+                          rows={[
+                            { label: 'Đã hoàn', value: money(selected.refund) },
+                            ...(selected.refundPendingAmount
+                              ? [
+                                  {
+                                    label: 'Đang chờ hoàn',
+                                    value: money(selected.refundPendingAmount),
+                                  },
+                                ]
+                              : []),
+                            { label: 'Trạng thái', value: selected.refundStatus },
+                            ...(selected.refundUpdatedAt
+                              ? [{ label: 'Cập nhật', value: selected.refundUpdatedAt }]
+                              : []),
+                          ]}
+                        />
+                      </Panel>
+                    )}
                 </div>
               </div>
             ) : (
@@ -589,28 +699,64 @@ export function MyRentalsPage({
                   <div className="customer-order-list">
                     <div className="order-table-scroll customer-order-table">
                       <table className="order-table">
-                        <thead><tr>
-                          <th scope="col">Mã đơn</th><th scope="col">Trang phục</th>
-                          <th scope="col">Nhận</th><th scope="col">Hạn trả</th>
-                          <th scope="col">Trạng thái</th><th scope="col">Tiền thuê</th>
-                        </tr></thead>
-                        <tbody>{visible.map((order) => (
-                          <tr key={order.id}>
-                            <td><button type="button" className="order-table-link" onClick={() => go('myRentalDetail', { order: order.id })}>{order.id}</button></td>
-                            <td>{order.items?.length ? order.items.map((item) => item.costume).join(', ') : order.costume}</td>
-                            <td>{order.pickup}</td><td>{order.due}</td>
-                            <td><StatusLabel {...orderStatus[order.status]} /></td>
-                            <td>{money(order.rental)}</td>
+                        <thead>
+                          <tr>
+                            <th scope="col">Mã đơn</th>
+                            <th scope="col">Trang phục</th>
+                            <th scope="col">Nhận</th>
+                            <th scope="col">Hạn trả</th>
+                            <th scope="col">Trạng thái</th>
+                            <th scope="col">Tiền thuê</th>
                           </tr>
-                        ))}</tbody>
+                        </thead>
+                        <tbody>
+                          {visible.map((order) => (
+                            <tr key={order.id}>
+                              <td>
+                                <button
+                                  type="button"
+                                  className="order-table-link"
+                                  onClick={() => go('myRentalDetail', { order: order.id })}
+                                >
+                                  {order.id}
+                                </button>
+                              </td>
+                              <td>
+                                {order.items?.length
+                                  ? order.items.map((item) => item.costume).join(', ')
+                                  : order.costume}
+                              </td>
+                              <td>{order.pickup}</td>
+                              <td>{order.due}</td>
+                              <td>
+                                <StatusLabel {...orderStatus[order.status]} />
+                              </td>
+                              <td>{money(order.rental)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
                       </table>
                     </div>
                     <div className="customer-order-mobile-list">
                       {visible.map((order) => (
-                        <button key={order.id} type="button" className="customer-order-card" onClick={() => go('myRentalDetail', { order: order.id })}>
-                          <span><strong>{order.id}</strong><StatusLabel {...orderStatus[order.status]} /></span>
-                          <span>{order.items?.length ? order.items.map((item) => item.costume).join(', ') : order.costume}</span>
-                          <small>Nhận {order.pickup} · Trả {order.due}</small>
+                        <button
+                          key={order.id}
+                          type="button"
+                          className="customer-order-card"
+                          onClick={() => go('myRentalDetail', { order: order.id })}
+                        >
+                          <span>
+                            <strong>{order.id}</strong>
+                            <StatusLabel {...orderStatus[order.status]} />
+                          </span>
+                          <span>
+                            {order.items?.length
+                              ? order.items.map((item) => item.costume).join(', ')
+                              : order.costume}
+                          </span>
+                          <small>
+                            Nhận {order.pickup} · Trả {order.due}
+                          </small>
                         </button>
                       ))}
                     </div>
@@ -628,26 +774,35 @@ export function MyRentalsPage({
                 )}
               </>
             )}
-            <InlineIssue
-              text={issue}
-              conflict={scenario === 'version' || scenario === 'cancelled'}
-            />
+            {!dialog && (
+              <InlineIssue
+                text={issue}
+                conflict={scenario === 'version' || scenario === 'cancelled'}
+              />
+            )}
             {dialog && selected && (
               <ConfirmDialog
                 title="Hủy yêu cầu thuê"
                 confirmText="Xác nhận hủy"
                 danger
                 loading={busy}
-                onClose={() => setDialog(false)}
+                onClose={() => {
+                  setDialog(false);
+                  setIssue('');
+                }}
                 onConfirm={() => void confirm()}
               >
-                <p>Hủy {selected.id} sẽ được lưu trong lịch sử đơn. Lý do là bắt buộc.</p>
+                <p>
+                  Yêu cầu {selected.id} sẽ kết thúc ngay khi hủy. Nếu đã trả tiền tại chi nhánh, hãy
+                  liên hệ Studio để đối chiếu.
+                </p>
                 <Field
                   label="Lý do hủy"
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   error={issue && !reason.trim() ? issue : undefined}
                 />
+                {issue && reason.trim() && <InlineIssue text={issue} />}
               </ConfirmDialog>
             )}
           </div>
@@ -855,9 +1010,7 @@ function CustomerPaymentPanel({
         </Feedback>
       ) : (
         <div className="customer-payment-list">
-          <p className="muted small-note">
-            Thanh toán online được xác nhận sau khi cổng phản hồi.
-          </p>
+          <p className="muted small-note">Thanh toán online được xác nhận sau khi cổng phản hồi.</p>
           {rows.map((row) => {
             if (row.purpose === 'EXTRA' && row.remaining <= 0) return null;
             const activeCheckout = checkout?.purpose === row.purpose ? checkout : undefined;
@@ -993,7 +1146,10 @@ export function AccountPage({
   const [attempted, setAttempted] = useState(false);
   const [accountName, setAccountName] = useState(apiIdentity?.displayName ?? '');
   const [accountPhone, setAccountPhone] = useState('');
-  const [savedAccountProfile, setSavedAccountProfile] = useState({ name: apiIdentity?.displayName ?? '', phone: '' });
+  const [savedAccountProfile, setSavedAccountProfile] = useState({
+    name: apiIdentity?.displayName ?? '',
+    phone: '',
+  });
   const [accountEditing, setAccountEditing] = useState(false);
   const [profileRetry, setProfileRetry] = useState(0);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -1083,12 +1239,26 @@ export function AccountPage({
               <>
                 <KeyFacts
                   rows={[
-                    { label: 'Họ tên', value: profileAvailable ? savedAccountProfile.name : apiIdentity.displayName },
+                    {
+                      label: 'Họ tên',
+                      value: profileAvailable ? savedAccountProfile.name : apiIdentity.displayName,
+                    },
                     {
                       label: 'Email',
                       value: <span className="account-email">{apiIdentity.email}</span>,
                     },
-                    ...(isApiCustomer ? [{ label: 'Điện thoại', value: profileAvailable ? savedAccountProfile.phone || 'Chưa thêm' : profileLoading ? 'Đang tải' : 'Chưa tải được' }] : []),
+                    ...(isApiCustomer
+                      ? [
+                          {
+                            label: 'Điện thoại',
+                            value: profileAvailable
+                              ? savedAccountProfile.phone || 'Chưa thêm'
+                              : profileLoading
+                                ? 'Đang tải'
+                                : 'Chưa tải được',
+                          },
+                        ]
+                      : []),
                     {
                       label: 'Vai trò',
                       value:
@@ -1099,12 +1269,28 @@ export function AccountPage({
                 {isApiCustomer && (
                   <div className="account-profile-editor">
                     {profileLoading && (
-                      <p className="muted" role="status">Đang tải thông tin liên hệ…</p>
+                      <p className="muted" role="status">
+                        Đang tải thông tin liên hệ…
+                      </p>
                     )}
                     {profileIssue && (
-                      <Feedback tone="danger" title="Chưa cập nhật được hồ sơ" action={!profileAvailable ? (
-                        <Button variant="secondary" onClick={() => { setProfileLoading(true); setProfileRetry((value) => value + 1); }}>Thử lại</Button>
-                      ) : undefined}>
+                      <Feedback
+                        tone="danger"
+                        title="Chưa cập nhật được hồ sơ"
+                        action={
+                          !profileAvailable ? (
+                            <Button
+                              variant="secondary"
+                              onClick={() => {
+                                setProfileLoading(true);
+                                setProfileRetry((value) => value + 1);
+                              }}
+                            >
+                              Thử lại
+                            </Button>
+                          ) : undefined
+                        }
+                      >
                         {profileIssue}
                       </Feedback>
                     )}
@@ -1114,7 +1300,13 @@ export function AccountPage({
                       </Feedback>
                     )}
                     {profileAvailable && !accountEditing && (
-                      <Button variant="secondary" onClick={() => { setAccountEditing(true); setProfileNotice(''); }}>
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          setAccountEditing(true);
+                          setProfileNotice('');
+                        }}
+                      >
                         Chỉnh sửa liên hệ
                       </Button>
                     )}
@@ -1143,13 +1335,22 @@ export function AccountPage({
                           disabled={profileSaving}
                         />
                         <div className="feature-actions">
-                          <Button type="submit" loading={profileSaving} disabled={profileLoading}>Lưu</Button>
-                          <Button type="button" variant="secondary" disabled={profileSaving} onClick={() => {
-                            setAccountName(savedAccountProfile.name);
-                            setAccountPhone(savedAccountProfile.phone);
-                            setProfileIssue('');
-                            setAccountEditing(false);
-                          }}>Hủy</Button>
+                          <Button type="submit" loading={profileSaving} disabled={profileLoading}>
+                            Lưu
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={profileSaving}
+                            onClick={() => {
+                              setAccountName(savedAccountProfile.name);
+                              setAccountPhone(savedAccountProfile.phone);
+                              setProfileIssue('');
+                              setAccountEditing(false);
+                            }}
+                          >
+                            Hủy
+                          </Button>
                         </div>
                       </form>
                     )}

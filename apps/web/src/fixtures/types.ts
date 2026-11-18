@@ -103,6 +103,8 @@ export interface Order {
   /** API timestamps used for availability checks; fixtures may omit them. */
   apiPlannedStartAt?: string;
   apiPlannedDueAt?: string;
+  refundUpdatedAt?: string;
+  refundPendingAmount?: number;
   dayPolicy: string;
   items: OrderItem[];
   /** API payments used to distinguish recorded, pending, and remaining amounts at handover. */

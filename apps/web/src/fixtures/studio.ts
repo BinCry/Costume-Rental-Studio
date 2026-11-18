@@ -242,6 +242,8 @@ export interface CustomerOrder {
   rentalStatus: string;
   depositStatus: string;
   refundStatus: string;
+  refundUpdatedAt?: string;
+  refundPendingAmount?: number;
   returnStatus: string;
   history: string[];
   reason?: string;
@@ -1097,7 +1099,8 @@ export const studioAdapter = {
     const existing = customerOrders.find((order) => order.id === id);
     if (existing) return existing.customerCode;
     const requestedItems = bookingItems(draft).flatMap((line) =>
-      Array.from({ length: line.quantity }, () => line));
+      Array.from({ length: line.quantity }, () => line),
+    );
     const catalog = fixtureCatalog.find((item) => item.id === requestedItems[0]?.costumeId);
     if (!catalog) throw new FixtureIssue('NOT_FOUND', 'Không tìm thấy mẫu đã chọn.');
     let customer = customers.find((item) => item.phone === draft.phone);
@@ -1120,9 +1123,11 @@ export const studioAdapter = {
       .filter(
         (unit) =>
           unit.branch === draft.branch &&
-          requestedItems.some((line) =>
-            unit.model === fixtureCatalog.find((item) => item.id === line.costumeId)?.name &&
-            unit.variant === line.variant) &&
+          requestedItems.some(
+            (line) =>
+              unit.model === fixtureCatalog.find((item) => item.id === line.costumeId)?.name &&
+              unit.variant === line.variant,
+          ) &&
           ['READY', 'CLEANING', 'REPAIR'].includes(unit.status),
       )
       .map((unit) => ({
@@ -1152,7 +1157,10 @@ export const studioAdapter = {
         { label: 'Tiền cọc', amount: quote.deposit, status: 'Chưa thu', tone: 'neutral' },
         { label: 'Phụ phí / hoàn', amount: 0, status: 'Chưa phát sinh', tone: 'neutral' },
       ],
-      history: ['03/10/2026 · Tạo yêu cầu fixture', '03/10/2026 · Chờ nhân viên xác nhận, chưa giữ bộ'],
+      history: [
+        '03/10/2026 · Tạo yêu cầu fixture',
+        '03/10/2026 · Chờ nhân viên xác nhận, chưa giữ bộ',
+      ],
       note: 'Yêu cầu mẫu; cần kiểm tra khả dụng và gán bộ.',
       eligibleUnits,
     });
@@ -1163,8 +1171,14 @@ export const studioAdapter = {
       branch: draft.branch,
       pickup,
       due,
-      costume: [...new Set(requestedItems.map((line) =>
-        fixtureCatalog.find((item) => item.id === line.costumeId)?.name ?? catalog.name))].join(', '),
+      costume: [
+        ...new Set(
+          requestedItems.map(
+            (line) =>
+              fixtureCatalog.find((item) => item.id === line.costumeId)?.name ?? catalog.name,
+          ),
+        ),
+      ].join(', '),
       variant: requestedItems.map((line) => line.variant).join(', '),
       rental: quote.rental,
       deposit: quote.deposit,
