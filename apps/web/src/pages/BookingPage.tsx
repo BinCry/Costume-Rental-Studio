@@ -730,48 +730,60 @@ export function BookingPage({
                 </p>
               ) : data?.length ? (
                 <div className="booking-costumes">
-                  {data.map((entry) => (
-                    <button
-                      key={entry.id}
-                      type="button"
-                      className={`booking-costume ${lines.some((line) => line.costumeId === entry.id) ? 'selected' : ''}`}
-                      aria-label={`Thêm ${entry.name} vào yêu cầu`}
-                      disabled={totalQuantity >= 50}
-                      onClick={() => {
-                        updateLines([
-                          ...lines,
-                          {
-                            costumeId: entry.id,
-                            variant: apiMode ? '' : `${entry.sizes[0]} / ${entry.colors[0]}`,
-                            quantity: 1,
-                          },
-                        ]);
-                      }}
-                    >
-                      <span
-                        className={`booking-costume-image costume-${entry.imagePosition}`}
-                        role="img"
-                        aria-label={entry.imageAlt ?? `Ảnh ${entry.name}`}
+                  {data.map((entry) => {
+                    const isSelected = lines.some((line) => line.costumeId === entry.id);
+                    return (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        className={`booking-costume ${isSelected ? 'selected' : ''}`}
+                        aria-label={
+                          isSelected
+                            ? `Bỏ ${entry.name} khỏi yêu cầu thuê`
+                            : `Thêm ${entry.name} vào yêu cầu thuê`
+                        }
+                        aria-pressed={isSelected}
+                        disabled={!isSelected && totalQuantity >= 50}
+                        onClick={() => {
+                          if (isSelected) {
+                            updateLines(lines.filter((line) => line.costumeId !== entry.id));
+                            return;
+                          }
+                          updateLines([
+                            ...lines,
+                            {
+                              costumeId: entry.id,
+                              variant: apiMode ? '' : `${entry.sizes[0]} / ${entry.colors[0]}`,
+                              quantity: 1,
+                            },
+                          ]);
+                        }}
                       >
-                        <ImageWithFallback
-                          src={entry.imageUrl}
-                          alt=""
-                          compact
-                          missingText="Chưa có ảnh"
-                          failedText="Ảnh chưa tải được"
-                        />
-                      </span>
-                      <span>
-                        <strong>{entry.name}</strong>
-                        <small>
-                          {entry.category} · Từ {money(entry.priceFrom)}/ngày
-                        </small>
-                      </span>
-                      <span className="booking-add-icon" aria-hidden="true">
-                        +
-                      </span>
-                    </button>
-                  ))}
+                        <span
+                          className={`booking-costume-image costume-${entry.imagePosition}`}
+                          role="img"
+                          aria-label={entry.imageAlt ?? `Ảnh ${entry.name}`}
+                        >
+                          <ImageWithFallback
+                            src={entry.imageUrl}
+                            alt=""
+                            compact
+                            missingText="Chưa có ảnh"
+                            failedText="Ảnh chưa tải được"
+                          />
+                        </span>
+                        <span>
+                          <strong>{entry.name}</strong>
+                          <small>
+                            {entry.category} · Từ {money(entry.priceFrom)}/ngày
+                          </small>
+                        </span>
+                        <span className="booking-add-icon" aria-hidden="true">
+                          {isSelected ? '−' : '+'}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="booking-selection-status">Chưa có mẫu trang phục để chọn.</p>

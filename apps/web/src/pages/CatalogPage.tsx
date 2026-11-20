@@ -254,7 +254,7 @@ function CostumeCard({
       : availabilityState === 'error'
         ? 'Chưa kiểm tra được lịch'
         : availabilityState === 'available'
-          ? 'Có size/màu phù hợp theo kỳ đã chọn'
+          ? 'Có sẵn'
           : 'Không có size/màu phù hợp theo kỳ này'
     : periodSelected && fixtureAvailabilityKnown
       ? available && !conflict
