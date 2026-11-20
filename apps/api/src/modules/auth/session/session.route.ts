@@ -25,9 +25,10 @@ import {
 } from './session.service.js';
 
 export const sessionRouter = Router();
-const limit = rateLimit({
+const loginAttemptLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
+  skipSuccessfulRequests: true,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   handler: (request, response) =>
@@ -49,14 +50,14 @@ function requestMetadata(request: Request, input?: { deviceId?: string; deviceNa
   };
 }
 
-sessionRouter.post('/login', requireTrustedOrigin, limit, async (request, response) => {
+sessionRouter.post('/login', requireTrustedOrigin, loginAttemptLimit, async (request, response) => {
   response.setHeader('Cache-Control', 'no-store');
   const input = parse(loginSchema, request.body);
   const result = await login(input, requestMetadata(request, input));
   return sendSuccess(response, setRefreshCookie(response, result), 'Logged in');
 });
 
-sessionRouter.post('/refresh', requireTrustedOrigin, limit, async (request, response) => {
+sessionRouter.post('/refresh', requireTrustedOrigin, async (request, response) => {
   response.setHeader('Cache-Control', 'no-store');
   try {
     const token = readRefreshCookie(request);
@@ -108,7 +109,6 @@ sessionRouter.post(
 sessionRouter.post(
   '/change-password',
   requireTrustedOrigin,
-  limit,
   requireAuthentication,
   async (request, response) => {
     response.setHeader('Cache-Control', 'no-store');

@@ -430,4 +430,39 @@ describe('auth HTTP contract', () => {
       expect.arrayContaining([expect.stringContaining('Expires=Thu, 01 Jan 1970')]),
     );
   });
+  it('limits failed password logins without throttling session refreshes or successful customers', async () => {
+    const app = createApp();
+    app.set('trust proxy', 1);
+
+    const customerIp = '198.51.100.40';
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      await request(app)
+        .post('/api/v1/auth/refresh')
+        .set('X-Forwarded-For', customerIp)
+        .expect(401);
+    }
+    await request(app)
+      .post('/api/v1/auth/login')
+      .set('X-Forwarded-For', customerIp)
+      .send({ email, password })
+      .expect(200);
+
+    const attackerIp = '198.51.100.41';
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await request(app)
+        .post('/api/v1/auth/login')
+        .set('X-Forwarded-For', attackerIp)
+        .send({ email, password: `${password}-incorrect` })
+        .expect(401);
+    }
+    const blocked = await request(app)
+      .post('/api/v1/auth/login')
+      .set('X-Forwarded-For', attackerIp)
+      .send({ email, password: `${password}-incorrect` })
+      .expect(429);
+    expect(blocked.body).toMatchObject({
+      success: false,
+      error: { code: 'AUTH_RATE_LIMITED' },
+    });
+  });
 });
