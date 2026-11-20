@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Navigate } from '../App';
 import { Button, Feedback, Field, SelectField, StatusLabel } from '../components/ui';
 import { defaultRentalDate, money } from '../components/support';
@@ -34,6 +34,163 @@ interface CounterRentalLine {
   id: number;
   costumeId: string;
   variant: string;
+}
+
+function CounterCustomerPicker({
+  customers,
+  selectedCustomer,
+  search,
+  canReadAllCustomers,
+  onSearchChange,
+  onSelect,
+}: {
+  customers: Customer[];
+  selectedCustomer?: Customer;
+  search: string;
+  canReadAllCustomers: boolean;
+  onSearchChange: (value: string) => void;
+  onSelect: (customer: Customer) => void;
+}) {
+  const inputId = useId();
+  const listId = useId();
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const visibleCustomers = customers
+    .filter((customer) => matchesCustomerSearch(customer, search))
+    .slice(0, 8);
+  const inputValue = selectedCustomer
+    ? `${selectedCustomer.name} · ${
+        selectedCustomer.phone.trim() ? selectedCustomer.phone : selectedCustomer.email
+      }`
+    : search;
+
+  const choose = (customer: Customer) => {
+    onSelect(customer);
+    setOpen(false);
+    setActiveIndex(-1);
+  };
+
+  return (
+    <div
+      className="field counter-customer-picker"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+    >
+      <label htmlFor={inputId}>Tìm và chọn khách thuê</label>
+      <div className="counter-customer-picker-control">
+        <input
+          id={inputId}
+          type="search"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={open}
+          aria-controls={listId}
+          aria-activedescendant={
+            open && activeIndex >= 0 && visibleCustomers.length
+              ? `${listId}-option-${activeIndex}`
+              : undefined
+          }
+          autoComplete="off"
+          value={inputValue}
+          placeholder="Tên, số điện thoại, email hoặc mã khách"
+          onFocus={() => setOpen(true)}
+          onChange={(event) => {
+            onSearchChange(event.target.value);
+            setActiveIndex(-1);
+            setOpen(true);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowDown') {
+              event.preventDefault();
+              setOpen(true);
+              setActiveIndex((current) =>
+                Math.min(current + 1, Math.max(visibleCustomers.length - 1, 0)),
+              );
+            } else if (event.key === 'ArrowUp') {
+              event.preventDefault();
+              setOpen(true);
+              setActiveIndex((current) =>
+                current <= 0 ? Math.max(visibleCustomers.length - 1, 0) : current - 1,
+              );
+            } else if (
+              event.key === 'Enter' &&
+              open &&
+              activeIndex >= 0 &&
+              visibleCustomers[activeIndex]
+            ) {
+              event.preventDefault();
+              choose(visibleCustomers[activeIndex]);
+            } else if (event.key === 'Escape') {
+              setOpen(false);
+            }
+          }}
+        />
+        {(selectedCustomer ?? search) && (
+          <button
+            className="counter-customer-picker-clear"
+            type="button"
+            aria-label={selectedCustomer ? 'Bỏ chọn khách thuê' : 'Xóa nội dung tìm kiếm'}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              onSearchChange('');
+              setOpen(true);
+              setActiveIndex(-1);
+            }}
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+        )}
+        {open && (
+          <div className="counter-customer-picker-results" id={listId} role="listbox">
+            {visibleCustomers.length ? (
+              visibleCustomers.map((customer, index) => (
+                <div
+                  className={`counter-customer-picker-option ${
+                    index === activeIndex ? 'is-active' : ''
+                  }`}
+                  id={`${listId}-option-${index}`}
+                  key={customer.code}
+                  role="option"
+                  aria-selected={selectedCustomer?.code === customer.code}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  onClick={() => choose(customer)}
+                >
+                  <span className="counter-customer-picker-option-name">{customer.name}</span>
+                  <span className="counter-customer-picker-option-meta">
+                    {[
+                      customer.phone.trim() ? customer.phone : customer.email,
+                      customer.code,
+                      customer.preferredBranch,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <p className="counter-customer-picker-empty" role="status">
+                {search
+                  ? canReadAllCustomers
+                    ? 'Không tìm thấy khách phù hợp. Có thể tạo hồ sơ mới.'
+                    : 'Không tìm thấy khách trong phạm vi chi nhánh này. Có thể tạo hồ sơ mới.'
+                  : 'Chưa có hồ sơ khách để chọn.'}
+              </p>
+            )}
+            {visibleCustomers.length === 8 && (
+              <p className="counter-customer-picker-footnote">Nhập thêm để thu hẹp kết quả.</p>
+            )}
+          </div>
+        )}
+      </div>
+      {selectedCustomer && (
+        <p className="field-hint" role="status">
+          {selectedCustomer.code} · {selectedCustomer.preferredBranch}
+        </p>
+      )}
+    </div>
+  );
 }
 
 function counterVariantOptions(item?: CatalogItem): CounterVariantOption[] {
@@ -493,10 +650,7 @@ export function CounterRentalPage({
           resolvedCustomer && !customers.some((c) => c.code === resolvedCustomer.code)
             ? [resolvedCustomer, ...customers]
             : customers;
-        const matches = availableCustomers.filter((customer) =>
-          matchesCustomerSearch(customer, customerSearch),
-        );
-        const customer = matches.find((c) => c.code === customerCode);
+        const customer = availableCustomers.find((entry) => entry.code === customerCode);
         return (
           <div className="page">
             <PageHeading title="Tạo đơn thuê tại quầy" />
@@ -570,62 +724,26 @@ export function CounterRentalPage({
                       </div>
                     ) : (
                       <>
-                        <SearchField
-                          label="Tìm tên, số điện thoại, email hoặc mã khách"
-                          value={customerSearch}
-                          onChange={(value) => {
+                        <CounterCustomerPicker
+                          customers={availableCustomers}
+                          selectedCustomer={customer}
+                          search={customerSearch}
+                          canReadAllCustomers={canReadAllCustomers}
+                          onSearchChange={(value) => {
                             setCustomerSearch(value);
                             setCustomerNotice('');
-                            const nextMatches = availableCustomers.filter((entry) =>
-                              matchesCustomerSearch(entry, value),
-                            );
-                            const nextCode =
-                              value.trim() && nextMatches.length === 1
-                                ? nextMatches[0].code
-                                : nextMatches.some((entry) => entry.code === customerCode)
-                                  ? customerCode
-                                  : '';
-                            if (nextCode !== customerCode) {
-                              setCustomerCode(nextCode);
+                            if (customerCode) {
+                              setCustomerCode('');
                               clearQuote();
                             }
                           }}
-                        />
-                        <SelectField
-                          label="Chọn khách"
-                          value={customer?.code ?? ''}
-                          onChange={(e) => {
-                            setCustomerCode(e.target.value);
-                            clearQuote();
+                          onSelect={(nextCustomer) => {
+                            if (nextCustomer.code !== customerCode) clearQuote();
+                            setCustomerCode(nextCustomer.code);
+                            setCustomerSearch('');
+                            setCustomerNotice('');
                           }}
-                        >
-                          {!customer && <option value="">Chọn đúng khách trong kết quả</option>}
-                          {matches.map((c) => (
-                            <option value={c.code} key={c.code}>
-                              {[
-                                c.name,
-                                c.phone || c.email,
-                                canReadAllCustomers && c.preferredBranch,
-                              ]
-                                .filter(Boolean)
-                                .join(' · ')}
-                            </option>
-                          ))}
-                        </SelectField>
-                        {customer && (
-                          <p className="field-hint">
-                            {customer.code} · {customer.preferredBranch}
-                          </p>
-                        )}
-                        {!customer && customerSearch && (
-                          <p className="field-hint" role="status">
-                            {matches.length
-                              ? 'Chọn một khách trong kết quả trước khi tạo yêu cầu.'
-                              : canReadAllCustomers
-                                ? 'Không tìm thấy hồ sơ; có thể tạo hồ sơ mới sau khi kiểm tra thông tin.'
-                                : 'Không tìm thấy trong phạm vi chi nhánh được cấp quyền; có thể tạo hồ sơ mới sau khi kiểm tra thông tin.'}
-                          </p>
-                        )}
+                        />
                         {customerNotice && (
                           <p className="field-hint" role="status">
                             {customerNotice}
