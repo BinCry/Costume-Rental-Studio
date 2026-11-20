@@ -18,7 +18,7 @@ import { useFixtureResource } from '../components/useFixtureResource';
 import { useMobileDetailReveal } from '../components/useMobileDetailReveal';
 import { branches, fixtureAdapter, fixtureCatalog, fixturePeriod } from '../fixtures/adapter';
 import { studioAdapter, type ActiveUnit, type Customer, type Unit } from '../fixtures/studio';
-import type { CatalogItem, DemoScenario, QuoteSnapshot } from '../fixtures/types';
+import type { BookingDraft, CatalogItem, DemoScenario, QuoteSnapshot } from '../fixtures/types';
 import { apiEnabled, hasAccessToken } from '../api/client';
 import { isValidPhone, samePhone } from '../utils/phone';
 import { rentalPeriodIssues } from '../utils/rental-period';
@@ -28,6 +28,12 @@ interface CounterVariantOption {
   value: string;
   label: string;
   apiId?: string;
+}
+
+interface CounterRentalLine {
+  id: number;
+  costumeId: string;
+  variant: string;
 }
 
 function counterVariantOptions(item?: CatalogItem): CounterVariantOption[] {
@@ -69,7 +75,7 @@ export function CounterRentalPage({
       ? rentalBranch
       : branches.includes(branch)
         ? branch
-        : branches[0] ?? rentalBranch;
+        : (branches[0] ?? rentalBranch);
   const loadCustomers = useCallback(
     (currentScenario: DemoScenario) =>
       studioAdapter.customers(
@@ -105,19 +111,26 @@ export function CounterRentalPage({
   const [newEmail, setNewEmail] = useState('');
   const [customerNotice, setCustomerNotice] = useState('');
   const [resolvedCustomer, setResolvedCustomer] = useState<Customer | null>(null);
-  const [costume, setCostume] = useState('ao-dai-lina');
-  const [variant, setVariant] = useState('');
-  const [pickup, setPickup] = useState(() => realApiMode ? defaultRentalDate(1) : fixturePeriod.pickup);
-  const [due, setDue] = useState(() => realApiMode ? defaultRentalDate(3) : fixturePeriod.returnAt);
+  const [rentalLines, setRentalLines] = useState<CounterRentalLine[]>([
+    { id: 1, costumeId: 'ao-dai-lina', variant: '' },
+  ]);
+  const [pickup, setPickup] = useState(() =>
+    realApiMode ? defaultRentalDate(1) : fixturePeriod.pickup,
+  );
+  const [due, setDue] = useState(() =>
+    realApiMode ? defaultRentalDate(3) : fixturePeriod.returnAt,
+  );
   const [quote, setQuote] = useState<QuoteSnapshot>();
-  const [eligibleUnits, setEligibleUnits] = useState<Unit[]>([]);
-  const [selectedUnit, setSelectedUnit] = useState('');
+  const [quoteClock, setQuoteClock] = useState(Date.now);
+  const [eligibleUnits, setEligibleUnits] = useState<Unit[][]>([]);
+  const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
   const [issue, setIssue] = useState('');
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState('');
   const [createdMode, setCreatedMode] = useState<'pending' | 'confirmed'>('pending');
   const submittingRef = useRef(false);
   const newCustomerSequenceRef = useRef(0);
+  const rentalLineSequenceRef = useRef(1);
   const quoteRequestRef = useRef(0);
   const issueRef = useRef<HTMLDivElement>(null);
   const createdRef = useRef<HTMLDivElement>(null);
@@ -133,31 +146,110 @@ export function CounterRentalPage({
     createdRef.current?.focus();
     createdRef.current?.scrollIntoView({ block: 'nearest' });
   }, [created]);
-  const selectedCostume = catalog.some((entry) => entry.id === costume)
-    ? costume
-    : catalog[0]?.id ?? '';
-  const item = catalog.find((c) => c.id === selectedCostume);
-  const variantOptions = counterVariantOptions(item);
-  const selectedVariantOption =
-    variantOptions.find((option) => option.value === variant) ??
-    variantOptions.find((option) => option.label === variant) ??
-    variantOptions[0];
-  const selectedVariantValue = selectedVariantOption?.value ?? '';
-  const selectedVariant = selectedVariantOption?.apiId ?? selectedVariantOption?.label ?? '';
-  const selectedApiVariantId = selectedVariantOption?.apiId;
+  const selectedLines = rentalLines.map((line) => {
+    const selectedCostume = catalog.some((entry) => entry.id === line.costumeId)
+      ? line.costumeId
+      : (catalog[0]?.id ?? '');
+    const item = catalog.find((entry) => entry.id === selectedCostume);
+    const variantOptions = counterVariantOptions(item);
+    const selectedVariantOption =
+      variantOptions.find((option) => option.value === line.variant) ??
+      variantOptions.find((option) => option.label === line.variant) ??
+      variantOptions[0];
+    return {
+      ...line,
+      costumeId: selectedCostume,
+      item,
+      variantOptions,
+      selectedVariantValue: selectedVariantOption?.value ?? '',
+      selectedVariant: selectedVariantOption?.apiId ?? selectedVariantOption?.label ?? '',
+      selectedApiVariantId: selectedVariantOption?.apiId,
+    };
+  });
+  const selectedUnitSummary = selectedUnits.filter(Boolean).join(', ');
+  const canConfirmAllLines =
+    selectedLines.length > 0 &&
+    new Set(selectedUnits.filter(Boolean)).size === selectedLines.length &&
+    selectedLines.every((_, index) => {
+      const unit = eligibleUnits[index]?.find(
+        (candidate) => candidate.barcode === selectedUnits[index],
+      );
+      return Boolean(unit?.status === 'READY' && unit.available && (!realApiMode || unit.apiId));
+    });
+  const missingReadyLine = selectedLines.findIndex(
+    (_, index) =>
+      !(eligibleUnits[index] ?? []).some((unit) => unit.status === 'READY' && unit.available),
+  );
+  const expiresAt = quote?.expiresAtIso ? Date.parse(quote.expiresAtIso) : undefined;
+  const quoteExpired =
+    realApiMode &&
+    expiresAt !== undefined &&
+    (!Number.isFinite(expiresAt) || expiresAt <= quoteClock);
+  useEffect(() => {
+    if (!realApiMode || expiresAt === undefined || !Number.isFinite(expiresAt)) return;
+    const timeout = window.setTimeout(
+      () => setQuoteClock(Date.now()),
+      Math.max(0, expiresAt - Date.now()),
+    );
+    return () => window.clearTimeout(timeout);
+  }, [expiresAt, realApiMode]);
   const { pickupIssue, returnIssue } = rentalPeriodIssues(pickup, due);
   const validatePeriod = () => {
     const dates = rentalPeriodIssues(pickup, due);
-    return dates.pickupIssue ?? dates.returnIssue ??
-      (!pickup || !due ? 'Chọn thời điểm nhận và trả đồ.' : undefined);
+    return (
+      dates.pickupIssue ??
+      dates.returnIssue ??
+      (!pickup || !due ? 'Chọn thời điểm nhận và trả đồ.' : undefined)
+    );
   };
   const clearQuote = useCallback(() => {
     quoteRequestRef.current += 1;
     setQuote(undefined);
     setEligibleUnits([]);
-    setSelectedUnit('');
+    setSelectedUnits([]);
     if (!submittingRef.current) setBusy(false);
   }, []);
+  const updateRentalLine = (index: number, updates: Partial<CounterRentalLine>) => {
+    setRentalLines((current) =>
+      current.map((line, lineIndex) => (lineIndex === index ? { ...line, ...updates } : line)),
+    );
+    clearQuote();
+  };
+  const addRentalLine = () => {
+    const firstItem = catalog[0];
+    setRentalLines((current) => [
+      ...current,
+      {
+        id: ++rentalLineSequenceRef.current,
+        costumeId: firstItem?.id ?? '',
+        variant: counterVariantOptions(firstItem)[0]?.value ?? '',
+      },
+    ]);
+    clearQuote();
+  };
+  const removeRentalLine = (lineId: number) => {
+    setRentalLines((current) => current.filter((line) => line.id !== lineId));
+    clearQuote();
+  };
+  const counterDraft = (name: string, phone: string): BookingDraft => {
+    const items = selectedLines.map((line) => ({
+      costumeId: line.costumeId,
+      variant: line.selectedVariant,
+      quantity: 1,
+    }));
+    const firstLine = items[0] ?? { costumeId: '', variant: '', quantity: 0 };
+    return {
+      ...firstLine,
+      quantity: items.length,
+      items,
+      branch: selectedBranch,
+      pickup,
+      returnAt: due,
+      name,
+      phone,
+      note: '',
+    };
+  };
   const getQuote = async () => {
     const dateIssue = validatePeriod();
     if (dateIssue) {
@@ -168,13 +260,18 @@ export function CounterRentalPage({
       setIssue('Lưu hồ sơ khách mới trước khi tải báo giá.');
       return;
     }
-    const selectedCustomer = data?.find((entry) => entry.code === customerCode) ??
+    const selectedCustomer =
+      data?.find((entry) => entry.code === customerCode) ??
       (resolvedCustomer?.code === customerCode ? resolvedCustomer : undefined);
     if (!selectedCustomer) {
       setIssue('Chọn đúng hồ sơ khách trước khi tải báo giá.');
       return;
     }
-    if (!item || catalogLoading) {
+    if (
+      !selectedLines.length ||
+      selectedLines.some((line) => !line.item || !line.selectedVariant) ||
+      catalogLoading
+    ) {
       setIssue('Đợi danh mục trang phục tải xong rồi thử lại.');
       return;
     }
@@ -183,42 +280,44 @@ export function CounterRentalPage({
     setIssue('');
     try {
       const [nextQuote, units] = await Promise.all([
-        fixtureAdapter.getQuote(
-          {
-            costumeId: selectedCostume,
-            variant: selectedVariant,
-            quantity: 1,
-            branch: selectedBranch,
-            pickup,
-            returnAt: due,
-            name: '',
-            phone: '',
-            note: '',
-          },
-          scenario,
-          { customerCode: selectedCustomer.code, channel: 'IN_STORE' },
-        ),
+        fixtureAdapter.getQuote(counterDraft('', ''), scenario, {
+          customerCode: selectedCustomer.code,
+          channel: 'IN_STORE',
+        }),
         realApiMode
-          ? selectedApiVariantId
-            ? fixtureAdapter.rentalAvailability(selectedApiVariantId, selectedBranch, pickup, due)
-            : Promise.reject(
-                new Error(
-                  'Không tìm thấy mã biến thể trên máy chủ. Tải lại danh mục rồi thử lại.',
-                ),
-              )
-          : studioAdapter.units(scenario).then((allUnits) =>
-              allUnits.filter(
-                (unit) =>
-                  unit.branch === selectedBranch &&
-                  unit.model === item.name &&
-                  unit.variant === selectedVariant,
+          ? Promise.all(
+              selectedLines.map((line) =>
+                line.selectedApiVariantId
+                  ? fixtureAdapter.rentalAvailability(
+                      line.selectedApiVariantId,
+                      selectedBranch,
+                      pickup,
+                      due,
+                    )
+                  : Promise.reject(
+                      new Error(
+                        'Không tìm thấy mã biến thể trên máy chủ. Tải lại danh mục rồi thử lại.',
+                      ),
+                    ),
               ),
-            ),
+            )
+          : studioAdapter
+              .units(scenario)
+              .then((allUnits) =>
+                selectedLines.map((line) =>
+                  allUnits.filter(
+                    (unit) =>
+                      unit.branch === selectedBranch &&
+                      unit.model === line.item?.name &&
+                      unit.variant === line.selectedVariant,
+                  ),
+                ),
+              ),
       ]);
       if (requestId === quoteRequestRef.current) {
         setQuote(nextQuote);
         setEligibleUnits(units);
-        setSelectedUnit('');
+        setSelectedUnits(selectedLines.map(() => ''));
         revealQuote();
       }
     } catch (e) {
@@ -245,14 +344,14 @@ export function CounterRentalPage({
       return;
     }
     const email = newEmail.trim().toLocaleLowerCase('vi');
-    const phoneMatch = customers.find(
-      (customer) => samePhone(customer.phone, newPhone),
-    );
+    const phoneMatch = customers.find((customer) => samePhone(customer.phone, newPhone));
     const emailMatch = email
       ? customers.find((customer) => customer.email.trim().toLocaleLowerCase('vi') === email)
       : undefined;
     if (phoneMatch && emailMatch && phoneMatch.code !== emailMatch.code) {
-      setIssue('Số điện thoại và email thuộc hai hồ sơ khác nhau. Kiểm tra thông tin trước khi tiếp tục.');
+      setIssue(
+        'Số điện thoại và email thuộc hai hồ sơ khác nhau. Kiểm tra thông tin trước khi tiếp tục.',
+      );
       return;
     }
     const existing = emailMatch ?? phoneMatch;
@@ -315,67 +414,57 @@ export function CounterRentalPage({
       setIssue('Tải báo giá trước khi tạo yêu cầu.');
       return;
     }
-    const selectedCustomer = data?.find((entry) => entry.code === customerCode) ??
+    if (
+      realApiMode &&
+      quote.expiresAtIso &&
+      (!Number.isFinite(Date.parse(quote.expiresAtIso)) ||
+        Date.parse(quote.expiresAtIso) <= Date.now())
+    ) {
+      setIssue('Báo giá đã hết hạn. Xem báo giá mới trước khi tạo yêu cầu.');
+      return;
+    }
+    const selectedCustomer =
+      data?.find((entry) => entry.code === customerCode) ??
       (resolvedCustomer?.code === customerCode ? resolvedCustomer : undefined);
     if (creating || !selectedCustomer || !name.trim() || !isValidPhone(phone)) {
       setIssue('Lưu hoặc chọn đúng hồ sơ khách trước khi tạo đơn.');
       return;
     }
-    const unit = eligibleUnits.find((candidate) => candidate.barcode === selectedUnit);
-    if (
-      confirmNow &&
-      (!canConfirm ||
-        !eligibleUnits.some(
-          (unit) => unit.barcode === selectedUnit && unit.status === 'READY' && unit.available,
-        ))
-    ) {
-      setIssue('Chọn một bộ READY còn khả dụng trước khi xác nhận.');
+    if (quote.available === false) {
+      setIssue('Báo giá hiện không đủ bộ. Chọn lại mẫu hoặc kỳ thuê rồi tải báo giá mới.');
+      return;
+    }
+    const chosenUnits = selectedLines.map((_, index) =>
+      eligibleUnits[index]?.find((candidate) => candidate.barcode === selectedUnits[index]),
+    );
+    if (confirmNow && (!canConfirm || !canConfirmAllLines)) {
+      setIssue('Chọn một barcode READY còn khả dụng cho từng bộ trước khi xác nhận.');
       return;
     }
     submittingRef.current = true;
     setBusy(true);
     setIssue('');
     try {
+      const draft = counterDraft(name, phone);
       const id = await fixtureAdapter.submitBooking(
-        {
-          costumeId: selectedCostume,
-          variant: selectedVariant,
-          quantity: 1,
-          branch: selectedBranch,
-          pickup,
-          returnAt: due,
-          name,
-          phone,
-          note: '',
-        },
+        draft,
         quote,
         scenario,
-        confirmNow && realApiMode && unit?.apiId
-          ? { code: unit.barcode, id: unit.apiId }
+        confirmNow && realApiMode
+          ? selectedLines.map((line, index) => ({
+              code: selectedUnits[index],
+              id: chosenUnits[index]!.apiId!,
+              variantId: line.selectedApiVariantId!,
+            }))
           : undefined,
       );
-      if (!realApiMode)
-        studioAdapter.recordBooking(
-          id,
-          {
-            costumeId: selectedCostume,
-            variant: selectedVariant,
-            quantity: 1,
-            branch: selectedBranch,
-            pickup,
-            returnAt: due,
-            name,
-            phone,
-            note: '',
-          },
-          quote,
-        );
+      if (!realApiMode) studioAdapter.recordBooking(id, draft, quote);
       setCreated(id);
       setCreatedMode('pending');
       if (confirmNow) {
         try {
-          await fixtureAdapter.confirmOrder(id, 1, [selectedUnit], scenario);
-          if (!realApiMode) studioAdapter.reflectConfirmation(id, [selectedUnit]);
+          await fixtureAdapter.confirmOrder(id, 1, selectedUnits, scenario);
+          if (!realApiMode) studioAdapter.reflectConfirmation(id, selectedUnits);
           setCreatedMode('confirmed');
         } catch (caught) {
           setIssue(
@@ -400,18 +489,17 @@ export function CounterRentalPage({
       allowEmpty
     >
       {(customers) => {
-        const availableCustomers = resolvedCustomer && !customers.some((c) => c.code === resolvedCustomer.code)
-          ? [resolvedCustomer, ...customers]
-          : customers;
+        const availableCustomers =
+          resolvedCustomer && !customers.some((c) => c.code === resolvedCustomer.code)
+            ? [resolvedCustomer, ...customers]
+            : customers;
         const matches = availableCustomers.filter((customer) =>
           matchesCustomerSearch(customer, customerSearch),
         );
         const customer = matches.find((c) => c.code === customerCode);
         return (
           <div className="page">
-            <PageHeading
-              title="Tạo đơn thuê tại quầy"
-            />
+            <PageHeading title="Tạo đơn thuê tại quầy" />
             <div className="feature-two-column">
               <div>
                 <fieldset
@@ -422,21 +510,33 @@ export function CounterRentalPage({
                     title="1. Khách thuê"
                     action={
                       canCreateCustomer ? (
-                        <Button variant="quiet" onClick={() => { setCreating(!creating); setCustomerNotice(''); clearQuote(); setIssue(''); }}>
+                        <Button
+                          variant="quiet"
+                          onClick={() => {
+                            setCreating(!creating);
+                            setCustomerNotice('');
+                            clearQuote();
+                            setIssue('');
+                          }}
+                        >
                           {creating ? 'Chọn khách có sẵn' : '+ Tạo hồ sơ'}
                         </Button>
-                      ) : <span className="muted">Chỉ chọn hồ sơ có sẵn</span>
+                      ) : (
+                        <span className="muted">Chỉ chọn hồ sơ có sẵn</span>
+                      )
                     }
                   >
                     {creating ? (
                       <div className="stack-form">
                         <Field
                           label="Họ tên"
+                          required
                           value={newName}
                           onChange={(e) => setNewName(e.target.value)}
                         />
                         <Field
                           label="Số điện thoại"
+                          required
                           value={newPhone}
                           onChange={(e) => setNewPhone(e.target.value)}
                         />
@@ -444,12 +544,27 @@ export function CounterRentalPage({
                           <Field
                             label="Email"
                             type="email"
+                            required
                             value={newEmail}
                             onChange={(e) => setNewEmail(e.target.value)}
                           />
                         )}
-                        {realApiMode && <p className="field-hint">Lưu hồ sơ không tạo tài khoản đăng nhập.</p>}
-                        <Button loading={busy} onClick={() => void saveNewCustomer(customers)}>
+                        {realApiMode && (
+                          <p className="field-hint">
+                            Email cần có để lưu hồ sơ trên hệ thống. Việc lưu không tạo tài khoản
+                            đăng nhập.
+                          </p>
+                        )}
+                        <Button
+                          loading={busy}
+                          disabled={
+                            busy ||
+                            !newName.trim() ||
+                            !isValidPhone(newPhone) ||
+                            (realApiMode && !/^\S+@\S+\.\S+$/.test(newEmail.trim()))
+                          }
+                          onClick={() => void saveNewCustomer(customers)}
+                        >
                           Lưu hồ sơ khách
                         </Button>
                       </div>
@@ -464,11 +579,12 @@ export function CounterRentalPage({
                             const nextMatches = availableCustomers.filter((entry) =>
                               matchesCustomerSearch(entry, value),
                             );
-                            const nextCode = value.trim() && nextMatches.length === 1
-                              ? nextMatches[0].code
-                              : nextMatches.some((entry) => entry.code === customerCode)
-                                ? customerCode
-                                : '';
+                            const nextCode =
+                              value.trim() && nextMatches.length === 1
+                                ? nextMatches[0].code
+                                : nextMatches.some((entry) => entry.code === customerCode)
+                                  ? customerCode
+                                  : '';
                             if (nextCode !== customerCode) {
                               setCustomerCode(nextCode);
                               clearQuote();
@@ -486,13 +602,21 @@ export function CounterRentalPage({
                           {!customer && <option value="">Chọn đúng khách trong kết quả</option>}
                           {matches.map((c) => (
                             <option value={c.code} key={c.code}>
-                              {[c.name, c.phone || c.email, canReadAllCustomers && c.preferredBranch]
+                              {[
+                                c.name,
+                                c.phone || c.email,
+                                canReadAllCustomers && c.preferredBranch,
+                              ]
                                 .filter(Boolean)
                                 .join(' · ')}
                             </option>
                           ))}
                         </SelectField>
-                        {customer && <p className="field-hint">{customer.code} · {customer.preferredBranch}</p>}
+                        {customer && (
+                          <p className="field-hint">
+                            {customer.code} · {customer.preferredBranch}
+                          </p>
+                        )}
                         {!customer && customerSearch && (
                           <p className="field-hint" role="status">
                             {matches.length
@@ -511,40 +635,73 @@ export function CounterRentalPage({
                     )}
                   </Panel>
                   <Panel title="2. Trang phục và thời gian">
-                    <div className="feature-filters">
-                      <SelectField
-                        label="Mẫu trang phục"
-                        value={selectedCostume}
-                        disabled={catalogLoading || !catalog.length}
-                        onChange={(e) => {
-                          const next = catalog.find((c) => c.id === e.target.value);
-                          setCostume(e.target.value);
-                          setVariant(counterVariantOptions(next)[0]?.value ?? '');
-                          clearQuote();
-                        }}
-                      >
-                        {!catalog.length && <option value="">Chưa có mẫu trang phục</option>}
-                        {catalog.map((c) => (
-                          <option value={c.id} key={c.id}>
-                            {c.name}{realApiMode && counterVariantOptions(c)[0] ? ` · ${counterVariantOptions(c)[0].label}` : ''}
-                          </option>
-                        ))}
-                      </SelectField>
-                      <SelectField
-                        label="Biến thể"
-                        value={selectedVariantValue}
-                        disabled={!item || catalogLoading}
-                        onChange={(e) => {
-                          setVariant(e.target.value);
-                          clearQuote();
-                        }}
-                      >
-                        {variantOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </SelectField>
+                    <p className="field-hint">
+                      Mỗi dòng là một bộ; chọn size riêng nếu khách thuê nhiều bộ.
+                    </p>
+                    <div className="counter-rental-lines">
+                      {selectedLines.map((line, index) => (
+                        <div className="counter-rental-line" key={line.id}>
+                          <div className="counter-rental-line-head">
+                            <strong>Bộ {index + 1}</strong>
+                            <Button
+                              type="button"
+                              variant="quiet"
+                              disabled={rentalLines.length === 1 || !!created || busy}
+                              aria-label={`Xóa bộ ${index + 1}`}
+                              onClick={() => removeRentalLine(line.id)}
+                            >
+                              Xóa
+                            </Button>
+                          </div>
+                          <div className="feature-filters">
+                            <SelectField
+                              label="Mẫu trang phục"
+                              value={line.costumeId}
+                              disabled={catalogLoading || !catalog.length}
+                              onChange={(event) => {
+                                const next = catalog.find(
+                                  (entry) => entry.id === event.target.value,
+                                );
+                                updateRentalLine(index, {
+                                  costumeId: event.target.value,
+                                  variant: counterVariantOptions(next)[0]?.value ?? '',
+                                });
+                              }}
+                            >
+                              {!catalog.length && <option value="">Chưa có mẫu trang phục</option>}
+                              {catalog.map((entry) => (
+                                <option value={entry.id} key={entry.id}>
+                                  {entry.name}
+                                </option>
+                              ))}
+                            </SelectField>
+                            <SelectField
+                              label="Size / màu"
+                              value={line.selectedVariantValue}
+                              disabled={!line.item || catalogLoading}
+                              onChange={(event) =>
+                                updateRentalLine(index, { variant: event.target.value })
+                              }
+                            >
+                              {line.variantOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </SelectField>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={catalogLoading || !catalog.length || !!created || busy}
+                      onClick={addRentalLine}
+                    >
+                      ＋ Thêm bộ
+                    </Button>
+                    <div className="feature-filters counter-rental-period">
                       {!realApiMode && (
                         <BranchSelector
                           label="Chi nhánh nhận và trả"
@@ -575,17 +732,30 @@ export function CounterRentalPage({
                         }}
                       />
                     </div>
-                    {catalogLoading && <p className="muted" role="status">Đang tải danh mục trang phục…</p>}
+                    {catalogLoading && (
+                      <p className="muted" role="status">
+                        Đang tải danh mục trang phục…
+                      </p>
+                    )}
                     {catalogError && (
                       <Feedback
                         tone="danger"
                         title="Không tải được danh mục trang phục"
-                        action={<Button variant="secondary" onClick={retryCatalog}>Thử tải lại</Button>}
+                        action={
+                          <Button variant="secondary" onClick={retryCatalog}>
+                            Thử tải lại
+                          </Button>
+                        }
                       >
                         {catalogError}
                       </Feedback>
                     )}
-                    <Button variant="secondary" loading={busy} disabled={catalogLoading || !catalog.length || creating || !customer} onClick={() => void getQuote()}>
+                    <Button
+                      variant="secondary"
+                      loading={busy}
+                      disabled={catalogLoading || !catalog.length || creating || !customer}
+                      onClick={() => void getQuote()}
+                    >
                       Xem báo giá
                     </Button>
                   </Panel>
@@ -617,38 +787,101 @@ export function CounterRentalPage({
                           { label: 'Cần thu khi nhận', value: money(quote.amountDueAtPickup) },
                         ]}
                       />
+                      {quote.lines?.length ? (
+                        <ul className="counter-quote-lines" aria-label="Chi tiết bộ trong báo giá">
+                          {quote.lines.map((line) => (
+                            <li key={line.variantId}>
+                              <span>
+                                {line.variantLabel}
+                                {line.quantity > 1 ? ` × ${line.quantity}` : ''}
+                              </span>
+                              <strong>{line.availableUnits} bộ khả dụng</strong>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
                       <p className="field-hint">
                         Hết hạn: {quote.expiresAt} · {quote.policy} · Chưa thu tiền.
                       </p>
-                      {canConfirm && (
-                        <SelectField
-                          label="Bộ sẽ gán khi xác nhận"
-                          value={selectedUnit}
-                          disabled={!!created || busy}
-                          onChange={(event) => setSelectedUnit(event.target.value)}
-                        >
-                          <option value="">Chọn barcode khả dụng</option>
-                          {eligibleUnits.map((unit) => (
-                            <option
-                              key={unit.barcode}
-                              value={unit.barcode}
-                              disabled={unit.status !== 'READY' || !unit.available}
+                      {quoteExpired && (
+                        <Feedback
+                          tone="warning"
+                          title="Báo giá đã hết hạn"
+                          action={
+                            <Button
+                              variant="secondary"
+                              loading={busy}
+                              onClick={() => void getQuote()}
                             >
-                              {unit.barcode} ·{' '}
-                              {unit.status === 'READY' && unit.available
-                                ? 'Sẵn sàng'
-                                : unit.status === 'CLEANING'
-                                  ? 'Đang vệ sinh'
-                                  : unit.status === 'REPAIR'
-                                    ? 'Đang sửa chữa'
-                                    : 'Không khả dụng'}
-                            </option>
-                          ))}
-                        </SelectField>
+                              Xem báo giá mới
+                            </Button>
+                          }
+                        >
+                          Giá và tình trạng bộ có thể đã thay đổi. Xem lại trước khi tạo yêu cầu.
+                        </Feedback>
                       )}
-                      {eligibleUnits.length === 0 && (
-                        <Feedback tone="warning" title="Chưa có bộ khả dụng">
-                          Đổi mẫu hoặc kỳ thuê, hoặc tạo yêu cầu chờ kiểm tra.
+                      {canConfirm && (
+                        <div className="counter-unit-assignments">
+                          {selectedLines.map((line, index) => {
+                            const unavailableCodes = new Set(
+                              selectedUnits.filter(
+                                (code, otherIndex) => code && otherIndex !== index,
+                              ),
+                            );
+                            const options = (eligibleUnits[index] ?? []).filter(
+                              (unit) =>
+                                unit.barcode === selectedUnits[index] ||
+                                !unavailableCodes.has(unit.barcode),
+                            );
+                            return (
+                              <SelectField
+                                key={line.id}
+                                label={`Barcode cho bộ ${index + 1} · ${line.selectedVariant}`}
+                                value={selectedUnits[index] ?? ''}
+                                disabled={!!created || busy}
+                                onChange={(event) =>
+                                  setSelectedUnits((current) =>
+                                    selectedLines.map((_, lineIndex) =>
+                                      lineIndex === index
+                                        ? event.target.value
+                                        : (current[lineIndex] ?? ''),
+                                    ),
+                                  )
+                                }
+                              >
+                                <option value="">Chọn bộ khả dụng</option>
+                                {options.map((unit) => (
+                                  <option
+                                    key={unit.barcode}
+                                    value={unit.barcode}
+                                    disabled={unit.status !== 'READY' || !unit.available}
+                                  >
+                                    {unit.barcode} ·{' '}
+                                    {unit.status === 'READY' && unit.available
+                                      ? 'Sẵn sàng'
+                                      : unit.status === 'CLEANING'
+                                        ? 'Đang vệ sinh'
+                                        : unit.status === 'REPAIR'
+                                          ? 'Đang sửa chữa'
+                                          : 'Không khả dụng'}
+                                  </option>
+                                ))}
+                              </SelectField>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {quote.available === false && (
+                        <Feedback tone="warning" title="Không đủ bộ cho kỳ thuê này">
+                          Chọn lại mẫu hoặc kỳ thuê rồi tải báo giá mới. Đơn chưa được tạo.
+                        </Feedback>
+                      )}
+                      {quote.available !== false && canConfirm && missingReadyLine >= 0 && (
+                        <Feedback
+                          tone="warning"
+                          title={`Chưa có barcode READY cho bộ ${missingReadyLine + 1}`}
+                        >
+                          Có thể tạo yêu cầu chờ để xử lý tiếp; hiện chưa thể xác nhận và giữ bộ.
                         </Feedback>
                       )}
                     </>
@@ -663,8 +896,8 @@ export function CounterRentalPage({
                       >
                         {createdMode === 'confirmed'
                           ? realApiMode
-                            ? `Đã gán ${selectedUnit} trên hệ thống. Kiểm bộ và phụ kiện trên chi tiết đơn trước khi giao; tiền thuê và cọc chưa thu.`
-                            : `Đã gán ${selectedUnit} trong dữ liệu demo. Kiểm bộ và phụ kiện trên chi tiết đơn trước khi giao; tiền thuê và cọc chưa thu.`
+                            ? `Đã gán ${selectedUnitSummary} trên hệ thống. Kiểm bộ và phụ kiện trên chi tiết đơn trước khi giao; tiền thuê và cọc chưa thu.`
+                            : `Đã gán ${selectedUnitSummary} trong dữ liệu demo. Kiểm bộ và phụ kiện trên chi tiết đơn trước khi giao; tiền thuê và cọc chưa thu.`
                           : realApiMode
                             ? 'Đơn đã được tạo trên hệ thống. Mở chi tiết đơn để kiểm tra trạng thái và tiếp tục xử lý.'
                             : 'Yêu cầu đang chờ xác nhận trong dữ liệu demo. Mở chi tiết đơn để tiếp tục.'}
@@ -674,29 +907,36 @@ export function CounterRentalPage({
                     <div className="counter-actions">
                       {canConfirm && (
                         <Button
-                          disabled={!quote || !selectedUnit || creating || !customer || busy}
+                          disabled={
+                            !quote ||
+                            quote.available === false ||
+                            quoteExpired ||
+                            !canConfirmAllLines ||
+                            creating ||
+                            !customer ||
+                            busy
+                          }
                           loading={busy}
                           onClick={() =>
-                            void create(
-                              customer?.name ?? '',
-                              customer?.phone ?? '',
-                              true,
-                            )
+                            void create(customer?.name ?? '', customer?.phone ?? '', true)
                           }
                         >
-                          Tạo và xác nhận · {selectedUnit || 'chọn bộ'}
+                          Tạo và xác nhận{selectedUnitSummary ? ` · ${selectedUnitSummary}` : ''}
                         </Button>
                       )}
                       <Button
                         variant={canConfirm ? 'secondary' : 'primary'}
-                        disabled={!quote || creating || !customer || busy}
+                        disabled={
+                          !quote ||
+                          quote.available === false ||
+                          quoteExpired ||
+                          creating ||
+                          !customer ||
+                          busy
+                        }
                         loading={busy}
                         onClick={() =>
-                          void create(
-                            customer?.name ?? '',
-                            customer?.phone ?? '',
-                            false,
-                          )
+                          void create(customer?.name ?? '', customer?.phone ?? '', false)
                         }
                       >
                         Chỉ tạo yêu cầu chờ
@@ -774,19 +1014,19 @@ export function ActiveRentalsPage({
       emptyTitle="Chưa có bộ đang ở khách"
     >
       {(items) => {
-        const filtered = items.filter(
-          (x) =>
-            x.branch === branch &&
-            (dueFilter === 'all' || x.overdue) &&
-            `${x.barcode} ${x.phone} ${x.orderId} ${x.customer}`
-              .toLowerCase()
-              .includes(query.toLowerCase()),
-        ).sort((left, right) => Number(right.overdue) - Number(left.overdue));
+        const filtered = items
+          .filter(
+            (x) =>
+              x.branch === branch &&
+              (dueFilter === 'all' || x.overdue) &&
+              `${x.barcode} ${x.phone} ${x.orderId} ${x.customer}`
+                .toLowerCase()
+                .includes(query.toLowerCase()),
+          )
+          .sort((left, right) => Number(right.overdue) - Number(left.overdue));
         return (
           <div className="page">
-            <PageHeading
-              title="Đang thuê"
-            />
+            <PageHeading title="Đang thuê" />
             <div className="feature-two-column independent-scroll-workspace">
               <div role="region" aria-label="Cuộn danh sách bộ đang thuê" tabIndex={0}>
                 <Panel title="Tra bộ đang ở khách">
@@ -837,9 +1077,7 @@ export function ActiveRentalsPage({
                                 {row.barcode}
                               </button>
                             </td>
-                            <td>
-                              {row.customer}
-                            </td>
+                            <td>{row.customer}</td>
                             <td>{row.orderId}</td>
                             <td>{row.due}</td>
                             <td>
@@ -877,7 +1115,10 @@ export function ActiveRentalsPage({
                     />
                     <KeyFacts
                       rows={[
-                        { label: 'Trang phục / size', value: `${selected.costume} · ${selected.variant}` },
+                        {
+                          label: 'Trang phục / size',
+                          value: `${selected.costume} · ${selected.variant}`,
+                        },
                         {
                           label: 'Người đang giữ',
                           value: `${selected.customer} · ${selected.phone}`,

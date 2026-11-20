@@ -44,8 +44,10 @@ import {
   updateOwnCustomerProfile,
 } from '../api/client';
 import { useBranchOptions } from '../components/useBranchOptions';
+import { BranchAddressNote } from '../components/BranchAddressNote';
 import { isValidPhone } from '../utils/phone';
 import { rentalPeriodIssues } from '../utils/rental-period';
+import { minimumRentalDateTime, minimumRentalReturnDateTime } from '../utils/date-format';
 
 const loadCostumeDetails =
   (id: string) =>
@@ -64,8 +66,8 @@ const loadCostumeDetails =
         id,
         name: first.model?.name ?? first.variantCode,
         category: first.model?.category?.name ?? 'Trang phục',
-        description: first.model?.shortDescription ?? first.model?.description ?? '',
-        material: first.model?.material ?? 'Thông tin chất liệu sẽ được xác nhận tại studio.',
+        description: first.model?.shortDescription ?? '',
+        material: first.model?.material ?? '',
         accessories: [],
         imagePosition: modelImages.length ? 'center' : 'missing',
         imageUrl: modelImages[0]?.url,
@@ -93,6 +95,7 @@ const loadCustomerOrders = (scenario: DemoScenario) =>
   apiEnabled && (hasAccessToken() || !import.meta.env.DEV)
     ? listCustomerOrders()
     : studioAdapter.customerOrders(scenario);
+const customerOrderPageSize = 8;
 
 function readDetailPeriod(key: string) {
   try {
@@ -128,6 +131,7 @@ export function CostumeDetailPage({
   const usePublicApi = apiEnabled && (hasAccessToken() || !import.meta.env.DEV);
   const {
     options: branchOptions,
+    addresses: branchAddresses,
     ready: branchOptionsReady,
     error: branchOptionsError,
     retry: retryBranches,
@@ -150,6 +154,12 @@ export function CostumeDetailPage({
       due: requestedReturn ?? saved?.due ?? defaultReturn,
     };
   });
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+  useEffect(() => {
+    const updateTime = () => setCurrentTime(Date.now());
+    const interval = window.setInterval(updateTime, 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
   const { pickup, due } = period;
   const [photo, setPhoto] = useState(0);
   const selectedVariant =
@@ -164,10 +174,8 @@ export function CostumeDetailPage({
     const before = url.href;
     url.searchParams.set('variantCode', selectedVariantCode);
     if (branch) url.searchParams.set('branch', branch);
-    if (pickup) url.searchParams.set('pickup', pickup);
-    else url.searchParams.delete('pickup');
-    if (due) url.searchParams.set('returnAt', due);
-    else url.searchParams.delete('returnAt');
+    url.searchParams.set('pickup', pickup);
+    url.searchParams.set('returnAt', due);
     if (url.href !== before) window.history.replaceState(window.history.state, '', url);
   }, [branch, due, id, pickup, selectedVariantCode]);
 
@@ -321,15 +329,18 @@ export function CostumeDetailPage({
                       disabled={!branchOptionsReady || branchOptions.length === 0}
                       onChange={setBranchSelection}
                     />
+                    <BranchAddressNote branchName={branch} address={branchAddresses[branch]} />
                     <DateTimeField
                       label="Nhận"
                       value={pickup}
+                      min={minimumRentalDateTime(currentTime)}
                       error={pickupIssue}
                       onChange={(next) => setPeriod((current) => ({ ...current, pickup: next }))}
                     />
                     <DateTimeField
                       label="Trả"
                       value={due}
+                      min={minimumRentalReturnDateTime(pickup, currentTime)}
                       error={returnIssue}
                       onChange={(next) => setPeriod((current) => ({ ...current, due: next }))}
                     />
@@ -479,6 +490,7 @@ export function MyRentalsPage({
 }) {
   const { loading, error, data, retry } = useFixtureResource(scenario, loadCustomerOrders);
   const [filter, setFilter] = useState('Tất cả');
+  const [listPage, setListPage] = useState(1);
   const [dialog, setDialog] = useState(false);
   const [reason, setReason] = useState('');
   const [issue, setIssue] = useState('');
@@ -522,6 +534,12 @@ export function MyRentalsPage({
             ? orders
             : orders.filter((order) => order.customerCode === customerCode);
         const visible = ownOrders.filter((order) => filter === 'Tất cả' || order.status === filter);
+        const pageCount = Math.max(1, Math.ceil(visible.length / customerOrderPageSize));
+        const currentPage = Math.min(listPage, pageCount);
+        const pageOrders = visible.slice(
+          (currentPage - 1) * customerOrderPageSize,
+          currentPage * customerOrderPageSize,
+        );
         const selected = id
           ? local?.id === id
             ? local
@@ -685,7 +703,10 @@ export function MyRentalsPage({
                   <SelectField
                     label="Lọc trạng thái"
                     value={filter}
-                    onChange={(e) => setFilter(e.target.value)}
+                    onChange={(e) => {
+                      setFilter(e.target.value);
+                      setListPage(1);
+                    }}
                   >
                     <option>Tất cả</option>
                     {Array.from(new Set(ownOrders.map((order) => order.status))).map((status) => (
@@ -710,7 +731,7 @@ export function MyRentalsPage({
                           </tr>
                         </thead>
                         <tbody>
-                          {visible.map((order) => (
+                          {pageOrders.map((order) => (
                             <tr key={order.id}>
                               <td>
                                 <button
@@ -738,7 +759,7 @@ export function MyRentalsPage({
                       </table>
                     </div>
                     <div className="customer-order-mobile-list">
-                      {visible.map((order) => (
+                      {pageOrders.map((order) => (
                         <button
                           key={order.id}
                           type="button"
@@ -760,6 +781,31 @@ export function MyRentalsPage({
                         </button>
                       ))}
                     </div>
+                    {pageCount > 1 && (
+                      <nav className="customer-order-pagination" aria-label="Trang đơn thuê">
+                        <span aria-live="polite">
+                          {(currentPage - 1) * customerOrderPageSize + 1}–
+                          {Math.min(currentPage * customerOrderPageSize, visible.length)} /{' '}
+                          {visible.length}
+                        </span>
+                        <div>
+                          <Button
+                            variant="secondary"
+                            disabled={currentPage === 1}
+                            onClick={() => setListPage(currentPage - 1)}
+                          >
+                            Trước
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            disabled={currentPage === pageCount}
+                            onClick={() => setListPage(currentPage + 1)}
+                          >
+                            Tiếp
+                          </Button>
+                        </div>
+                      </nav>
+                    )}
                   </div>
                 ) : (
                   <EmptyState

@@ -18,15 +18,19 @@ import { branches, fixtureAdapter, fixturePeriod } from '../fixtures/adapter';
 import type { CatalogItem, DemoScenario } from '../fixtures/types';
 import { apiEnabled, hasAccessToken } from '../api/client';
 import { useBranchOptions } from '../components/useBranchOptions';
-import { formatCalendarDate } from '../utils/date-format';
+import { BranchAddressNote } from '../components/BranchAddressNote';
+import {
+  formatCalendarDate,
+  minimumRentalDateTime,
+  minimumRentalReturnDateTime,
+} from '../utils/date-format';
 import { rentalPeriodIssues } from '../utils/rental-period';
 import { checkCatalogAvailability, type CatalogAvailability } from './catalogAvailability';
 
 const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
 type CatalogSort = 'default' | 'price-asc' | 'price-desc' | 'name';
 function catalogSortFromUrl(value: string | null): CatalogSort {
-  return value === 'price-asc' || value === 'price-desc' || value === 'name'
-    ? value : 'default';
+  return value === 'price-asc' || value === 'price-desc' || value === 'name' ? value : 'default';
 }
 
 interface AvailabilitySnapshot {
@@ -271,7 +275,6 @@ function CostumeCard({
             <Icon name="spark" size={30} /> Chưa có ảnh
           </span>
         ) : null}
-        <span className="media-caption">{item.imageUrl ? 'Ảnh trang phục' : 'Ảnh minh họa'}</span>
       </div>
       <div className="costume-body">
         <div className="costume-top">
@@ -280,7 +283,7 @@ function CostumeCard({
             <h3>{item.name}</h3>
           </div>
         </div>
-        <p className="costume-description">{item.description}</p>
+        {item.description.trim() && <p className="costume-description">{item.description}</p>}
         <p className="costume-variant">
           {item.sizes.join(', ')} <span>·</span> {item.colors.join(', ')}
         </p>
@@ -344,6 +347,7 @@ export function CatalogPage({
   const apiMode = apiEnabled && (hasAccessToken() || !import.meta.env.DEV);
   const {
     options: branchOptions,
+    addresses: branchAddresses,
     ready: branchOptionsReady,
     error: branchOptionsError,
     retry: retryBranches,
@@ -360,7 +364,11 @@ export function CatalogPage({
   const [size, setSize] = useState(initialContext.get('size') ?? 'Tất cả');
   const [color, setColor] = useState(initialContext.get('color') ?? 'Tất cả');
   const [search, setSearch] = useState(initialContext.get('search') ?? '');
-  const [sort, setSort] = useState<CatalogSort>(() => catalogSortFromUrl(initialContext.get('sort')));
+  const [sort, setSort] = useState<CatalogSort>(() =>
+    catalogSortFromUrl(initialContext.get('sort')),
+  );
+  const [availabilityOnly, setAvailabilityOnly] = useState(initialContext.get('available') === '1');
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
   const normalizedSearch = search.trim().toLocaleLowerCase('vi');
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<CatalogItem | null>(null);
@@ -369,7 +377,26 @@ export function CatalogPage({
   const previewRef = useRef<HTMLElement>(null);
   const previewTriggerRef = useRef<HTMLButtonElement>(null);
   const { loading, data, error, retry } = useFixtureResource(scenario, loadCatalog);
-  const context = { branch, pickup, returnAt, category, size, color, search, sort };
+  useEffect(() => {
+    const updateTime = () => setCurrentTime(Date.now());
+    const initialTimer = window.setTimeout(updateTime, 0);
+    const interval = window.setInterval(updateTime, 60_000);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(interval);
+    };
+  }, []);
+  const context = {
+    branch,
+    pickup,
+    returnAt,
+    category,
+    size,
+    color,
+    search,
+    sort,
+    available: availabilityOnly ? '1' : '',
+  };
   useEffect(() => {
     if (window.location.pathname !== '/') return;
     const params = new URLSearchParams();
@@ -381,14 +408,34 @@ export function CatalogPage({
     if (color !== 'Tất cả') params.set('color', color);
     if (normalizedSearch) params.set('search', search.trim());
     if (sort !== 'default') params.set('sort', sort);
+    if (availabilityOnly) params.set('available', '1');
     window.history.replaceState(null, '', `/${params.toString() ? `?${params}` : ''}`);
-  }, [branch, pickup, returnAt, category, size, color, search, normalizedSearch, sort]);
+  }, [
+    branch,
+    pickup,
+    returnAt,
+    category,
+    size,
+    color,
+    search,
+    normalizedSearch,
+    sort,
+    availabilityOnly,
+  ]);
   const periodSelected = !!pickup && !!returnAt;
   const { pickupIssue, returnIssue } = rentalPeriodIssues(pickup, returnAt);
   const dateRangeIssue = pickupIssue ?? returnIssue;
   const availabilityRequestEnabled =
     apiMode && !!branch && periodSelected && !dateRangeIssue && Boolean(data?.length);
-  const availabilityKey = JSON.stringify([branch, pickup, returnAt, category, size, color, normalizedSearch]);
+  const availabilityKey = JSON.stringify([
+    branch,
+    pickup,
+    returnAt,
+    category,
+    size,
+    color,
+    normalizedSearch,
+  ]);
   const currentApiAvailability =
     availabilityRequestEnabled && apiAvailability?.key === availabilityKey
       ? apiAvailability.values
@@ -402,14 +449,17 @@ export function CatalogPage({
   useEffect(() => {
     if (!availabilityRequestEnabled || !data?.length) return;
     let cancelled = false;
-    const visible = data.filter((item) =>
-      (category === 'Tất cả' || item.category === category) &&
-      item.name.toLocaleLowerCase('vi').includes(normalizedSearch),
+    const visible = data.filter(
+      (item) =>
+        (category === 'Tất cả' || item.category === category) &&
+        item.name.toLocaleLowerCase('vi').includes(normalizedSearch),
     );
     const timer = window.setTimeout(() => {
-      void checkCatalogAvailability(visible, branch, pickup, returnAt, size, color).then((values) => {
-        if (!cancelled) setApiAvailability({ key: availabilityKey, ...values });
-      });
+      void checkCatalogAvailability(visible, branch, pickup, returnAt, size, color).then(
+        (values) => {
+          if (!cancelled) setApiAvailability({ key: availabilityKey, ...values });
+        },
+      );
     }, 350);
     return () => {
       cancelled = true;
@@ -440,29 +490,76 @@ export function CatalogPage({
   ].sort();
   const sizeOptions = [...new Set((data ?? []).flatMap((item) => item.sizes))].sort();
   const colorOptions = [...new Set((data ?? []).flatMap((item) => item.colors))].sort();
-  const filtered = (data ?? []).filter(
+  const filteredByControls = (data ?? []).filter(
     (item) =>
       (category === 'Tất cả' || item.category === category) &&
       (item.apiVariants?.length
-        ? item.apiVariants.some((variant) =>
-            (size === 'Tất cả' || variant.size === size) &&
-            (color === 'Tất cả' || variant.color === color))
+        ? item.apiVariants.some(
+            (variant) =>
+              (size === 'Tất cả' || variant.size === size) &&
+              (color === 'Tất cả' || variant.color === color),
+          )
         : (size === 'Tất cả' || item.sizes.includes(size)) &&
           (color === 'Tất cả' || item.colors.includes(color))) &&
       item.name.toLocaleLowerCase('vi').includes(normalizedSearch),
   );
   if (sort !== 'default') {
-    filtered.sort((first, second) => {
-      const difference = sort === 'name'
-        ? first.name.localeCompare(second.name, 'vi')
-        : sort === 'price-desc'
-          ? second.priceFrom - first.priceFrom
-          : first.priceFrom - second.priceFrom;
-      return difference || first.name.localeCompare(second.name, 'vi') || first.id.localeCompare(second.id);
+    filteredByControls.sort((first, second) => {
+      const difference =
+        sort === 'name'
+          ? first.name.localeCompare(second.name, 'vi')
+          : sort === 'price-desc'
+            ? second.priceFrom - first.priceFrom
+            : first.priceFrom - second.priceFrom;
+      return (
+        difference ||
+        first.name.localeCompare(second.name, 'vi') ||
+        first.id.localeCompare(second.id)
+      );
     });
   }
-  const hasActiveFilters = category !== 'Tất cả' || size !== 'Tất cả' ||
-    color !== 'Tất cả' || Boolean(search.trim());
+  const availabilitySearchReady = apiMode
+    ? Boolean(branch && periodSelected && !dateRangeIssue)
+    : fixtureAvailabilityKnown;
+  const availabilityResultsLoading =
+    availabilityOnly &&
+    apiMode &&
+    availabilitySearchReady &&
+    filteredByControls.some(
+      (item) => !currentApiAvailability[item.id] || currentApiAvailability[item.id] === 'loading',
+    );
+  const availabilityResultsFailed =
+    availabilityOnly &&
+    apiMode &&
+    availabilitySearchReady &&
+    filteredByControls.length > 0 &&
+    filteredByControls.every((item) => currentApiAvailability[item.id] === 'error');
+  const availabilityResultsPartiallyFailed =
+    availabilityOnly &&
+    apiMode &&
+    availabilitySearchReady &&
+    filteredByControls.some((item) => currentApiAvailability[item.id] === 'error') &&
+    !availabilityResultsFailed;
+  const filtered = !availabilityOnly
+    ? filteredByControls
+    : !availabilitySearchReady
+      ? []
+      : apiMode
+        ? filteredByControls.filter((item) => currentApiAvailability[item.id] === 'available')
+        : filteredByControls.filter(
+            (item) => item.availableAtFixturePeriod && scenario !== 'conflict',
+          );
+  const catalogCountLabel = loading
+    ? 'Đang tải mẫu…'
+    : availabilityOnly
+      ? !availabilitySearchReady
+        ? 'Chọn lịch để lọc'
+        : availabilityResultsLoading
+          ? 'Đang kiểm tra lịch…'
+          : `${filtered.length} mẫu còn hàng`
+      : `${filtered.length} mẫu trang phục`;
+  const hasActiveFilters =
+    category !== 'Tất cả' || size !== 'Tất cả' || color !== 'Tất cả' || Boolean(search.trim());
   const reset = () => {
     setCategory('Tất cả');
     setSize('Tất cả');
@@ -484,21 +581,46 @@ export function CatalogPage({
       previewTriggerRef.current?.scrollIntoView({ block: 'center', behavior: 'instant' });
     });
   };
+  const beginAvailabilitySearch = () => {
+    setAvailabilityOnly(true);
+    const filters = document.getElementById('availability-filters');
+    filters?.scrollIntoView({
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 'instant'
+        : 'smooth',
+      block: 'center',
+    });
+    window.requestAnimationFrame(() =>
+      filters?.querySelector<HTMLSelectElement>('select')?.focus({ preventScroll: true }),
+    );
+  };
+  const toggleAvailabilityOnly = () => setAvailabilityOnly((current) => !current);
   return (
     <div className="page catalog-page">
       <section className="catalog-hero">
         <div className="hero-copy">
-          <span className="hero-kicker">
-            <Icon name="spark" size={15} /> THE LOOK IS YOURS
-          </span>
           <h1>
-            Trang phục đẹp.
+            Thuê trang phục
             <br />
-            <em>Khoảnh khắc của bạn.</em>
+            <em>theo lịch của bạn.</em>
           </h1>
-          <a className="button button-primary" href="#bo-suu-tap">
-            Khám phá bộ sưu tập <Icon name="arrow" size={18} />
-          </a>
+          <div className="hero-actions">
+            <a
+              className="button button-primary"
+              href="#bo-suu-tap"
+              onClick={() => setAvailabilityOnly(false)}
+            >
+              Xem bộ sưu tập <Icon name="arrow" size={18} />
+            </a>
+            <button
+              className="button button-secondary"
+              type="button"
+              aria-controls="availability-filters"
+              onClick={beginAvailabilitySearch}
+            >
+              Tìm mẫu theo lịch <Icon name="calendar" size={18} />
+            </button>
+          </div>
         </div>
         <HeroCarousel />
       </section>
@@ -510,40 +632,77 @@ export function CatalogPage({
           </Button>
         </Feedback>
       )}
-      <section className="availability-bar" aria-label="Chi nhánh và thời gian thuê">
-        <div className="availability-title">
-          <Icon name="calendar" size={21} />
-          <span>
-            Chọn lịch của bạn
-          </span>
+      <section
+        id="availability-filters"
+        className="availability-bar"
+        aria-label="Chi nhánh và thời gian thuê"
+      >
+        <div className="branch-picker-field">
+          <SelectField
+            label="Chi nhánh"
+            value={branch}
+            disabled={!branchOptionsReady || branchOptions.length === 0}
+            onChange={(event) => setBranchSelection(event.target.value)}
+          >
+            {branchOptions.length === 0 && (
+              <option value="">
+                {branchOptionsReady ? 'Chưa có chi nhánh khả dụng' : 'Đang tải chi nhánh…'}
+              </option>
+            )}
+            {branchOptions.map((entry) => (
+              <option key={entry}>{entry}</option>
+            ))}
+          </SelectField>
+          <BranchAddressNote branchName={branch} address={branchAddresses[branch]} />
         </div>
-        <SelectField
-          label="Chi nhánh"
-          value={branch}
-          disabled={!branchOptionsReady || branchOptions.length === 0}
-          onChange={(event) => setBranchSelection(event.target.value)}
-        >
-          {branchOptions.length === 0 && (
-            <option value="">
-              {branchOptionsReady ? 'Chưa có chi nhánh khả dụng' : 'Đang tải chi nhánh…'}
-            </option>
-          )}
-          {branchOptions.map((entry) => (
-            <option key={entry}>{entry}</option>
-          ))}
-        </SelectField>
-        <DateTimeField label="Nhận đồ" value={pickup} error={pickupIssue} onChange={setPickup} />
-        <DateTimeField label="Trả đồ" value={returnAt} onChange={setReturnAt} error={returnIssue} />
+        <DateTimeField
+          label="Nhận đồ"
+          value={pickup}
+          min={currentTime > 0 ? minimumRentalDateTime(currentTime) : undefined}
+          error={pickupIssue}
+          onChange={setPickup}
+        />
+        <DateTimeField
+          label="Trả đồ"
+          value={returnAt}
+          min={currentTime > 0 ? minimumRentalReturnDateTime(pickup, currentTime) : undefined}
+          onChange={setReturnAt}
+          error={returnIssue}
+        />
       </section>
       <section id="bo-suu-tap" className="catalog-section">
         <div className="section-heading">
           <div>
             <h2>Bộ sưu tập trang phục</h2>
           </div>
-          <div className="catalog-count">
-            {loading ? 'Đang tải...' : `${filtered.length} mẫu trang phục`}
+          <div className="catalog-heading-actions">
+            <Button
+              variant="secondary"
+              className="availability-mode-toggle"
+              aria-pressed={availabilityOnly}
+              onClick={toggleAvailabilityOnly}
+            >
+              {availabilityOnly ? 'Xem tất cả mẫu' : 'Chỉ mẫu còn hàng'}
+            </Button>
+            <div className="catalog-count" role="status" aria-live="polite">
+              {catalogCountLabel}
+            </div>
           </div>
         </div>
+        {availabilityOnly && !periodSelected && (
+          <Feedback tone="info" title="Chọn lịch để tìm mẫu còn hàng">
+            Nhập chi nhánh, giờ nhận và giờ trả ở khung phía trên.
+          </Feedback>
+        )}
+        {availabilityOnly &&
+          periodSelected &&
+          !dateRangeIssue &&
+          !apiMode &&
+          !fixtureAvailabilityKnown && (
+            <Feedback tone="info" title="Chưa có dữ liệu tồn kho cho lịch này">
+              Bản xem thử chỉ có dữ liệu cho một kỳ mẫu. Có thể xem toàn bộ mẫu hoặc thử kỳ mẫu.
+            </Feedback>
+          )}
         {dateRangeIssue && (
           <Feedback tone="warning" title="Khoảng thuê chưa hợp lệ">
             {dateRangeIssue} Tồn kho chưa được kiểm tra.
@@ -616,8 +775,8 @@ export function CatalogPage({
               </Button>
             </div>
             <div className="result-toolbar">
-              <span className="catalog-mobile-count" role="status">
-                {loading ? 'Đang tải mẫu…' : `${filtered.length} mẫu trang phục`}
+              <span className="catalog-mobile-count" role="status" aria-live="polite">
+                {catalogCountLabel}
               </span>
               <div className="active-chips">
                 <span className="chip">
@@ -625,18 +784,72 @@ export function CatalogPage({
                   {branch}
                 </span>
                 {periodSelected && (
-                  <button type="button" className="chip chip-filter" onClick={() => { setPickup(''); setReturnAt(''); }} aria-label="Xóa kỳ thuê đã chọn">
+                  <button
+                    type="button"
+                    className="chip chip-filter"
+                    onClick={() => {
+                      setPickup('');
+                      setReturnAt('');
+                    }}
+                    aria-label="Xóa kỳ thuê đã chọn"
+                  >
                     <Icon name="calendar" size={15} />
                     {formatCalendarDate(pickup.slice(0, 10))} →{' '}
                     {formatCalendarDate(returnAt.slice(0, 10))}
                     <span aria-hidden="true">×</span>
                   </button>
                 )}
-                {category !== 'Tất cả' && <button type="button" className="chip chip-filter" onClick={() => setCategory('Tất cả')} aria-label={`Xóa lọc loại ${category}`}>Loại: {category} <span aria-hidden="true">×</span></button>}
-                {size !== 'Tất cả' && <button type="button" className="chip chip-filter" onClick={() => setSize('Tất cả')} aria-label={`Xóa lọc kích cỡ ${size}`}>Size: {size} <span aria-hidden="true">×</span></button>}
-                {color !== 'Tất cả' && <button type="button" className="chip chip-filter" onClick={() => setColor('Tất cả')} aria-label={`Xóa lọc màu ${color}`}>Màu: {color} <span aria-hidden="true">×</span></button>}
-                {search.trim() && <button type="button" className="chip chip-filter" onClick={() => setSearch('')} aria-label={`Xóa từ khóa ${search}`}>Tìm: {search} <span aria-hidden="true">×</span></button>}
-                {hasActiveFilters && <button type="button" className="text-button" onClick={reset}>Xóa lọc</button>}
+                {availabilityOnly && (
+                  <span className="chip">
+                    <Icon name="check" size={15} />
+                    Chỉ mẫu còn hàng
+                  </span>
+                )}
+                {category !== 'Tất cả' && (
+                  <button
+                    type="button"
+                    className="chip chip-filter"
+                    onClick={() => setCategory('Tất cả')}
+                    aria-label={`Xóa lọc loại ${category}`}
+                  >
+                    Loại: {category} <span aria-hidden="true">×</span>
+                  </button>
+                )}
+                {size !== 'Tất cả' && (
+                  <button
+                    type="button"
+                    className="chip chip-filter"
+                    onClick={() => setSize('Tất cả')}
+                    aria-label={`Xóa lọc kích cỡ ${size}`}
+                  >
+                    Size: {size} <span aria-hidden="true">×</span>
+                  </button>
+                )}
+                {color !== 'Tất cả' && (
+                  <button
+                    type="button"
+                    className="chip chip-filter"
+                    onClick={() => setColor('Tất cả')}
+                    aria-label={`Xóa lọc màu ${color}`}
+                  >
+                    Màu: {color} <span aria-hidden="true">×</span>
+                  </button>
+                )}
+                {search.trim() && (
+                  <button
+                    type="button"
+                    className="chip chip-filter"
+                    onClick={() => setSearch('')}
+                    aria-label={`Xóa từ khóa ${search}`}
+                  >
+                    Tìm: {search} <span aria-hidden="true">×</span>
+                  </button>
+                )}
+                {hasActiveFilters && (
+                  <button type="button" className="text-button" onClick={reset}>
+                    Xóa lọc
+                  </button>
+                )}
               </div>
             </div>
             {selectedItem &&
@@ -671,7 +884,7 @@ export function CatalogPage({
                       </button>
                     </div>
                     <h3>{selectedItem.name}</h3>
-                    <p>{selectedItem.description}</p>
+                    {selectedItem.description.trim() && <p>{selectedItem.description}</p>}
                     <p>
                       <strong>Size:</strong> {selectedItem.sizes.join(', ')} · <strong>Màu:</strong>{' '}
                       {selectedItem.colors.join(', ')}
@@ -720,30 +933,79 @@ export function CatalogPage({
                 {error}
               </Feedback>
             )}
-            {loading ? (
-              <SkeletonGrid />
-            ) : !error && filtered.length === 0 ? (
-              <EmptyState
-                title={
-                  periodSelected
-                    ? 'Không có trang phục phù hợp tại chi nhánh và thời gian này'
-                    : 'Chưa có mẫu phù hợp bộ lọc'
+            {availabilityResultsFailed && (
+              <Feedback
+                tone="danger"
+                title="Chưa kiểm tra được tồn kho theo lịch"
+                action={
+                  <Button
+                    variant="secondary"
+                    onClick={() => setAvailabilityRetry((value) => value + 1)}
+                  >
+                    Thử lại
+                  </Button>
                 }
               >
-                Hãy đổi ngày, xóa bộ lọc hoặc chọn chi nhánh khác.
-                <div className="empty-actions">
-                  <Button variant="secondary" onClick={reset}>
-                    Xóa bộ lọc
-                  </Button>
+                Giữ nguyên lịch đã chọn rồi thử lại.
+              </Feedback>
+            )}
+            {availabilityResultsPartiallyFailed && (
+              <Feedback
+                tone="warning"
+                title="Một số mẫu chưa kiểm tra được lịch"
+                action={
                   <Button
-                    variant="quiet"
-                    onClick={() => {
-                      setPickup('');
-                      setReturnAt('');
-                    }}
+                    variant="secondary"
+                    onClick={() => setAvailabilityRetry((value) => value + 1)}
                   >
-                    Đổi ngày
+                    Thử lại
                   </Button>
+                }
+              >
+                Danh sách chỉ hiển thị các mẫu đã xác nhận còn hàng.
+              </Feedback>
+            )}
+            {loading || availabilityResultsLoading ? (
+              <SkeletonGrid />
+            ) : availabilityOnly &&
+              (!availabilitySearchReady || availabilityResultsFailed) ? null : !error &&
+              filtered.length === 0 ? (
+              <EmptyState
+                title={
+                  availabilityOnly
+                    ? availabilityResultsPartiallyFailed
+                      ? 'Chưa xác định được mẫu còn hàng'
+                      : 'Không có mẫu còn hàng theo lịch này'
+                    : periodSelected
+                      ? 'Không có trang phục phù hợp tại chi nhánh và thời gian này'
+                      : 'Chưa có mẫu phù hợp bộ lọc'
+                }
+              >
+                {availabilityOnly
+                  ? 'Thử size khác, đổi thời gian hoặc chọn chi nhánh khác.'
+                  : 'Hãy đổi ngày, xóa bộ lọc hoặc chọn chi nhánh khác.'}
+                <div className="empty-actions">
+                  {availabilityOnly ? (
+                    <Button variant="secondary" onClick={toggleAvailabilityOnly}>
+                      Xem tất cả mẫu
+                    </Button>
+                  ) : (
+                    <Button variant="secondary" onClick={reset}>
+                      Xóa bộ lọc
+                    </Button>
+                  )}
+                  {periodSelected && (
+                    <Button
+                      variant="quiet"
+                      onClick={() => {
+                        setPickup('');
+                        setReturnAt('');
+                        if (availabilityOnly) setAvailabilityOnly(false);
+                      }}
+                    >
+                      Đổi ngày
+                    </Button>
+                  )}
                 </div>
               </EmptyState>
             ) : (

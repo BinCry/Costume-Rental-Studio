@@ -26,10 +26,15 @@ import {
   recoverPendingRentalOrder,
   type RecoveredRentalOrder,
 } from '../api/client';
-import { formatLocalDateTime } from '../utils/date-format';
+import {
+  formatLocalDateTime,
+  minimumRentalDateTime,
+  minimumRentalReturnDateTime,
+} from '../utils/date-format';
 import { isValidPhone } from '../utils/phone';
 import { rentalPeriodIssues } from '../utils/rental-period';
 import { useBranchOptions } from '../components/useBranchOptions';
+import { BranchAddressNote } from '../components/BranchAddressNote';
 import { quoteNeedsConfirmation } from './quoteConfirmation';
 import { bookingDraftStorageKey, readResumedBooking, type ResumedBooking } from './bookingResume';
 
@@ -42,13 +47,6 @@ function storeBookingDraft(draft: BookingDraft) {
   );
 }
 const loadCatalog = (scenario: DemoScenario) => fixtureAdapter.listCatalog(scenario);
-function toLocalDateTimeInput(value: Date) {
-  const pad = (part: number) => String(part).padStart(2, '0');
-  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
-}
-function minimumPickupDateTime(now: number) {
-  return toLocalDateTimeInput(new Date(now + 2 * 60_000));
-}
 function lateReturnPolicyText(quote: QuoteSnapshot | undefined, apiMode: boolean) {
   const dueRule =
     'Hạn trả là thời điểm ghi trên đơn; đệm lịch nội bộ không kéo dài thời gian thuê.';
@@ -137,6 +135,7 @@ export function BookingPage({
   const apiMode = apiEnabled && (hasAccessToken() || !import.meta.env.DEV);
   const {
     options: branchOptions,
+    addresses: branchAddresses,
     ready: branchOptionsReady,
     error: branchOptionsError,
     retry: retryBranches,
@@ -160,7 +159,7 @@ export function BookingPage({
   const [quoteIssue, setQuoteIssue] = useState('');
   const [quoteIssueCode, setQuoteIssueCode] = useState('');
   const [issue, setIssue] = useState('');
-  const [currentTime, setCurrentTime] = useState(0);
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const [submittedId, setSubmittedId] = useState('');
   const [submittedDetails, setSubmittedDetails] = useState<RecoveredRentalOrder>();
@@ -698,27 +697,27 @@ export function BookingPage({
           </button>
         ))}
       </div>
-      <div className="booking-layout">
-        <details className="booking-mobile-summary">
-          <summary>
-            <span>
-              {totalQuantity} bộ · {lines.length} lựa chọn
-            </span>
-            <strong>{quote ? money(quote.amountDueAtPickup) : 'Chưa có báo giá'}</strong>
-          </summary>
-          <BookingSummaryContent
-            lines={summaryLines}
-            branch={draft.branch}
-            pickup={draft.pickup}
-            returnAt={draft.returnAt}
-            quote={quote}
-            apiMode={apiMode}
-          />
-        </details>
-        <aside
-          className={`booking-sidebar ${step === 0 ? 'booking-sidebar-selection' : 'booking-sidebar-summary'}`}
-        >
-          {step === 0 ? (
+      <div className={`booking-layout ${step === 1 ? 'booking-layout--review' : ''}`}>
+        {step === 0 && (
+          <details className="booking-mobile-summary">
+            <summary>
+              <span>
+                {totalQuantity} bộ · {lines.length} lựa chọn
+              </span>
+              <strong>{quote ? money(quote.amountDueAtPickup) : 'Chưa có báo giá'}</strong>
+            </summary>
+            <BookingSummaryContent
+              lines={summaryLines}
+              branch={draft.branch}
+              pickup={draft.pickup}
+              returnAt={draft.returnAt}
+              quote={quote}
+              apiMode={apiMode}
+            />
+          </details>
+        )}
+        {step === 0 && (
+          <aside className="booking-sidebar booking-sidebar-selection">
             <div className="booking-selection-card">
               <div className="booking-selection-heading">
                 <h2>Trang phục thuê</h2>
@@ -778,22 +777,13 @@ export function BookingPage({
                 <p className="booking-selection-status">Chưa có mẫu trang phục để chọn.</p>
               )}
             </div>
-          ) : (
-            <BookingSummaryContent
-              lines={summaryLines}
-              branch={draft.branch}
-              pickup={draft.pickup}
-              returnAt={draft.returnAt}
-              quote={quote}
-              apiMode={apiMode}
-            />
-          )}
-        </aside>
+          </aside>
+        )}
         <section className="booking-panel" ref={panelRef}>
           <div className="panel-intro">
             <span className="step-number">0{step + 1}</span>
             <div>
-              <p className="eyebrow">CHẶNG {step + 1} / 2</p>
+              <p className="eyebrow">BƯỚC {step + 1} / 2</p>
               <h2 ref={stepHeadingRef} tabIndex={-1} className="booking-step-heading">
                 {steps[step]}
               </h2>
@@ -828,21 +818,29 @@ export function BookingPage({
               {step === 0 && (
                 <div className="form-stack">
                   <h3 className="booking-subheading">Chi nhánh và lịch thuê</h3>
-                  <SelectField
-                    label="Chi nhánh nhận và trả"
-                    value={draft.branch}
-                    disabled={!branchOptionsReady || branchOptions.length === 0}
-                    onChange={(event) => update('branch', event.target.value)}
-                  >
-                    {branchOptions.length === 0 && (
-                      <option value="">
-                        {branchOptionsReady ? 'Chưa có chi nhánh khả dụng' : 'Đang tải chi nhánh…'}
-                      </option>
-                    )}
-                    {branchOptions.map((entry) => (
-                      <option key={entry}>{entry}</option>
-                    ))}
-                  </SelectField>
+                  <div className="branch-picker-field">
+                    <SelectField
+                      label="Chi nhánh nhận và trả"
+                      value={draft.branch}
+                      disabled={!branchOptionsReady || branchOptions.length === 0}
+                      onChange={(event) => update('branch', event.target.value)}
+                    >
+                      {branchOptions.length === 0 && (
+                        <option value="">
+                          {branchOptionsReady
+                            ? 'Chưa có chi nhánh khả dụng'
+                            : 'Đang tải chi nhánh…'}
+                        </option>
+                      )}
+                      {branchOptions.map((entry) => (
+                        <option key={entry}>{entry}</option>
+                      ))}
+                    </SelectField>
+                    <BranchAddressNote
+                      branchName={draft.branch}
+                      address={branchAddresses[draft.branch]}
+                    />
+                  </div>
                   {branchOptionsError && (
                     <Feedback tone="danger" title="Chưa tải được danh sách chi nhánh">
                       Hãy thử lại trước khi tiếp tục đặt thuê.{' '}
@@ -855,7 +853,7 @@ export function BookingPage({
                     <DateTimeField
                       label="Nhận đồ"
                       value={draft.pickup}
-                      min={currentTime > 0 ? minimumPickupDateTime(currentTime) : undefined}
+                      min={currentTime > 0 ? minimumRentalDateTime(currentTime) : undefined}
                       onChange={(value) => update('pickup', value)}
                       error={
                         pickupIssue ??
@@ -872,6 +870,11 @@ export function BookingPage({
                     <DateTimeField
                       label="Trả đồ"
                       value={draft.returnAt}
+                      min={
+                        currentTime > 0
+                          ? minimumRentalReturnDateTime(draft.pickup, currentTime)
+                          : undefined
+                      }
                       onChange={(value) => update('returnAt', value)}
                       error={
                         returnIssue ??
@@ -969,7 +972,9 @@ export function BookingPage({
                           })}
                         </div>
                       ) : (
-                        <p className="inline-note">Chọn mẫu ở cột bên phải để thêm vào yêu cầu.</p>
+                        <p className="inline-note">
+                          Chưa chọn mẫu. Thêm trang phục để xem báo giá.
+                        </p>
                       )}
                     </>
                   )}
@@ -1024,15 +1029,15 @@ export function BookingPage({
                     ) : (
                       <div className="booking-quote-status__summary">
                         <div>
-                          <span>Dự kiến thu khi nhận</span>
+                          <span>Báo giá</span>
                           <strong>
                             {quote?.available === false
                               ? 'Không đủ bộ'
                               : quote
-                                ? money(quote.amountDueAtPickup)
+                                ? 'Đã cập nhật'
                                 : busy
-                                  ? 'Đang tải báo giá…'
-                                  : 'Chưa có báo giá'}
+                                  ? 'Đang tải…'
+                                  : 'Chưa có'}
                           </strong>
                         </div>
                         {quote && (
@@ -1113,6 +1118,7 @@ export function BookingPage({
                       {quote.available === false && (
                         <Feedback
                           tone="danger"
+                          className="booking-availability-feedback"
                           title="Không đủ bộ trong kỳ thuê này"
                           action={
                             <Button variant="secondary" onClick={() => setStep(0)}>

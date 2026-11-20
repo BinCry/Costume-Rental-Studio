@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { apiEnabled, hasAccessToken, listBranches } from '../api/client';
 import { branches as fixtureBranches } from '../fixtures/adapter';
+import { customerBranches } from '../fixtures/studio';
 
 /**
  * Customer-facing branch choices come from the public API when configured.
@@ -13,6 +14,7 @@ export function useBranchOptions() {
   const [result, setResult] = useState<{
     key: string;
     options: string[];
+    addresses: Record<string, string>;
     error: boolean;
   }>();
 
@@ -21,10 +23,19 @@ export function useBranchOptions() {
     let cancelled = false;
     void listBranches()
       .then((items) => {
-        if (!cancelled) setResult({ key: requestKey, options: items.map((item) => item.name), error: false });
+        if (!cancelled) {
+          setResult({
+            key: requestKey,
+            options: items.map((item) => item.name),
+            addresses: Object.fromEntries(
+              items.map((item) => [item.name, item.address?.trim() ?? '']),
+            ),
+            error: false,
+          });
+        }
       })
       .catch(() => {
-        if (!cancelled) setResult({ key: requestKey, options: [], error: true });
+        if (!cancelled) setResult({ key: requestKey, options: [], addresses: {}, error: true });
       });
     return () => {
       cancelled = true;
@@ -33,7 +44,10 @@ export function useBranchOptions() {
 
   const resolved = useApi && result?.key === requestKey ? result : undefined;
   return {
-    options: useApi ? resolved?.options ?? [] : fixtureBranches,
+    options: useApi ? (resolved?.options ?? []) : fixtureBranches,
+    addresses: useApi
+      ? (resolved?.addresses ?? {})
+      : Object.fromEntries(customerBranches.map((branch) => [branch.name, branch.address])),
     ready: !useApi || !!resolved,
     error: !!resolved?.error,
     retry: () => setRevision((value) => value + 1),

@@ -6,6 +6,7 @@ import {
   Button,
   DateTimeField,
   ConfirmDialog,
+  DetailDialog,
   EmptyState,
   Feedback,
   Field,
@@ -54,22 +55,35 @@ function orderTimestamp(value: string | undefined, fallback: string) {
   if (value) return new Date(value).getTime();
   const match = /(\d{2})\/(\d{2})\/(\d{4}).*?(\d{2}):(\d{2})/.exec(fallback);
   return match
-    ? new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]), Number(match[4]), Number(match[5])).getTime()
+    ? new Date(
+        Number(match[3]),
+        Number(match[2]) - 1,
+        Number(match[1]),
+        Number(match[4]),
+        Number(match[5]),
+      ).getTime()
     : Number.POSITIVE_INFINITY;
 }
 function compareOrders(left: Order, right: Order, sort: OrderSort) {
   if (sort === 'code-asc') return left.id.localeCompare(right.id, 'vi');
   const pickup = sort.startsWith('pickup');
-  const leftTime = orderTimestamp(pickup ? left.apiPlannedStartAt : left.apiPlannedDueAt,
-    pickup ? left.pickup : left.returnAt);
-  const rightTime = orderTimestamp(pickup ? right.apiPlannedStartAt : right.apiPlannedDueAt,
-    pickup ? right.pickup : right.returnAt);
-  return (sort.endsWith('asc') ? leftTime - rightTime : rightTime - leftTime) ||
-    left.id.localeCompare(right.id, 'vi');
+  const leftTime = orderTimestamp(
+    pickup ? left.apiPlannedStartAt : left.apiPlannedDueAt,
+    pickup ? left.pickup : left.returnAt,
+  );
+  const rightTime = orderTimestamp(
+    pickup ? right.apiPlannedStartAt : right.apiPlannedDueAt,
+    pickup ? right.pickup : right.returnAt,
+  );
+  return (
+    (sort.endsWith('asc') ? leftTime - rightTime : rightTime - leftTime) ||
+    left.id.localeCompare(right.id, 'vi')
+  );
 }
 function isOverdueRental(order: Order) {
-  return order.status === 'ACTIVE' &&
-    orderTimestamp(order.apiPlannedDueAt, order.returnAt) < Date.now();
+  return (
+    order.status === 'ACTIVE' && orderTimestamp(order.apiPlannedDueAt, order.returnAt) < Date.now()
+  );
 }
 
 export function OrdersPage({
@@ -104,17 +118,22 @@ export function OrdersPage({
   const [branch, setBranch] = useState(initialBranch);
   const [selectedId, setSelectedId] = useState(initialOrderId ?? 'RT-1024');
   const [group, setGroup] = useState(initialFilter ?? 'Tất cả');
-  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('q') ?? '');
+  const [search, setSearch] = useState(
+    () => new URLSearchParams(window.location.search).get('q') ?? '',
+  );
   const [sort, setSort] = useState<OrderSort>(() => {
     const value = new URLSearchParams(window.location.search).get('sort');
-    return ['pickup-asc', 'pickup-desc', 'return-asc', 'return-desc', 'code-asc'].includes(value ?? '')
-      ? value as OrderSort : 'pickup-asc';
+    return ['pickup-asc', 'pickup-desc', 'return-asc', 'return-desc', 'code-asc'].includes(
+      value ?? '',
+    )
+      ? (value as OrderSort)
+      : 'pickup-asc';
   });
   const [page, setPage] = useState(() => {
     const value = new URLSearchParams(window.location.search).get('page');
     return value ? Math.max(1, Number(value) || 1) : initialOrderId ? 0 : 1;
   });
-  const [mobileDetail, setMobileDetail] = useState(!!initialOrderId);
+  const [detailOpen, setDetailOpen] = useState(!!initialOrderId);
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
   const [unavailableUnits, setUnavailableUnits] = useState<string[]>([]);
   const [replacementOptions, setReplacementOptions] = useState<Record<string, Unit[]>>({});
@@ -132,55 +151,60 @@ export function OrdersPage({
   const [preparedCodes, setPreparedCodes] = useState<string[]>([]);
   const [accessoryCodes, setAccessoryCodes] = useState<string[]>([]);
   const { loading, data, error, retry } = useFixtureResource(scenario, loadOrders);
-  const detailBackRef = useRef<HTMLButtonElement>(null);
-  const detailRef = useRef<HTMLElement>(null);
-  const selectedRowRef = useRef<HTMLButtonElement>(null);
   const noticeRef = useRef<HTMLDivElement>(null);
-  const toolbarRef = useRef<HTMLDivElement>(null);
   const unitSelectionRef = useRef<HTMLDivElement>(null);
-  const previousMobileViewRef = useRef<boolean | null>(null);
   useEffect(() => {
-    if (window.innerWidth >= 768 || loading || error) return;
-    if (previousMobileViewRef.current === null && !mobileDetail) {
-      previousMobileViewRef.current = false;
-      return;
-    }
-    if (previousMobileViewRef.current === mobileDetail) return;
-    previousMobileViewRef.current = mobileDetail;
-    const target = mobileDetail ? detailBackRef.current : selectedRowRef.current;
-    target?.focus({ preventScroll: true });
-    (mobileDetail ? detailRef.current : target)?.scrollIntoView({
-      block: 'start',
-      behavior: 'instant',
-    });
-  }, [mobileDetail, loading, error]);
+    const syncDetailRoute = () => {
+      const match = /^\/(?:quan-tri|van-hanh)\/don-thue\/([^/]+)\/?$/.exec(
+        window.location.pathname,
+      );
+      if (match) {
+        setSelectedId(decodeURIComponent(match[1]));
+        setDetailOpen(true);
+      } else {
+        setDetailOpen(false);
+      }
+    };
+    window.addEventListener('popstate', syncDetailRoute);
+    return () => window.removeEventListener('popstate', syncDetailRoute);
+  }, []);
   useEffect(() => {
     if (!notice) return;
     noticeRef.current?.focus();
     noticeRef.current?.scrollIntoView({ block: 'start', behavior: 'instant' });
   }, [notice]);
   const scoped = (data ?? []).filter((order) => order.branch === branch);
-  const visible = scoped.filter(
-    (order) =>
-      (group === 'Tất cả' ||
-        (group === 'Quá hạn' ? isOverdueRental(order) :
-          groupDefs.find((entry) => entry.label === group)?.statuses.includes(order.status))) &&
-      `${order.id} ${order.customer} ${order.phone} ${order.items.map((item) => item.unitCode).join(' ')}`
-        .toLocaleLowerCase('vi')
-        .includes(search.toLocaleLowerCase('vi')),
-  ).sort((left, right) => compareOrders(left, right, sort));
+  const visible = scoped
+    .filter(
+      (order) =>
+        (group === 'Tất cả' ||
+          (group === 'Quá hạn'
+            ? isOverdueRental(order)
+            : groupDefs.find((entry) => entry.label === group)?.statuses.includes(order.status))) &&
+        `${order.id} ${order.customer} ${order.phone} ${order.items.map((item) => item.unitCode).join(' ')}`
+          .toLocaleLowerCase('vi')
+          .includes(search.toLocaleLowerCase('vi')),
+    )
+    .sort((left, right) => compareOrders(left, right, sort));
   const pageCount = Math.max(1, Math.ceil(visible.length / orderPageSize));
-  const deepLinkIndex = initialOrderId ? visible.findIndex((entry) => entry.id === initialOrderId) : -1;
-  const currentPage = page === 0 && deepLinkIndex >= 0
-    ? Math.floor(deepLinkIndex / orderPageSize) + 1
-    : Math.min(Math.max(page, 1), pageCount);
+  const deepLinkIndex = initialOrderId
+    ? visible.findIndex((entry) => entry.id === initialOrderId)
+    : -1;
+  const currentPage =
+    page === 0 && deepLinkIndex >= 0
+      ? Math.floor(deepLinkIndex / orderPageSize) + 1
+      : Math.min(Math.max(page, 1), pageCount);
   const pageItems = visible.slice((currentPage - 1) * orderPageSize, currentPage * orderPageSize);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (search) params.set('q', search); else params.delete('q');
-    if (group !== 'Tất cả') params.set('filter', group); else params.delete('filter');
-    if (sort !== 'pickup-asc') params.set('sort', sort); else params.delete('sort');
-    if (currentPage > 1) params.set('page', String(currentPage)); else params.delete('page');
+    if (search) params.set('q', search);
+    else params.delete('q');
+    if (group !== 'Tất cả') params.set('filter', group);
+    else params.delete('filter');
+    if (sort !== 'pickup-asc') params.set('sort', sort);
+    else params.delete('sort');
+    if (currentPage > 1) params.set('page', String(currentPage));
+    else params.delete('page');
     const query = params.toString();
     window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
   }, [search, group, sort, currentPage]);
@@ -230,9 +254,17 @@ export function OrdersPage({
     !!order &&
     assignedCodes.length === order.items.length &&
     assignedCodes.every((code) => preparedCodes.includes(code) && accessoryCodes.includes(code));
+  const closeOrderDetail = () => {
+    setDetailOpen(false);
+    window.history.replaceState(
+      null,
+      '',
+      `${adminRoute ? '/quan-tri' : '/van-hanh'}/don-thue${window.location.search}`,
+    );
+  };
   const chooseOrder = (id: string) => {
     setSelectedId(id);
-    setMobileDetail(true);
+    setDetailOpen(true);
     setSelectedUnits([]);
     setReplacementOptions({});
     setReplacementSelection({});
@@ -250,19 +282,17 @@ export function OrdersPage({
       '',
       `${adminRoute ? '/quan-tri' : '/van-hanh'}/don-thue/${encodeURIComponent(id)}${window.location.search}`,
     );
-    if (window.innerWidth >= 900) {
-      window.requestAnimationFrame(() =>
-        detailRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }),
-      );
-    }
   };
   const changePage = (nextPage: number) => {
     const next = Math.max(1, Math.min(nextPage, pageCount));
     setPage(next);
     setSelectedId(visible[(next - 1) * orderPageSize]?.id ?? '');
-    setMobileDetail(false);
-    window.history.pushState(null, '',
-      `${adminRoute ? '/quan-tri' : '/van-hanh'}/don-thue${window.location.search}`);
+    setDetailOpen(false);
+    window.history.pushState(
+      null,
+      '',
+      `${adminRoute ? '/quan-tri' : '/van-hanh'}/don-thue${window.location.search}`,
+    );
   };
   const toggleUnit = (code: string) => {
     if (selectedUnits.includes(code)) {
@@ -504,19 +534,12 @@ export function OrdersPage({
         <div>
           <h1>Đơn thuê</h1>
         </div>
-        <div className="feature-actions">
-          <StatusLabel
-            text={loading ? 'Đang tải đơn' : `${scoped.length} đơn tại chi nhánh`}
-            tone="neutral"
-          />
-          <Button variant="secondary" onClick={() => {
-            setGroup('Đang thuê');
-            setPage(1);
-            window.requestAnimationFrame(() => toolbarRef.current?.querySelector<HTMLInputElement>('input')?.focus());
-          }}>Tra barcode</Button>
-        </div>
+        <StatusLabel
+          text={loading ? 'Đang tải đơn' : `${scoped.length} đơn tại chi nhánh`}
+          tone="neutral"
+        />
       </div>
-      <div ref={toolbarRef} className={`staff-toolbar orders-toolbar ${realApiMode ? '' : 'with-branch'}`}>
+      <div className={`staff-toolbar orders-toolbar ${realApiMode ? '' : 'with-branch'}`}>
         {!realApiMode && (
           <SelectField
             label="Chi nhánh"
@@ -535,12 +558,18 @@ export function OrdersPage({
           label="Tìm mã đơn, khách hoặc barcode"
           placeholder="RT-1024, Nguyễn An, BC-..."
           value={search}
-          onChange={(event) => { setSearch(event.target.value); setPage(1); }}
+          onChange={(event) => {
+            setSearch(event.target.value);
+            setPage(1);
+          }}
         />
         <SelectField
           label="Nhóm trạng thái"
           value={group}
-          onChange={(event) => { setGroup(event.target.value); setPage(1); }}
+          onChange={(event) => {
+            setGroup(event.target.value);
+            setPage(1);
+          }}
         >
           <option>Tất cả</option>
           {groupDefs.map((entry) => (
@@ -550,7 +579,10 @@ export function OrdersPage({
         <SelectField
           label="Sắp xếp"
           value={sort}
-          onChange={(event) => { setSort(event.target.value as OrderSort); setPage(1); }}
+          onChange={(event) => {
+            setSort(event.target.value as OrderSort);
+            setPage(1);
+          }}
         >
           <option value="pickup-asc">Nhận sớm nhất</option>
           <option value="pickup-desc">Nhận muộn nhất</option>
@@ -631,11 +663,13 @@ export function OrdersPage({
         />
       )}
       {!loading && !error && scoped.length > 0 && (
-        <div className={`orders-workspace ${mobileDetail ? 'show-detail' : ''}`}>
+        <div className="orders-workspace">
           <section className="order-list" aria-label="Danh sách đơn">
             <div className="order-list-head">
               <h2>{group === 'Tất cả' ? 'Tất cả đơn' : group}</h2>
-              <span>{visible.length} đơn · trang {currentPage}/{pageCount}</span>
+              <span>
+                {visible.length} đơn · trang {currentPage}/{pageCount}
+              </span>
             </div>
             {visible.length === 0 ? (
               <EmptyState title="Không có đơn phù hợp bộ lọc">
@@ -652,71 +686,87 @@ export function OrdersPage({
               </EmptyState>
             ) : (
               <>
-                <div className="order-table-scroll">
+                <p className="table-scroll-hint">Trên điện thoại, vuốt ngang để xem đủ cột.</p>
+                <div
+                  className="order-table-scroll"
+                  role="region"
+                  aria-label="Bảng đơn thuê, kéo ngang để xem thêm cột"
+                  tabIndex={0}
+                >
                   <table className="order-table">
                     <thead>
                       <tr>
                         <th scope="col">Mã đơn</th>
                         <th scope="col">Khách hàng</th>
+                        <th scope="col">Chi nhánh</th>
+                        <th scope="col">Số bộ</th>
                         <th scope="col">Nhận đồ</th>
                         <th scope="col">Trả đồ</th>
                         <th scope="col">Trạng thái</th>
+                        <th scope="col">Chi tiết</th>
                       </tr>
                     </thead>
                     <tbody>
                       {pageItems.map((entry) => (
-                        <tr key={entry.id} className={order?.id === entry.id ? 'selected' : ''}>
+                        <tr
+                          key={entry.id}
+                          className={detailOpen && order?.id === entry.id ? 'selected' : ''}
+                        >
                           <td>
-                            <button
-                              type="button"
-                              className="order-table-link"
-                              onClick={() => chooseOrder(entry.id)}
-                            >
-                              {entry.id}
-                            </button>
+                            <strong>{entry.id}</strong>
                           </td>
-                          <td>{entry.customer}</td>
+                          <td className="order-customer-cell">
+                            <strong>{entry.customer}</strong>
+                            <small>{entry.phone}</small>
+                          </td>
+                          <td>{entry.branch}</td>
+                          <td>{entry.items.length} bộ</td>
                           <td>{entry.pickup}</td>
                           <td>{entry.returnAt}</td>
                           <td>
                             <StatusLabel
-                              text={isOverdueRental(entry) ? 'Quá hạn' : orderStatus[entry.status].text}
-                              tone={isOverdueRental(entry) ? 'warning' : orderStatus[entry.status].tone}
+                              text={
+                                isOverdueRental(entry) ? 'Quá hạn' : orderStatus[entry.status].text
+                              }
+                              tone={
+                                isOverdueRental(entry) ? 'warning' : orderStatus[entry.status].tone
+                              }
                             />
+                          </td>
+                          <td className="order-action-cell">
+                            <Button
+                              variant="secondary"
+                              className="order-detail-action"
+                              aria-label={`Chi tiết đơn ${entry.id}`}
+                              onClick={() => chooseOrder(entry.id)}
+                            >
+                              Chi tiết
+                            </Button>
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-                <div className="order-mobile-list">
-                  {pageItems.map((entry) => (
-                    <button
-                      key={entry.id}
-                      className={`order-list-row ${order?.id === entry.id ? 'selected' : ''}`}
-                      ref={order?.id === entry.id ? selectedRowRef : undefined}
-                      onClick={() => chooseOrder(entry.id)}
-                    >
-                      <div>
-                        <strong>{entry.id}</strong>
-                        <small>{entry.pickup}</small>
-                      </div>
-                      <span>{entry.customer}</span>
-                      <StatusLabel
-                        text={isOverdueRental(entry) ? 'Quá hạn' : orderStatus[entry.status].text}
-                        tone={isOverdueRental(entry) ? 'warning' : orderStatus[entry.status].tone}
-                      />
-                    </button>
-                  ))}
-                </div>
                 {pageCount > 1 && (
                   <nav className="order-pagination" aria-label="Trang danh sách đơn">
-                    <span>{(currentPage - 1) * orderPageSize + 1}–{Math.min(currentPage * orderPageSize, visible.length)} / {visible.length}</span>
+                    <span>
+                      {(currentPage - 1) * orderPageSize + 1}–
+                      {Math.min(currentPage * orderPageSize, visible.length)} / {visible.length}
+                    </span>
                     <div>
-                      <Button variant="secondary" disabled={currentPage === 1} onClick={() => changePage(currentPage - 1)}>
+                      <Button
+                        variant="secondary"
+                        disabled={currentPage === 1}
+                        onClick={() => changePage(currentPage - 1)}
+                      >
                         Trước
                       </Button>
-                      <Button variant="secondary" disabled={currentPage === pageCount} onClick={() => changePage(currentPage + 1)}>
+                      <Button
+                        variant="secondary"
+                        disabled={currentPage === pageCount}
+                        onClick={() => changePage(currentPage + 1)}
+                      >
                         Tiếp
                       </Button>
                     </div>
@@ -725,16 +775,13 @@ export function OrdersPage({
               </>
             )}
           </section>
-          <section ref={detailRef} className="order-detail" aria-label="Chi tiết đơn đang chọn">
-            <button
-              ref={detailBackRef}
-              className="back-to-list"
-              onClick={() => setMobileDetail(false)}
+          {detailOpen && order && (
+            <DetailDialog
+              title={`Chi tiết đơn ${order.id}`}
+              closeLabel={`Đóng chi tiết đơn ${order.id}`}
+              onClose={closeOrderDetail}
             >
-              <Icon name="arrow" size={17} /> Quay lại danh sách
-            </button>
-            {order ? (
-              <>
+              <section className="order-detail" aria-label={`Chi tiết đơn ${order.id}`}>
                 <div className="detail-head">
                   <div>
                     <p className="eyebrow">CHI TIẾT ĐƠN · PHIÊN BẢN {order.version}</p>
@@ -1210,11 +1257,9 @@ export function OrdersPage({
                     ))}
                   </ol>
                 </div>
-              </>
-            ) : (
-              <EmptyState title="Chọn một đơn để xem chi tiết" />
-            )}
-          </section>
+              </section>
+            </DetailDialog>
+          )}
         </div>
       )}
       {dialog === 'confirm' && order && (

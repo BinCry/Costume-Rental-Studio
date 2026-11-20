@@ -1,6 +1,18 @@
-import { useCallback, useState, type FormEvent } from 'react';
+import { useCallback, useRef, useState, type FormEvent } from 'react';
 import type { Navigate } from '../App';
-import { Button, ConfirmDialog, DateField, DateTimeField, EmptyState, Feedback, Field, SelectField, TextAreaField, StatusLabel } from '../components/ui';
+import {
+  Button,
+  ConfirmDialog,
+  DateField,
+  DateTimeField,
+  DetailDialog,
+  EmptyState,
+  Feedback,
+  Field,
+  SelectField,
+  TextAreaField,
+  StatusLabel,
+} from '../components/ui';
 import { formatVietnamDateTime } from '../utils/date-format';
 import {
   BarcodeLookup,
@@ -15,7 +27,12 @@ import {
   Timeline,
   UnitDetailPanel,
 } from '../components/studio';
-import { blockStatusLabels, blockTypeLabels, conditionLabels, unitStatusLabels } from '../components/statusLabels';
+import {
+  blockStatusLabels,
+  blockTypeLabels,
+  conditionLabels,
+  unitStatusLabels,
+} from '../components/statusLabels';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { useBranchOptions } from '../components/useBranchOptions';
 import { useMobileDetailReveal } from '../components/useMobileDetailReveal';
@@ -79,17 +96,25 @@ function CreateInventoryUnitPanel({
   const [notes, setNotes] = useState('');
   const [issue, setIssue] = useState('');
   const [busy, setBusy] = useState(false);
-  const variants = (data ?? []).flatMap((model) => model.variants.map((variant) => ({
-    id: variant.apiId,
-    label: `${model.name} · ${variant.size} / ${variant.color}`,
-  }))).filter((variant): variant is { id: string; label: string } => !!variant.id);
+  const variants = (data ?? [])
+    .flatMap((model) =>
+      model.variants.map((variant) => ({
+        id: variant.apiId,
+        label: `${model.name} · ${variant.size} / ${variant.color}`,
+      })),
+    )
+    .filter((variant): variant is { id: string; label: string } => !!variant.id);
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!acquiredDateValid) {
       setIssue('Kiểm tra ngày nhập kho.');
       return;
     }
-    if (!unitCode.trim() || !variantId || (cost && (!Number.isSafeInteger(Number(cost)) || Number(cost) < 0))) {
+    if (
+      !unitCode.trim() ||
+      !variantId ||
+      (cost && (!Number.isSafeInteger(Number(cost)) || Number(cost) < 0))
+    ) {
       setIssue('Nhập barcode, chọn biến thể và kiểm tra giá nhập.');
       return;
     }
@@ -113,22 +138,79 @@ function CreateInventoryUnitPanel({
   };
   return (
     <Panel title={`Ghi nhận bộ mới · ${branch}`}>
-      {loading ? <p className="muted" role="status">Đang tải biến thể đang kinh doanh…</p> : (
+      {loading ? (
+        <p className="muted" role="status">
+          Đang tải biến thể đang kinh doanh…
+        </p>
+      ) : (
         <form className="stack-form" onSubmit={(event) => void save(event)}>
           <div className="feature-filters">
-            <Field label="Barcode bộ" required value={unitCode} disabled={busy} onChange={(event) => setUnitCode(event.target.value.toUpperCase())} hint="Chỉ dùng chữ, số và dấu gạch nối." />
-            <SelectField label="Mẫu / biến thể" required value={variantId} disabled={busy || !variants.length} onChange={(event) => setVariantId(event.target.value)}>
+            <Field
+              label="Barcode bộ"
+              required
+              value={unitCode}
+              disabled={busy}
+              onChange={(event) => setUnitCode(event.target.value.toUpperCase())}
+              hint="Chỉ dùng chữ, số và dấu gạch nối."
+            />
+            <SelectField
+              label="Mẫu / biến thể"
+              required
+              value={variantId}
+              disabled={busy || !variants.length}
+              onChange={(event) => setVariantId(event.target.value)}
+            >
               <option value="">Chọn biến thể</option>
-              {variants.map((variant) => <option value={variant.id} key={variant.id}>{variant.label}</option>)}
+              {variants.map((variant) => (
+                <option value={variant.id} key={variant.id}>
+                  {variant.label}
+                </option>
+              ))}
             </SelectField>
-            <DateField label="Ngày nhập" value={acquiredAt} disabled={busy} onChange={setAcquiredAt} onValidityChange={setAcquiredDateValid} />
-            <Field label="Giá nhập (đ)" type="number" min="0" step="1000" value={cost} disabled={busy} onChange={(event) => setCost(event.target.value)} />
+            <DateField
+              label="Ngày nhập"
+              value={acquiredAt}
+              disabled={busy}
+              onChange={setAcquiredAt}
+              onValidityChange={setAcquiredDateValid}
+            />
+            <Field
+              label="Giá nhập (đ)"
+              type="number"
+              min="0"
+              step="1000"
+              value={cost}
+              disabled={busy}
+              onChange={(event) => setCost(event.target.value)}
+            />
           </div>
-          <TextAreaField label="Ghi chú tiếp nhận" value={notes} disabled={busy} onChange={(event) => setNotes(event.target.value)} />
-          {!variants.length && !loading && <Feedback tone="warning" title="Chưa có biến thể để nhập kho">Hãy kiểm tra quyền xem danh mục và trạng thái kinh doanh của biến thể.</Feedback>}
-          {error && <Feedback tone="danger" title="Không tải được danh mục">{String(error)} <button type="button" className="text-button" onClick={retry}>Thử lại</button></Feedback>}
-          {issue && <Feedback tone="danger" title="Chưa tạo được bộ">{issue}</Feedback>}
-          <Button type="submit" loading={busy} disabled={loading || !variants.length}>Tạo bộ chờ kiểm tra</Button>
+          <TextAreaField
+            label="Ghi chú tiếp nhận"
+            value={notes}
+            disabled={busy}
+            onChange={(event) => setNotes(event.target.value)}
+          />
+          {!variants.length && !loading && (
+            <Feedback tone="warning" title="Chưa có biến thể để nhập kho">
+              Hãy kiểm tra quyền xem danh mục và trạng thái kinh doanh của biến thể.
+            </Feedback>
+          )}
+          {error && (
+            <Feedback tone="danger" title="Không tải được danh mục">
+              {String(error)}{' '}
+              <button type="button" className="text-button" onClick={retry}>
+                Thử lại
+              </button>
+            </Feedback>
+          )}
+          {issue && (
+            <Feedback tone="danger" title="Chưa tạo được bộ">
+              {issue}
+            </Feedback>
+          )}
+          <Button type="submit" loading={busy} disabled={loading || !variants.length}>
+            Tạo bộ chờ kiểm tra
+          </Button>
         </form>
       )}
     </Panel>
@@ -158,12 +240,12 @@ export function InventoryPage({
   const realApiMode = apiEnabled && hasAccessToken();
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.units);
   const loadBlocks = useCallback(
-    async () => realApiMode ? listUnitBlocks({ branchName: branch }) : [],
+    async () => (realApiMode ? listUnitBlocks({ branchName: branch }) : []),
     [branch, realApiMode],
   );
   const blocksResource = useFixtureResource(scenario, loadBlocks, branch);
   const loadCapacity = useCallback(
-    async () => realApiMode && branch ? listCapacityWindows(branch) : [],
+    async () => (realApiMode && branch ? listCapacityWindows(branch) : []),
     [branch, realApiMode],
   );
   const capacityResource = useFixtureResource(scenario, loadCapacity, branch);
@@ -189,8 +271,12 @@ export function InventoryPage({
   const [busy, setBusy] = useState(false);
   const [showCreateUnit, setShowCreateUnit] = useState(false);
   const [showBlockForm, setShowBlockForm] = useState(false);
-  const [inspectionGrade, setInspectionGrade] = useState<'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED'>('GOOD');
-  const [unitTargetStatus, setUnitTargetStatus] = useState<'READY' | 'CLEANING' | 'REPAIR'>('CLEANING');
+  const [inspectionGrade, setInspectionGrade] = useState<
+    'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED'
+  >('GOOD');
+  const [unitTargetStatus, setUnitTargetStatus] = useState<'READY' | 'CLEANING' | 'REPAIR'>(
+    'CLEANING',
+  );
   const [operationNotes, setOperationNotes] = useState('');
   const [retirementOpen, setRetirementOpen] = useState(false);
   const [retirementNotes, setRetirementNotes] = useState('');
@@ -202,10 +288,14 @@ export function InventoryPage({
   const [windowNotes, setWindowNotes] = useState('');
   const [editingWindow, setEditingWindow] = useState<CapacityWindowRecord>();
   const [deleteWindowTarget, setDeleteWindowTarget] = useState<CapacityWindowRecord>();
-  const { detailRef, revealDetail } = useMobileDetailReveal<HTMLDivElement>();
+  const activeDetailBarcodeRef = useRef<string | undefined>(undefined);
+  const closeUnitDetail = () => {
+    activeDetailBarcodeRef.current = undefined;
+    setSelected(undefined);
+  };
   const refreshUnitDetail = async (unit: Unit) => {
     if (!unit.apiId || !realApiMode) {
-      setSelected(unit);
+      if (activeDetailBarcodeRef.current === unit.barcode) setSelected(unit);
       return;
     }
     try {
@@ -213,14 +303,18 @@ export function InventoryPage({
         listUnitBlocks({ unitId: unit.apiId }),
         listInventoryUnitEvents(unit.apiId),
       ]);
-      setSelected({
-        ...unit,
-        blocks,
-        history,
-      });
+      if (activeDetailBarcodeRef.current === unit.barcode) {
+        setSelected({
+          ...unit,
+          blocks,
+          history,
+        });
+      }
     } catch (error) {
-      setSelected(unit);
-      setIssue(error instanceof Error ? error.message : 'Không tải được lịch sử bộ.');
+      if (activeDetailBarcodeRef.current === unit.barcode) {
+        setSelected(unit);
+        setIssue(error instanceof Error ? error.message : 'Không tải được lịch sử bộ.');
+      }
     }
   };
   const selectUnit = (unit: Unit) => {
@@ -232,8 +326,8 @@ export function InventoryPage({
     setScheduleNotice('');
     setEditingBlock(undefined);
     setShowBlockForm(false);
+    activeDetailBarcodeRef.current = unit.barcode;
     setSelected(unit);
-    revealDetail();
     void refreshUnitDetail(unit);
   };
   const addBlock = async () => {
@@ -243,7 +337,11 @@ export function InventoryPage({
       setBlockIssue('Nhập lý do và khoảng block hợp lệ.');
       return;
     }
-    if (!Number.isInteger(Number(effort)) || Number(effort) < 1 || (blockCost && (!Number.isSafeInteger(Number(blockCost)) || Number(blockCost) < 0))) {
+    if (
+      !Number.isInteger(Number(effort)) ||
+      Number(effort) < 1 ||
+      (blockCost && (!Number.isSafeInteger(Number(blockCost)) || Number(blockCost) < 0))
+    ) {
       setBlockIssue('Kiểm tra số phút xử lý và chi phí dự kiến.');
       return;
     }
@@ -278,19 +376,22 @@ export function InventoryPage({
         blocksResource.retry();
         await refreshUnitDetail(selected);
       } else {
-        setSelected(await studioAdapter.addBlock(
+        const updated = await studioAdapter.addBlock(
           selected.barcode,
           { type: blockType, from, until, reason, status: 'PLANNED' },
           scenario,
-        ));
+        );
+        if (activeDetailBarcodeRef.current === selected.barcode) setSelected(updated);
       }
       retry();
       setReason('');
-      setBlockNotice(editingBlock
-        ? `Đã cập nhật lịch ${blockTypeLabels[blockType]} cho ${selected.barcode}.`
-        : realApiMode
-          ? `Đã tạo lịch ${blockTypeLabels[blockType]} cho ${selected.barcode} trên hệ thống.`
-          : `Đã tạo block ${blockTypeLabels[blockType]} cho ${selected.barcode} trong fixture.`);
+      setBlockNotice(
+        editingBlock
+          ? `Đã cập nhật lịch ${blockTypeLabels[blockType]} cho ${selected.barcode}.`
+          : realApiMode
+            ? `Đã tạo lịch ${blockTypeLabels[blockType]} cho ${selected.barcode} trên hệ thống.`
+            : `Đã tạo block ${blockTypeLabels[blockType]} cho ${selected.barcode} trong fixture.`,
+      );
       setShowBlockForm(false);
     } catch (e) {
       setBlockIssue(e instanceof Error ? e.message : 'Không tạo được block.');
@@ -305,9 +406,11 @@ export function InventoryPage({
     setNotice('');
     try {
       const updated = await operation();
-      setSelected({ ...updated, blocks: selected.blocks, history: selected.history });
+      const detailStillOpen = activeDetailBarcodeRef.current === selected.barcode;
+      if (detailStillOpen)
+        setSelected({ ...updated, blocks: selected.blocks, history: selected.history });
       retry();
-      await refreshUnitDetail(updated);
+      if (detailStillOpen) await refreshUnitDetail(updated);
       setOperationNotes('');
       setNotice(successMessage);
     } catch (error) {
@@ -326,7 +429,11 @@ export function InventoryPage({
       blocksResource.retry();
       retry();
       if (selected) await refreshUnitDetail(selected);
-      setScheduleNotice(action === 'start' ? 'Đã bắt đầu lịch xử lý.' : 'Đã hoàn tất lịch xử lý; bộ đã chuyển sang sẵn sàng.');
+      setScheduleNotice(
+        action === 'start'
+          ? 'Đã bắt đầu lịch xử lý.'
+          : 'Đã hoàn tất lịch xử lý; bộ đã chuyển sang sẵn sàng.',
+      );
     } catch (error) {
       setScheduleIssue(error instanceof Error ? error.message : 'Không cập nhật được lịch xử lý.');
     } finally {
@@ -357,7 +464,13 @@ export function InventoryPage({
     setCapacityIssue('');
     setCapacityNotice('');
     const availableMinutes = Number(windowMinutes);
-    if (!branch || !windowStart || windowEnd <= windowStart || !Number.isInteger(availableMinutes) || availableMinutes < 1) {
+    if (
+      !branch ||
+      !windowStart ||
+      windowEnd <= windowStart ||
+      !Number.isInteger(availableMinutes) ||
+      availableMinutes < 1
+    ) {
       setCapacityIssue('Kiểm tra khoảng thời gian và số phút năng lực.');
       return;
     }
@@ -403,20 +516,23 @@ export function InventoryPage({
       if (editingWindow?.id === deleteWindowTarget.id) setEditingWindow(undefined);
       capacityResource.retry();
       blocksResource.retry();
-      setCapacityNotice('Đã xóa khung năng lực. Các lịch xử lý liên quan vẫn còn và không còn gắn với khung này.');
+      setCapacityNotice(
+        'Đã xóa khung năng lực. Các lịch xử lý liên quan vẫn còn và không còn gắn với khung này.',
+      );
     } catch (error) {
       setCapacityIssue(error instanceof Error ? error.message : 'Không xóa được khung năng lực.');
     } finally {
       setBusy(false);
     }
   };
-  const availableStatusTargets = selected?.status === 'READY'
-    ? ['CLEANING', 'REPAIR'] as const
-    : selected?.status === 'CLEANING'
-      ? ['READY', 'REPAIR'] as const
-      : selected?.status === 'REPAIR'
-        ? ['READY'] as const
-        : [] as const;
+  const availableStatusTargets =
+    selected?.status === 'READY'
+      ? (['CLEANING', 'REPAIR'] as const)
+      : selected?.status === 'CLEANING'
+        ? (['READY', 'REPAIR'] as const)
+        : selected?.status === 'REPAIR'
+          ? (['READY'] as const)
+          : ([] as const);
   const effectiveUnitTarget = availableStatusTargets.some((status) => status === unitTargetStatus)
     ? unitTargetStatus
     : (availableStatusTargets[0] ?? 'READY');
@@ -439,10 +555,20 @@ export function InventoryPage({
           <div className="page">
             <PageHeading
               title="Kho theo barcode"
-              action={canManage ? <div className="feature-actions">
-                <Button variant="secondary" onClick={() => go('transfers')}>Phiếu điều chuyển</Button>
-                {realApiMode && <Button onClick={() => setShowCreateUnit((value) => !value)}>{showCreateUnit ? 'Đóng nhập bộ' : '＋ Nhập bộ mới'}</Button>}
-              </div> : undefined}
+              action={
+                canManage ? (
+                  <div className="feature-actions">
+                    <Button variant="secondary" onClick={() => go('transfers')}>
+                      Phiếu điều chuyển
+                    </Button>
+                    {realApiMode && (
+                      <Button onClick={() => setShowCreateUnit((value) => !value)}>
+                        {showCreateUnit ? 'Đóng nhập bộ' : '＋ Nhập bộ mới'}
+                      </Button>
+                    )}
+                  </div>
+                ) : undefined
+              }
             />
             {showCreateUnit && realApiMode && canManage && (
               <CreateInventoryUnitPanel
@@ -450,14 +576,20 @@ export function InventoryPage({
                 branch={branch}
                 onCreated={(unit) => {
                   setShowCreateUnit(false);
+                  activeDetailBarcodeRef.current = unit.barcode;
                   setSelected(unit);
                   retry();
                   setNotice(`Đã ghi nhận ${unit.barcode}; bộ đang chờ kiểm tra đầu vào.`);
                 }}
               />
             )}
-            <div className="feature-two-column independent-scroll-workspace">
-              <div role="region" aria-label="Cuộn danh sách và lịch bộ" tabIndex={0}>
+            <div className="inventory-workspace">
+              <div
+                className="inventory-main-column"
+                role="region"
+                aria-label="Danh sách và lịch bộ"
+                tabIndex={0}
+              >
                 <Panel title="Tra cứu bộ">
                   <BarcodeLookup
                     branch={branch}
@@ -465,7 +597,7 @@ export function InventoryPage({
                     onFound={(unit) => {
                       selectUnit(unit);
                     }}
-                    onError={() => setSelected(undefined)}
+                    onError={closeUnitDetail}
                   />
                   <FilterBar>
                     <SearchField label="Tìm barcode hoặc mẫu" value={search} onChange={setSearch} />
@@ -484,34 +616,40 @@ export function InventoryPage({
                   </FilterBar>
                 </Panel>
                 <Panel title={`${visible.length} bộ tại ${branch}`}>
-                  <div className="responsive-table" role="region" aria-label="Bảng bộ trang phục" tabIndex={0}>
+                  <p className="table-scroll-hint">Trên điện thoại, vuốt ngang để xem đủ cột.</p>
+                  <div
+                    className="responsive-table inventory-unit-table"
+                    role="region"
+                    aria-label="Bảng bộ trang phục, kéo ngang để xem thêm cột"
+                    tabIndex={0}
+                  >
                     <table>
                       <thead>
                         <tr>
                           <th>Barcode</th>
                           <th>Mẫu / biến thể</th>
+                          <th>Tình trạng</th>
                           <th>Vận hành</th>
                           <th>Khả dụng</th>
-                          <th>Block</th>
+                          <th>Lịch chặn</th>
+                          <th>Ngày nhập</th>
+                          <th>Chi tiết</th>
                         </tr>
                       </thead>
                       <tbody>
                         {visible.map((u) => (
-                          <tr key={u.barcode}>
+                          <tr
+                            key={u.barcode}
+                            className={selected?.barcode === u.barcode ? 'selected' : ''}
+                          >
                             <td>
-                              <button
-                                className="text-link"
-                                onClick={() => {
-                                  selectUnit(u);
-                                }}
-                              >
-                                {u.barcode}
-                              </button>
+                              <strong>{u.barcode}</strong>
                             </td>
                             <td>
                               {u.model}
                               <small>{u.variant}</small>
                             </td>
+                            <td>{conditionLabels[u.condition] ?? u.condition}</td>
                             <td>
                               <StatusLabel
                                 text={unitStatusLabels[u.status]}
@@ -525,7 +663,26 @@ export function InventoryPage({
                               />
                             </td>
                             <td>{u.available ? 'Có thể kiểm tra' : 'Không khả dụng'}</td>
-                            <td>{u.blocks.filter((b) => b.status !== 'COMPLETED').length}</td>
+                            <td>
+                              {
+                                u.blocks.filter(
+                                  (block) =>
+                                    block.status !== 'COMPLETED' && block.status !== 'CANCELLED',
+                                ).length
+                              }
+                            </td>
+                            <td>{u.acquiredAt ? formatVietnamDateTime(u.acquiredAt) : '—'}</td>
+                            <td className="inventory-unit-action">
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                className="inventory-detail-action"
+                                aria-label={`Chi tiết bộ ${u.barcode}`}
+                                onClick={() => selectUnit(u)}
+                              >
+                                Chi tiết
+                              </Button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -534,74 +691,364 @@ export function InventoryPage({
                   {!visible.length && <p className="muted">Không có bộ phù hợp bộ lọc.</p>}
                 </Panel>
                 <details className="inventory-secondary-section">
-                  <summary>Lịch xử lý · {blocksResource.data?.length ?? 0}{blocksResource.error ? ' · Lỗi tải' : ''}</summary>
-                <Panel title="Lịch xử lý tại chi nhánh" action={<Button type="button" variant="quiet" loading={blocksResource.loading} onClick={blocksResource.retry}>Tải lại</Button>}>
-                  <InlineIssue text={scheduleIssue} conflict={scenario === 'conflict' || scenario === 'version'} />
-                  {scheduleNotice && <Feedback tone="success" title="Đã cập nhật lịch xử lý">{scheduleNotice}</Feedback>}
-                  {blocksResource.error && <Feedback tone="danger" title="Không tải được lịch xử lý">{String(blocksResource.error)} <button type="button" className="text-button" onClick={blocksResource.retry}>Thử lại</button></Feedback>}
-                  {blocksResource.loading ? <p className="muted" role="status">Đang tải lịch…</p> : (
-                    <div className="responsive-table" role="region" aria-label="Bảng lịch xử lý" tabIndex={0}>
-                      <table>
-                        <thead><tr><th>Barcode</th><th>Công việc</th><th>Thời gian</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
-                        <tbody>
-                          {(blocksResource.data ?? []).map((block) => <tr key={block.id}>
-                            <td>{block.unitCode || 'Bộ trang phục'}</td>
-                            <td>{blockTypeLabels[block.type]}<small>{block.reason}</small></td>
-                            <td>{formatVietnamDateTime(block.from)}<small>đến {formatVietnamDateTime(block.until)}</small></td>
-                            <td><StatusLabel text={blockStatusLabels[block.status]} tone={block.status === 'COMPLETED' ? 'success' : block.status === 'CANCELLED' ? 'neutral' : block.status === 'IN_PROGRESS' ? 'warning' : 'info'} /></td>
-                          <td>{canManage && block.status === 'PLANNED' && <div className="catalog-media-card__actions"><Button type="button" variant="quiet" disabled={busy} onClick={() => void updateBlock(block, 'start')}>Bắt đầu</Button><Button type="button" variant="quiet" disabled={busy} onClick={() => { const unit = units.find((candidate) => candidate.apiId === block.unitId); if (unit) selectUnit(unit); setBlockIssue(''); setBlockNotice(''); setEditingBlock(block); setBlockType(block.type); setFrom(toLocalDateTimeInput(block.from)); setUntil(toLocalDateTimeInput(block.until)); setReason(block.reason); setEffort(String(block.estimatedEffortMinutes ?? 60)); setBlockCost(block.costVnd === undefined ? '' : String(block.costVnd)); setCapacityWindowId(block.capacityWindowId ?? ''); }}>Chỉnh lịch</Button><Button type="button" variant="quiet" disabled={busy} onClick={() => { setScheduleIssue(''); setScheduleNotice(''); setCancelTarget(block); setCancelReason(''); }}>Hủy lịch</Button></div>}{canManage && block.status === 'IN_PROGRESS' && <Button type="button" variant="secondary" loading={busy} onClick={() => void updateBlock(block, 'complete')}>Hoàn tất</Button>}</td>
-                          </tr>)}
-                        </tbody>
-                      </table>
-                      {!blocksResource.data?.length && <p className="muted">Chi nhánh chưa có lịch xử lý.</p>}
-                    </div>
-                  )}
-                </Panel>
+                  <summary>
+                    Lịch xử lý · {blocksResource.data?.length ?? 0}
+                    {blocksResource.error ? ' · Lỗi tải' : ''}
+                  </summary>
+                  <Panel
+                    title="Lịch xử lý tại chi nhánh"
+                    action={
+                      <Button
+                        type="button"
+                        variant="quiet"
+                        loading={blocksResource.loading}
+                        onClick={blocksResource.retry}
+                      >
+                        Tải lại
+                      </Button>
+                    }
+                  >
+                    <InlineIssue
+                      text={scheduleIssue}
+                      conflict={scenario === 'conflict' || scenario === 'version'}
+                    />
+                    {scheduleNotice && (
+                      <Feedback tone="success" title="Đã cập nhật lịch xử lý">
+                        {scheduleNotice}
+                      </Feedback>
+                    )}
+                    {blocksResource.error && (
+                      <Feedback tone="danger" title="Không tải được lịch xử lý">
+                        {String(blocksResource.error)}{' '}
+                        <button
+                          type="button"
+                          className="text-button"
+                          onClick={blocksResource.retry}
+                        >
+                          Thử lại
+                        </button>
+                      </Feedback>
+                    )}
+                    {blocksResource.loading ? (
+                      <p className="muted" role="status">
+                        Đang tải lịch…
+                      </p>
+                    ) : (
+                      <div
+                        className="responsive-table"
+                        role="region"
+                        aria-label="Bảng lịch xử lý"
+                        tabIndex={0}
+                      >
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Barcode</th>
+                              <th>Công việc</th>
+                              <th>Thời gian</th>
+                              <th>Trạng thái</th>
+                              <th>Thao tác</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(blocksResource.data ?? []).map((block) => (
+                              <tr key={block.id}>
+                                <td>{block.unitCode || 'Bộ trang phục'}</td>
+                                <td>
+                                  {blockTypeLabels[block.type]}
+                                  <small>{block.reason}</small>
+                                </td>
+                                <td>
+                                  {formatVietnamDateTime(block.from)}
+                                  <small>đến {formatVietnamDateTime(block.until)}</small>
+                                </td>
+                                <td>
+                                  <StatusLabel
+                                    text={blockStatusLabels[block.status]}
+                                    tone={
+                                      block.status === 'COMPLETED'
+                                        ? 'success'
+                                        : block.status === 'CANCELLED'
+                                          ? 'neutral'
+                                          : block.status === 'IN_PROGRESS'
+                                            ? 'warning'
+                                            : 'info'
+                                    }
+                                  />
+                                </td>
+                                <td>
+                                  {canManage && block.status === 'PLANNED' && (
+                                    <div className="catalog-media-card__actions">
+                                      <Button
+                                        type="button"
+                                        variant="quiet"
+                                        disabled={busy}
+                                        onClick={() => void updateBlock(block, 'start')}
+                                      >
+                                        Bắt đầu
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="quiet"
+                                        disabled={busy}
+                                        onClick={() => {
+                                          const unit = units.find(
+                                            (candidate) => candidate.apiId === block.unitId,
+                                          );
+                                          if (unit) selectUnit(unit);
+                                          setBlockIssue('');
+                                          setBlockNotice('');
+                                          setEditingBlock(block);
+                                          setBlockType(block.type);
+                                          setFrom(toLocalDateTimeInput(block.from));
+                                          setUntil(toLocalDateTimeInput(block.until));
+                                          setReason(block.reason);
+                                          setEffort(String(block.estimatedEffortMinutes ?? 60));
+                                          setBlockCost(
+                                            block.costVnd === undefined
+                                              ? ''
+                                              : String(block.costVnd),
+                                          );
+                                          setCapacityWindowId(block.capacityWindowId ?? '');
+                                        }}
+                                      >
+                                        Chỉnh lịch
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="quiet"
+                                        disabled={busy}
+                                        onClick={() => {
+                                          setScheduleIssue('');
+                                          setScheduleNotice('');
+                                          setCancelTarget(block);
+                                          setCancelReason('');
+                                        }}
+                                      >
+                                        Hủy lịch
+                                      </Button>
+                                    </div>
+                                  )}
+                                  {canManage && block.status === 'IN_PROGRESS' && (
+                                    <Button
+                                      type="button"
+                                      variant="secondary"
+                                      loading={busy}
+                                      onClick={() => void updateBlock(block, 'complete')}
+                                    >
+                                      Hoàn tất
+                                    </Button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {!blocksResource.data?.length && (
+                          <p className="muted">Chi nhánh chưa có lịch xử lý.</p>
+                        )}
+                      </div>
+                    )}
+                  </Panel>
                 </details>
               </div>
-              <div ref={detailRef} tabIndex={0} role="region" aria-label="Chi tiết bộ đang chọn" key={selected?.barcode ?? 'none'}>
-                {selected ? (
+            </div>
+            {selected && (
+              <DetailDialog
+                title={`Chi tiết bộ ${selected.barcode}`}
+                closeLabel={`Đóng chi tiết bộ ${selected.barcode}`}
+                onClose={closeUnitDetail}
+              >
+                <div
+                  className="inventory-unit-detail"
+                  role="region"
+                  aria-label={`Chi tiết bộ ${selected.barcode}`}
+                  key={selected.barcode}
+                >
                   <>
                     <UnitDetailPanel unit={selected} />
-                    {blockNotice && <Feedback tone="success" title="Đã lưu lịch xử lý">{blockNotice}</Feedback>}
+                    {blockNotice && (
+                      <Feedback tone="success" title="Đã lưu lịch xử lý">
+                        {blockNotice}
+                      </Feedback>
+                    )}
                     {canManage && (
                       <Panel title="Cập nhật tình trạng bộ">
                         {realApiMode && selected.apiId ? (
                           selected.status === 'INBOUND' ? (
                             <div className="stack-form">
-                              <p className="muted">Kiểm tra tình trạng trước khi đưa bộ vào sử dụng.</p>
-                              <SelectField label="Tình trạng kiểm tra" value={inspectionGrade} onChange={(event) => setInspectionGrade(event.target.value as typeof inspectionGrade)}>
-                                <option value="NEW">Mới</option><option value="GOOD">Tốt</option><option value="FAIR">Cần theo dõi</option><option value="POOR">Kém</option><option value="DAMAGED">Hư hỏng</option>
+                              <p className="muted">
+                                Kiểm tra tình trạng trước khi đưa bộ vào sử dụng.
+                              </p>
+                              <SelectField
+                                label="Tình trạng kiểm tra"
+                                value={inspectionGrade}
+                                onChange={(event) =>
+                                  setInspectionGrade(event.target.value as typeof inspectionGrade)
+                                }
+                              >
+                                <option value="NEW">Mới</option>
+                                <option value="GOOD">Tốt</option>
+                                <option value="FAIR">Cần theo dõi</option>
+                                <option value="POOR">Kém</option>
+                                <option value="DAMAGED">Hư hỏng</option>
                               </SelectField>
-                              <TextAreaField label="Ghi chú kiểm tra" value={operationNotes} onChange={(event) => setOperationNotes(event.target.value)} />
+                              <TextAreaField
+                                label="Ghi chú kiểm tra"
+                                value={operationNotes}
+                                onChange={(event) => setOperationNotes(event.target.value)}
+                              />
                               <div className="feature-actions">
-                                <Button loading={busy} onClick={() => void updateUnit(() => inspectInventoryUnit(selected.apiId!, { conditionGrade: inspectionGrade, nextStatus: 'READY', notes: operationNotes.trim() || undefined }), 'Đã kiểm tra và đưa bộ vào trạng thái sẵn sàng.')}>Đạt · sẵn sàng</Button>
-                                <Button variant="secondary" loading={busy} onClick={() => void updateUnit(() => inspectInventoryUnit(selected.apiId!, { conditionGrade: inspectionGrade, nextStatus: 'REPAIR', notes: operationNotes.trim() || undefined }), 'Đã ghi nhận kiểm tra; bộ cần sửa chữa.')}>Cần sửa</Button>
+                                <Button
+                                  loading={busy}
+                                  onClick={() =>
+                                    void updateUnit(
+                                      () =>
+                                        inspectInventoryUnit(selected.apiId!, {
+                                          conditionGrade: inspectionGrade,
+                                          nextStatus: 'READY',
+                                          notes: operationNotes.trim() || undefined,
+                                        }),
+                                      'Đã kiểm tra và đưa bộ vào trạng thái sẵn sàng.',
+                                    )
+                                  }
+                                >
+                                  Đạt · sẵn sàng
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  loading={busy}
+                                  onClick={() =>
+                                    void updateUnit(
+                                      () =>
+                                        inspectInventoryUnit(selected.apiId!, {
+                                          conditionGrade: inspectionGrade,
+                                          nextStatus: 'REPAIR',
+                                          notes: operationNotes.trim() || undefined,
+                                        }),
+                                      'Đã ghi nhận kiểm tra; bộ cần sửa chữa.',
+                                    )
+                                  }
+                                >
+                                  Cần sửa
+                                </Button>
                               </div>
                             </div>
-                          ) : selected.status === 'READY' || selected.status === 'CLEANING' || selected.status === 'REPAIR' ? (
+                          ) : selected.status === 'READY' ||
+                            selected.status === 'CLEANING' ||
+                            selected.status === 'REPAIR' ? (
                             <div className="stack-form">
-                              <SelectField label="Chuyển trạng thái" value={effectiveUnitTarget} onChange={(event) => setUnitTargetStatus(event.target.value as typeof unitTargetStatus)}>
-                                {(selected.status === 'READY' ? ['CLEANING', 'REPAIR'] : selected.status === 'CLEANING' ? ['READY', 'REPAIR'] : ['READY']).map((status) => <option key={status} value={status}>{unitStatusLabels[status as Unit['status']]}</option>)}
+                              <SelectField
+                                label="Chuyển trạng thái"
+                                value={effectiveUnitTarget}
+                                onChange={(event) =>
+                                  setUnitTargetStatus(event.target.value as typeof unitTargetStatus)
+                                }
+                              >
+                                {(selected.status === 'READY'
+                                  ? ['CLEANING', 'REPAIR']
+                                  : selected.status === 'CLEANING'
+                                    ? ['READY', 'REPAIR']
+                                    : ['READY']
+                                ).map((status) => (
+                                  <option key={status} value={status}>
+                                    {unitStatusLabels[status as Unit['status']]}
+                                  </option>
+                                ))}
                               </SelectField>
-                              <TextAreaField label="Ghi chú" value={operationNotes} onChange={(event) => setOperationNotes(event.target.value)} />
-                              <Button loading={busy} onClick={() => void updateUnit(() => changeInventoryUnitStatus(selected.apiId!, { targetStatus: effectiveUnitTarget, notes: operationNotes.trim() || undefined }), `Đã chuyển bộ sang ${unitStatusLabels[effectiveUnitTarget]}.`)}>Cập nhật trạng thái</Button>
+                              <TextAreaField
+                                label="Ghi chú"
+                                value={operationNotes}
+                                onChange={(event) => setOperationNotes(event.target.value)}
+                              />
+                              <Button
+                                loading={busy}
+                                onClick={() =>
+                                  void updateUnit(
+                                    () =>
+                                      changeInventoryUnitStatus(selected.apiId!, {
+                                        targetStatus: effectiveUnitTarget,
+                                        notes: operationNotes.trim() || undefined,
+                                      }),
+                                    `Đã chuyển bộ sang ${unitStatusLabels[effectiveUnitTarget]}.`,
+                                  )
+                                }
+                              >
+                                Cập nhật trạng thái
+                              </Button>
                             </div>
-                          ) : <p className="muted">Bộ đang điều chuyển hoặc đã ngừng sử dụng nên không thể đổi trạng thái tại đây.</p>
-                        ) : <p className="muted">Thao tác vòng đời bộ cần kết nối API và quyền quản lý kho.</p>}
-                        {realApiMode && selected.apiId && selected.status !== 'RETIRED' && selected.status !== 'IN_TRANSFER' && <Button type="button" variant="quiet" disabled={busy} onClick={() => { setRetirementNotes(''); setRetirementOpen(true); }}>Ngừng sử dụng bộ</Button>}
-                        {issue && <Feedback tone="danger" title="Thao tác chưa hoàn tất">{issue}</Feedback>}
-                        {notice && <Feedback tone="success" title="Đã cập nhật">{notice}</Feedback>}
+                          ) : (
+                            <p className="muted">
+                              Bộ đang điều chuyển hoặc đã ngừng sử dụng nên không thể đổi trạng thái
+                              tại đây.
+                            </p>
+                          )
+                        ) : (
+                          <p className="muted">
+                            Thao tác vòng đời bộ cần kết nối API và quyền quản lý kho.
+                          </p>
+                        )}
+                        {realApiMode &&
+                          selected.apiId &&
+                          selected.status !== 'RETIRED' &&
+                          selected.status !== 'IN_TRANSFER' && (
+                            <Button
+                              type="button"
+                              variant="quiet"
+                              disabled={busy}
+                              onClick={() => {
+                                setRetirementNotes('');
+                                setRetirementOpen(true);
+                              }}
+                            >
+                              Ngừng sử dụng bộ
+                            </Button>
+                          )}
+                        {issue && (
+                          <Feedback tone="danger" title="Thao tác chưa hoàn tất">
+                            {issue}
+                          </Feedback>
+                        )}
+                        {notice && (
+                          <Feedback tone="success" title="Đã cập nhật">
+                            {notice}
+                          </Feedback>
+                        )}
                       </Panel>
                     )}
                     {canManage && !showBlockForm && !editingBlock && (
-                      <Button variant="secondary" onClick={() => { setEditingBlock(undefined); setBlockIssue(''); setBlockNotice(''); setShowBlockForm(true); }}>
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          setEditingBlock(undefined);
+                          setBlockIssue('');
+                          setBlockNotice('');
+                          setShowBlockForm(true);
+                        }}
+                      >
                         Tạo lịch xử lý cho bộ
                       </Button>
                     )}
                     {canManage && (showBlockForm || !!editingBlock) && (
-                      <Panel title={editingBlock ? 'Chỉnh lịch xử lý' : 'Tạo lịch xử lý cho bộ'} action={<Button type="button" variant="quiet" onClick={() => { setEditingBlock(undefined); setShowBlockForm(false); setBlockIssue(''); }}>Đóng</Button>}>
-                        <p className="field-hint">Lịch xử lý làm bộ không khả dụng trong khoảng đã chọn.</p>
+                      <Panel
+                        title={editingBlock ? 'Chỉnh lịch xử lý' : 'Tạo lịch xử lý cho bộ'}
+                        action={
+                          <Button
+                            type="button"
+                            variant="quiet"
+                            onClick={() => {
+                              setEditingBlock(undefined);
+                              setShowBlockForm(false);
+                              setBlockIssue('');
+                            }}
+                          >
+                            Đóng
+                          </Button>
+                        }
+                      >
+                        <p className="field-hint">
+                          Lịch xử lý làm bộ không khả dụng trong khoảng đã chọn.
+                        </p>
                         <SelectField
                           label="Loại block"
                           value={blockType}
@@ -620,74 +1067,248 @@ export function InventoryPage({
                           <DateTimeField label="Đến" value={until} onChange={setUntil} />
                         </div>
                         <div className="feature-filters">
-                          <Field label="Thời lượng dự kiến (phút)" type="number" min="1" max="10080" value={effort} onChange={(event) => setEffort(event.target.value)} />
-                          <Field label="Chi phí dự kiến (đ)" type="number" min="0" step="1000" value={blockCost} onChange={(event) => setBlockCost(event.target.value)} />
+                          <Field
+                            label="Thời lượng dự kiến (phút)"
+                            type="number"
+                            min="1"
+                            max="10080"
+                            value={effort}
+                            onChange={(event) => setEffort(event.target.value)}
+                          />
+                          <Field
+                            label="Chi phí dự kiến (đ)"
+                            type="number"
+                            min="0"
+                            step="1000"
+                            value={blockCost}
+                            onChange={(event) => setBlockCost(event.target.value)}
+                          />
                         </div>
-                        {realApiMode && (capacityResource.data?.length ?? 0) > 0 && <SelectField label="Khung năng lực (nếu có)" value={capacityWindowId} onChange={(event) => setCapacityWindowId(event.target.value)}><option value="">Không gắn khung</option>{capacityResource.data?.map((window) => <option key={window.id} value={window.id}>{formatVietnamDateTime(window.startsAt)} · {window.availableMinutes} phút</option>)}</SelectField>}
+                        {realApiMode && (capacityResource.data?.length ?? 0) > 0 && (
+                          <SelectField
+                            label="Khung năng lực (nếu có)"
+                            value={capacityWindowId}
+                            onChange={(event) => setCapacityWindowId(event.target.value)}
+                          >
+                            <option value="">Không gắn khung</option>
+                            {capacityResource.data?.map((window) => (
+                              <option key={window.id} value={window.id}>
+                                {formatVietnamDateTime(window.startsAt)} · {window.availableMinutes}{' '}
+                                phút
+                              </option>
+                            ))}
+                          </SelectField>
+                        )}
                         <TextAreaField
                           label="Lý do"
                           value={reason}
                           onChange={(e) => setReason(e.target.value)}
                         />
-                        <Button loading={busy} disabled={!canManage || (realApiMode && !selected.apiId)} onClick={() => void addBlock()}>
-                          {editingBlock ? 'Lưu lịch xử lý' : realApiMode ? 'Tạo lịch xử lý' : 'Tạo block fixture'}
+                        <Button
+                          loading={busy}
+                          disabled={!canManage || (realApiMode && !selected.apiId)}
+                          onClick={() => void addBlock()}
+                        >
+                          {editingBlock
+                            ? 'Lưu lịch xử lý'
+                            : realApiMode
+                              ? 'Tạo lịch xử lý'
+                              : 'Tạo block fixture'}
                         </Button>
-                        <InlineIssue text={blockIssue} conflict={scenario === 'conflict' || scenario === 'version'} />
+                        <InlineIssue
+                          text={blockIssue}
+                          conflict={scenario === 'conflict' || scenario === 'version'}
+                        />
                       </Panel>
                     )}
                   </>
-                ) : (
-                  <Panel title="Chọn một bộ">
-                    <p className="muted">Chọn dòng hoặc quét barcode để xem block và lịch sử bộ.</p>
-                  </Panel>
-                )}
-              </div>
-            </div>
+                </div>
+              </DetailDialog>
+            )}
             <details className="inventory-secondary-section inventory-capacity-section">
-              <summary>Năng lực xử lý · {branch}{capacityResource.error ? ' · Lỗi tải' : ''}</summary>
-            <Panel title={`Năng lực xử lý · ${branch}`}>
-              <InlineIssue text={capacityIssue} conflict={scenario === 'conflict' || scenario === 'version'} />
-              {capacityNotice && <Feedback tone="success" title="Đã cập nhật năng lực">{capacityNotice}</Feedback>}
-              {capacityResource.error && <Feedback tone="danger" title="Không tải được năng lực xử lý">{String(capacityResource.error)} <button type="button" className="text-button" onClick={capacityResource.retry}>Thử lại</button></Feedback>}
-              {capacityResource.loading ? <p className="muted" role="status">Đang tải khung năng lực…</p> : (
-                <div className="feature-card-list">
-                  {(capacityResource.data ?? []).map((window: CapacityWindowRecord) => <div className="feature-list-row" key={window.id}>
-                    <strong>{formatVietnamDateTime(window.startsAt)} – {formatVietnamDateTime(window.endsAt)}</strong>
-                    <span>{window.availableMinutes} phút năng lực</span>
-                    {window.notes && <small>{window.notes}</small>}
-                    {canManage && <div className="catalog-media-card__actions"><Button type="button" variant="quiet" disabled={busy} onClick={() => { setEditingWindow(window); setWindowStart(toLocalDateTimeInput(window.startsAt)); setWindowEnd(toLocalDateTimeInput(window.endsAt)); setWindowMinutes(String(window.availableMinutes)); setWindowNotes(window.notes ?? ''); }}>Điều chỉnh</Button><Button type="button" variant="quiet" disabled={busy} onClick={() => setDeleteWindowTarget(window)}>Xóa khung</Button></div>}
-                  </div>)}
-                  {!capacityResource.data?.length && <p className="muted">Chưa khai báo khung năng lực.</p>}
-                </div>
-              )}
-              {canManage && realApiMode && <form className="stack-form" onSubmit={(event) => void addCapacityWindow(event)}>
-                <h3>{editingWindow ? 'Điều chỉnh khung năng lực' : 'Thêm khung năng lực'}</h3>
-                <div className="feature-filters">
-                  <DateTimeField label="Bắt đầu" value={windowStart} onChange={setWindowStart} />
-                  <DateTimeField label="Kết thúc" value={windowEnd} onChange={setWindowEnd} />
-                  <Field label="Phút có thể xử lý" type="number" min="1" max="100800" value={windowMinutes} onChange={(event) => setWindowMinutes(event.target.value)} />
-                </div>
-                <Field label="Ghi chú" value={windowNotes} onChange={(event) => setWindowNotes(event.target.value)} />
-                <div className="feature-actions"><Button type="submit" loading={busy}>{editingWindow ? 'Cập nhật khung' : 'Lưu năng lực chi nhánh'}</Button>{editingWindow && <Button type="button" variant="quiet" disabled={busy} onClick={() => setEditingWindow(undefined)}>Hủy chỉnh sửa</Button>}</div>
-              </form>}
-            </Panel>
+              <summary>
+                Năng lực xử lý · {branch}
+                {capacityResource.error ? ' · Lỗi tải' : ''}
+              </summary>
+              <Panel title={`Năng lực xử lý · ${branch}`}>
+                <InlineIssue
+                  text={capacityIssue}
+                  conflict={scenario === 'conflict' || scenario === 'version'}
+                />
+                {capacityNotice && (
+                  <Feedback tone="success" title="Đã cập nhật năng lực">
+                    {capacityNotice}
+                  </Feedback>
+                )}
+                {capacityResource.error && (
+                  <Feedback tone="danger" title="Không tải được năng lực xử lý">
+                    {String(capacityResource.error)}{' '}
+                    <button type="button" className="text-button" onClick={capacityResource.retry}>
+                      Thử lại
+                    </button>
+                  </Feedback>
+                )}
+                {capacityResource.loading ? (
+                  <p className="muted" role="status">
+                    Đang tải khung năng lực…
+                  </p>
+                ) : (
+                  <div className="feature-card-list">
+                    {(capacityResource.data ?? []).map((window: CapacityWindowRecord) => (
+                      <div className="feature-list-row" key={window.id}>
+                        <strong>
+                          {formatVietnamDateTime(window.startsAt)} –{' '}
+                          {formatVietnamDateTime(window.endsAt)}
+                        </strong>
+                        <span>{window.availableMinutes} phút năng lực</span>
+                        {window.notes && <small>{window.notes}</small>}
+                        {canManage && (
+                          <div className="catalog-media-card__actions">
+                            <Button
+                              type="button"
+                              variant="quiet"
+                              disabled={busy}
+                              onClick={() => {
+                                setEditingWindow(window);
+                                setWindowStart(toLocalDateTimeInput(window.startsAt));
+                                setWindowEnd(toLocalDateTimeInput(window.endsAt));
+                                setWindowMinutes(String(window.availableMinutes));
+                                setWindowNotes(window.notes ?? '');
+                              }}
+                            >
+                              Điều chỉnh
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="quiet"
+                              disabled={busy}
+                              onClick={() => setDeleteWindowTarget(window)}
+                            >
+                              Xóa khung
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {!capacityResource.data?.length && (
+                      <p className="muted">Chưa khai báo khung năng lực.</p>
+                    )}
+                  </div>
+                )}
+                {canManage && realApiMode && (
+                  <form className="stack-form" onSubmit={(event) => void addCapacityWindow(event)}>
+                    <h3>{editingWindow ? 'Điều chỉnh khung năng lực' : 'Thêm khung năng lực'}</h3>
+                    <div className="feature-filters">
+                      <DateTimeField
+                        label="Bắt đầu"
+                        value={windowStart}
+                        onChange={setWindowStart}
+                      />
+                      <DateTimeField label="Kết thúc" value={windowEnd} onChange={setWindowEnd} />
+                      <Field
+                        label="Phút có thể xử lý"
+                        type="number"
+                        min="1"
+                        max="100800"
+                        value={windowMinutes}
+                        onChange={(event) => setWindowMinutes(event.target.value)}
+                      />
+                    </div>
+                    <Field
+                      label="Ghi chú"
+                      value={windowNotes}
+                      onChange={(event) => setWindowNotes(event.target.value)}
+                    />
+                    <div className="feature-actions">
+                      <Button type="submit" loading={busy}>
+                        {editingWindow ? 'Cập nhật khung' : 'Lưu năng lực chi nhánh'}
+                      </Button>
+                      {editingWindow && (
+                        <Button
+                          type="button"
+                          variant="quiet"
+                          disabled={busy}
+                          onClick={() => setEditingWindow(undefined)}
+                        >
+                          Hủy chỉnh sửa
+                        </Button>
+                      )}
+                    </div>
+                  </form>
+                )}
+              </Panel>
             </details>
-            {retirementOpen && selected && <ConfirmDialog title="Ngừng sử dụng bộ này?" confirmText="Ngừng sử dụng" danger loading={busy} confirmDisabled={!retirementNotes.trim()} onClose={() => setRetirementOpen(false)} onConfirm={() => void updateUnit(async () => {
-              const updated = await retireInventoryUnit(selected.apiId!, retirementNotes.trim());
-              setRetirementOpen(false);
-              return updated;
-            }, 'Bộ đã được ngừng sử dụng.') }>
-              <p>Bộ sẽ không còn được đưa vào lịch thuê. Chỉ thực hiện khi đã xác nhận không có đơn, điều chuyển hoặc lịch xử lý đang mở.</p>
-              <TextAreaField label="Lý do bắt buộc" required value={retirementNotes} onChange={(event) => setRetirementNotes(event.target.value)} />
-            </ConfirmDialog>}
-            {deleteWindowTarget && <ConfirmDialog title="Xóa khung năng lực?" confirmText="Xóa khung" danger loading={busy} onClose={() => setDeleteWindowTarget(undefined)} onConfirm={() => void confirmDeleteCapacityWindow()}>
-              <p>Thao tác này gỡ khung khỏi lịch năng lực chi nhánh. Lịch xử lý đang gắn với khung vẫn được giữ lại nhưng sẽ không còn liên kết.</p>
-              <p><strong>{formatVietnamDateTime(deleteWindowTarget.startsAt)} – {formatVietnamDateTime(deleteWindowTarget.endsAt)}</strong></p>
-            </ConfirmDialog>}
-            {cancelTarget && <ConfirmDialog title="Hủy lịch xử lý?" confirmText="Hủy lịch" danger loading={busy} confirmDisabled={!cancelReason.trim()} onClose={() => setCancelTarget(undefined)} onConfirm={() => void confirmCancelBlock()}>
-              <p>Lịch sẽ chuyển sang trạng thái đã hủy và vẫn còn trong lịch sử bộ.</p>
-              <TextAreaField label="Lý do hủy" required value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} />
-            </ConfirmDialog>}
+            {retirementOpen && selected && (
+              <ConfirmDialog
+                title="Ngừng sử dụng bộ này?"
+                confirmText="Ngừng sử dụng"
+                danger
+                loading={busy}
+                confirmDisabled={!retirementNotes.trim()}
+                onClose={() => setRetirementOpen(false)}
+                onConfirm={() =>
+                  void updateUnit(async () => {
+                    const updated = await retireInventoryUnit(
+                      selected.apiId!,
+                      retirementNotes.trim(),
+                    );
+                    setRetirementOpen(false);
+                    return updated;
+                  }, 'Bộ đã được ngừng sử dụng.')
+                }
+              >
+                <p>
+                  Bộ sẽ không còn được đưa vào lịch thuê. Chỉ thực hiện khi đã xác nhận không có
+                  đơn, điều chuyển hoặc lịch xử lý đang mở.
+                </p>
+                <TextAreaField
+                  label="Lý do bắt buộc"
+                  required
+                  value={retirementNotes}
+                  onChange={(event) => setRetirementNotes(event.target.value)}
+                />
+              </ConfirmDialog>
+            )}
+            {deleteWindowTarget && (
+              <ConfirmDialog
+                title="Xóa khung năng lực?"
+                confirmText="Xóa khung"
+                danger
+                loading={busy}
+                onClose={() => setDeleteWindowTarget(undefined)}
+                onConfirm={() => void confirmDeleteCapacityWindow()}
+              >
+                <p>
+                  Thao tác này gỡ khung khỏi lịch năng lực chi nhánh. Lịch xử lý đang gắn với khung
+                  vẫn được giữ lại nhưng sẽ không còn liên kết.
+                </p>
+                <p>
+                  <strong>
+                    {formatVietnamDateTime(deleteWindowTarget.startsAt)} –{' '}
+                    {formatVietnamDateTime(deleteWindowTarget.endsAt)}
+                  </strong>
+                </p>
+              </ConfirmDialog>
+            )}
+            {cancelTarget && (
+              <ConfirmDialog
+                title="Hủy lịch xử lý?"
+                confirmText="Hủy lịch"
+                danger
+                loading={busy}
+                confirmDisabled={!cancelReason.trim()}
+                onClose={() => setCancelTarget(undefined)}
+                onConfirm={() => void confirmCancelBlock()}
+              >
+                <p>Lịch sẽ chuyển sang trạng thái đã hủy và vẫn còn trong lịch sử bộ.</p>
+                <TextAreaField
+                  label="Lý do hủy"
+                  required
+                  value={cancelReason}
+                  onChange={(event) => setCancelReason(event.target.value)}
+                />
+              </ConfirmDialog>
+            )}
           </div>
         );
       }}
@@ -695,24 +1316,38 @@ export function InventoryPage({
   );
 }
 
-export function TransfersPage({ scenario, branch, canManage = true }: { scenario: DemoScenario; branch: string; canManage?: boolean }) {
+export function TransfersPage({
+  scenario,
+  branch,
+  canManage = true,
+}: {
+  scenario: DemoScenario;
+  branch: string;
+  canManage?: boolean;
+}) {
   const loadTransfers = useCallback(
     (currentScenario: DemoScenario) => studioAdapter.transfers(currentScenario, branch),
     [branch],
   );
   const realApiMode = apiEnabled && hasAccessToken();
-  const { options: branchOptions, ready: branchesReady, error: branchesError, retry: retryBranches } = useBranchOptions();
+  const {
+    options: branchOptions,
+    ready: branchesReady,
+    error: branchesError,
+    retry: retryBranches,
+  } = useBranchOptions();
   const { loading, error, data, retry } = useFixtureResource(scenario, loadTransfers, branch);
   const [selected, setSelected] = useState('DC-001');
   const [from, setFrom] = useState(branch);
-  const [to, setTo] = useState(realApiMode ? '' : branch === 'Chi nhánh Quận 1' ? 'Chi nhánh Thủ Đức' : 'Chi nhánh Quận 1');
+  const [to, setTo] = useState(
+    realApiMode ? '' : branch === 'Chi nhánh Quận 1' ? 'Chi nhánh Thủ Đức' : 'Chi nhánh Quận 1',
+  );
   const [unitCodeEntry, setUnitCodeEntry] = useState(() => ({
     apiMode: realApiMode,
     value: realApiMode ? '' : 'BC-012',
   }));
-  const unitCode = unitCodeEntry.apiMode === realApiMode
-    ? unitCodeEntry.value
-    : realApiMode ? '' : 'BC-012';
+  const unitCode =
+    unitCodeEntry.apiMode === realApiMode ? unitCodeEntry.value : realApiMode ? '' : 'BC-012';
   const setUnitCode = (value: string) => setUnitCodeEntry({ apiMode: realApiMode, value });
   const [note, setNote] = useState('');
   const [checks, setChecks] = useState<Record<string, string>>({});
@@ -725,7 +1360,9 @@ export function TransfersPage({ scenario, branch, canManage = true }: { scenario
   const sourceBranch = realApiMode ? branch : from;
   const destinationOptions = branchOptions.filter((name) => name !== sourceBranch);
   const destinationBranch = realApiMode
-    ? destinationOptions.includes(to) ? to : destinationOptions[0] ?? ''
+    ? destinationOptions.includes(to)
+      ? to
+      : (destinationOptions[0] ?? '')
     : to;
   const save = async (value: Transfer) => {
     setBusy(true);
@@ -787,244 +1424,297 @@ export function TransfersPage({ scenario, branch, canManage = true }: { scenario
             <PageHeading
               eyebrow="KHO / ĐIỀU CHUYỂN"
               title="Điều chuyển chi nhánh"
-              action={canManage && transfers.length > 0 ? (
-                <Button variant="secondary" onClick={() => setShowCreateTransfer((value) => !value)}>
-                  {showCreateTransfer ? 'Đóng biểu mẫu' : '+ Tạo phiếu'}
-                </Button>
-              ) : undefined}
+              action={
+                canManage && transfers.length > 0 ? (
+                  <Button
+                    variant="secondary"
+                    onClick={() => setShowCreateTransfer((value) => !value)}
+                  >
+                    {showCreateTransfer ? 'Đóng biểu mẫu' : '+ Tạo phiếu'}
+                  </Button>
+                ) : undefined
+              }
             />
             <div className="feature-two-column independent-scroll-workspace">
               <div role="region" aria-label="Cuộn yêu cầu và danh sách điều chuyển" tabIndex={0}>
-                {canManage && (showCreateTransfer || transfers.length === 0) && <Panel title="Tạo yêu cầu">
-                  <div className="feature-filters">
-                    {realApiMode ? (
-                      <div className="field">
-                        <span>Chi nhánh xuất</span>
-                        <strong>{sourceBranch}</strong>
-                      </div>
-                    ) : (
+                {canManage && (showCreateTransfer || transfers.length === 0) && (
+                  <Panel title="Tạo yêu cầu">
+                    <div className="feature-filters">
+                      {realApiMode ? (
+                        <div className="field">
+                          <span>Chi nhánh xuất</span>
+                          <strong>{sourceBranch}</strong>
+                        </div>
+                      ) : (
+                        <BranchSelector
+                          label="Chi nhánh xuất"
+                          value={from}
+                          options={branchOptions}
+                          onChange={(value) => {
+                            setFrom(value);
+                            setTo(branchOptions.find((name) => name !== value) ?? '');
+                          }}
+                        />
+                      )}
                       <BranchSelector
-                        label="Chi nhánh xuất"
-                        value={from}
-                        options={branchOptions}
-                        onChange={(value) => {
-                          setFrom(value);
-                          setTo(branchOptions.find((name) => name !== value) ?? '');
-                        }}
+                        label="Chi nhánh nhận"
+                        value={destinationBranch}
+                        options={destinationOptions}
+                        disabled={
+                          realApiMode &&
+                          (!branchesReady || branchesError || destinationOptions.length === 0)
+                        }
+                        onChange={setTo}
                       />
+                      <Field
+                        label="Barcode bộ sẵn sàng"
+                        value={unitCode}
+                        onChange={(e) => setUnitCode(e.target.value.toUpperCase())}
+                      />
+                    </div>
+                    <TextAreaField
+                      label="Lý do điều chuyển"
+                      value={note}
+                      onChange={(e) => setNote(e.target.value)}
+                    />
+                    {realApiMode && branchesError && (
+                      <Feedback tone="danger" title="Chưa tải được danh sách chi nhánh">
+                        Không thể chọn nơi nhận.{' '}
+                        <button type="button" className="text-button" onClick={retryBranches}>
+                          Thử lại
+                        </button>
+                      </Feedback>
                     )}
-                    <BranchSelector
-                      label="Chi nhánh nhận"
-                      value={destinationBranch}
-                      options={destinationOptions}
-                      disabled={realApiMode && (!branchesReady || branchesError || destinationOptions.length === 0)}
-                      onChange={setTo}
-                    />
-                    <Field
-                      label="Barcode bộ sẵn sàng"
-                      value={unitCode}
-                      onChange={(e) => setUnitCode(e.target.value.toUpperCase())}
-                    />
-                  </div>
-                  <TextAreaField
-                    label="Lý do điều chuyển"
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                  />
-                  {realApiMode && branchesError && (
-                    <Feedback tone="danger" title="Chưa tải được danh sách chi nhánh">
-                      Không thể chọn nơi nhận.{' '}
-                      <button type="button" className="text-button" onClick={retryBranches}>Thử lại</button>
-                    </Feedback>
-                  )}
-                  <Button
-                    disabled={busy || (realApiMode && (!branchesReady || branchesError || !destinationBranch))}
-                    onClick={() => {
-                      if (!unitCode.trim()) {
-                        setIssue('Nhập barcode bộ cần điều chuyển.');
-                        return;
+                    <Button
+                      disabled={
+                        busy ||
+                        (realApiMode && (!branchesReady || branchesError || !destinationBranch))
                       }
-                      if (sourceBranch === destinationBranch || !destinationBranch || !note.trim()) {
-                        setIssue('Chọn hai chi nhánh khác nhau và nhập lý do.');
-                        return;
-                      }
-                      void save({
-                        code: `DC-DEMO-${transfers.length + 1}`,
-                        from: sourceBranch,
-                        to: destinationBranch,
-                        status: 'REQUESTED',
-                        units: [{ barcode: unitCode.trim() }],
-                        note,
-                        version: 1,
-                        history: newTransferHistory(),
-                      });
-                    }}
-                  >
-                    Tạo phiếu yêu cầu
-                  </Button>
-                </Panel>}
+                      onClick={() => {
+                        if (!unitCode.trim()) {
+                          setIssue('Nhập barcode bộ cần điều chuyển.');
+                          return;
+                        }
+                        if (
+                          sourceBranch === destinationBranch ||
+                          !destinationBranch ||
+                          !note.trim()
+                        ) {
+                          setIssue('Chọn hai chi nhánh khác nhau và nhập lý do.');
+                          return;
+                        }
+                        void save({
+                          code: `DC-DEMO-${transfers.length + 1}`,
+                          from: sourceBranch,
+                          to: destinationBranch,
+                          status: 'REQUESTED',
+                          units: [{ barcode: unitCode.trim() }],
+                          note,
+                          version: 1,
+                          history: newTransferHistory(),
+                        });
+                      }}
+                    >
+                      Tạo phiếu yêu cầu
+                    </Button>
+                  </Panel>
+                )}
                 <Panel title="Phiếu điều chuyển">
                   {transfers.length === 0 ? (
-                    <EmptyState title="Chưa có phiếu điều chuyển">Tạo phiếu đầu tiên để theo dõi quá trình chuyển bộ.</EmptyState>
-                  ) : <div className="responsive-table catalog-admin-table transfer-admin-table" role="region" aria-label="Bảng phiếu điều chuyển" tabIndex={0}>
-                    <table>
-                      <thead><tr><th>Mã phiếu</th><th>Từ</th><th>Đến</th><th>Bộ</th><th>Trạng thái</th></tr></thead>
-                      <tbody>
-                        {transfers.map((transfer) => (
-                          <tr key={transfer.code} className={current?.code === transfer.code ? 'selected' : ''}>
-                            <td data-label="Mã phiếu">
-                              <button
-                                type="button"
-                                className="text-link"
-                                aria-pressed={current?.code === transfer.code}
-                                onClick={() => {
-                                  setSelected(transfer.code);
-                                  setChecks({});
-                                  setNotice('');
-                                  revealDetail();
-                                }}
-                              >{transfer.code}</button>
-                            </td>
-                            <td data-label="Từ">{transfer.from}</td>
-                            <td data-label="Đến">{transfer.to}</td>
-                            <td data-label="Bộ">{transfer.units.map((unit) => unit.barcode).join(', ')}</td>
-                            <td data-label="Trạng thái">{transferStatus[transfer.status]}</td>
+                    <EmptyState title="Chưa có phiếu điều chuyển">
+                      Tạo phiếu đầu tiên để theo dõi quá trình chuyển bộ.
+                    </EmptyState>
+                  ) : (
+                    <div
+                      className="responsive-table catalog-admin-table transfer-admin-table"
+                      role="region"
+                      aria-label="Bảng phiếu điều chuyển"
+                      tabIndex={0}
+                    >
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Mã phiếu</th>
+                            <th>Từ</th>
+                            <th>Đến</th>
+                            <th>Bộ</th>
+                            <th>Trạng thái</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>}
+                        </thead>
+                        <tbody>
+                          {transfers.map((transfer) => (
+                            <tr
+                              key={transfer.code}
+                              className={current?.code === transfer.code ? 'selected' : ''}
+                            >
+                              <td data-label="Mã phiếu">
+                                <button
+                                  type="button"
+                                  className="text-link"
+                                  aria-pressed={current?.code === transfer.code}
+                                  onClick={() => {
+                                    setSelected(transfer.code);
+                                    setChecks({});
+                                    setNotice('');
+                                    revealDetail();
+                                  }}
+                                >
+                                  {transfer.code}
+                                </button>
+                              </td>
+                              <td data-label="Từ">{transfer.from}</td>
+                              <td data-label="Đến">{transfer.to}</td>
+                              <td data-label="Bộ">
+                                {transfer.units.map((unit) => unit.barcode).join(', ')}
+                              </td>
+                              <td data-label="Trạng thái">{transferStatus[transfer.status]}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </Panel>
               </div>
-              {current ? <div
-                ref={detailRef}
-                tabIndex={0}
-                role="region"
-                aria-label="Chi tiết phiếu điều chuyển đang chọn"
-                key={current.code}
-              >
-                <Panel title={current.code}>
-                  <StatusLabel
-                    text={transferStatus[current.status]}
-                    tone={
-                      current.status === 'RECEIVED'
-                        ? 'success'
-                        : current.status === 'REJECTED' || current.status === 'CANCELLED'
-                          ? 'danger'
-                          : 'warning'
-                    }
-                  />
-                  <KeyFacts
-                    rows={[
-                      { label: 'Từ', value: current.from },
-                      { label: 'Đến', value: current.to },
-                      {
-                        label: 'Đã nhận',
-                        value: `${current.units.filter((item) => item.received).length}/${current.units.length} bộ`,
-                      },
-                      { label: 'Ghi chú', value: current.note },
-                      { label: 'Phiên bản', value: current.version },
-                    ]}
-                  />
-                  <h3>Kiểm từng bộ</h3>
-                  {current.units.map((u) => (
-                    <div className="feature-list-row" key={u.barcode}>
-                      <strong>{u.barcode}</strong>
-                      <span>
-                        Tình trạng xuất: {u.out ? (conditionLabels[u.out] ?? u.out) : 'Chưa xuất'} ·
-                        Nhận: {u.received ?? 'Chưa nhận'}
-                      </span>
-                      {canManage && current.status === 'IN_TRANSIT' && !u.received ? (
-                        <SelectField
-                          label={`Tình trạng nhận ${u.barcode}`}
-                          value={checks[u.barcode] ?? ''}
-                          onChange={(e) => setChecks({ ...checks, [u.barcode]: e.target.value })}
-                        >
-                          <option value="">Chưa kiểm</option>
-                          <option value="GOOD">Tốt</option>
-                          <option value="FAIR">Cần theo dõi</option>
-                          <option value="DAMAGED">Hư hỏng</option>
-                        </SelectField>
-                      ) : (
-                        <small>
-                          Tình trạng nhận: {u.in ? (conditionLabels[u.in] ?? u.in) : '—'}
-                        </small>
-                      )}
-                    </div>
-                  ))}
-                  {canManage && <div className="feature-actions">
-                    {current.status === 'REQUESTED' && (
-                      <Button disabled={busy} onClick={() => void advance(current, 'APPROVED')}>
-                        Duyệt điều chuyển
-                      </Button>
-                    )}
-                    {current.status === 'APPROVED' && (
-                      <Button disabled={busy} onClick={() => void advance(current, 'IN_TRANSIT')}>
-                        Kiểm và xuất bộ
-                      </Button>
-                    )}
-                    {current.status === 'IN_TRANSIT' && (
-                      <Button
-                        disabled={
-                          busy || !current.units.some((u) => !u.received && checks[u.barcode])
-                        }
-                        onClick={() => void advance(current, 'RECEIVED')}
-                      >
-                        Xác nhận nhận{' '}
-                        {current.units.filter((u) => !u.received && checks[u.barcode]).length} bộ
-                      </Button>
-                    )}
-                  </div>}
-                  {canManage && current.status === 'REQUESTED' && (
-                    <div className="destructive-area">
-                      <TextAreaField
-                        label="Lý do từ chối hoặc hủy"
-                        value={reason}
-                        onChange={(e) => setReason(e.target.value)}
-                      />
+              {current ? (
+                <div
+                  ref={detailRef}
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Chi tiết phiếu điều chuyển đang chọn"
+                  key={current.code}
+                >
+                  <Panel title={current.code}>
+                    <StatusLabel
+                      text={transferStatus[current.status]}
+                      tone={
+                        current.status === 'RECEIVED'
+                          ? 'success'
+                          : current.status === 'REJECTED' || current.status === 'CANCELLED'
+                            ? 'danger'
+                            : 'warning'
+                      }
+                    />
+                    <KeyFacts
+                      rows={[
+                        { label: 'Từ', value: current.from },
+                        { label: 'Đến', value: current.to },
+                        {
+                          label: 'Đã nhận',
+                          value: `${current.units.filter((item) => item.received).length}/${current.units.length} bộ`,
+                        },
+                        { label: 'Ghi chú', value: current.note },
+                        { label: 'Phiên bản', value: current.version },
+                      ]}
+                    />
+                    <h3>Kiểm từng bộ</h3>
+                    {current.units.map((u) => (
+                      <div className="feature-list-row" key={u.barcode}>
+                        <strong>{u.barcode}</strong>
+                        <span>
+                          Tình trạng xuất: {u.out ? (conditionLabels[u.out] ?? u.out) : 'Chưa xuất'}{' '}
+                          · Nhận: {u.received ?? 'Chưa nhận'}
+                        </span>
+                        {canManage && current.status === 'IN_TRANSIT' && !u.received ? (
+                          <SelectField
+                            label={`Tình trạng nhận ${u.barcode}`}
+                            value={checks[u.barcode] ?? ''}
+                            onChange={(e) => setChecks({ ...checks, [u.barcode]: e.target.value })}
+                          >
+                            <option value="">Chưa kiểm</option>
+                            <option value="GOOD">Tốt</option>
+                            <option value="FAIR">Cần theo dõi</option>
+                            <option value="DAMAGED">Hư hỏng</option>
+                          </SelectField>
+                        ) : (
+                          <small>
+                            Tình trạng nhận: {u.in ? (conditionLabels[u.in] ?? u.in) : '—'}
+                          </small>
+                        )}
+                      </div>
+                    ))}
+                    {canManage && (
                       <div className="feature-actions">
-                        <Button
-                          variant="danger"
-                          disabled={!reason.trim() || busy}
-                          onClick={() => void advance(current, 'REJECTED')}
-                        >
-                          Từ chối
-                        </Button>
-                        <Button
-                          variant="quiet"
-                          disabled={!reason.trim() || busy}
-                          onClick={() => void advance(current, 'CANCELLED')}
-                        >
-                          Hủy phiếu
+                        {current.status === 'REQUESTED' && (
+                          <Button disabled={busy} onClick={() => void advance(current, 'APPROVED')}>
+                            Duyệt điều chuyển
+                          </Button>
+                        )}
+                        {current.status === 'APPROVED' && (
+                          <Button
+                            disabled={busy}
+                            onClick={() => void advance(current, 'IN_TRANSIT')}
+                          >
+                            Kiểm và xuất bộ
+                          </Button>
+                        )}
+                        {current.status === 'IN_TRANSIT' && (
+                          <Button
+                            disabled={
+                              busy || !current.units.some((u) => !u.received && checks[u.barcode])
+                            }
+                            onClick={() => void advance(current, 'RECEIVED')}
+                          >
+                            Xác nhận nhận{' '}
+                            {current.units.filter((u) => !u.received && checks[u.barcode]).length}{' '}
+                            bộ
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                    {canManage && current.status === 'REQUESTED' && (
+                      <div className="destructive-area">
+                        <TextAreaField
+                          label="Lý do từ chối hoặc hủy"
+                          value={reason}
+                          onChange={(e) => setReason(e.target.value)}
+                        />
+                        <div className="feature-actions">
+                          <Button
+                            variant="danger"
+                            disabled={!reason.trim() || busy}
+                            onClick={() => void advance(current, 'REJECTED')}
+                          >
+                            Từ chối
+                          </Button>
+                          <Button
+                            variant="quiet"
+                            disabled={!reason.trim() || busy}
+                            onClick={() => void advance(current, 'CANCELLED')}
+                          >
+                            Hủy phiếu
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                    {canManage && current.status === 'APPROVED' && (
+                      <div className="destructive-area">
+                        <Button variant="quiet" onClick={() => void advance(current, 'CANCELLED')}>
+                          Hủy trước khi xuất
                         </Button>
                       </div>
-                    </div>
+                    )}
+                    <h3>Lịch sử</h3>
+                    <Timeline items={current.history} />
+                  </Panel>
+                  <InlineIssue
+                    text={issue}
+                    conflict={scenario === 'conflict' || scenario === 'version'}
+                  />
+                  {notice && (
+                    <Feedback tone="success" title="Đã cập nhật phiếu">
+                      {notice}
+                    </Feedback>
                   )}
-                  {canManage && current.status === 'APPROVED' && (
-                    <div className="destructive-area">
-                      <Button variant="quiet" onClick={() => void advance(current, 'CANCELLED')}>
-                        Hủy trước khi xuất
-                      </Button>
-                    </div>
+                  {scenario === 'unitBlocked' && (
+                    <Feedback tone="warning" title="Bộ bị block">
+                      Bộ đang vệ sinh hoặc sửa chữa không được xuất.
+                    </Feedback>
                   )}
-                  <h3>Lịch sử</h3>
-                  <Timeline items={current.history} />
-                </Panel>
-                <InlineIssue
-                  text={issue}
-                  conflict={scenario === 'conflict' || scenario === 'version'}
-                />
-                {notice && (
-                  <Feedback tone="success" title="Đã cập nhật phiếu">
-                    {notice}
-                  </Feedback>
-                )}
-                {scenario === 'unitBlocked' && (
-                  <Feedback tone="warning" title="Bộ bị block">
-                    Bộ đang vệ sinh hoặc sửa chữa không được xuất.
-                  </Feedback>
-                )}
-              </div> : <EmptyState title="Chọn phiếu để xem chi tiết" />}
+                </div>
+              ) : (
+                <EmptyState title="Chọn phiếu để xem chi tiết" />
+              )}
             </div>
           </div>
         );

@@ -1041,12 +1041,16 @@ export default function App() {
           <a href="/dat-thue" onClick={() => setMobileMenuOpen(false)}>
             Đặt thuê
           </a>
-          <a href="/don-cua-toi" onClick={() => setMobileMenuOpen(false)}>
-            Đơn của tôi
-          </a>
-          <a href="/tai-khoan" onClick={() => setMobileMenuOpen(false)}>
-            Tài khoản
-          </a>
+          {studioSignedIn && (
+            <>
+              <a href="/don-cua-toi" onClick={() => setMobileMenuOpen(false)}>
+                Đơn của tôi
+              </a>
+              <a href="/tai-khoan" onClick={() => setMobileMenuOpen(false)}>
+                Tài khoản
+              </a>
+            </>
+          )}
           {studioSignedIn ? (
             <button
               className="studio-mobile-logout"

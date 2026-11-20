@@ -215,7 +215,9 @@ export function DateField({
   const touched = draftState.sourceValue === value && draftState.touched;
 
   const parsed = parseDisplayDate(draft);
-  const outsideRange = parsed.valid && !!parsed.value &&
+  const outsideRange =
+    parsed.valid &&
+    !!parsed.value &&
     ((!!min && parsed.value < min) || (!!max && parsed.value > max));
   const invalid = (touched && (!parsed.valid || outsideRange)) || (required && touched && !draft);
   const error = invalid
@@ -253,7 +255,8 @@ export function DateField({
           onChange={(event) => {
             const nextDraft = event.target.value;
             const next = parseDisplayDate(nextDraft);
-            const withinRange = !next.value || ((!min || next.value >= min) && (!max || next.value <= max));
+            const withinRange =
+              !next.value || ((!min || next.value >= min) && (!max || next.value <= max));
             const nextValue = next.valid && withinRange ? next.value : value;
             setDraftState({ sourceValue: nextValue, draft: nextDraft, touched: false });
             onValidityChange?.(next.valid && withinRange);
@@ -281,8 +284,16 @@ export function DateField({
           onChange={(event) => acceptDate(event.target.value)}
         />
       </div>
-      {hint && !error && <p id={`${id}-hint`} className="field-hint">{hint}</p>}
-      {error && <p id={`${id}-error`} className="field-error">{error}</p>}
+      {hint && !error && (
+        <p id={`${id}-hint`} className="field-hint">
+          {hint}
+        </p>
+      )}
+      {error && (
+        <p id={`${id}-error`} className="field-error">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
@@ -548,6 +559,93 @@ export function SkeletonGrid({ count = 4 }: { count?: number }) {
   );
 }
 
+export function DetailDialog({
+  title,
+  children,
+  onClose,
+  closeLabel = 'Đóng cửa sổ chi tiết',
+}: {
+  title: string;
+  children: ReactNode;
+  onClose: () => void;
+  closeLabel?: string;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialogRef.current?.focus();
+    return () => previous?.focus();
+  }, []);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && document.querySelectorAll('.dialog-backdrop').length === 1) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="dialog-backdrop detail-dialog-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="dialog detail-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onKeyDown={(event) => {
+          if (event.key !== 'Tab') return;
+          const focusable = Array.from(
+            dialogRef.current?.querySelectorAll<HTMLElement>(
+              'button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href]',
+            ) ?? [],
+          );
+          if (focusable.length === 0) return;
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (document.activeElement === dialogRef.current) {
+            event.preventDefault();
+            (event.shiftKey ? last : first).focus();
+          } else if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }}
+      >
+        <div className="dialog-top">
+          <h2 id={titleId}>{title}</h2>
+          <button type="button" className="icon-button" onClick={onClose} aria-label={closeLabel}>
+            <Icon name="close" />
+          </button>
+        </div>
+        <div className="dialog-body detail-dialog-body">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 export function ConfirmDialog({
   title,
   children,
@@ -644,7 +742,12 @@ export function ConfirmDialog({
           <Button variant="secondary" onClick={onClose} disabled={loading}>
             Quay lại
           </Button>
-          <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} loading={loading} disabled={confirmDisabled}>
+          <Button
+            variant={danger ? 'danger' : 'primary'}
+            onClick={onConfirm}
+            loading={loading}
+            disabled={confirmDisabled}
+          >
             {confirmText}
           </Button>
         </div>

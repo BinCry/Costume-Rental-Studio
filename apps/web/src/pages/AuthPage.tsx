@@ -240,11 +240,7 @@ export function AuthPage({
   }, [resetResendSeconds]);
 
   useEffect(() => {
-    if (
-      mode === 'login' &&
-      params.get('status') === 'success' &&
-      !callbackHandled.current
-    ) {
+    if (mode === 'login' && params.get('status') === 'success' && !callbackHandled.current) {
       callbackHandled.current = true;
       setGoogleCallbackPending(true);
       clearAccessToken();
@@ -521,9 +517,8 @@ export function AuthPage({
           <div className="auth-visual-shade" />
           <div className="auth-visual-copy">
             <span className="auth-kicker">STUDIO TRANG PHỤC</span>
-            <h2>Một bộ đồ đẹp. Một khoảnh khắc đáng nhớ.</h2>
-            <p>Chọn trang phục bạn yêu thích, studio sẽ xác nhận lịch thuê cùng bạn.</p>
-            <span className="auth-visual-caption">THUÊ TRANG PHỤC · ĐƠN GIẢN HƠN</span>
+            <h2>Thuê trang phục theo lịch của bạn.</h2>
+            <p>Chọn mẫu, thời gian và gửi yêu cầu thuê.</p>
           </div>
         </aside>
 
@@ -535,7 +530,7 @@ export function AuthPage({
               {mode === 'login'
                 ? restrictedPortal
                   ? 'Dùng tài khoản được quản lý studio cấp để truy cập đúng khu vực theo vai trò.'
-                  : 'Theo dõi đơn thuê và tiếp tục hành trình chọn trang phục của bạn.'
+                  : 'Đăng nhập để xem đơn thuê và thông tin tài khoản.'
                 : registerMode
                   ? 'Tạo tài khoản để quản lý thông tin và các đơn thuê của bạn.'
                   : 'Xác minh email để đặt lại mật khẩu tài khoản.'}

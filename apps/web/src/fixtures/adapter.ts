@@ -52,7 +52,7 @@ const catalog: CatalogItem[] = [
     priceFrom: 320000,
     depositFrom: 500000,
     availableAtFixturePeriod: true,
-    description: 'Tà áo mềm nhẹ cho những khoảnh khắc thật riêng.',
+    description: '',
   },
   {
     id: 'suit-aria',
@@ -64,7 +64,7 @@ const catalog: CatalogItem[] = [
     priceFrom: 420000,
     depositFrom: 700000,
     availableAtFixturePeriod: true,
-    description: 'Đường cắt hiện đại, dễ phối cho nhiều dịp.',
+    description: '',
   },
   {
     id: 'dam-rouge',
@@ -76,7 +76,7 @@ const catalog: CatalogItem[] = [
     priceFrom: 390000,
     depositFrom: 600000,
     availableAtFixturePeriod: false,
-    description: 'Sắc berry nổi bật với phom dáng tối giản.',
+    description: '',
   },
   {
     id: 'ao-dai-may',
@@ -88,7 +88,7 @@ const catalog: CatalogItem[] = [
     priceFrom: 280000,
     depositFrom: 450000,
     availableAtFixturePeriod: true,
-    description: 'Một lựa chọn nhẹ nhàng cho ngày đặc biệt.',
+    description: '',
   },
 ];
 
@@ -147,7 +147,10 @@ const orders: Order[] = [
       { label: 'Tiền cọc', amount: 1000000, status: 'Chưa thu', tone: 'neutral' },
       { label: 'Phụ phí / hoàn', amount: 0, status: 'Chưa phát sinh', tone: 'neutral' },
     ],
-    history: ['03/10/2026 · Khách gửi yêu cầu thuê', '03/10/2026 · Chờ nhân viên kiểm tra lịch và gán bộ'],
+    history: [
+      '03/10/2026 · Khách gửi yêu cầu thuê',
+      '03/10/2026 · Chờ nhân viên kiểm tra lịch và gán bộ',
+    ],
     note: 'Cần đủ 2 bộ cùng size.',
     eligibleUnits: q1Units,
   },
@@ -404,7 +407,12 @@ export const fixtureAdapter = {
   async getQuote(
     draft: BookingDraft,
     scenario: DemoScenario,
-    options: { customerCode?: string; channel?: string; promotionCode?: string; publicEstimate?: boolean } = {},
+    options: {
+      customerCode?: string;
+      channel?: string;
+      promotionCode?: string;
+      publicEstimate?: boolean;
+    } = {},
   ): Promise<QuoteSnapshot> {
     if (apiEnabled && (hasAccessToken() || !import.meta.env.DEV)) {
       if (!hasAccessToken() && !options.publicEstimate)
@@ -435,10 +443,20 @@ export const fixtureAdapter = {
     }
     const requested = bookingItems(draft);
     const quantity = requested.reduce((sum, line) => sum + line.quantity, 0);
-    if (quantity < 1 || quantity > 50 || requested.some((line) =>
-      !Number.isInteger(line.quantity) || line.quantity < 1 ||
-      !catalog.some((item) => item.id === line.costumeId &&
-        item.sizes.map((size) => `${size} / ${item.colors[0]}`).includes(line.variant))))
+    if (
+      quantity < 1 ||
+      quantity > 50 ||
+      requested.some(
+        (line) =>
+          !Number.isInteger(line.quantity) ||
+          line.quantity < 1 ||
+          !catalog.some(
+            (item) =>
+              item.id === line.costumeId &&
+              item.sizes.map((size) => `${size} / ${item.colors[0]}`).includes(line.variant),
+          ),
+      )
+    )
       throw new FixtureIssue('NO_FIXTURE_QUOTE', 'Kiểm tra mẫu, size và số bộ đã chọn.');
     const groups = new Map<string, { costumeId: string; variant: string; quantity: number }>();
     for (const line of requested) {
@@ -480,13 +498,13 @@ export const fixtureAdapter = {
     draft: BookingDraft,
     quote: QuoteSnapshot,
     scenario: DemoScenario,
-    assignedUnit?: { code: string; id: string },
+    assignedUnits?: { code: string; id: string; variantId: string }[],
   ): Promise<string> {
     if (apiEnabled && (hasAccessToken() || !import.meta.env.DEV)) {
       if (!hasAccessToken())
         throw new FixtureIssue('AUTH_REQUIRED', 'Đăng nhập để gửi yêu cầu thuê lên máy chủ.');
       try {
-        return await createApiOrder(draft, quote, assignedUnit);
+        return await createApiOrder(draft, quote, assignedUnits);
       } catch (error) {
         throw asFixtureIssue(error);
       }
@@ -501,7 +519,10 @@ export const fixtureAdapter = {
     if (!quote.id)
       throw new FixtureIssue('QUOTE_MISSING', 'Cần báo giá còn hiệu lực trước khi gửi.');
     if (quote.available === false)
-      throw new FixtureIssue('UNAVAILABLE', 'Không đủ bộ cho kỳ thuê này. Hãy đổi lựa chọn và tải lại báo giá.');
+      throw new FixtureIssue(
+        'UNAVAILABLE',
+        'Không đủ bộ cho kỳ thuê này. Hãy đổi lựa chọn và tải lại báo giá.',
+      );
     return `RT-DEMO-${nextDemoRequest++}`;
   },
   async rentalAvailability(

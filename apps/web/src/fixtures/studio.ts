@@ -491,11 +491,11 @@ const customers: Customer[] = [
     interactions: ['02/10/2026 · Đã nhận hai bộ Áo dài Lina'],
   },
 ];
-const branches: Branch[] = [
+export const customerBranches: Branch[] = [
   {
     code: 'HCM-Q1',
     name: 'Chi nhánh Quận 1',
-    address: 'Quận 1, TP. Hồ Chí Minh',
+    address: '123 Nguyễn Huệ, Phường Sài Gòn, TP.HCM',
     status: 'ACTIVE',
     timezone: 'Asia/Ho_Chi_Minh',
   },
@@ -507,6 +507,7 @@ const branches: Branch[] = [
     timezone: 'Asia/Ho_Chi_Minh',
   },
 ];
+const branches = customerBranches;
 const employees: Employee[] = [
   {
     code: 'NV-001',

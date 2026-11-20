@@ -165,6 +165,7 @@ export function bookingItems(draft: BookingDraft) {
 export interface QuoteSnapshot {
   id: string;
   expiresAt: string;
+  expiresAtIso?: string;
   daysLabel: string;
   pricePerDay: number;
   quantity: number;

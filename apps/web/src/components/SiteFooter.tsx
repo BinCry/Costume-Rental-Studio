@@ -106,7 +106,7 @@ export function SiteFooter({ branchContacts, compact = false }: SiteFooterProps)
               <small>TRANG PHỤC</small>
             </span>
           </a>
-          <p>Trang phục cho những khoảnh khắc đáng nhớ.</p>
+          <p>Áo dài · Đầm dự tiệc · Trang phục cosplay</p>
         </div>
 
         <section className="site-footer-contact" aria-labelledby="site-footer-contact-title">

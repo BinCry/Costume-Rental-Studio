@@ -113,7 +113,11 @@ const adminNavGroups: { id: string; label: string; screens: Screen[] }[] = [
   { id: 'transfers', label: 'Điều chuyển', screens: ['adminTransfers'] },
   { id: 'customers', label: 'Khách hàng', screens: ['adminCrm'] },
   { id: 'catalog', label: 'Danh mục', screens: ['adminCatalog'] },
-  { id: 'settings', label: 'Cấu hình', screens: ['employees', 'roles', 'branches', 'policies', 'promotions'] },
+  {
+    id: 'settings',
+    label: 'Cấu hình',
+    screens: ['employees', 'roles', 'branches', 'policies', 'promotions'],
+  },
 ];
 const isStaff = (screen: Screen) =>
   ![
@@ -673,8 +677,7 @@ export default function StudioApp() {
             : shellActorGroup === 'CUSTOMER'
               ? 'Khách hàng'
               : 'Chưa được phân quyền';
-  const requiresCustomerSession =
-    route.screen === 'myRentals' || route.screen === 'myRentalDetail';
+  const requiresCustomerSession = route.screen === 'myRentals' || route.screen === 'myRentalDetail';
   const requiresSession = productionApiMode && (staff || requiresCustomerSession);
   const sessionPending =
     requiresSession && (!apiSessionReady || (!!apiIdentity && !apiBranchesReady));
@@ -1018,29 +1021,38 @@ export default function StudioApp() {
               <section className="staff-menu-account" aria-label="Tài khoản và chi nhánh">
                 <label className="sidebar-branch">
                   <span>Chi nhánh làm việc</span>
-                  <select
-                    id="sidebar-branch-select"
-                    aria-label="Chi nhánh làm việc"
-                    value={activeBranch}
-                    onChange={(event) => setBranch(event.target.value)}
-                    disabled={
-                      !apiBranchesReady || apiBranchesFailed || apiBranchOptions.length === 0
-                    }
-                  >
-                    {!apiBranchesReady ? (
-                      <option value="">Đang tải danh sách chi nhánh…</option>
-                    ) : apiBranchesFailed ? (
-                      <option value="">Không tải được danh sách chi nhánh</option>
-                    ) : apiBranchOptions.length === 0 ? (
-                      <option value="">Không có chi nhánh được gán</option>
-                    ) : (
-                      apiBranchOptions.map((name) => (
-                        <option value={name} key={name}>
-                          {name}
-                        </option>
-                      ))
-                    )}
-                  </select>
+                  {apiBranchesReady && !apiBranchesFailed && apiBranchOptions.length === 1 ? (
+                    <span
+                      className="sidebar-branch-static"
+                      aria-label={`Chi nhánh làm việc: ${apiBranchOptions[0]}`}
+                    >
+                      {apiBranchOptions[0]}
+                    </span>
+                  ) : (
+                    <select
+                      id="sidebar-branch-select"
+                      aria-label="Chi nhánh làm việc"
+                      value={activeBranch}
+                      onChange={(event) => setBranch(event.target.value)}
+                      disabled={
+                        !apiBranchesReady || apiBranchesFailed || apiBranchOptions.length === 0
+                      }
+                    >
+                      {!apiBranchesReady ? (
+                        <option value="">Đang tải danh sách chi nhánh…</option>
+                      ) : apiBranchesFailed ? (
+                        <option value="">Không tải được danh sách chi nhánh</option>
+                      ) : apiBranchOptions.length === 0 ? (
+                        <option value="">Không có chi nhánh được gán</option>
+                      ) : (
+                        apiBranchOptions.map((name) => (
+                          <option value={name} key={name}>
+                            {name}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  )}
                   {apiBranchesFailed && (
                     <button
                       type="button"
@@ -1331,8 +1343,12 @@ export default function StudioApp() {
             {route.screen === 'dashboard' && (
               <DashboardPage scenario={scenario} go={go} initialBranch={activeBranch} />
             )}
-            {(route.screen === 'orders' || route.screen === 'adminOrders' || route.screen === 'active' || route.screen === 'adminActive') && (
+            {(route.screen === 'orders' ||
+              route.screen === 'adminOrders' ||
+              route.screen === 'active' ||
+              route.screen === 'adminActive') && (
               <OrdersPage
+                key={`${route.screen}:${p.get('order') ?? ''}`}
                 scenario={scenario}
                 go={actorGroup === 'ADMIN' ? adminGo : go}
                 canManage={
@@ -1365,7 +1381,12 @@ export default function StudioApp() {
                   'rentals.manage.all',
                 ].some((permission) => effectivePermissions.includes(permission))}
                 initialOrderId={p.get('order') ?? undefined}
-                initialFilter={p.get('filter') ?? (route.screen === 'active' || route.screen === 'adminActive' ? 'Đang thuê' : undefined)}
+                initialFilter={
+                  p.get('filter') ??
+                  (route.screen === 'active' || route.screen === 'adminActive'
+                    ? 'Đang thuê'
+                    : undefined)
+                }
                 initialBranch={activeBranch}
               />
             )}

@@ -1076,7 +1076,7 @@ export async function listCatalog(): Promise<CatalogItem[]> {
       ...group.variants.map((variant) => numberValue(variant.depositAmountVnd)),
     ),
     availableAtFixturePeriod: true,
-    description: group.model?.shortDescription ?? group.model?.description ?? '',
+    description: group.model?.shortDescription ?? '',
   }));
 }
 function variantFromAdminApi(variant: ApiVariant): Variant {
@@ -1728,6 +1728,7 @@ export async function getQuote(
   return {
     id: quoteId,
     expiresAt: formatDate(response.quoteExpiresAt),
+    expiresAtIso: response.quoteExpiresAt,
     daysLabel: response.period.billableDays + ' ngày · ' + billingMode,
     pricePerDay,
     quantity: totalQuantity,
@@ -1761,7 +1762,7 @@ export async function getQuote(
 export async function createOrder(
   draft: BookingDraft,
   quote: QuoteSnapshot,
-  assignedUnit?: { code: string; id: string },
+  assignedUnits?: { code: string; id: string; variantId: string }[],
 ) {
   if (hasPendingRentalOrder())
     throw new ApiClientError(
@@ -1857,9 +1858,12 @@ export async function createOrder(
   clearPendingRentalOrder();
   quoteRefs.delete(quote.id);
   const orderCode = rememberCreatedOrder(created, variantIds);
-  if (assignedUnit) {
-    unitRefs.set(orderCode, new Map([[assignedUnit.code, assignedUnit.id]]));
-    unitVariantRefs.set(orderCode, new Map([[assignedUnit.code, variantIds[0]]]));
+  if (assignedUnits?.length) {
+    unitRefs.set(orderCode, new Map(assignedUnits.map((unit) => [unit.code, unit.id])));
+    unitVariantRefs.set(
+      orderCode,
+      new Map(assignedUnits.map((unit) => [unit.code, unit.variantId])),
+    );
   }
   return orderCode;
 }
