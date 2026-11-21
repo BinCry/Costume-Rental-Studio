@@ -212,13 +212,11 @@ export function MoneySummary({
   rental,
   deposit,
   extra = 0,
-  refund = 0,
   title = 'Chi tiết tiền',
 }: {
   rental: number;
   deposit: number;
   extra?: number;
-  refund?: number;
   title?: string;
 }) {
   return (
@@ -226,9 +224,8 @@ export function MoneySummary({
       <KeyFacts
         rows={[
           { label: 'Tiền thuê', value: money(rental) },
-          { label: 'Cọc (không tính doanh thu)', value: money(deposit) },
-          { label: 'Phụ phí', value: money(extra) },
-          { label: 'Đã hoàn cọc', value: money(refund) },
+          ...(deposit > 0 ? [{ label: 'Tiền cọc', value: money(deposit) }] : []),
+          ...(extra > 0 ? [{ label: 'Phụ phí', value: money(extra) }] : []),
         ]}
       />
     </Panel>

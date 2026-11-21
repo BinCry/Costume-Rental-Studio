@@ -203,7 +203,11 @@ export function DashboardPage({
         {displayedSummary.map((entry) => (
           <button
             key={entry.kind}
-            className={`queue-counter ${effectiveKind === entry.kind ? 'selected' : ''}`}
+            className={[
+              'queue-counter',
+              `queue-counter-${entry.kind}`,
+              effectiveKind === entry.kind ? 'selected' : '',
+            ].filter(Boolean).join(' ')}
             onClick={() => setKind(entry.kind)}
           >
             <span>{entry.label}</span>

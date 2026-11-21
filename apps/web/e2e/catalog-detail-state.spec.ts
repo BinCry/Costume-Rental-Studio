@@ -1,16 +1,16 @@
 import { expect, test } from '@playwright/test';
 
 test('keeps the selected variant in the detail URL after reload', async ({ page }) => {
-  await page.goto('/trang-phuc/suit-aria?variantCode=SUIT-ARIA-L&category=Suit');
+  const modelId = 'ao-dai-lina';
+  await page.goto(`/trang-phuc/${modelId}?variantCode=AO-DAI-LINA-M`);
   const variants = page.locator('.variant-pills').getByRole('button');
-  const variant = variants.getByText(/^M ·/);
-  await expect(variants.getByText(/^L ·/)).toHaveAttribute('aria-pressed', 'true');
+  const variant = variants.getByText(/^S ·/);
+  await expect(variants.getByText(/^M ·/)).toHaveAttribute('aria-pressed', 'true');
   await variant.click();
   await expect(variant).toHaveAttribute('aria-pressed', 'true');
   const url = new URL(page.url());
-  expect(url.pathname).toBe('/trang-phuc/suit-aria');
-  expect(url.searchParams.get('variantCode')).toBe('SUIT-ARIA-M');
-  expect(url.searchParams.get('category')).toBe('Suit');
+  expect(url.pathname).toBe(`/trang-phuc/${modelId}`);
+  expect(url.searchParams.get('variantCode')).toBe('AO-DAI-LINA-S');
 
   await page.reload();
   await expect(variant).toHaveAttribute('aria-pressed', 'true');
@@ -28,14 +28,15 @@ test('restores branch and manually entered rental period after reload', async ({
   await due.fill('07/04/2028 16:30');
   const params = new URL(page.url()).searchParams;
   expect(params.get('branch')).toBe('Chi nhánh Thủ Đức');
-  expect(params.has('pickup')).toBe(false);
-  expect(params.has('returnAt')).toBe(false);
+  expect(params.get('pickup')).toContain('2028-04-05T10:15');
+  expect(params.get('returnAt')).toContain('2028-04-07T16:30');
 
   await page.reload();
   await expect(branch).toHaveValue('Chi nhánh Thủ Đức');
   await expect(pickup).toHaveValue('05/04/2028 10:15');
   await expect(due).toHaveValue('07/04/2028 16:30');
   await due.clear();
+  await expect.poll(() => new URL(page.url()).searchParams.get('returnAt')).toBe('');
   await page.reload();
   await expect(due).toHaveValue('');
 });

@@ -16,7 +16,7 @@ describe('CRM case history in Vietnamese', () => {
 
   it('describes case creation and owner changes, keeping a staff note', () => {
     expect(caseHistoryText({ eventType: 'CREATED', toStatus: 'OPEN' }, stamp)).toBe(
-      '13/11/2026 10:20 · Tạo case',
+      '13/11/2026 10:20 · Tạo yêu cầu',
     );
     expect(caseHistoryText({ eventType: 'OWNER_CHANGED', note: 'Giao cho Hà Nguyễn' }, stamp)).toBe(
       '13/11/2026 10:20 · Đổi người phụ trách · Giao cho Hà Nguyễn',
@@ -25,7 +25,7 @@ describe('CRM case history in Vietnamese', () => {
 
   it('never shows a raw code for an unknown event', () => {
     expect(caseHistoryText({ eventType: 'SOMETHING_NEW' }, stamp)).toBe(
-      '13/11/2026 10:20 · Cập nhật case',
+      '13/11/2026 10:20 · Cập nhật yêu cầu',
     );
   });
 });

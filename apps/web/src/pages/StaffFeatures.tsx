@@ -889,6 +889,7 @@ export function CounterRentalPage({
               </div>
               <div
                 ref={quotePanelRef}
+                className={`counter-quote-workspace ${quote ? 'has-quote' : ''}`}
                 tabIndex={-1}
                 role="region"
                 aria-label="Báo giá và xác nhận đơn tại quầy"
@@ -1023,6 +1024,12 @@ export function CounterRentalPage({
                     </div>
                   ) : (
                     <div className="counter-actions">
+                      {quote && (
+                        <div className="counter-quote-sticky-total">
+                          <span>Tiền thuê và cọc</span>
+                          <strong>{money(quote.amountDueAtPickup)}</strong>
+                        </div>
+                      )}
                       {canConfirm && (
                         <Button
                           disabled={

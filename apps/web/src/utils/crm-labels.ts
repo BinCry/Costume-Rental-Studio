@@ -43,12 +43,12 @@ export function caseHistoryText(
 ) {
   const event =
     entry.eventType === 'CREATED'
-      ? 'Tạo case'
+      ? 'Tạo yêu cầu'
       : entry.eventType === 'STATUS_CHANGED'
         ? `Đổi trạng thái: ${statusName(entry.fromStatus)} → ${statusName(entry.toStatus)}`
         : entry.eventType === 'OWNER_CHANGED'
           ? 'Đổi người phụ trách'
-          : 'Cập nhật case';
+          : 'Cập nhật yêu cầu';
   return joinLine([stamp, event, entry.note]);
 }
 

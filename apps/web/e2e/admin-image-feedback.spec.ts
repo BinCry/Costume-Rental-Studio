@@ -49,6 +49,7 @@ test('explains unsupported images at the file input', async ({ page }) => {
     route.fulfill({ json: { success: true, data: [] } }),
   );
   await page.goto('/quan-tri/danh-muc');
+  await page.getByRole('button', { name: 'Ảnh sản phẩm' }).click();
   const input = page.getByLabel('Chọn ảnh', { exact: true });
   await expect(input).toBeEnabled();
   await input.setInputFiles({

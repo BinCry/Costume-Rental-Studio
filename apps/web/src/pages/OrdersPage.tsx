@@ -686,6 +686,56 @@ export function OrdersPage({
               </EmptyState>
             ) : (
               <>
+                <div className="order-mobile-list" aria-label="Danh sách đơn thuê">
+                  {pageItems.map((entry) => (
+                    <article
+                      className={`order-mobile-card ${detailOpen && order?.id === entry.id ? 'selected' : ''}`}
+                      key={entry.id}
+                    >
+                      <div className="order-mobile-card__head">
+                        <strong>{entry.id}</strong>
+                        <StatusLabel
+                          text={
+                            isOverdueRental(entry) ? 'Quá hạn' : orderStatus[entry.status].text
+                          }
+                          tone={
+                            isOverdueRental(entry) ? 'warning' : orderStatus[entry.status].tone
+                          }
+                        />
+                      </div>
+                      <div className="order-mobile-card__customer">
+                        <strong>{entry.customer}</strong>
+                        <small>{entry.phone}</small>
+                      </div>
+                      <dl className="order-mobile-card__facts">
+                        <div>
+                          <dt>Chi nhánh</dt>
+                          <dd>{entry.branch}</dd>
+                        </div>
+                        <div>
+                          <dt>Số bộ</dt>
+                          <dd>{entry.items.length}</dd>
+                        </div>
+                        <div>
+                          <dt>Nhận đồ</dt>
+                          <dd>{entry.pickup}</dd>
+                        </div>
+                        <div>
+                          <dt>Trả đồ</dt>
+                          <dd>{entry.returnAt}</dd>
+                        </div>
+                      </dl>
+                      <Button
+                        variant="secondary"
+                        className="order-detail-action"
+                        aria-label={`Chi tiết đơn ${entry.id}`}
+                        onClick={() => chooseOrder(entry.id)}
+                      >
+                        Chi tiết đơn
+                      </Button>
+                    </article>
+                  ))}
+                </div>
                 <p className="table-scroll-hint">Trên điện thoại, vuốt ngang để xem đủ cột.</p>
                 <div
                   className="order-table-scroll"

@@ -672,10 +672,11 @@ function apiErrorMessage(status: number, code: string) {
     INVALID_ORDER_TRANSITION: 'Đơn đã chuyển sang trạng thái khác. Hãy tải lại trước khi thao tác.',
     CONTACT_CONFLICT:
       'Số điện thoại hoặc email này đã được dùng cho tài khoản khác. Hãy tìm hồ sơ khách sẵn có hoặc nhập thông tin khác.',
+    CRM_CASE_NOT_FOUND: 'Không tìm thấy yêu cầu hỗ trợ hoặc yêu cầu không còn truy cập được.',
     CRM_CASE_OWNER_UNCHANGED:
-      'Case đã được giao cho người này. Hãy chọn người phụ trách khác nếu muốn đổi.',
+      'Yêu cầu hỗ trợ đã được giao cho người này. Hãy chọn người phụ trách khác nếu muốn đổi.',
     INVALID_CRM_CASE_TRANSITION:
-      'Case không chuyển thẳng được sang trạng thái này. Muốn đóng case, hãy chuyển sang "Đã giải quyết" trước.',
+      'Yêu cầu hỗ trợ không thể chuyển thẳng sang trạng thái này. Muốn đóng yêu cầu, hãy chuyển sang "Đã giải quyết" trước.',
     POLICY_OVERLAP: 'Thời hạn chính sách bị trùng. Hãy kiểm tra lại thời điểm áp dụng.',
     STAFF_CONFLICT:
       'Không thể liên kết tài khoản này với nhân viên. Kiểm tra trạng thái và xác minh email của tài khoản, hoặc kiểm tra mã nhân viên và số điện thoại có bị trùng không.',
@@ -1337,14 +1338,15 @@ function mapOrder(order: ApiOrder): Order {
     orderItems.reduce(
       (sum, item) => sum + numberValue(item.unitDailyPriceVnd) * (item.billableDays ?? 1),
       0,
-    ) +
-      numberValue(order.additionalRentalFeeVnd) -
+    ) -
       numberValue(order.promotionDiscountVnd),
   );
   const deposit = orderItems.reduce((sum, item) => sum + numberValue(item.unitDepositVnd), 0);
   const extra = orderItems.reduce(
     (sum, item) => sum + numberValue(item.damageFeeVnd) + numberValue(item.missingFeeVnd),
-    numberValue(order.lateFeeVnd) + numberValue(order.otherFeeVnd),
+    numberValue(order.additionalRentalFeeVnd) +
+      numberValue(order.lateFeeVnd) +
+      numberValue(order.otherFeeVnd),
   );
   const successful = (payment: NonNullable<ApiOrder['payments']>[number]) =>
     payment.status === 'SUCCEEDED' || payment.status === 'PAID';
@@ -2489,7 +2491,7 @@ function localDateTimeInput(value: string) {
 function crmCaseFromApi(crmCase: ApiCrmCase): Case {
   const customerCode = crmCase.customer?.customerCode ?? crmCase.customerUserId;
   const branch = crmCase.branch?.name ?? branchNameById(crmCase.branchId);
-  const history = crmCase.createdAt ? [`${formatDate(crmCase.createdAt)} · Tạo case`] : [];
+  const history = crmCase.createdAt ? [`${formatDate(crmCase.createdAt)} · Tạo yêu cầu`] : [];
   caseRefs.set(crmCase.caseCode, {
     id: crmCase.id,
     customerUserId: crmCase.customerUserId,
@@ -2652,7 +2654,7 @@ export async function saveCrmCase(value: Case): Promise<Case> {
   if (!branchIds.has(value.branch)) await listBranches();
   const branchId = branchIds.get(value.branch);
   if (!branchId)
-    throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không tìm thấy chi nhánh xử lý case.');
+    throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không tìm thấy chi nhánh xử lý yêu cầu hỗ trợ.');
   const reference = caseRefs.get(value.code);
   const customer = customerRefs.get(value.customerCode);
   if (!reference) {
@@ -2662,7 +2664,7 @@ export async function saveCrmCase(value: Case): Promise<Case> {
       throw new ApiClientError(
         422,
         'CUSTOMER_CONTEXT_MISSING',
-        'Chưa tải được mã khách để tạo case.',
+        'Chưa tải được thông tin khách để tạo yêu cầu hỗ trợ.',
       );
     const created = await request<ApiCrmCase>('/api/v1/crm/cases', {
       method: 'POST',
@@ -2685,7 +2687,7 @@ export async function saveCrmCase(value: Case): Promise<Case> {
     throw new ApiClientError(
       422,
       'CRM_BRANCH_CHANGE_UNSUPPORTED',
-      'API hiện chưa hỗ trợ chuyển case sang chi nhánh khác.',
+      'Hiện chưa thể chuyển yêu cầu hỗ trợ sang chi nhánh khác.',
     );
   let updated = await request<ApiCrmCase>(`/api/v1/crm/cases/${encodeURIComponent(reference.id)}`, {
     method: 'PATCH',

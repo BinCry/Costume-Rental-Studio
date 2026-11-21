@@ -710,7 +710,12 @@ export default function StudioApp() {
   };
   return (
     <div
-      className={`app ${staff ? 'app-staff' : 'app-customer'} ${staff && menuOpen ? 'nav-open' : ''} ${portalClass}`}
+      className={[
+        'app',
+        staff ? 'app-staff work-portal-theme' : 'app-customer',
+        staff && menuOpen ? 'nav-open' : '',
+        portalClass,
+      ].filter(Boolean).join(' ')}
     >
       <a className="skip-link" href="#main-content">
         Bỏ qua điều hướng

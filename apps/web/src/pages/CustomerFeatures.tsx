@@ -297,6 +297,9 @@ export function CostumeDetailPage({
               <div>
                 <p className="eyebrow">{item.category} · Bộ sưu tập</p>
                 <h1>{item.name}</h1>
+                {item.description?.trim() && (
+                  <p className="costume-detail-description">{item.description}</p>
+                )}
                 <Panel title="Chọn size / màu">
                   <div className="variant-pills">
                     {item.variants.map((value) => (
@@ -593,6 +596,8 @@ export function MyRentalsPage({
                     orderId={selected.id}
                     orderStatus={selected.status}
                     payments={selected.apiPayments ?? []}
+                    expectedRental={selected.rental}
+                    expectedDeposit={selected.deposit}
                     realApiMode={apiEnabled && hasAccessToken()}
                     onOrdersRefresh={retry}
                   />
@@ -671,14 +676,15 @@ export function MyRentalsPage({
                     rental={selected.rental}
                     deposit={selected.deposit}
                     extra={selected.extra}
-                    refund={selected.refund}
                   />
                   {selected.refundStatus !== 'Chưa phát sinh' &&
                     selected.refundStatus !== 'Chưa có dữ liệu' && (
                       <Panel title="Hoàn tiền">
                         <KeyFacts
                           rows={[
-                            { label: 'Đã hoàn', value: money(selected.refund) },
+                            ...(selected.refund > 0
+                              ? [{ label: 'Đã hoàn', value: money(selected.refund) }]
+                              : []),
                             ...(selected.refundPendingAmount
                               ? [
                                   {
@@ -862,12 +868,16 @@ function CustomerPaymentPanel({
   orderId,
   orderStatus,
   payments,
+  expectedRental,
+  expectedDeposit,
   realApiMode,
   onOrdersRefresh,
 }: {
   orderId: string;
   orderStatus: string;
   payments: NonNullable<CustomerOrder['apiPayments']>;
+  expectedRental: number;
+  expectedDeposit: number;
   realApiMode: boolean;
   onOrdersRefresh: () => void;
 }) {
@@ -943,11 +953,15 @@ function CustomerPaymentPanel({
         {
           purpose: 'RENTAL' as const,
           label: 'Tiền thuê',
+          due: moneyValue(settlement.rental.dueVnd),
+          paid: moneyValue(settlement.rental.paidVnd),
           remaining: moneyValue(settlement.rental.remainingVnd),
         },
         {
           purpose: 'DEPOSIT' as const,
           label: 'Tiền cọc',
+          due: moneyValue(settlement.deposit.dueVnd),
+          paid: moneyValue(settlement.deposit.paidVnd),
           remaining: Math.max(
             0,
             moneyValue(settlement.deposit.dueVnd) - moneyValue(settlement.deposit.paidVnd),
@@ -956,10 +970,16 @@ function CustomerPaymentPanel({
         {
           purpose: 'EXTRA' as const,
           label: 'Phụ phí',
+          due: moneyValue(settlement.extra.dueVnd),
+          paid: moneyValue(settlement.extra.paidVnd),
           remaining: moneyValue(settlement.extra.remainingVnd),
         },
       ]
     : [];
+  const settlementMismatch =
+    !!settlement &&
+    (moneyValue(settlement.rental.dueVnd) !== Math.round(expectedRental) ||
+      moneyValue(settlement.deposit.dueVnd) !== Math.round(expectedDeposit));
   const pendingPayment = (purpose: 'RENTAL' | 'DEPOSIT' | 'EXTRA') =>
     paymentRecords.find(
       (payment) =>
@@ -1026,6 +1046,7 @@ function CustomerPaymentPanel({
             disabled={loading || !!busyPurpose}
             onClick={() => {
               setCheckout(undefined);
+              retryPaymentState();
               onOrdersRefresh();
             }}
           >
@@ -1057,34 +1078,72 @@ function CustomerPaymentPanel({
       ) : (
         <div className="customer-payment-list">
           <p className="muted small-note">Thanh toán online được xác nhận sau khi cổng phản hồi.</p>
+          {settlementMismatch && (
+            <Feedback
+              tone="danger"
+              title="Số tiền trong đơn chưa khớp"
+              action={
+                <Button
+                  variant="secondary"
+                  disabled={loading || !!busyPurpose}
+                  onClick={() => {
+                    retryPaymentState();
+                    onOrdersRefresh();
+                  }}
+                >
+                  Tải lại số tiền
+                </Button>
+              }
+            >
+              Chi tiết đơn và quyết toán đang hiển thị số tiền khác nhau. Tạm thời chưa thể mở
+              thanh toán để tránh thu sai; nếu tải lại vẫn còn, vui lòng liên hệ Studio.
+            </Feedback>
+          )}
           {rows.map((row) => {
-            if (row.purpose === 'EXTRA' && row.remaining <= 0) return null;
             const activeCheckout = checkout?.purpose === row.purpose ? checkout : undefined;
             const pending =
               pendingPayment(row.purpose) ??
               (activeCheckout
                 ? { amount: activeCheckout.amount, checkoutUrl: activeCheckout.url }
                 : undefined);
+            if (row.due <= 0 && row.paid <= 0 && row.remaining <= 0 && !pending) return null;
             const pendingUrl = safeCheckoutUrl(pending?.checkoutUrl);
             const paymentStatus = pending
               ? 'Đang chờ xác nhận'
-              : row.remaining <= 0
+              : row.due <= 0
+                ? 'Chưa phát sinh'
+                : row.remaining <= 0
                 ? 'Đã thanh toán đủ'
-                : 'Còn phải thanh toán';
+                : row.paid > 0
+                  ? 'Đã thanh toán một phần'
+                  : 'Chưa thanh toán';
             return (
               <div className="customer-payment-row" key={row.purpose}>
                 <div className="customer-payment-row__summary">
                   <strong>{row.label}</strong>
-                  <span>
-                    {pending ? `Đang chờ ${money(Number(pending.amount))}` : money(row.remaining)}
-                  </span>
+                  <span>{money(row.due)}</span>
+                  <small>
+                    {pending
+                      ? 'Đang chờ xác nhận ' + money(Number(pending.amount))
+                      : `Đã thanh toán ${money(row.paid)} · Còn lại ${money(row.remaining)}`}
+                  </small>
                 </div>
                 <div className="customer-payment-row__actions">
                   <StatusLabel
                     text={paymentStatus}
-                    tone={pending ? 'warning' : row.remaining <= 0 ? 'success' : 'neutral'}
+                    tone={
+                      pending
+                        ? 'warning'
+                        : row.due <= 0
+                          ? 'neutral'
+                          : row.remaining <= 0
+                            ? 'success'
+                            : row.paid > 0
+                              ? 'info'
+                              : 'neutral'
+                    }
                   />
-                  {pendingUrl && !activeCheckout && (
+                  {pendingUrl && !activeCheckout && !settlementMismatch && (
                     <a
                       className="button button-secondary"
                       href={pendingUrl}
@@ -1094,18 +1153,18 @@ function CustomerPaymentPanel({
                       Tiếp tục thanh toán
                     </a>
                   )}
-                  {!pending && row.remaining > 0 && (
+                  {!pending && row.remaining > 0 && !settlementMismatch && (
                     <Button
                       type="button"
                       variant="secondary"
                       loading={busyPurpose === row.purpose}
-                      disabled={!!busyPurpose || loading}
+                      disabled={!!busyPurpose || loading || settlementMismatch}
                       onClick={() => void startCheckout(row.purpose, row.remaining)}
                     >
                       Thanh toán online
                     </Button>
                   )}
-                  {activeCheckout && (
+                  {activeCheckout && !settlementMismatch && (
                     <a
                       className="button button-primary"
                       href={activeCheckout.url}

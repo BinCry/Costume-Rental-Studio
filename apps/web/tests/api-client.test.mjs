@@ -970,7 +970,7 @@ describe('web API client session and error handling', () => {
       status: 409,
       code: 'INVALID_CRM_CASE_TRANSITION',
       message:
-        'Case không chuyển thẳng được sang trạng thái này. Muốn đóng case, hãy chuyển sang "Đã giải quyết" trước.',
+        'Yêu cầu hỗ trợ không thể chuyển thẳng sang trạng thái này. Muốn đóng yêu cầu, hãy chuyển sang "Đã giải quyết" trước.',
     });
   });
 
@@ -997,7 +997,7 @@ describe('web API client session and error handling', () => {
     await expect(login('khach@example.com', 'password-test')).rejects.toMatchObject({
       status: 409,
       code: 'CRM_CASE_OWNER_UNCHANGED',
-      message: 'Case đã được giao cho người này. Hãy chọn người phụ trách khác nếu muốn đổi.',
+      message: 'Yêu cầu hỗ trợ đã được giao cho người này. Hãy chọn người phụ trách khác nếu muốn đổi.',
     });
   });
 

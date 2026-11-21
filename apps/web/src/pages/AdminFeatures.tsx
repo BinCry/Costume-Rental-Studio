@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import {
   Button,
   ConfirmDialog,
+  DetailDialog,
   DateField,
   EmptyState,
   Feedback,
@@ -25,7 +26,6 @@ import {
 } from '../components/studio';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { useBranchOptions } from '../components/useBranchOptions';
-import { useMobileDetailReveal } from '../components/useMobileDetailReveal';
 import {
   permissions,
   studioAdapter,
@@ -229,6 +229,7 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
   );
   const categoriesResource = useFixtureResource(scenario, loadCategories);
   const [selected, setSelected] = useState('ao-dai-lina');
+  const [detailOpen, setDetailOpen] = useState(false);
   const [catalogSection, setCatalogSection] = useState<'info' | 'variants' | 'media'>('info');
   const [model, setModel] = useState<CostumeDetail>();
   const [variant, setVariant] = useState<Variant>();
@@ -565,6 +566,7 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
           });
           setVariant(undefined);
           setIssue('');
+          setDetailOpen(true);
         };
         const selectExistingModel = (id: string) => {
           resetMediaDraft();
@@ -573,6 +575,7 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
           setModel(undefined);
           setVariant(undefined);
           setIssue('');
+          setDetailOpen(true);
         };
         return (
           <div className="page">
@@ -591,22 +594,59 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                 </Button>
               ) : undefined}
             />
-            <div className="feature-two-column catalog-admin-layout independent-scroll-workspace">
+            <div className="admin-table-workspace catalog-admin-workspace">
               <div role="region" aria-label="Danh sách mẫu trang phục" tabIndex={0}>
                 <Panel title="Danh mục mẫu">
-                  {hasUnsavedCatalogDraft && (
-                    <p className="field-hint" role="status">Có thay đổi chưa lưu trong mẫu đang mở.</p>
-                  )}
                   <div className="responsive-table catalog-admin-table" role="region" aria-label="Danh sách mẫu trang phục" tabIndex={0}>
                     <table>
-                      <thead><tr><th>Mã mẫu</th><th>Tên mẫu</th><th>Danh mục</th><th>Biến thể</th></tr></thead>
+                      <thead>
+                        <tr>
+                          <th scope="col">Mã mẫu</th>
+                          <th scope="col">Tên mẫu</th>
+                          <th scope="col">Danh mục</th>
+                          <th scope="col">Biến thể</th>
+                          <th scope="col">Giá thuê từ</th>
+                          <th scope="col">Cọc từ</th>
+                          <th scope="col">Chi tiết</th>
+                        </tr>
+                      </thead>
                       <tbody>
                         {items.map((item) => (
-                          <tr key={item.id} className={selected === item.id ? 'selected' : ''}>
-                            <td data-label="Mã mẫu"><button className="text-link" aria-pressed={selected === item.id} disabled={mediaBusy || busy} onClick={() => { if (selected === item.id) return; if (hasUnsavedCatalogDraft) setPendingCatalogTarget(item.id); else selectExistingModel(item.id); }}>{item.modelCode?.trim() ? item.modelCode : item.id}</button></td>
+                          <tr key={item.id} className={detailOpen && selected === item.id ? 'selected' : ''}>
+                            <td data-label="Mã mẫu">{item.modelCode?.trim() ? item.modelCode : item.id}</td>
                             <td data-label="Tên mẫu">{item.name}</td>
                             <td data-label="Danh mục">{item.category}</td>
                             <td data-label="Biến thể">{item.variants.length}</td>
+                            <td data-label="Giá thuê từ">
+                              {item.variants.length
+                                ? money(Math.min(...item.variants.map((entry) => entry.price)))
+                                : '—'}
+                            </td>
+                            <td data-label="Cọc từ">
+                              {item.variants.length
+                                ? money(Math.min(...item.variants.map((entry) => entry.deposit)))
+                                : '—'}
+                            </td>
+                            <td data-label="Chi tiết">
+                              <Button
+                                type="button"
+                                variant="quiet"
+                                disabled={mediaBusy || busy}
+                                aria-label={`Chi tiết mẫu ${item.name}`}
+                                onClick={() => {
+                                  if (detailOpen && selected === item.id) return;
+                                  if (hasUnsavedCatalogDraft && selected !== item.id) {
+                                    setPendingCatalogTarget(item.id);
+                                  } else if (selected === item.id) {
+                                    setDetailOpen(true);
+                                  } else {
+                                    selectExistingModel(item.id);
+                                  }
+                                }}
+                              >
+                                Chi tiết
+                              </Button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -614,6 +654,12 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                   </div>
                 </Panel>
               </div>
+              {detailOpen && editing && (
+              <DetailDialog
+                title={editing.modelCode?.trim() ? `Chi tiết mẫu ${editing.modelCode}` : editing.name ? `Chi tiết mẫu ${editing.name}` : 'Tạo mẫu mới'}
+                closeLabel="Đóng chi tiết mẫu trang phục"
+                onClose={() => setDetailOpen(false)}
+              >
               <div role="region" aria-label="Chỉnh sửa mẫu trang phục" tabIndex={0}>
                 <div className="variant-pills catalog-editor-sections" role="group" aria-label="Chỉnh sửa mẫu trang phục">
                   <button type="button" className={catalogSection === 'info' ? 'active' : ''} aria-pressed={catalogSection === 'info'} onClick={() => setCatalogSection('info')}>Thông tin</button>
@@ -695,9 +741,11 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                       }
                     />
                   )}
-                  <Button loading={busy} onClick={() => void saveModel()}>
-                    Lưu mẫu
-                  </Button>
+                  <div className="editor-save-bar">
+                    <Button loading={busy} onClick={() => void saveModel()}>
+                      Lưu mẫu
+                    </Button>
+                  </div>
                   </fieldset>
                   </div>
                   <div hidden={catalogSection !== 'media'}>
@@ -991,9 +1039,11 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                       <Feedback tone="warning" title="Giá snapshot trên đơn">
                         Sửa giá hiện hành không thay đổi giá, cọc hoặc số ngày trên đơn đã lập.
                       </Feedback>
-                      <Button loading={busy} onClick={() => void saveVariant()}>
-                        Lưu biến thể & giá
-                      </Button>
+                      <div className="editor-save-bar">
+                        <Button loading={busy} onClick={() => void saveVariant()}>
+                          Lưu biến thể & giá
+                        </Button>
+                      </div>
                     </fieldset>
                   ) : (
                     <p className="muted">Chọn biến thể để sửa giá hoặc tạo mới.</p>
@@ -1050,6 +1100,8 @@ export function CatalogAdminPage({ scenario, canManage = true }: { scenario: Dem
                   </ConfirmDialog>
                 )}
               </div>
+              </DetailDialog>
+              )}
             </div>
           </div>
         );
@@ -1087,7 +1139,7 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
       : branchOptions[0] ?? ''
     : assignmentBranchSelection;
   const [pendingEmployee, setPendingEmployee] = useState('');
-  const { detailRef, revealDetail } = useMobileDetailReveal<HTMLDivElement>();
+  const [detailOpen, setDetailOpen] = useState(false);
   const staffRoles = (rolesResource.data ?? []).filter((role) => role.group === 'STAFF');
   const availableAssignmentRoles = staffRoles.length
     ? staffRoles
@@ -1177,15 +1229,15 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                       employmentStatus: 'ACTIVE',
                       assignments: [],
                     });
-                    revealDetail();
+                    setDetailOpen(true);
                   }}
                 >
                   + Tạo nhân viên chờ kích hoạt
                 </Button>
               ) : undefined}
             />
-            <div className="feature-two-column independent-scroll-workspace">
-              <Panel title="Danh sách nhân viên" scrollRegionLabel="Cuộn danh sách nhân viên">
+            <div className="admin-table-workspace employee-admin-workspace">
+              <Panel title="Danh sách nhân viên">
                 <SearchField
                   label="Tìm theo tên, email hoặc mã nhân viên"
                   value={search}
@@ -1241,33 +1293,66 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                   ) : (
                     <div className="responsive-table catalog-admin-table employee-admin-table" role="region" aria-label="Bảng nhân viên" tabIndex={0}>
                       <table>
-                        <thead><tr><th>Nhân viên</th><th>Email</th><th>Tài khoản</th><th>Làm việc</th></tr></thead>
+                        <thead>
+                          <tr>
+                            <th scope="col">Nhân viên</th>
+                            <th scope="col">Email</th>
+                            <th scope="col">Chi nhánh</th>
+                            <th scope="col">Vai trò</th>
+                            <th scope="col">Tài khoản</th>
+                            <th scope="col">Làm việc</th>
+                            <th scope="col">Chi tiết</th>
+                          </tr>
+                        </thead>
                         <tbody>
                           {visibleEmployees.map((employee) => (
-                            <tr key={employee.code} className={person.code === employee.code ? 'selected' : ''}>
+                            <tr key={employee.code} className={detailOpen && person.code === employee.code ? 'selected' : ''}>
                               <td data-label="Nhân viên">
                                 <span className="employee-admin-person">
-                                <button
+                                  <strong>{employee.name}</strong>
+                                  <small className="employee-admin-code">{employeeDisplayCode(employee)}</small>
+                                </span>
+                              </td>
+                              <td data-label="Email" title={employee.email} className="employee-admin-email">{employee.email}</td>
+                              <td data-label="Chi nhánh">
+                                {employee.assignments.length
+                                  ? [...new Set(employee.assignments.map((assignment) => assignment.branch))].join(', ')
+                                  : 'Chưa phân công'}
+                              </td>
+                              <td data-label="Vai trò">
+                                {employee.assignments.length
+                                  ? [...new Set(employee.assignments.map((assignment) => staffRoleLabels[assignment.roleCode] ?? assignment.roleCode))].join(', ')
+                                  : 'Chưa phân công'}
+                              </td>
+                              <td data-label="Tài khoản">{accountLabels[employee.accountStatus]}</td>
+                              <td data-label="Làm việc">{employmentLabels[employee.employmentStatus]}</td>
+                              <td data-label="Chi tiết">
+                                <Button
                                   type="button"
-                                  className="text-link"
-                                  aria-pressed={person.code === employee.code}
+                                  variant="quiet"
+                              disabled={busy}
+                                  aria-pressed={detailOpen && person.code === employee.code}
+                                  aria-label={`Chi tiết nhân viên ${employee.name}`}
                                   onClick={() => {
+                                    if (detailOpen && selected === employee.code) return;
                                     if (editing && selected !== employee.code) {
                                       setPendingEmployee(employee.code);
+                                      return;
+                                    }
+                                    if (selected === employee.code) {
+                                      setDetailOpen(true);
                                       return;
                                     }
                                     setSelected(employee.code);
                                     setEditing(undefined);
                                     setCreatingEmployee(false);
-                                    revealDetail();
+                                    setIssue('');
+                                    setDetailOpen(true);
                                   }}
-                                >{employee.name}</button>
-                                <small className="employee-admin-code">{employeeDisplayCode(employee)}</small>
-                                </span>
+                                >
+                                  Chi tiết
+                                </Button>
                               </td>
-                              <td data-label="Email" title={employee.email} className="employee-admin-email">{employee.email}</td>
-                              <td data-label="Tài khoản">{accountLabels[employee.accountStatus]}</td>
-                              <td data-label="Làm việc">{employmentLabels[employee.employmentStatus]}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1275,13 +1360,12 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                     </div>
                   )}
               </Panel>
-              <div
-                ref={detailRef}
-                tabIndex={0}
-                role="region"
-                aria-label="Hồ sơ nhân viên đang chọn"
-                key={person.code}
+              {detailOpen && person && (
+              <DetailDialog
+                title={creatingEmployee ? 'Tạo nhân viên chờ kích hoạt' : `Hồ sơ ${employeeDisplayCode(person)}`}
+                onClose={() => setDetailOpen(false)}
               >
+              <div tabIndex={0} role="region" aria-label="Hồ sơ nhân viên đang chọn" key={person.code}>
                 <Panel title={`Hồ sơ ${employeeDisplayCode(person)}`}>
                   <fieldset className="permission-fieldset" disabled={!canManage}>
                   <div className="feature-filters">
@@ -1291,7 +1375,11 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                       onChange={(e) => setEditing({ ...person, name: e.target.value })}
                     />
                     <Field
-                      label="Email Google dự kiến"
+                      label={
+                        creatingEmployee || person.accountStatus === 'PENDING'
+                          ? 'Email Google để kích hoạt'
+                          : 'Email'
+                      }
                       value={person.email}
                       onChange={(e) => setEditing({ ...person, email: e.target.value })}
                     />
@@ -1476,6 +1564,8 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                   </Feedback>
                 )}
               </div>
+              </DetailDialog>
+              )}
             </div>
             {pendingEmployee && (
               <ConfirmDialog
@@ -1487,7 +1577,7 @@ export function EmployeesPage({ scenario, canManage = true }: { scenario: DemoSc
                   setEditing(undefined);
                   setCreatingEmployee(false);
                   setPendingEmployee('');
-                  revealDetail();
+                  setDetailOpen(true);
                 }}
               >
                 <p>Thông tin và phân công đang sửa sẽ mất. Bạn có thể quay lại để lưu trước.</p>
@@ -1698,7 +1788,7 @@ export function RolesPage({ scenario, canManage = true }: { scenario: DemoScenar
   const [busy, setBusy] = useState(false);
   const [pendingRole, setPendingRole] = useState('');
   const [permissionSearch, setPermissionSearch] = useState('');
-  const { detailRef, revealDetail } = useMobileDetailReveal<HTMLDivElement>();
+  const [detailOpen, setDetailOpen] = useState(false);
   return (
     <StateGate
       loading={loading || permissionsResource.loading}
@@ -1726,49 +1816,68 @@ export function RolesPage({ scenario, canManage = true }: { scenario: DemoScenar
               eyebrow="QUẢN TRỊ / PHÂN QUYỀN"
               title="Quyền theo vai trò"
             />
-            <div className={`role-layout independent-scroll-workspace ${changed ? 'has-unsaved-role' : ''}`}>
-              <Panel title="Vai trò" scrollRegionLabel="Cuộn danh sách vai trò">
+            <div className="admin-table-workspace role-admin-workspace">
+              <Panel title="Vai trò">
                 <div className="responsive-table catalog-admin-table role-admin-table" role="region" aria-label="Bảng vai trò" tabIndex={0}>
                   <table>
-                    <thead><tr><th>Vai trò</th><th>Nhóm</th><th>Số quyền</th></tr></thead>
+                    <thead>
+                      <tr>
+                        <th scope="col">Vai trò</th>
+                        <th scope="col">Mã vai trò</th>
+                        <th scope="col">Nhóm</th>
+                        <th scope="col">Số quyền</th>
+                        <th scope="col">Chi tiết</th>
+                      </tr>
+                    </thead>
                     <tbody>
                       {roles.map((item) => (
-                        <tr key={item.code} className={role.code === item.code ? 'selected' : ''}>
+                        <tr key={item.code} className={detailOpen && role.code === item.code ? 'selected' : ''}>
                           <td data-label="Vai trò">
-                            <span className="employee-admin-person">
-                              <button
-                                type="button"
-                                className="text-link"
-                                aria-pressed={role.code === item.code}
-                                onClick={() => {
-                                  if (changed && item.code !== role.code) {
-                                    setPendingRole(item.code);
-                                    return;
-                                  }
-                                  setSelected(item.code);
-                                  setDraft(undefined);
-                                  setIssue('');
-                                  revealDetail();
-                                }}
-                              >{item.name}</button>
-                              <small className="employee-admin-code">{item.code}</small>
-                            </span>
+                            <strong>{item.name}</strong>
                           </td>
+                          <td data-label="Mã vai trò"><code>{item.code}</code></td>
                           <td data-label="Nhóm">{item.group}</td>
                           <td data-label="Số quyền">{item.permissions.length}</td>
+                          <td data-label="Chi tiết">
+                            <Button
+                              type="button"
+                              variant="quiet"
+                              disabled={busy}
+                              aria-pressed={detailOpen && role.code === item.code}
+                              aria-label={`Chi tiết quyền ${item.name}`}
+                              onClick={() => {
+                                if (detailOpen && selected === item.code) return;
+                                if (changed && item.code !== role.code) {
+                                  setPendingRole(item.code);
+                                  return;
+                                }
+                                if (selected === item.code) {
+                                  setDetailOpen(true);
+                                  return;
+                                }
+                                setSelected(item.code);
+                                setDraft(undefined);
+                                setIssue('');
+                                setNotice('');
+                                setPermissionSearch('');
+                                setDetailOpen(true);
+                              }}
+                            >
+                              Chi tiết
+                            </Button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               </Panel>
-              <div
-                ref={detailRef}
-                tabIndex={0}
-                role="region"
-                aria-label="Quyền của vai trò đang chọn"
-                key={role.code}
+              {detailOpen && (
+              <DetailDialog
+                title={`Quyền của ${role.name}`}
+                onClose={() => setDetailOpen(false)}
               >
+              <div tabIndex={0} role="region" aria-label="Quyền của vai trò đang chọn" key={role.code}>
                 <Panel title={role.name}>
                   <p className="muted">
                     Quyền được chọn áp dụng cho vai trò này. Phân công vai trò cho nhân viên theo
@@ -1902,6 +2011,8 @@ export function RolesPage({ scenario, canManage = true }: { scenario: DemoScenar
                   </Feedback>
                 )}
               </div>
+              </DetailDialog>
+              )}
             </div>
             {pendingRole && (
               <ConfirmDialog
@@ -1912,7 +2023,10 @@ export function RolesPage({ scenario, canManage = true }: { scenario: DemoScenar
                   setSelected(pendingRole);
                   setDraft(undefined);
                   setPendingRole('');
-                  revealDetail();
+                  setIssue('');
+                  setNotice('');
+                  setPermissionSearch('');
+                  setDetailOpen(true);
                 }}
               >
                 <p>Các checkbox vừa thay đổi sẽ mất. Bạn có thể quay lại để lưu trước.</p>
@@ -1930,6 +2044,7 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
   const { loading, error, data, retry } = useFixtureResource(scenario, studioAdapter.policies);
   const [selected, setSelected] = useState('POLICY-2026-BUFFER-01');
   const [draft, setDraft] = useState<Policy>();
+  const [detailOpen, setDetailOpen] = useState(false);
   const [pendingPolicyAction, setPendingPolicyAction] = useState('');
   const [effectiveDateValid, setEffectiveDateValid] = useState(true);
   const [issue, setIssue] = useState('');
@@ -1955,6 +2070,7 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
             to: undefined,
             reason: '',
           });
+          setDetailOpen(true);
         };
         return (
           <div className="page">
@@ -1964,39 +2080,74 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                 <Button
                   variant="secondary"
                   onClick={() => {
-                    if (draft) setPendingPolicyAction('__new__');
+                    if (draft) setDetailOpen((open) => !open);
                     else startPolicyDraft();
                   }}
                 >
-                  + Phiên bản mới
+                  {draft ? detailOpen ? 'Đóng biểu mẫu' : 'Tiếp tục soạn phiên bản' : '+ Phiên bản mới'}
                 </Button>
               ) : undefined}
             />
-            <div className="feature-two-column independent-scroll-workspace">
-              <Panel title="Lịch sử phiên bản" scrollRegionLabel="Cuộn lịch sử chính sách">
+            <div className="admin-table-workspace policy-admin-workspace">
+              <Panel title={`Lịch sử phiên bản · ${items.length}`}>
                 <div className="responsive-table catalog-admin-table policy-admin-table" role="region" aria-label="Bảng phiên bản chính sách" tabIndex={0}>
                   <table>
-                    <thead><tr><th>Phiên bản</th><th>Hiệu lực</th><th>Đếm ngày</th><th>Trạng thái</th></tr></thead>
+                    <thead>
+                      <tr>
+                        <th scope="col">Phiên bản</th>
+                        <th scope="col">Hiệu lực</th>
+                        <th scope="col">Đếm ngày</th>
+                        <th scope="col">Lý do thay đổi</th>
+                        <th scope="col">Trạng thái</th>
+                        <th scope="col">Chi tiết</th>
+                      </tr>
+                    </thead>
                     <tbody>
                       {items.map((item) => (
-                        <tr key={item.code} className={selected === item.code ? 'selected' : ''}>
-                          <td data-label="Phiên bản">
-                            <button type="button" className="text-link" aria-pressed={selected === item.code} onClick={() => {
-                              if (selected === item.code) return;
-                              if (draft) setPendingPolicyAction(item.code);
-                              else setSelected(item.code);
-                            }}>{item.code}</button>
-                          </td>
+                        <tr key={item.code} className={detailOpen && selected === item.code ? 'selected' : ''}>
+                          <td data-label="Phiên bản"><strong>{item.code}</strong></td>
                           <td data-label="Hiệu lực">{formatPolicyDate(item.from)} → {formatPolicyDate(item.to)}</td>
                           <td data-label="Đếm ngày">{item.billingMode === 'ROLLING_24_HOURS' ? '24 giờ' : 'Ngày lịch'}</td>
-                          <td data-label="Trạng thái">{item.to ? 'Lịch sử' : 'Hiện hành'}</td>
+                          <td data-label="Lý do thay đổi">{item.reason || '—'}</td>
+                          <td data-label="Trạng thái">
+                            <StatusLabel
+                              text={item.to ? 'Lịch sử' : 'Hiện hành'}
+                              tone={item.to ? 'neutral' : 'success'}
+                            />
+                          </td>
+                          <td data-label="Chi tiết">
+                            <Button
+                              type="button"
+                              variant="quiet"
+                              disabled={busy}
+                              aria-pressed={detailOpen && selected === item.code}
+                              aria-label={`Chi tiết phiên bản ${item.code}`}
+                              onClick={() => {
+                                if (detailOpen && selected === item.code) return;
+                                if (draft && selected !== item.code) {
+                                  setPendingPolicyAction(item.code);
+                                  return;
+                                }
+                                setSelected(item.code);
+                                setIssue('');
+                                setDetailOpen(true);
+                              }}
+                            >
+                              Chi tiết
+                            </Button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               </Panel>
-              <div key={policy.code} role="region" aria-label="Cuộn chi tiết chính sách" tabIndex={0}>
+              {detailOpen && (
+              <DetailDialog
+                title={draft ? 'Tạo phiên bản chính sách' : `Chi tiết ${policy.code}`}
+                onClose={() => setDetailOpen(false)}
+              >
+              <div key={policy.code} role="region" aria-label="Chi tiết chính sách" tabIndex={0}>
                 <Panel title={policy.code}>
                   <StatusLabel
                     text={policy.to ? 'Lịch sử' : realApiMode ? 'Đang hiệu lực trên máy chủ' : 'Đang hiệu lực theo fixture'}
@@ -2183,45 +2334,49 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                         { label: 'Đệm lịch nội bộ', value: `${(((draft.lateReturnBufferMinutes ?? 0) + (draft.defaultCleaningBufferMinutes ?? 0)) / 60).toLocaleString('vi-VN')} giờ` },
                       ]} />
                     </div>
-                    <Button
-                      disabled={!canManage}
-                      loading={busy}
-                      onClick={() => {
-                        void (async () => {
-                          if (
-                            !effectiveDateValid ||
-                            !draft.from ||
-                            !draft.reason.trim() ||
-                            (draft.maxDays != null && draft.maxDays < draft.minDays)
-                          ) {
-                            setIssue('Nhập ngày hiệu lực, lý do và số ngày hợp lệ.');
-                            return;
-                          }
-                          setBusy(true);
-                          setIssue('');
-                          try {
-                            await studioAdapter.savePolicy(draft, scenario);
-                            setSelected(draft.code);
-                            setDraft(undefined);
-                            retry();
-                          } catch (e) {
-                            setIssue(issueText(e));
-                          } finally {
-                            setBusy(false);
-                          }
-                        })();
-                      }}
-                    >
-                      Tạo phiên bản
-                    </Button>
-                    <Button type="button" variant="secondary" onClick={() => { setDraft(undefined); setIssue(''); }}>
-                      Bỏ bản nháp
-                    </Button>
+                    <div className="feature-actions editor-save-bar">
+                      <Button
+                        disabled={!canManage}
+                        loading={busy}
+                        onClick={() => {
+                          void (async () => {
+                            if (
+                              !effectiveDateValid ||
+                              !draft.from ||
+                              !draft.reason.trim() ||
+                              (draft.maxDays != null && draft.maxDays < draft.minDays)
+                            ) {
+                              setIssue('Nhập ngày hiệu lực, lý do và số ngày hợp lệ.');
+                              return;
+                            }
+                            setBusy(true);
+                            setIssue('');
+                            try {
+                              await studioAdapter.savePolicy(draft, scenario);
+                              setSelected(draft.code);
+                              setDraft(undefined);
+                              retry();
+                            } catch (e) {
+                              setIssue(issueText(e));
+                            } finally {
+                              setBusy(false);
+                            }
+                          })();
+                        }}
+                      >
+                        Tạo phiên bản
+                      </Button>
+                      <Button type="button" variant="secondary" onClick={() => { setDraft(undefined); setIssue(''); }}>
+                        Bỏ bản nháp
+                      </Button>
+                    </div>
                     </fieldset>
                   </Panel>
                 )}
                 <InlineIssue text={issue} />
               </div>
+              </DetailDialog>
+              )}
             </div>
             {pendingPolicyAction && (
               <ConfirmDialog
@@ -2229,8 +2384,10 @@ export function PoliciesPage({ scenario, canManage = true }: { scenario: DemoSce
                 confirmText="Bỏ bản nháp"
                 onClose={() => setPendingPolicyAction('')}
                 onConfirm={() => {
-                  if (pendingPolicyAction === '__new__') startPolicyDraft();
-                  else { setDraft(undefined); setSelected(pendingPolicyAction); setIssue(''); }
+                  setDraft(undefined);
+                  setSelected(pendingPolicyAction);
+                  setIssue('');
+                  setDetailOpen(true);
                   setPendingPolicyAction('');
                 }}
               >
@@ -2574,18 +2731,10 @@ export function ReportsPage({
                     <strong className="report-number">{money(report.rentalRevenue)}</strong>
                     <p className="report-card-note">Không gồm tiền cọc</p>
                   </Panel>
-                  <Panel title={realApiMode ? 'Đơn quá hạn' : 'Bộ quá hạn'}>
-                    <strong className="report-number">
-                      {realApiMode ? report.overdueOrders ?? 0 : report.overdueUnits}
-                    </strong>
-                    <p className="report-card-note">Cần được nhân viên theo dõi</p>
+                  <Panel title="Đã hoàn cọc">
+                    <strong className="report-number">{money(report.completedRefund ?? 0)}</strong>
+                    <p className="report-card-note">Hoàn tất trong kỳ báo cáo</p>
                   </Panel>
-                  {realApiMode && (
-                    <Panel title="Đã hoàn cọc">
-                      <strong className="report-number">{money(report.completedRefund ?? 0)}</strong>
-                      <p className="report-card-note">Hoàn tất trong kỳ báo cáo</p>
-                    </Panel>
-                  )}
                   <Panel title="Cọc đang giữ (số dư hiện tại)">
                     <strong className="report-number">{money(report.depositsHeld)}</strong>
                     <p className="report-card-note">Tính theo số dư hiện tại của chi nhánh.</p>
@@ -2614,19 +2763,13 @@ export function ReportsPage({
                 <Panel
                   title="Doanh thu thuê theo thời gian"
                   className="report-chart-panel"
-                  action={
-                    <div className="report-chart-total">
-                      <span>Tổng trong kỳ</span>
-                      <strong>{money(report.rentalRevenue)}</strong>
-                    </div>
-                  }
                 >
                   <div className="report-chart-legend">
                     <span aria-hidden="true" /> Tiền thuê đã ghi nhận
                   </div>
                   <RevenueTrendChart points={report.revenuePeriods ?? []} groupBy={groupBy} />
                 </Panel>
-                <div className="feature-two-column report-detail-grid">
+                <div className={`feature-two-column report-detail-grid ${realApiMode ? 'report-detail-grid--single' : ''}`}>
                   <Panel title="Giao dịch theo trạng thái">
                     <KeyFacts
                       rows={report.transactions.map((item) => ({
@@ -2640,25 +2783,23 @@ export function ReportsPage({
                       </Feedback>
                     )}
                   </Panel>
-                  <Panel title="Hoàn cọc">
-                    {realApiMode ? (
-                      <p className="muted">
-                        Tổng số tiền đã hoàn được thể hiện ở chỉ số “Đã hoàn cọc” phía trên.
-                      </p>
-                    ) : (
-                      <KeyFacts
-                        rows={report.refunds.map((item) => ({
-                          label: refundStatusLabel(item.status),
-                          value: item.count,
-                        }))}
-                      />
-                    )}
-                    {scenario === 'refundFailed' && (
-                      <Feedback tone="danger" title="Hoàn cọc thất bại">
-                        Cần đối soát trạng thái; không tự thử lại giao dịch tài chính.
-                      </Feedback>
-                    )}
-                  </Panel>
+                  {(!realApiMode || scenario === 'refundFailed') && (
+                    <Panel title="Hoàn cọc">
+                      {!realApiMode && (
+                        <KeyFacts
+                          rows={report.refunds.map((item) => ({
+                            label: refundStatusLabel(item.status),
+                            value: item.count,
+                          }))}
+                        />
+                      )}
+                      {scenario === 'refundFailed' && (
+                        <Feedback tone="danger" title="Hoàn cọc thất bại">
+                          Cần đối soát trạng thái; không tự thử lại giao dịch tài chính.
+                        </Feedback>
+                      )}
+                    </Panel>
+                  )}
                 </div>
               </>
             )}

@@ -4,6 +4,7 @@ import {
   ConfirmDialog,
   Feedback,
   DateTimeField,
+  DetailDialog,
   Field,
   SelectField,
   TextAreaField,
@@ -20,7 +21,6 @@ import {
   Timeline,
 } from '../components/studio';
 import { useFixtureResource } from '../components/useFixtureResource';
-import { useMobileDetailReveal } from '../components/useMobileDetailReveal';
 import {
   apiEnabled,
   createCustomerInteraction,
@@ -78,6 +78,9 @@ export function CrmPage({
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState('KH-004');
   const [caseCode, setCaseCode] = useState('CS-001');
+  const [caseDetailOpen, setCaseDetailOpen] = useState(false);
+  const [interactionOpen, setInteractionOpen] = useState(false);
+  const [interactionDiscardOpen, setInteractionDiscardOpen] = useState(false);
   const [draft, setDraft] = useState<Case>();
   const [newCustomer, setNewCustomer] = useState<Customer>();
   const [issue, setIssue] = useState('');
@@ -100,12 +103,8 @@ export function CrmPage({
     'IN_PERSON' | 'PHONE' | 'EMAIL' | 'CHAT' | 'SOCIAL'
   >('IN_PERSON');
   const [pendingView, setPendingView] = useState<
-    { kind: 'customer' | 'case' | 'newCase'; code: string } | undefined
+    { kind: 'customer' | 'case' | 'newCase' | 'closeCase'; code: string } | undefined
   >();
-  const { detailRef: customerDetailRef, revealDetail: revealCustomer } =
-    useMobileDetailReveal<HTMLDivElement>();
-  const { detailRef: caseDetailRef, revealDetail: revealCase } =
-    useMobileDetailReveal<HTMLDivElement>();
   const visibleApiCustomers = visibleBranchCustomers(data ?? [], branch, search, realApiMode);
   const activeCustomer = realApiMode
     ? visibleApiCustomers.find((customer) => customer.code === selected) ?? visibleApiCustomers[0]
@@ -146,7 +145,7 @@ export function CrmPage({
     };
   }, [activeCustomer, activeCustomerCode, branch, interactionRetry, realApiMode]);
   useEffect(() => {
-    if (!realApiMode || !activeCaseCode) return;
+    if (!realApiMode || !activeCaseCode || !caseDetailOpen) return;
     let active = true;
     void listCrmCaseHistory(activeCaseCode)
       .then((items) => {
@@ -158,7 +157,7 @@ export function CrmPage({
     return () => {
       active = false;
     };
-  }, [activeCaseCode, caseHistoryRetry, realApiMode]);
+  }, [activeCaseCode, caseDetailOpen, caseHistoryRetry, realApiMode]);
   const switchView = (kind: 'customer' | 'case' | 'newCase', code: string) => {
     if (draft) {
       setPendingView({ kind, code });
@@ -169,24 +168,48 @@ export function CrmPage({
       setApiRentalHistoryErrors((current) => ({ ...current, [code]: false }));
       setApiInteractionErrors((current) => ({ ...current, [JSON.stringify([code, branch])]: false }));
       setCaseCode('');
-      revealCustomer();
+      setCaseDetailOpen(false);
     } else if (kind === 'case') {
+      const selectedCase = (casesResource.data ?? []).find((item) => item.code === code);
+      if (selectedCase) setSelected(selectedCase.customerCode);
       setApiCaseHistoryErrors((current) => ({ ...current, [code]: false }));
       setCaseCode(code);
-      revealCase();
+      setCaseDetailOpen(true);
     }
+    setIssue('');
+    setNotice('');
+  };
+  const startNewCase = (customerCode: string) => {
+    if (draft) {
+      setPendingView({ kind: 'newCase', code: customerCode });
+      return;
+    }
+    const value: Case = {
+      code: `CS-DEMO-${(casesResource.data ?? []).length + 1}`,
+      customerCode,
+      branch,
+      subject: '',
+      description: '',
+      priority: 'NORMAL',
+      status: 'OPEN',
+      history: [],
+    };
+    setSelected(customerCode);
+    setCaseCode(value.code);
+    setDraft(value);
+    setCaseDetailOpen(true);
     setIssue('');
     setNotice('');
   };
   const saveCase = async (value: Case) => {
     if (!canManage) return;
     if (!value.subject.trim()) {
-      setIssue('Nhập tiêu đề case trước khi lưu hoặc nhận xử lý.');
+      setIssue('Nhập tiêu đề yêu cầu trước khi lưu hoặc nhận xử lý.');
       return;
     }
     const isNewCase = !(casesResource.data ?? []).some((item) => item.code === value.code);
     if (isNewCase && (!value.dueAt || !Number.isFinite(Date.parse(value.dueAt)) || Date.parse(value.dueAt) <= Date.now())) {
-      setIssue('Chọn hạn xử lý trong tương lai cho case mới.');
+      setIssue('Chọn hạn xử lý trong tương lai cho yêu cầu mới.');
       return;
     }
     if (value.dueAt && !Number.isFinite(Date.parse(value.dueAt))) {
@@ -214,25 +237,25 @@ export function CrmPage({
       const previous = casesResource.data?.find((item) => item.code === value.code);
       const history = previous
         ? value.history[0] === previous.history[0]
-          ? [`${formatVietnamDateTime(new Date())} · Cập nhật case`, ...value.history]
+          ? [`${formatVietnamDateTime(new Date())} · Cập nhật yêu cầu`, ...value.history]
           : value.history
         : value.history.length
           ? value.history
-          : [`${formatVietnamDateTime(new Date())} · Tạo case`];
+          : [`${formatVietnamDateTime(new Date())} · Tạo yêu cầu`];
       const saved = await studioAdapter.saveCase({ ...value, history }, scenario);
       setCaseCode(saved.code);
       setDraft(undefined);
-      setNotice(realApiMode ? 'Case đã được lưu vào hệ thống CRM.' : 'Case đã được lưu trong dữ liệu mẫu và ghi lịch sử.');
+      setNotice(realApiMode ? 'Yêu cầu hỗ trợ đã được lưu.' : 'Yêu cầu hỗ trợ đã được lưu trong dữ liệu mẫu.');
       casesResource.retry();
     } catch (e) {
-      setIssue(e instanceof Error ? e.message : 'Chưa thể lưu case.');
+      setIssue(e instanceof Error ? e.message : 'Chưa thể lưu yêu cầu hỗ trợ.');
     } finally {
       setBusy(false);
     }
   };
   const saveInteraction = async (customerCode: string) => {
     if (!interactionNote.trim()) {
-      setIssue('Nhập nội dung tương tác trước khi ghi.');
+      setIssue('Nhập nội dung trao đổi trước khi lưu.');
       return;
     }
     setBusy(true);
@@ -250,12 +273,22 @@ export function CrmPage({
         [interactionKey]: [line, ...(current[interactionKey] ?? [])],
       }));
       setInteractionNote('');
-      setNotice('Đã ghi tương tác vào hồ sơ khách.');
+      setNotice('Đã ghi nhận trao đổi vào hồ sơ khách.');
     } catch (e) {
-      setIssue(e instanceof Error ? e.message : 'Chưa thể ghi tương tác.');
+      setIssue(e instanceof Error ? e.message : 'Chưa thể lưu trao đổi.');
     } finally {
       setBusy(false);
     }
+  };
+  const closeInteraction = () => {
+    if (busy) return;
+    if (interactionNote.trim()) {
+      setInteractionDiscardOpen(true);
+      return;
+    }
+    setInteractionOpen(false);
+    setIssue('');
+    setNotice('');
   };
   return (
     <StateGate
@@ -272,12 +305,13 @@ export function CrmPage({
       {(customers) => {
         const visible = visibleBranchCustomers(customers, branch, search, realApiMode);
         const person = visible.find((c) => c.code === activeCustomerCode) ?? visible[0];
-        const related = (casesResource.data ?? [])
+        const allCases = casesResource.data ?? [];
+        const related = allCases
           .filter((c) => c.customerCode === person?.code)
           .sort((left, right) =>
             (left.dueAt ? Date.parse(left.dueAt) : Number.POSITIVE_INFINITY) -
               (right.dueAt ? Date.parse(right.dueAt) : Number.POSITIVE_INFINITY));
-        const current = related.find((c) => c.code === activeCaseCode) ?? related[0];
+        const current = allCases.find((c) => c.code === activeCaseCode) ?? related[0];
         const editing = draft ?? current;
         const personInteractions = person
           ? apiInteractions[JSON.stringify([person.code, branch])] ?? (realApiMode ? [] : person.interactions)
@@ -296,7 +330,7 @@ export function CrmPage({
         return (
           <div className="page">
             <PageHeading
-              title="Khách hàng & case"
+              title="Khách hàng và yêu cầu hỗ trợ"
               action={
                 canManage ? (
                   <Button
@@ -319,8 +353,8 @@ export function CrmPage({
               }
             />
             {!canManage && (
-              <Feedback title="Chỉ xem hồ sơ và case">
-                Vai trò hiện tại chưa có mã quyền cập nhật CRM tại chi nhánh này.
+              <Feedback title="Chỉ xem thông tin khách hàng">
+                Tài khoản của bạn chưa được cấp quyền tạo hoặc cập nhật yêu cầu hỗ trợ.
               </Feedback>
             )}
             <div className="crm-layout independent-scroll-workspace">
@@ -331,30 +365,53 @@ export function CrmPage({
                   onChange={setSearch}
                 />
                 <div className="feature-card-list">
-                  {visible.map((c) => (
-                    <button
-                      className={`feature-list-row selectable ${person?.code === c.code ? 'selected' : ''}`}
-                      aria-pressed={person?.code === c.code}
-                      key={c.code}
-                      onClick={() => switchView('customer', c.code)}
-                    >
-                      <strong>{c.name}</strong>
-                      <span>{c.phone}</span>
-                      <small>{c.code}</small>
-                    </button>
-                  ))}
+                  {visible.map((c) => {
+                    const customerCases = allCases.filter((item) => item.customerCode === c.code);
+                    const openCases = customerCases.filter(
+                      (item) => item.status === 'OPEN' || item.status === 'IN_PROGRESS',
+                    );
+                    const overdueCases = openCases.filter(caseIsOverdue);
+                    return (
+                      <button
+                        className={`feature-list-row selectable ${person?.code === c.code ? 'selected' : ''}`}
+                        aria-pressed={person?.code === c.code}
+                        key={c.code}
+                        onClick={() => switchView('customer', c.code)}
+                      >
+                        <strong>{c.name}</strong>
+                        <span>{c.phone}</span>
+                        <small>{c.code}</small>
+                        <span
+                          className={`crm-customer-case-indicator${overdueCases.length ? ' overdue' : ''}`}
+                        >
+                          {openCases.length} yêu cầu đang mở
+                          {overdueCases.length > 0 ? ` · ${overdueCases.length} quá hạn` : ''}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
-                {!visible.length && <p className="muted">Không có khách phù hợp ở {branch}.</p>}
+                {!visible.length && (
+                  <p className="muted">
+                    Không tìm thấy khách tại {branch}. Kiểm tra từ khóa và chi nhánh đang làm việc.
+                  </p>
+                )}
               </Panel>
-              <div className="crm-detail-workspace" role="region" aria-label="Hồ sơ và case của khách" tabIndex={0}>
+              <div className="crm-detail-workspace" role="region" aria-label="Thông tin khách hàng và yêu cầu hỗ trợ" tabIndex={0}>
               {person ? (
-                <div
-                  ref={customerDetailRef}
-                  tabIndex={-1}
-                  role="region"
-                  aria-label="Hồ sơ khách đang chọn"
-                >
-                  <Panel title={person.name}>
+                <div className="crm-selected-customer">
+                  <Panel
+                    title={person.name}
+                    action={realApiMode && canManage ? (
+                      <Button variant="secondary" onClick={() => {
+                        setIssue('');
+                        setNotice('');
+                        setInteractionOpen(true);
+                      }}>
+                        + Ghi nhận trao đổi
+                      </Button>
+                    ) : undefined}
+                  >
                     <KeyFacts
                       rows={[
                         { label: 'Mã khách', value: person.code },
@@ -383,7 +440,7 @@ export function CrmPage({
                     )}
                     </details>
                     <details className="crm-history-section">
-                      <summary>Lịch sử tương tác</summary>
+                      <summary>Lịch sử liên hệ</summary>
                     {realApiMode && (apiInteractions[JSON.stringify([person.code, branch])] === undefined && !apiInteractionErrors[JSON.stringify([person.code, branch])]) ? (
                       <p className="muted" role="status">Đang tải tương tác…</p>
                     ) : realApiMode && apiInteractionErrors[JSON.stringify([person.code, branch])] ? (
@@ -401,74 +458,21 @@ export function CrmPage({
                       <Timeline items={personInteractions} />
                     )}
                     </details>
-                    {realApiMode && canManage && (
-                      <div className="stack-form">
-                        <SelectField
-                          label="Loại tương tác"
-                          value={interactionType}
-                          onChange={(e) => setInteractionType(e.target.value as typeof interactionType)}
-                        >
-                          <option value="NOTE">Ghi chú</option>
-                          <option value="INQUIRY">Hỏi thông tin</option>
-                          <option value="CONSULTATION">Tư vấn</option>
-                          <option value="COMPLAINT">Khiếu nại</option>
-                          <option value="FOLLOW_UP">Theo dõi sau thuê</option>
-                        </SelectField>
-                        <SelectField
-                          label="Kênh"
-                          value={interactionChannel}
-                          onChange={(e) => setInteractionChannel(e.target.value as typeof interactionChannel)}
-                        >
-                          <option value="IN_PERSON">Tại quầy</option>
-                          <option value="PHONE">Điện thoại</option>
-                          <option value="EMAIL">Email</option>
-                          <option value="CHAT">Chat</option>
-                          <option value="SOCIAL">Mạng xã hội</option>
-                        </SelectField>
-                        <TextAreaField
-                          label="Nội dung tương tác"
-                          value={interactionNote}
-                          onChange={(e) => setInteractionNote(e.target.value)}
-                          placeholder="Ghi ngắn gọn nhu cầu hoặc kết quả trao đổi"
-                        />
-                        <Button loading={busy} onClick={() => void saveInteraction(person.code)}>
-                          Ghi tương tác
-                        </Button>
-                      </div>
-                    )}
                   </Panel>
                   <Panel
-                    title="Case liên quan"
+                    title="Yêu cầu hỗ trợ"
                     action={
                       canManage ? (
                         <Button
                           variant="quiet"
-                          onClick={() => {
-                            if (draft) {
-                              setPendingView({ kind: 'newCase', code: person.code });
-                              return;
-                            }
-                            const value: Case = {
-                              code: `CS-DEMO-${(casesResource.data ?? []).length + 1}`,
-                              customerCode: person.code,
-                              branch,
-                              subject: '',
-                              description: '',
-                              priority: 'NORMAL',
-                              status: 'OPEN',
-                              history: [],
-                            };
-                            setDraft(value);
-                            setCaseCode(value.code);
-                            revealCase();
-                          }}
+                          onClick={() => startNewCase(person.code)}
                         >
-                          + Tạo case
+                          + Tạo yêu cầu
                         </Button>
                       ) : undefined
                     }
                   >
-                    <div className="responsive-table crm-case-table" role="region" aria-label="Danh sách case của khách" tabIndex={0}>
+                    <div className="responsive-table crm-case-table" role="region" aria-label="Danh sách yêu cầu hỗ trợ của khách" tabIndex={0}>
                       <table>
                         <thead><tr><th>Mã</th><th>Nội dung</th><th>Ưu tiên</th><th>Hạn xử lý</th><th>Trạng thái</th><th>Người xử lý</th></tr></thead>
                         <tbody>
@@ -509,7 +513,7 @@ export function CrmPage({
                         </button>
                       ))}
                     </div>
-                    {!related.length && <p className="muted">Chưa có case.</p>}
+                    {!related.length && <p className="muted">Khách hàng chưa có yêu cầu hỗ trợ.</p>}
                   </Panel>
                 </div>
               ) : (
@@ -517,13 +521,19 @@ export function CrmPage({
                   <p className="muted">Chọn khách ở cột bên trái.</p>
                 </Panel>
               )}
-              <div
-                ref={caseDetailRef}
-                tabIndex={-1}
-                role="region"
-                aria-label="Chi tiết case đang chọn"
-              >
-                {editing ? (
+              {caseDetailOpen && editing && (
+                <DetailDialog
+                  title={draft ? 'Tạo yêu cầu hỗ trợ' : 'Yêu cầu ' + editing.code}
+                  closeLabel="Đóng yêu cầu hỗ trợ"
+                  onClose={() => {
+                    if (draft) setPendingView({ kind: 'closeCase', code: draft.code });
+                    else setCaseDetailOpen(false);
+                  }}
+                >
+                  <div className="crm-case-dialog-context">
+                    <span>Khách hàng<strong>{person?.name ?? editing.customerCode}</strong></span>
+                    <span>Chi nhánh xử lý<strong>{editing.branch}</strong></span>
+                  </div>
                   <Panel title={editing.code}>
                     <StatusLabel
                       text={caseStatusLabels[editing.status]}
@@ -537,7 +547,7 @@ export function CrmPage({
                     />
                     <fieldset className="fieldset-reset stack-form" disabled={!canManage}>
                       <Field
-                        label="Tiêu đề case"
+                        label="Tiêu đề yêu cầu"
                         value={editing.subject}
                         onChange={(e) => setDraft({ ...editing, subject: e.target.value })}
                       />
@@ -578,7 +588,7 @@ export function CrmPage({
                             ...editing,
                             owner: e.target.value || undefined,
                             history: [
-                              `${formatVietnamDateTime(new Date())} · Chuyển case cho ${e.target.value || 'chưa phân công'}`,
+                              `${formatVietnamDateTime(new Date())} · Chuyển yêu cầu cho ${e.target.value || 'chưa phân công'}`,
                               ...editing.history,
                             ],
                           });
@@ -597,30 +607,30 @@ export function CrmPage({
                         ))}
                       </SelectField>
                       {ownerUnavailable && (
-                        <Feedback tone="warning" title="Cần phân công lại case">
+                        <Feedback tone="warning" title="Cần phân công lại yêu cầu">
                           Người phụ trách hiện tại không còn tài khoản hoặc phân công đang hoạt động
                           tại {editing.branch}. Lịch sử cũ vẫn được giữ.
                         </Feedback>
                       )}
                       {realApiMode && (
                         <div className="field">
-                          <span>Chi nhánh xử lý case</span>
+                          <span>Chi nhánh xử lý yêu cầu</span>
                           <strong>{editing.branch}</strong>
                           <p className="field-hint">
-                            Chi nhánh được khóa theo case trên máy chủ; API hiện chưa hỗ trợ chuyển case giữa chi nhánh.
+                            Yêu cầu được xử lý tại chi nhánh đã chọn và hiện chưa thể chuyển sang chi nhánh khác.
                           </p>
                         </div>
                       )}
                       {!realApiMode && (
                         <BranchSelector
-                          label="Chi nhánh xử lý case"
+                          label="Chi nhánh xử lý yêu cầu"
                           value={editing.branch}
                           onChange={(v) => {
                             setIssue('');
                             setDraft({
                               ...editing,
                               branch: v,
-                              history: [`${formatVietnamDateTime(new Date())} · Chuyển case sang ${v}`, ...editing.history],
+                              history: [`${formatVietnamDateTime(new Date())} · Chuyển yêu cầu sang ${v}`, ...editing.history],
                             });
                           }}
                         />
@@ -649,18 +659,18 @@ export function CrmPage({
                           loading={busy}
                           onClick={() => {
                             if (!editing.subject.trim()) {
-                              setIssue('Nhập tiêu đề case.');
+                              setIssue('Nhập tiêu đề yêu cầu.');
                               return;
                             }
                             void saveCase({
                               ...editing,
                               history: editing.history.length
                                 ? editing.history
-                                : [`${formatVietnamDateTime(new Date())} · Tạo case`],
+                                : [`${formatVietnamDateTime(new Date())} · Tạo yêu cầu`],
                             });
                           }}
                         >
-                          Lưu case
+                          Lưu yêu cầu
                         </Button>
                         {editing.status === 'OPEN' && (
                           <Button
@@ -671,7 +681,7 @@ export function CrmPage({
                                 ...editing,
                                 status: 'IN_PROGRESS',
                                 history: [
-                                  `${formatVietnamDateTime(new Date())} · ${editing.owner} bắt đầu xử lý case`,
+                                  `${formatVietnamDateTime(new Date())} · ${editing.owner} bắt đầu xử lý yêu cầu`,
                                   ...editing.history,
                                 ],
                               })
@@ -681,51 +691,130 @@ export function CrmPage({
                           </Button>
                         )}
                         {draft && (
-                          <Button variant="quiet" onClick={() => setDraft(undefined)}>
+                          <Button
+                            variant="quiet"
+                            onClick={() => {
+                              const isNew = current?.code !== editing.code;
+                              setDraft(undefined);
+                              if (isNew) setCaseDetailOpen(false);
+                            }}
+                          >
                             Bỏ thay đổi
                           </Button>
                         )}
                       </div>
                       {draft && (
                         <p className="field-hint" role="status">
-                          Case có thay đổi chưa lưu.
+                          Yêu cầu có thay đổi chưa lưu.
                         </p>
                       )}
                     </fieldset>
                     <details className="crm-history-section">
-                      <summary>Lịch sử case</summary>
+                      <summary>Lịch sử xử lý</summary>
                     {realApiMode && editing === current && current && apiCaseHistoryErrors[current.code] ? (
                       <Feedback
                         tone="danger"
-                        title="Chưa tải được lịch sử case"
+                        title="Chưa tải được lịch sử yêu cầu"
                         action={<Button variant="secondary" onClick={() => {
                           setApiCaseHistoryErrors((errors) => ({ ...errors, [current.code]: false }));
                           setCaseHistoryRetry((value) => value + 1);
                         }}>Thử lại</Button>}
                       >
-                        Timeline chưa được tải từ máy chủ.
+                        Chưa tải được lịch sử cập nhật.
                       </Feedback>
                     ) : realApiMode && editing === current && current && (apiCaseHistory[current.code] === undefined && !apiCaseHistoryErrors[current.code]) ? (
-                      <p className="muted" role="status">Đang tải lịch sử case…</p>
+                      <p className="muted" role="status">Đang tải lịch sử…</p>
                     ) : (
                       <Timeline items={editing === current ? currentHistory : editing.history} />
                     )}
                     </details>
                   </Panel>
-                ) : (
-                  <Panel title="Chi tiết case">
-                    <p className="muted">Chọn case hoặc tạo case mới cho khách đang xem.</p>
-                  </Panel>
-                )}
-                <InlineIssue text={issue} conflict={scenario === 'version'} />
-                {notice && (
-                  <Feedback tone="success" title="Đã lưu">
-                    {notice}
-                  </Feedback>
-                )}
-              </div>
+                  <InlineIssue text={issue} conflict={scenario === 'version'} />
+                  {notice && (
+                    <Feedback tone="success" title="Đã lưu">
+                      {notice}
+                    </Feedback>
+                  )}
+                </DetailDialog>
+              )}
               </div>
             </div>
+            {interactionOpen && person && (
+              <DetailDialog
+                title={'Ghi nhận trao đổi · ' + person.name}
+                closeLabel="Đóng ghi nhận trao đổi"
+                  onClose={closeInteraction}
+              >
+                <div className="crm-interaction-dialog">
+                  <KeyFacts
+                    rows={[
+                      { label: 'Mã khách', value: person.code },
+                      { label: 'Điện thoại', value: person.phone },
+                    ]}
+                  />
+                  <div className="stack-form">
+                    <SelectField
+                      label="Loại trao đổi"
+                      value={interactionType}
+                      onChange={(event) => setInteractionType(event.target.value as typeof interactionType)}
+                    >
+                      <option value="NOTE">Ghi chú</option>
+                      <option value="INQUIRY">Hỏi thông tin</option>
+                      <option value="CONSULTATION">Tư vấn</option>
+                      <option value="COMPLAINT">Khiếu nại</option>
+                      <option value="FOLLOW_UP">Theo dõi sau thuê</option>
+                    </SelectField>
+                    <SelectField
+                      label="Kênh liên hệ"
+                      value={interactionChannel}
+                      onChange={(event) => setInteractionChannel(event.target.value as typeof interactionChannel)}
+                    >
+                      <option value="IN_PERSON">Tại quầy</option>
+                      <option value="PHONE">Điện thoại</option>
+                      <option value="EMAIL">Email</option>
+                      <option value="CHAT">Chat</option>
+                      <option value="SOCIAL">Mạng xã hội</option>
+                    </SelectField>
+                    <TextAreaField
+                      label="Nội dung trao đổi"
+                      value={interactionNote}
+                      onChange={(event) => setInteractionNote(event.target.value)}
+                      placeholder="Tóm tắt nhu cầu hoặc kết quả trao đổi"
+                    />
+                    <InlineIssue text={issue} />
+                    {notice && <Feedback tone="success" title="Đã lưu ghi nhận">{notice}</Feedback>}
+                    <div className="feature-actions">
+                      <Button
+                        loading={busy}
+                        disabled={!interactionNote.trim()}
+                        onClick={() => void saveInteraction(person.code)}
+                      >
+                        Lưu ghi nhận
+                      </Button>
+                      <Button variant="secondary" disabled={busy} onClick={closeInteraction}>
+                        Hủy
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </DetailDialog>
+            )}
+            {interactionDiscardOpen && (
+              <ConfirmDialog
+                title="Bỏ nội dung chưa lưu?"
+                confirmText="Bỏ nội dung"
+                onClose={() => setInteractionDiscardOpen(false)}
+                onConfirm={() => {
+                  setInteractionDiscardOpen(false);
+                  setInteractionOpen(false);
+                  setInteractionNote('');
+                  setIssue('');
+                  setNotice('');
+                }}
+              >
+                <p>Nội dung trao đổi đang nhập sẽ bị xóa.</p>
+              </ConfirmDialog>
+            )}
             {newCustomer && (
               <ConfirmDialog
                 title="Tạo hồ sơ khách"
@@ -785,20 +874,26 @@ export function CrmPage({
             )}
             {pendingView && (
               <ConfirmDialog
-                title="Case có thay đổi chưa lưu"
-                confirmText="Bỏ thay đổi và tiếp tục"
+                title={pendingView.kind === 'closeCase' ? 'Bỏ nội dung chưa lưu?' : 'Yêu cầu có thay đổi chưa lưu'}
+                confirmText={pendingView.kind === 'closeCase' ? 'Bỏ nội dung' : 'Bỏ thay đổi và tiếp tục'}
                 onClose={() => setPendingView(undefined)}
                 onConfirm={() => {
                   const next = pendingView;
                   setDraft(undefined);
                   setPendingView(undefined);
+                  if (next.kind === 'closeCase') {
+                    setCaseDetailOpen(false);
+                    return;
+                  }
                   if (next.kind === 'customer') {
                     setSelected(next.code);
                     setCaseCode('');
-                    revealCustomer();
+                    setCaseDetailOpen(false);
                   } else if (next.kind === 'case') {
+                    const selectedCase = (casesResource.data ?? []).find((item) => item.code === next.code);
+                    if (selectedCase) setSelected(selectedCase.customerCode);
                     setCaseCode(next.code);
-                    revealCase();
+                    setCaseDetailOpen(true);
                   } else {
                     const value: Case = {
                       code: `CS-DEMO-${(casesResource.data ?? []).length + 1}`,
@@ -810,13 +905,18 @@ export function CrmPage({
                       status: 'OPEN',
                       history: [],
                     };
+                    setSelected(next.code);
                     setCaseCode(value.code);
                     setDraft(value);
-                    revealCase();
+                    setCaseDetailOpen(true);
                   }
                 }}
               >
-                <p>Nội dung case đang nhập sẽ mất. Bạn có thể quay lại để lưu trước.</p>
+                <p>
+                  {pendingView.kind === 'closeCase'
+                    ? 'Nội dung yêu cầu đang nhập sẽ bị xóa nếu bạn đóng cửa sổ.'
+                    : 'Nếu tiếp tục, nội dung yêu cầu chưa lưu sẽ bị mất. Bạn có thể quay lại để lưu trước.'}
+                </p>
               </ConfirmDialog>
             )}
           </div>

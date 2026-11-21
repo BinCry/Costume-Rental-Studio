@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import type { Navigate } from '../App';
 import {
   Button,
@@ -15,14 +15,12 @@ import {
 } from '../components/ui';
 import { formatVietnamDateTime } from '../utils/date-format';
 import {
-  BarcodeLookup,
   BranchSelector,
   FilterBar,
   InlineIssue,
   KeyFacts,
   PageHeading,
   Panel,
-  SearchField,
   StateGate,
   Timeline,
   UnitDetailPanel,
@@ -35,7 +33,6 @@ import {
 } from '../components/statusLabels';
 import { useFixtureResource } from '../components/useFixtureResource';
 import { useBranchOptions } from '../components/useBranchOptions';
-import { useMobileDetailReveal } from '../components/useMobileDetailReveal';
 import {
   studioAdapter,
   type Transfer,
@@ -252,6 +249,7 @@ export function InventoryPage({
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('Tất cả');
   const [selected, setSelected] = useState<Unit>();
+  const [barcodeIssue, setBarcodeIssue] = useState('');
   const [blockType, setBlockType] = useState<UnitBlock['type']>('CLEANING');
   const [from, setFrom] = useState(() => localDateTimeInput(60));
   const [until, setUntil] = useState(() => localDateTimeInput(180));
@@ -274,9 +272,9 @@ export function InventoryPage({
   const [inspectionGrade, setInspectionGrade] = useState<
     'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED'
   >('GOOD');
-  const [unitTargetStatus, setUnitTargetStatus] = useState<'READY' | 'CLEANING' | 'REPAIR'>(
-    'CLEANING',
-  );
+  const [unitTargetStatus, setUnitTargetStatus] = useState<
+    '' | 'READY' | 'CLEANING' | 'REPAIR'
+  >('');
   const [operationNotes, setOperationNotes] = useState('');
   const [retirementOpen, setRetirementOpen] = useState(false);
   const [retirementNotes, setRetirementNotes] = useState('');
@@ -320,6 +318,7 @@ export function InventoryPage({
   const selectUnit = (unit: Unit) => {
     setIssue('');
     setNotice('');
+    setUnitTargetStatus('');
     setBlockIssue('');
     setBlockNotice('');
     setScheduleIssue('');
@@ -535,7 +534,7 @@ export function InventoryPage({
           : ([] as const);
   const effectiveUnitTarget = availableStatusTargets.some((status) => status === unitTargetStatus)
     ? unitTargetStatus
-    : (availableStatusTargets[0] ?? 'READY');
+    : '';
   return (
     <StateGate
       loading={loading}
@@ -545,6 +544,44 @@ export function InventoryPage({
       emptyTitle="Kho chưa có bộ trang phục"
     >
       {(units) => {
+        const lookupScannedBarcode = (event: KeyboardEvent<HTMLInputElement>) => {
+          if (event.key !== 'Enter') return;
+          const code = search.trim().toUpperCase();
+          if (!code) return;
+
+          const exactBarcode = units.some((unit) => unit.barcode.toUpperCase() === code);
+          const modelMatch = units.some(
+            (unit) =>
+              unit.branch === branch &&
+              `${unit.model} ${unit.variant}`
+                .toLocaleLowerCase('vi')
+                .includes(search.trim().toLocaleLowerCase('vi')),
+          );
+          const barcodeLike =
+            /^[A-Z0-9][A-Z0-9._/-]{2,49}$/i.test(code) && /[0-9_-]/.test(code);
+          if (!exactBarcode && (!barcodeLike || modelMatch)) return;
+
+          event.preventDefault();
+          setBarcodeIssue('');
+          if (!exactBarcode) {
+            setBarcodeIssue('Không tìm thấy barcode này trong kho. Kiểm tra mã hoặc chi nhánh.');
+            return;
+          }
+          void studioAdapter
+            .barcode(code, branch, scenario)
+            .then((unit) => {
+              if (unit.branch !== branch) {
+                setBarcodeIssue(`Barcode ${code} thuộc ${unit.branch}, không thuộc chi nhánh đang mở.`);
+                return;
+              }
+              setSearch(code);
+              setFilter('Tất cả');
+              selectUnit(unit);
+            })
+            .catch((error) => {
+              setBarcodeIssue(error instanceof Error ? error.message : 'Không tìm thấy barcode.');
+            });
+        };
         const visible = units.filter(
           (u) =>
             u.branch === branch &&
@@ -591,16 +628,18 @@ export function InventoryPage({
                 tabIndex={0}
               >
                 <Panel title="Tra cứu bộ">
-                  <BarcodeLookup
-                    branch={branch}
-                    scenario={scenario}
-                    onFound={(unit) => {
-                      selectUnit(unit);
-                    }}
-                    onError={closeUnitDetail}
-                  />
                   <FilterBar>
-                    <SearchField label="Tìm barcode hoặc mẫu" value={search} onChange={setSearch} />
+                    <Field
+                      label="Tìm mẫu hoặc quét barcode"
+                      value={search}
+                      placeholder="Tên mẫu, size/màu hoặc barcode"
+                      autoComplete="off"
+                      onChange={(event) => {
+                        setSearch(event.target.value);
+                        setBarcodeIssue('');
+                      }}
+                      onKeyDown={lookupScannedBarcode}
+                    />
                     <SelectField
                       label="Trạng thái vận hành"
                       value={filter}
@@ -614,8 +653,72 @@ export function InventoryPage({
                       ))}
                     </SelectField>
                   </FilterBar>
+                  <p className="field-hint">
+                    Quét barcode rồi nhấn Enter để mở chi tiết; gõ tên mẫu để lọc danh sách.
+                  </p>
+                  <InlineIssue text={barcodeIssue} />
                 </Panel>
                 <Panel title={`${visible.length} bộ tại ${branch}`}>
+                  <div className="inventory-unit-cards" aria-label="Danh sách bộ trang phục">
+                    {visible.map((unit) => (
+                      <article
+                        className={`inventory-unit-card ${selected?.barcode === unit.barcode ? 'selected' : ''}`}
+                        key={unit.barcode}
+                      >
+                        <div className="inventory-unit-card__head">
+                          <div>
+                            <strong>{unit.barcode}</strong>
+                            <span>{unit.model}</span>
+                            <small>{unit.variant}</small>
+                          </div>
+                          <StatusLabel
+                            text={unitStatusLabels[unit.status]}
+                            tone={
+                              unit.status === 'READY'
+                                ? 'success'
+                                : unit.status === 'REPAIR'
+                                  ? 'danger'
+                                  : 'warning'
+                            }
+                          />
+                        </div>
+                        <dl className="inventory-unit-card__facts">
+                          <div>
+                            <dt>Tình trạng</dt>
+                            <dd>{conditionLabels[unit.condition] ?? unit.condition}</dd>
+                          </div>
+                          <div>
+                            <dt>Khả dụng</dt>
+                            <dd>{unit.available ? 'Có sẵn' : 'Không khả dụng'}</dd>
+                          </div>
+                          <div>
+                            <dt>Lịch chặn</dt>
+                            <dd>
+                              {
+                                unit.blocks.filter(
+                                  (block) =>
+                                    block.status !== 'COMPLETED' && block.status !== 'CANCELLED',
+                                ).length
+                              }
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Ngày nhập</dt>
+                            <dd>{unit.acquiredAt ? formatVietnamDateTime(unit.acquiredAt) : '—'}</dd>
+                          </div>
+                        </dl>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="inventory-detail-action"
+                          aria-label={`Chi tiết bộ ${unit.barcode}`}
+                          onClick={() => selectUnit(unit)}
+                        >
+                          Chi tiết bộ
+                        </Button>
+                      </article>
+                    ))}
+                  </div>
                   <p className="table-scroll-hint">Trên điện thoại, vuốt ngang để xem đủ cột.</p>
                   <div
                     className="responsive-table inventory-unit-table"
@@ -662,7 +765,7 @@ export function InventoryPage({
                                 }
                               />
                             </td>
-                            <td>{u.available ? 'Có thể kiểm tra' : 'Không khả dụng'}</td>
+                            <td>{u.available ? 'Có sẵn' : 'Không khả dụng'}</td>
                             <td>
                               {
                                 u.blocks.filter(
@@ -688,7 +791,13 @@ export function InventoryPage({
                       </tbody>
                     </table>
                   </div>
-                  {!visible.length && <p className="muted">Không có bộ phù hợp bộ lọc.</p>}
+                  {!visible.length && (
+                    <p className="muted">
+                      {search.trim()
+                        ? 'Không tìm thấy barcode hoặc mẫu trong chi nhánh này.'
+                        : 'Không có bộ phù hợp bộ lọc.'}
+                    </p>
+                  )}
                 </Panel>
                 <details className="inventory-secondary-section">
                   <summary>
@@ -945,6 +1054,7 @@ export function InventoryPage({
                                   setUnitTargetStatus(event.target.value as typeof unitTargetStatus)
                                 }
                               >
+                                <option value="">Chọn trạng thái mới</option>
                                 {(selected.status === 'READY'
                                   ? ['CLEANING', 'REPAIR']
                                   : selected.status === 'CLEANING'
@@ -963,7 +1073,9 @@ export function InventoryPage({
                               />
                               <Button
                                 loading={busy}
+                                disabled={busy || !effectiveUnitTarget}
                                 onClick={() =>
+                                  effectiveUnitTarget &&
                                   void updateUnit(
                                     () =>
                                       changeInventoryUnitStatus(selected.apiId!, {
@@ -1356,7 +1468,7 @@ export function TransfersPage({
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [showCreateTransfer, setShowCreateTransfer] = useState(false);
-  const { detailRef, revealDetail } = useMobileDetailReveal<HTMLDivElement>();
+  const [detailOpen, setDetailOpen] = useState(false);
   const sourceBranch = realApiMode ? branch : from;
   const destinationOptions = branchOptions.filter((name) => name !== sourceBranch);
   const destinationBranch = realApiMode
@@ -1371,7 +1483,7 @@ export function TransfersPage({
     try {
       const result = await studioAdapter.saveTransfer(value, scenario);
       setSelected(result.code);
-      revealDetail();
+      setDetailOpen(true);
       setNote('');
       setShowCreateTransfer(false);
       setNotice(`Đã tạo ${result.code}; chờ duyệt trước khi xuất bộ.`);
@@ -1425,19 +1537,30 @@ export function TransfersPage({
               eyebrow="KHO / ĐIỀU CHUYỂN"
               title="Điều chuyển chi nhánh"
               action={
-                canManage && transfers.length > 0 ? (
+                canManage ? (
                   <Button
                     variant="secondary"
-                    onClick={() => setShowCreateTransfer((value) => !value)}
+                    onClick={() => {
+                      if (showCreateTransfer) {
+                        setShowCreateTransfer(false);
+                        return;
+                      }
+                      setDetailOpen(false);
+                      setIssue('');
+                      setShowCreateTransfer(true);
+                    }}
                   >
                     {showCreateTransfer ? 'Đóng biểu mẫu' : '+ Tạo phiếu'}
                   </Button>
                 ) : undefined
               }
             />
-            <div className="feature-two-column independent-scroll-workspace">
-              <div role="region" aria-label="Cuộn yêu cầu và danh sách điều chuyển" tabIndex={0}>
-                {canManage && (showCreateTransfer || transfers.length === 0) && (
+            <div className="admin-table-workspace transfer-admin-workspace">
+                {canManage && showCreateTransfer && (
+                  <DetailDialog
+                    title="Tạo phiếu điều chuyển"
+                    onClose={() => setShowCreateTransfer(false)}
+                  >
                   <Panel title="Tạo yêu cầu">
                     <div className="feature-filters">
                       {realApiMode ? (
@@ -1517,7 +1640,9 @@ export function TransfersPage({
                     >
                       Tạo phiếu yêu cầu
                     </Button>
+                    <InlineIssue text={issue} conflict={scenario === 'conflict' || scenario === 'version'} />
                   </Panel>
+                  </DetailDialog>
                 )}
                 <Panel title="Phiếu điều chuyển">
                   {transfers.length === 0 ? (
@@ -1534,40 +1659,60 @@ export function TransfersPage({
                       <table>
                         <thead>
                           <tr>
-                            <th>Mã phiếu</th>
-                            <th>Từ</th>
-                            <th>Đến</th>
-                            <th>Bộ</th>
-                            <th>Trạng thái</th>
+                            <th scope="col">Mã phiếu</th>
+                            <th scope="col">Chi nhánh xuất</th>
+                            <th scope="col">Chi nhánh nhận</th>
+                            <th scope="col">Bộ</th>
+                            <th scope="col">Lý do</th>
+                            <th scope="col">Trạng thái</th>
+                            <th scope="col">Chi tiết</th>
                           </tr>
                         </thead>
                         <tbody>
                           {transfers.map((transfer) => (
                             <tr
                               key={transfer.code}
-                              className={current?.code === transfer.code ? 'selected' : ''}
+                              className={detailOpen && current?.code === transfer.code ? 'selected' : ''}
                             >
-                              <td data-label="Mã phiếu">
-                                <button
+                              <td data-label="Mã phiếu"><strong>{transfer.code}</strong></td>
+                              <td data-label="Chi nhánh xuất">{transfer.from}</td>
+                              <td data-label="Chi nhánh nhận">{transfer.to}</td>
+                              <td data-label="Bộ">
+                                {transfer.units.length} bộ · {transfer.units.map((unit) => unit.barcode).join(', ')}
+                              </td>
+                              <td data-label="Lý do">{transfer.note || '—'}</td>
+                              <td data-label="Trạng thái">
+                                <StatusLabel
+                                  text={transferStatus[transfer.status]}
+                                  tone={
+                                    transfer.status === 'RECEIVED'
+                                      ? 'success'
+                                      : transfer.status === 'REJECTED' || transfer.status === 'CANCELLED'
+                                        ? 'danger'
+                                        : 'warning'
+                                  }
+                                />
+                              </td>
+                              <td data-label="Chi tiết">
+                                <Button
                                   type="button"
-                                  className="text-link"
-                                  aria-pressed={current?.code === transfer.code}
+                                  variant="quiet"
+                                  disabled={busy}
+                                  aria-pressed={detailOpen && current?.code === transfer.code}
+                                  aria-label={`Chi tiết phiếu ${transfer.code}`}
                                   onClick={() => {
+                                    if (detailOpen && selected === transfer.code) return;
                                     setSelected(transfer.code);
                                     setChecks({});
+                                    setReason('');
+                                    setIssue('');
                                     setNotice('');
-                                    revealDetail();
+                                    setDetailOpen(true);
                                   }}
                                 >
-                                  {transfer.code}
-                                </button>
+                                  Chi tiết
+                                </Button>
                               </td>
-                              <td data-label="Từ">{transfer.from}</td>
-                              <td data-label="Đến">{transfer.to}</td>
-                              <td data-label="Bộ">
-                                {transfer.units.map((unit) => unit.barcode).join(', ')}
-                              </td>
-                              <td data-label="Trạng thái">{transferStatus[transfer.status]}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1575,15 +1720,12 @@ export function TransfersPage({
                     </div>
                   )}
                 </Panel>
-              </div>
-              {current ? (
-                <div
-                  ref={detailRef}
-                  tabIndex={0}
-                  role="region"
-                  aria-label="Chi tiết phiếu điều chuyển đang chọn"
-                  key={current.code}
+              {detailOpen && current && (
+                <DetailDialog
+                  title={`Phiếu điều chuyển ${current.code}`}
+                  onClose={() => setDetailOpen(false)}
                 >
+                <div tabIndex={0} role="region" aria-label="Chi tiết phiếu điều chuyển" key={current.code}>
                   <Panel title={current.code}>
                     <StatusLabel
                       text={transferStatus[current.status]}
@@ -1712,8 +1854,7 @@ export function TransfersPage({
                     </Feedback>
                   )}
                 </div>
-              ) : (
-                <EmptyState title="Chọn phiếu để xem chi tiết" />
+                </DetailDialog>
               )}
             </div>
           </div>

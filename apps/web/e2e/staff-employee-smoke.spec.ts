@@ -186,13 +186,15 @@ test('counter quote uses a real catalog variant and checks availability without 
 
   let quotedVariantId: string | undefined;
   let availabilityVariantId: string | null = null;
+  let quoteRequestCount = 0;
   await page.route('**/api/v1/rentals/quotes', async (route) => {
     const payload = JSON.parse(route.request().postData() ?? '{}') as {
       items?: { variantId?: string }[];
     };
     quotedVariantId = payload.items?.[0]?.variantId;
+    quoteRequestCount += 1;
     await fulfillJson(route, {
-      quoteExpiresAt: '2026-11-04T09:00:00.000Z',
+      quoteExpiresAt: new Date(Date.now() + (quoteRequestCount === 1 ? -60_000 : 60 * 60_000)).toISOString(),
       policy: { versionCode: 'E2E', billingDayMode: 'ROLLING_24_HOURS' },
       period: {
         billableDays: 2,
@@ -227,14 +229,19 @@ test('counter quote uses a real catalog variant and checks availability without 
   await page.goto('/van-hanh/tao-don');
   await expect(page.getByRole('heading', { name: 'Tạo đơn thuê tại quầy' })).toBeVisible();
   await expect(page.getByLabel('Biến thể')).toHaveValue(variantId);
-  await page.getByRole('button', { name: 'Kiểm tra khả dụng & báo giá' }).click();
+  await page.getByRole('button', { name: 'Xem báo giá' }).click();
 
   const quotePanel = page.getByRole('region', { name: 'Báo giá và xác nhận đơn tại quầy' });
-  await expect(quotePanel).toContainText('Báo giá hệ thống hết hạn');
+  await expect(quotePanel).toContainText('Báo giá đã hết hạn');
+  await expect(quotePanel.getByRole('button', { name: 'Xem báo giá mới' })).toBeVisible();
   await expect(quotePanel).toContainText('E2E-UNIT-01');
   expect(quotedVariantId).toBe(variantId);
   expect(availabilityVariantId).toBe(variantId);
-  await expect(page.getByRole('button', { name: 'Chỉ tạo yêu cầu chờ' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Chỉ tạo yêu cầu chờ' })).toBeDisabled();
+  await quotePanel.getByRole('button', { name: 'Xem báo giá mới' }).click();
+  await expect(quotePanel).not.toContainText('Báo giá đã hết hạn');
+  await expect(page.getByRole('button', { name: 'Chỉ tạo yêu cầu chờ' })).toBeEnabled();
+  expect(quoteRequestCount).toBe(2);
 });
 
 test('inventory can scroll horizontally by keyboard at 320px', async ({ page }) => {
@@ -285,9 +292,8 @@ test('staff reports use operations wording and load branch-scoped metrics', asyn
 
   await page.goto('/van-hanh/bao-cao');
   await expect(page.getByRole('heading', { name: 'Báo cáo vận hành' })).toBeVisible();
-  await expect(page.getByText('VẬN HÀNH / BÁO CÁO', { exact: true })).toBeVisible();
-  await expect(page.getByText('QUẢN TRỊ / BÁO CÁO', { exact: true })).toHaveCount(0);
-  await expect(
-    page.getByText(`Theo dõi tình hình thuê và thu chi tại ${branchName}.`, { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Bộ lọc báo cáo' })).toContainText(branchName);
+  await expect(page.locator('.feature-panel').filter({ has: page.getByRole('heading', { name: 'Lượt thuê' }) })).toContainText('1');
+  await expect(page.locator('.feature-panel').filter({ has: page.getByRole('heading', { name: 'Doanh thu tiền thuê' }) })).toContainText('120.000');
+  await expect(page.getByRole('heading', { name: 'Báo cáo quản trị' })).toHaveCount(0);
 });

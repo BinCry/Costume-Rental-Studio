@@ -9,7 +9,7 @@ import {
   type PromotionMutation,
   type PromotionRecord,
 } from '../api/client';
-import { Button, ConfirmDialog, DateTimeField, EmptyState, Feedback, Field, SelectField, StatusLabel } from '../components/ui';
+import { Button, ConfirmDialog, DateTimeField, DetailDialog, EmptyState, Feedback, Field, SelectField, StatusLabel } from '../components/ui';
 import { money } from '../components/support';
 import { PageHeading, Panel } from '../components/studio';
 import { formatVietnamDateTime } from '../utils/date-format';
@@ -274,8 +274,29 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
         action={
           <div className="feature-actions">
             {canManage && realApiMode && (
-              <Button onClick={() => setShowForm((value) => !value)}>
-                {showForm ? 'Đóng biểu mẫu' : editing ? 'Tiếp tục sửa mã' : '+ Tạo mã'}
+              <Button
+                onClick={() => {
+                  if (showForm) {
+                    setShowForm(false);
+                    return;
+                  }
+                  if (!editing && !formDirty) {
+                    const nextForm = newPromotionForm();
+                    setForm(nextForm);
+                    setFormBaseline(JSON.stringify(nextForm));
+                  }
+                  setIssue('');
+                  setNotice('');
+                  setShowForm(true);
+                }}
+              >
+                {showForm
+                  ? 'Đóng biểu mẫu'
+                  : editing
+                    ? 'Tiếp tục sửa mã'
+                    : formDirty
+                      ? 'Tiếp tục tạo mã'
+                      : '+ Tạo mã'}
               </Button>
             )}
             <Button variant="secondary" onClick={() => void reload()} loading={loading}>Tải lại</Button>
@@ -301,7 +322,7 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
           {error}
         </Feedback>
       )}
-      {issue && (
+      {issue && !showForm && (
         <Feedback tone="danger" title="Chưa thể hoàn tất">
           {issue}
         </Feedback>
@@ -312,16 +333,25 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
         </Feedback>
       )}
 
-      <div className={`promotion-admin-layout ${showForm ? 'form-open' : ''}`}>
+      <div className="promotion-admin-layout">
         {showForm && (
-        <Panel title={editing ? `Sửa ${editing.code}` : 'Tạo mã ưu đãi'}>
+        <DetailDialog
+          title={editing ? `Sửa mã ${editing.code}` : 'Tạo mã ưu đãi'}
+          closeLabel="Đóng biểu mẫu mã ưu đãi"
+          onClose={() => setShowForm(false)}
+        >
           <form
-            className="promotion-form"
+            className="promotion-form promotion-form--dialog"
             onSubmit={(event) => {
               event.preventDefault();
               void save();
             }}
           >
+            {issue && (
+              <Feedback tone="danger" title="Chưa thể lưu mã ưu đãi">
+                {issue}
+              </Feedback>
+            )}
             <fieldset disabled={!realApiMode || !canManage || busy}>
               <div className="promotion-form-grid">
                 <h3 className="promotion-form-section-title">Chương trình</h3>
@@ -454,7 +484,7 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
               </div>
             </fieldset>
           </form>
-        </Panel>
+        </DetailDialog>
         )}
 
         <Panel

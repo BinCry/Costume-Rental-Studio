@@ -607,8 +607,20 @@ export const permissions: Permission[] = [
     'Thu tiền thuê, cọc và phụ phí',
     'BRANCH',
   ],
-  ['crm.read.branch', 'CRM', 'Xem khách hàng', 'Xem hồ sơ và case trong chi nhánh', 'BRANCH'],
-  ['crm.manage.branch', 'CRM', 'Xử lý case', 'Tạo và cập nhật case trong chi nhánh', 'BRANCH'],
+  [
+    'crm.read.branch',
+    'CRM',
+    'Xem khách hàng',
+    'Xem hồ sơ và yêu cầu hỗ trợ trong chi nhánh',
+    'BRANCH',
+  ],
+  [
+    'crm.manage.branch',
+    'CRM',
+    'Quản lý yêu cầu hỗ trợ',
+    'Tạo và cập nhật yêu cầu hỗ trợ trong chi nhánh',
+    'BRANCH',
+  ],
   [
     'reports.read.branch',
     'Quản trị',
@@ -702,7 +714,7 @@ const cases: Case[] = [
     description: 'Cần xác nhận tình trạng tà áo và trao đổi với khách.',
     priority: 'HIGH',
     status: 'OPEN',
-    history: ['01/10/2026 · Thu Lê tạo case'],
+    history: ['01/10/2026 · Thu Lê tạo yêu cầu'],
   },
   {
     code: 'CS-002',
@@ -714,7 +726,7 @@ const cases: Case[] = [
     priority: 'NORMAL',
     status: 'IN_PROGRESS',
     owner: 'Hà Nguyễn',
-    history: ['03/10/2026 · Hà Nguyễn nhận case'],
+    history: ['03/10/2026 · Hà Nguyễn nhận xử lý yêu cầu'],
   },
 ];
 const policies: Policy[] = [
@@ -1422,7 +1434,7 @@ export const studioAdapter = {
           ? error
           : new FixtureIssue(
               'NETWORK',
-              error instanceof Error ? error.message : 'Không tải được case CRM.',
+              error instanceof Error ? error.message : 'Không tải được danh sách yêu cầu hỗ trợ.',
             );
       }
     }
