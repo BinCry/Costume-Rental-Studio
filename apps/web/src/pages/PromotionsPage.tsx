@@ -538,7 +538,8 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
                     <th>Mã / chương trình</th>
                     <th>Mức giảm</th>
                     <th>Đơn tối thiểu</th>
-                    <th>Hiệu lực</th>
+                    <th>Bắt đầu</th>
+                    <th>Kết thúc</th>
                     <th>Trạng thái</th>
                     <th>Thao tác</th>
                   </tr>
@@ -575,14 +576,11 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
                           </div>
                         </td>
                         <td data-label="Đơn tối thiểu">{money(item.minOrderAmountVnd)}</td>
-                        <td data-label="Hiệu lực" className="promotion-admin-dates">
-                          <div className="promotion-admin-date-range">
-                            <time dateTime={item.startAt}>
-                              {formatVietnamDateTime(item.startAt)}
-                            </time>
-                            <span aria-hidden="true">đến</span>
-                            <time dateTime={item.endAt}>{formatVietnamDateTime(item.endAt)}</time>
-                          </div>
+                        <td data-label="Bắt đầu" className="promotion-admin-dates">
+                          <time dateTime={item.startAt}>{formatVietnamDateTime(item.startAt)}</time>
+                        </td>
+                        <td data-label="Kết thúc" className="promotion-admin-dates">
+                          <time dateTime={item.endAt}>{formatVietnamDateTime(item.endAt)}</time>
                         </td>
                         <td data-label="Trạng thái">
                           <StatusLabel text={status.label} tone={status.tone} />
