@@ -58,6 +58,43 @@ export async function createPresignedUpload(
     const signed = await createPresignedPostUrl({ key: objectKey, contentType: input.contentType });
     return { objectKey, method: 'POST' as const, ...signed };
   }
+  if (input.purpose === 'rental-review') {
+    const order = await prisma.rentalOrder.findUnique({
+      where: { id: input.ownerId },
+      select: {
+        id: true,
+        customerUserId: true,
+        returnedAt: true,
+        status: true,
+        items: { where: { variantId: input.variantId }, select: { id: true } },
+      },
+    });
+    if (!order) throw new AppError(404, 'RENTAL_ORDER_NOT_FOUND', 'Rental order not found');
+    const ownsOrder =
+      actor.id === order.customerUserId &&
+      hasPermission(actor, {
+        module: 'rentals',
+        action: 'manage',
+        scope: 'OWN',
+      });
+    if (!ownsOrder)
+      throw new AppError(403, 'FORBIDDEN', 'Only the renter can upload review photos');
+    if (!order.returnedAt || !['RETURN_INSPECTION', 'COMPLETED'].includes(order.status))
+      throw new AppError(
+        409,
+        'REVIEW_NOT_AVAILABLE',
+        'Reviews are available after the outfit is returned',
+      );
+    if (!order.items.length)
+      throw new AppError(
+        400,
+        'REVIEW_VARIANT_NOT_IN_ORDER',
+        'This variant is not part of the rental order',
+      );
+    const objectKey = `rental-review-staging/orders/${order.id}/variants/${input.variantId}/users/${actor.id}/${randomUUID()}.${extensionByContentType[input.contentType]}`;
+    const signed = await createPresignedPostUrl({ key: objectKey, contentType: input.contentType });
+    return { objectKey, method: 'POST' as const, ...signed };
+  }
   const item = await prisma.rentalOrderItem.findUnique({
     where: { id: input.ownerId },
     select: { id: true, order: { select: { customerUserId: true, pickupBranchId: true } } },

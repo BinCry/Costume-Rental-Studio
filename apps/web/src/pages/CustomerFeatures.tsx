@@ -48,6 +48,7 @@ import { BranchAddressNote } from '../components/BranchAddressNote';
 import { isValidPhone } from '../utils/phone';
 import { rentalPeriodIssues } from '../utils/rental-period';
 import { minimumRentalDateTime, minimumRentalReturnDateTime } from '../utils/date-format';
+import { CustomerOrderReviews, ProductReviews } from './ReviewFeatures';
 
 const loadCostumeDetails =
   (id: string) =>
@@ -443,6 +444,7 @@ export function CostumeDetailPage({
                 </details>
               </div>
             </div>
+            <ProductReviews modelId={id} enabled={usePublicApi} />
           </div>
         );
       }}
@@ -587,122 +589,125 @@ export function MyRentalsPage({
               }
             />
             {selected ? (
-              <div className="feature-two-column">
-                <div>
-                  <p className="customer-next-step">
-                    <strong>Tiếp theo:</strong> {customerOrderNextStep(selected)}
-                  </p>
-                  <CustomerPaymentPanel
-                    orderId={selected.id}
-                    orderStatus={selected.status}
-                    payments={selected.apiPayments ?? []}
-                    expectedRental={selected.rental}
-                    expectedDeposit={selected.deposit}
-                    realApiMode={apiEnabled && hasAccessToken()}
-                    onOrdersRefresh={retry}
-                  />
-                  <Panel title="Thông tin thuê">
-                    <div className="feature-status-row">
-                      <StatusLabel {...orderStatus[selected.status]} />
-                      <StatusLabel
-                        text={`Tiền thuê: ${selected.rentalStatus}`}
-                        tone={
-                          selected.rentalStatus === 'Đã thu đủ'
-                            ? 'success'
-                            : selected.rentalStatus === 'Chưa thu'
-                              ? 'neutral'
-                              : 'warning'
-                        }
-                      />
-                      <StatusLabel text={`Cọc: ${selected.depositStatus}`} tone="info" />
-                      <StatusLabel text={`Trả: ${selected.returnStatus}`} tone="neutral" />
-                    </div>
-                    <KeyFacts
-                      rows={[
-                        {
-                          label: 'Trang phục',
-                          value:
-                            selected.items
-                              ?.map((item) => `${item.costume} · ${item.variant}`)
-                              .join(' / ') ?? `${selected.costume} · ${selected.variant}`,
-                        },
-                        { label: 'Chi nhánh nhận và trả', value: selected.branch },
-                        { label: 'Nhận', value: selected.pickup },
-                        { label: 'Hạn trả', value: selected.due },
-                      ]}
+              <>
+                <div className="feature-two-column">
+                  <div>
+                    <p className="customer-next-step">
+                      <strong>Tiếp theo:</strong> {customerOrderNextStep(selected)}
+                    </p>
+                    <CustomerPaymentPanel
+                      orderId={selected.id}
+                      orderStatus={selected.status}
+                      payments={selected.apiPayments ?? []}
+                      expectedRental={selected.rental}
+                      expectedDeposit={selected.deposit}
+                      realApiMode={apiEnabled && hasAccessToken()}
+                      onOrdersRefresh={retry}
                     />
-                    {(selected.reason ??
-                      (endReason?.orderId === selected.id ? endReason.text : undefined)) && (
-                      <Feedback tone="warning" title="Lý do kết thúc đơn">
-                        {selected.reason ?? endReason?.text}
-                      </Feedback>
-                    )}
-                    {endReason?.orderId === selected.id && endReason.error && (
-                      <Feedback
-                        tone="warning"
-                        title="Chưa tải được lý do"
-                        action={
-                          <Button
-                            variant="secondary"
-                            onClick={() => setReasonRetry((value) => value + 1)}
-                          >
-                            Thử lại
-                          </Button>
-                        }
-                      />
-                    )}
-                    {selected.canCancel && (
-                      <div className="destructive-area">
-                        <Button
-                          variant="danger"
-                          onClick={() => {
-                            setReason('');
-                            setIssue('');
-                            setDialog(true);
-                          }}
-                        >
-                          Hủy yêu cầu
-                        </Button>
-                      </div>
-                    )}
-                  </Panel>
-                  <details className="customer-order-history">
-                    <summary>Lịch sử đơn</summary>
-                    <Timeline items={selected.history} />
-                  </details>
-                </div>
-                <div>
-                  <MoneySummary
-                    rental={selected.rental}
-                    deposit={selected.deposit}
-                    extra={selected.extra}
-                  />
-                  {selected.refundStatus !== 'Chưa phát sinh' &&
-                    selected.refundStatus !== 'Chưa có dữ liệu' && (
-                      <Panel title="Hoàn tiền">
-                        <KeyFacts
-                          rows={[
-                            ...(selected.refund > 0
-                              ? [{ label: 'Đã hoàn', value: money(selected.refund) }]
-                              : []),
-                            ...(selected.refundPendingAmount
-                              ? [
-                                  {
-                                    label: 'Đang chờ hoàn',
-                                    value: money(selected.refundPendingAmount),
-                                  },
-                                ]
-                              : []),
-                            { label: 'Trạng thái', value: selected.refundStatus },
-                            ...(selected.refundUpdatedAt
-                              ? [{ label: 'Cập nhật', value: selected.refundUpdatedAt }]
-                              : []),
-                          ]}
+                    <Panel title="Thông tin thuê">
+                      <div className="feature-status-row">
+                        <StatusLabel {...orderStatus[selected.status]} />
+                        <StatusLabel
+                          text={`Tiền thuê: ${selected.rentalStatus}`}
+                          tone={
+                            selected.rentalStatus === 'Đã thu đủ'
+                              ? 'success'
+                              : selected.rentalStatus === 'Chưa thu'
+                                ? 'neutral'
+                                : 'warning'
+                          }
                         />
-                      </Panel>
-                    )}
+                        <StatusLabel text={`Cọc: ${selected.depositStatus}`} tone="info" />
+                        <StatusLabel text={`Trả: ${selected.returnStatus}`} tone="neutral" />
+                      </div>
+                      <KeyFacts
+                        rows={[
+                          {
+                            label: 'Trang phục',
+                            value:
+                              selected.items
+                                ?.map((item) => `${item.costume} · ${item.variant}`)
+                                .join(' / ') ?? `${selected.costume} · ${selected.variant}`,
+                          },
+                          { label: 'Chi nhánh nhận và trả', value: selected.branch },
+                          { label: 'Nhận', value: selected.pickup },
+                          { label: 'Hạn trả', value: selected.due },
+                        ]}
+                      />
+                      {(selected.reason ??
+                        (endReason?.orderId === selected.id ? endReason.text : undefined)) && (
+                        <Feedback tone="warning" title="Lý do kết thúc đơn">
+                          {selected.reason ?? endReason?.text}
+                        </Feedback>
+                      )}
+                      {endReason?.orderId === selected.id && endReason.error && (
+                        <Feedback
+                          tone="warning"
+                          title="Chưa tải được lý do"
+                          action={
+                            <Button
+                              variant="secondary"
+                              onClick={() => setReasonRetry((value) => value + 1)}
+                            >
+                              Thử lại
+                            </Button>
+                          }
+                        />
+                      )}
+                      {selected.canCancel && (
+                        <div className="destructive-area">
+                          <Button
+                            variant="danger"
+                            onClick={() => {
+                              setReason('');
+                              setIssue('');
+                              setDialog(true);
+                            }}
+                          >
+                            Hủy yêu cầu
+                          </Button>
+                        </div>
+                      )}
+                    </Panel>
+                    <details className="customer-order-history">
+                      <summary>Lịch sử đơn</summary>
+                      <Timeline items={selected.history} />
+                    </details>
+                  </div>
+                  <div>
+                    <MoneySummary
+                      rental={selected.rental}
+                      deposit={selected.deposit}
+                      extra={selected.extra}
+                    />
+                    {selected.refundStatus !== 'Chưa phát sinh' &&
+                      selected.refundStatus !== 'Chưa có dữ liệu' && (
+                        <Panel title="Hoàn tiền">
+                          <KeyFacts
+                            rows={[
+                              ...(selected.refund > 0
+                                ? [{ label: 'Đã hoàn', value: money(selected.refund) }]
+                                : []),
+                              ...(selected.refundPendingAmount
+                                ? [
+                                    {
+                                      label: 'Đang chờ hoàn',
+                                      value: money(selected.refundPendingAmount),
+                                    },
+                                  ]
+                                : []),
+                              { label: 'Trạng thái', value: selected.refundStatus },
+                              ...(selected.refundUpdatedAt
+                                ? [{ label: 'Cập nhật', value: selected.refundUpdatedAt }]
+                                : []),
+                            ]}
+                          />
+                        </Panel>
+                      )}
+                  </div>
                 </div>
-              </div>
+                <CustomerOrderReviews order={selected} onSaved={retry} />
+              </>
             ) : (
               <>
                 <FilterBar>
@@ -1095,8 +1100,8 @@ function CustomerPaymentPanel({
                 </Button>
               }
             >
-              Chi tiết đơn và quyết toán đang hiển thị số tiền khác nhau. Tạm thời chưa thể mở
-              thanh toán để tránh thu sai; nếu tải lại vẫn còn, vui lòng liên hệ Studio.
+              Chi tiết đơn và quyết toán đang hiển thị số tiền khác nhau. Tạm thời chưa thể mở thanh
+              toán để tránh thu sai; nếu tải lại vẫn còn, vui lòng liên hệ Studio.
             </Feedback>
           )}
           {rows.map((row) => {
@@ -1113,10 +1118,10 @@ function CustomerPaymentPanel({
               : row.due <= 0
                 ? 'Chưa phát sinh'
                 : row.remaining <= 0
-                ? 'Đã thanh toán đủ'
-                : row.paid > 0
-                  ? 'Đã thanh toán một phần'
-                  : 'Chưa thanh toán';
+                  ? 'Đã thanh toán đủ'
+                  : row.paid > 0
+                    ? 'Đã thanh toán một phần'
+                    : 'Chưa thanh toán';
             return (
               <div className="customer-payment-row" key={row.purpose}>
                 <div className="customer-payment-row__summary">

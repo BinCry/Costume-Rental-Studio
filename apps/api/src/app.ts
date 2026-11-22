@@ -35,6 +35,7 @@ import { knowledgeRouter } from './modules/knowledge/knowledge.route.js';
 import { agentRouter } from './modules/agent/agent.route.js';
 import { agentToolsInternalRouter } from './modules/agent-tools/agent-tools.route.js';
 import { openApiDocument } from './openapi.js';
+import { reviewRouter } from './modules/reviews/review.route.js';
 
 export function createApp() {
   const app = express();
@@ -150,6 +151,7 @@ export function createApp() {
   app.use('/api/v1/crm', crmRouter);
   app.use('/api/v1/scheduling', schedulingRouter);
   app.use('/api/v1/uploads', uploadRouter);
+  app.use('/api/v1/reviews', reviewRouter);
   app.use('/api/v1/promotions', promotionRouter);
   app.use('/api/v1/rental-policies', policyRouter);
   app.use('/api/v1/staff', staffRouter);

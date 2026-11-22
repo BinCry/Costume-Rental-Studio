@@ -156,6 +156,13 @@ enum RentalEvidencePhase {
   @@map("rental_evidence_phase")
 }
 
+enum RentalReviewStatus {
+  PUBLISHED
+  HIDDEN
+
+  @@map("rental_review_status")
+}
+
 enum InspectionStatus {
   PENDING_ASSESSMENT
   PASSED
@@ -575,6 +582,7 @@ model CostumeVariant {
   media                 CostumeMedia[]
   units                 CostumeUnit[]
   orderItems            RentalOrderItem[]
+  reviews               RentalReview[]
 
   @@index([modelId, status])
   @@map("costume_variants")
@@ -841,6 +849,7 @@ model RentalOrder {
   payments               Payment[]
   interactions           CustomerInteraction[]
   crmCases               CrmCase[]
+  reviews                RentalReview[]
   events                 RentalOrderEvent[]
 
   @@index([pickupBranchId, status, plannedStartAt])
@@ -883,6 +892,44 @@ model RentalOrderItem {
   @@index([orderId, allocationStatus])
   @@index([unitId, occupiedFrom, occupiedUntil, allocationStatus])
   @@map("rental_order_items")
+}
+
+model RentalReview {
+  id             String             @id @default(uuid()) @db.Uuid
+  orderId        String             @map("order_id") @db.Uuid
+  customerUserId String             @map("customer_user_id") @db.Uuid
+  variantId      String             @map("variant_id") @db.Uuid
+  stars          Int
+  content        String?            @db.Text
+  isAnonymous    Boolean            @default(true) @map("is_anonymous")
+  status         RentalReviewStatus @default(PUBLISHED)
+  moderationNote String?            @map("moderation_note") @db.VarChar(1000)
+  moderatedAt    DateTime?          @map("moderated_at") @db.Timestamptz(6)
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  order          RentalOrder        @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  customer       Customer           @relation(fields: [customerUserId], references: [userId], onDelete: Restrict)
+  variant        CostumeVariant     @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  media          RentalReviewMedia[]
+
+  @@unique([orderId, variantId])
+  @@index([variantId, status, createdAt])
+  @@index([customerUserId, createdAt])
+  @@index([status, createdAt])
+  @@map("rental_reviews")
+}
+
+model RentalReviewMedia {
+  id          String       @id @default(uuid()) @db.Uuid
+  reviewId    String       @map("review_id") @db.Uuid
+  objectKey   String       @unique @map("object_key") @db.VarChar(500)
+  contentType String       @map("content_type") @db.VarChar(100)
+  sortOrder   Int          @default(0) @map("sort_order")
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  review      RentalReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId, sortOrder])
+  @@map("rental_review_media")
 }
 
 model RentalItemEvidence {
@@ -1030,6 +1077,7 @@ model Customer {
   rentalOrders      RentalOrder[]
   interactions      CustomerInteraction[]
   crmCases          CrmCase[]
+  reviews           RentalReview[]
 
   @@map("customers")
 }

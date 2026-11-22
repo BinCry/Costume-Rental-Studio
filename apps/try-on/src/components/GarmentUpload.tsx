@@ -217,6 +217,8 @@ interface Props {
   /** Photo-mode person + pipeline result for the render-while-you-drag preview; null when no photo is loaded (the preview is skipped with a hint). */
   previewImage: ImageBitmap | null;
   previewResult: PipelineResult | null;
+  initiallyOpen?: boolean;
+  onClose?: () => void;
 }
 
 /**
@@ -228,9 +230,11 @@ interface Props {
  * All client-side; the matting model downloads lazily on first use of this
  * panel, independent of (and lazier than) the depth model.
  */
-export function GarmentUpload({ onGarmentAdded, previewImage, previewResult }: Props) {
+export function GarmentUpload({ onGarmentAdded, previewImage, previewResult, initiallyOpen = false, onClose }: Props) {
   const matting = useMatting();
-  const [step, setStep] = useState<UploadStep>({ kind: 'closed' });
+  const [step, setStep] = useState<UploadStep>(() =>
+    initiallyOpen ? { kind: 'front-select' } : { kind: 'closed' },
+  );
   const [category, setCategory] = useState<UploadCategory>('top');
   const [sleeves, setSleeves] = useState<SleeveLength>('half');
   const [length, setLength] = useState<HemLength>('hip');
@@ -239,6 +243,7 @@ export function GarmentUpload({ onGarmentAdded, previewImage, previewResult }: P
   // Close the panel if advanced mode itself gets turned off elsewhere —
   // this whole feature depends on the same opt-in ML infrastructure.
   useEffect(() => {
+    if (initiallyOpen) matting.setEnabled(true);
     return () => {
       matting.setEnabled(false);
     };
@@ -255,6 +260,7 @@ export function GarmentUpload({ onGarmentAdded, previewImage, previewResult }: P
     matting.setEnabled(false);
     setError(null);
     setStep({ kind: 'closed' });
+    onClose?.();
   };
 
   const isPants = category === 'pants';

@@ -18,6 +18,14 @@ export const createPresignedUploadSchema = z.discriminatedUnion('purpose', [
     contentType: z.enum(allowedImageContentTypes),
     size: z.coerce.number().int().positive(),
   }),
+  z.object({
+    purpose: z.literal('rental-review'),
+    ownerType: z.literal('rental-review'),
+    ownerId: z.uuid(),
+    variantId: z.uuid(),
+    contentType: z.enum(allowedImageContentTypes),
+    size: z.coerce.number().int().positive(),
+  }),
 ]);
 
 export type CreatePresignedUploadInput = z.infer<typeof createPresignedUploadSchema>;

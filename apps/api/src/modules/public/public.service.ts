@@ -116,11 +116,46 @@ export async function listPublicVariants(query: PublicCatalogListInput) {
     }),
     prisma.costumeVariant.count({ where }),
   ]);
+  const modelIds = [...new Set(items.map((item) => item.model.id))];
+  const modelVariantIds = modelIds.length
+    ? await prisma.costumeVariant.findMany({
+        where: { modelId: { in: modelIds } },
+        select: { id: true, modelId: true },
+      })
+    : [];
+  const reviewGroups = modelVariantIds.length
+    ? await prisma.rentalReview.groupBy({
+        by: ['variantId'],
+        where: {
+          status: 'PUBLISHED',
+          variantId: { in: modelVariantIds.map((variant) => variant.id) },
+        },
+        _sum: { stars: true },
+        _count: { _all: true },
+      })
+    : [];
+  const modelByVariant = new Map(modelVariantIds.map((variant) => [variant.id, variant.modelId]));
+  const summaries = new Map<string, { total: number; count: number }>();
+  reviewGroups.forEach((group) => {
+    const modelId = modelByVariant.get(group.variantId);
+    if (!modelId) return;
+    const current = summaries.get(modelId) ?? { total: 0, count: 0 };
+    current.total += group._sum.stars ?? 0;
+    current.count += group._count._all;
+    summaries.set(modelId, current);
+  });
   return pageResult(
     items.map((item) => ({
       ...item,
       model: {
         ...item.model,
+        reviewSummary: (() => {
+          const summary = summaries.get(item.model.id);
+          return {
+            average: summary ? summary.total / summary.count : 0,
+            count: summary?.count ?? 0,
+          };
+        })(),
         media: item.model.media.map(({ objectKey, ...media }) => ({
           ...media,
           mediaUrl: publicObjectUrl(objectKey),
@@ -146,10 +181,16 @@ export async function getPublicVariant(id: string) {
     select: publicVariantSelect,
   });
   if (!item) throw new AppError(404, 'VARIANT_NOT_FOUND', 'Variant not found');
+  const reviewSummary = await prisma.rentalReview.aggregate({
+    where: { status: 'PUBLISHED', variant: { modelId: item.model.id } },
+    _avg: { stars: true },
+    _count: { _all: true },
+  });
   return {
     ...item,
     model: {
       ...item.model,
+      reviewSummary: { average: reviewSummary._avg.stars ?? 0, count: reviewSummary._count._all },
       media: item.model.media.map(({ objectKey, ...media }) => ({
         ...media,
         mediaUrl: publicObjectUrl(objectKey),

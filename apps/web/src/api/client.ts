@@ -44,6 +44,7 @@ interface ApiModel {
   description?: string | null;
   material?: string | null;
   category?: { name?: string | null } | null;
+  reviewSummary?: { average: number; count: number };
   media?: { mediaUrl?: string | null; altText?: string | null }[];
 }
 type ApiAdminModel = ApiModel & {
@@ -114,6 +115,7 @@ interface ApiOrder {
   version: number;
   plannedStartAt: string;
   plannedDueAt: string;
+  returnedAt?: string | null;
   customerNote?: string | null;
   contactName?: string | null;
   contactPhone?: string | null;
@@ -1061,6 +1063,7 @@ export async function listCatalog(): Promise<CatalogItem[]> {
     imagePosition: group.imageUrl ? 'center' : 'missing',
     imageUrl: group.imageUrl,
     imageAlt: group.imageAlt,
+    reviewSummary: group.model?.reviewSummary,
     apiVariants: group.variants.map((variant) => ({
       id: variant.id,
       code: variant.variantCode,
@@ -1338,8 +1341,7 @@ function mapOrder(order: ApiOrder): Order {
     orderItems.reduce(
       (sum, item) => sum + numberValue(item.unitDailyPriceVnd) * (item.billableDays ?? 1),
       0,
-    ) -
-      numberValue(order.promotionDiscountVnd),
+    ) - numberValue(order.promotionDiscountVnd),
   );
   const deposit = orderItems.reduce((sum, item) => sum + numberValue(item.unitDepositVnd), 0);
   const extra = orderItems.reduce(
@@ -1404,6 +1406,7 @@ function mapOrder(order: ApiOrder): Order {
     branch,
     pickup: formatDate(order.plannedStartAt),
     returnAt: formatDate(order.plannedDueAt),
+    returnedAt: order.returnedAt ?? undefined,
     apiPlannedStartAt: order.plannedStartAt,
     apiPlannedDueAt: order.plannedDueAt,
     refundUpdatedAt: refundUpdatedAt ? formatDate(refundUpdatedAt) : undefined,
@@ -1562,7 +1565,12 @@ function customerOrderFromOrder(order: Order, customerCode: string): CustomerOrd
     due: order.returnAt,
     costume: order.items[0]?.costume ?? 'Trang phục',
     variant: order.items[0]?.variant ?? '',
-    items: order.items.map((item) => ({ costume: item.costume, variant: item.variant })),
+    returnedAt: order.returnedAt,
+    items: order.items.map((item) => ({
+      costume: item.costume,
+      variant: item.variant,
+      variantId: item.apiVariantId,
+    })),
     rental: rental?.amount ?? 0,
     deposit: deposit?.amount ?? 0,
     extra: extra?.amount ?? 0,
@@ -2408,14 +2416,6 @@ export async function saveStaff(employee: Employee) {
         employee.employmentStatus === 'TERMINATED' ? undefined : employee.employmentStatus,
     }),
   });
-  if (employee.employmentStatus === 'TERMINATED') {
-    await request(`/api/v1/staff/${encodeURIComponent(reference.userId)}/terminate`, {
-      method: 'POST',
-    });
-    return employee;
-  }
-  if (roleRefs.size === 0) await listRbacRoles();
-  if (branchIds.size === 0) await listBranches();
   const desired = new Map(
     employee.assignments.map((assignment) => [
       `${assignment.branch}|${assignment.roleCode}`,
@@ -2429,6 +2429,17 @@ export async function saveStaff(employee: Employee) {
         { method: 'DELETE' },
       );
   }
+
+  if (employee.employmentStatus === 'TERMINATED') {
+    await request(`/api/v1/staff/${encodeURIComponent(reference.userId)}/terminate`, {
+      method: 'POST',
+    });
+    staffRefs.delete(employee.code);
+    return employee;
+  }
+
+  if (roleRefs.size === 0) await listRbacRoles();
+  if (branchIds.size === 0) await listBranches();
   for (const [key, assignment] of desired) {
     if (reference.assignments.has(key)) continue;
     const roleId = roleRefs.get(assignment.roleCode);
@@ -2654,7 +2665,11 @@ export async function saveCrmCase(value: Case): Promise<Case> {
   if (!branchIds.has(value.branch)) await listBranches();
   const branchId = branchIds.get(value.branch);
   if (!branchId)
-    throw new ApiClientError(422, 'BRANCH_CONTEXT_MISSING', 'Không tìm thấy chi nhánh xử lý yêu cầu hỗ trợ.');
+    throw new ApiClientError(
+      422,
+      'BRANCH_CONTEXT_MISSING',
+      'Không tìm thấy chi nhánh xử lý yêu cầu hỗ trợ.',
+    );
   const reference = caseRefs.get(value.code);
   const customer = customerRefs.get(value.customerCode);
   if (!reference) {
@@ -2866,7 +2881,8 @@ export async function advanceTransfer(
       body: JSON.stringify({ expectedVersion: current.version }),
     });
   } else if (next === 'REJECTED' || next === 'CANCELLED') {
-    updated = await request<ApiTransfer>(path + '/' + next.toLowerCase(), {
+    const action = next === 'REJECTED' ? 'reject' : 'cancel';
+    updated = await request<ApiTransfer>(path + '/' + action, {
       method: 'POST',
       body: JSON.stringify({ expectedVersion: current.version, reason }),
     });
@@ -3631,6 +3647,201 @@ export async function deleteCatalogMedia(mediaId: string): Promise<void> {
 
 function orderApiId(orderCode: string) {
   return orderReference(orderCode).id;
+}
+
+export interface ReviewMedia {
+  id: string;
+  mediaUrl?: string;
+  contentType: string;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface RentalReviewRecord {
+  id: string;
+  orderId: string;
+  customerUserId: string;
+  variantId: string;
+  stars: number;
+  content: string | null;
+  isAnonymous: boolean;
+  status: 'PUBLISHED' | 'HIDDEN';
+  createdAt: string;
+  updatedAt: string;
+  authorName: string;
+  variant: {
+    id: string;
+    variantCode: string;
+    sizeCode: string;
+    colorCode: string;
+    model: { id: string; name: string };
+  };
+  order: { id: string; orderCode: string; returnedAt?: string | null };
+  media: ReviewMedia[];
+  moderationNote?: string | null;
+}
+
+export interface OrderReviewEligibility {
+  orderId: string;
+  orderCode: string;
+  returnedAt: string;
+  items: {
+    variant: {
+      id: string;
+      variantCode: string;
+      sizeCode: string;
+      colorCode: string;
+      model: { id: string; name: string };
+    };
+    review: null | {
+      id: string;
+      stars: number;
+      content: string | null;
+      isAnonymous: boolean;
+      status: 'PUBLISHED' | 'HIDDEN';
+      createdAt: string;
+      canEdit: boolean;
+      media: ReviewMedia[];
+    };
+  }[];
+}
+
+export interface ModelReviewPage {
+  summary: { average: number; count: number; distribution: { stars: number; count: number }[] };
+  items: {
+    id: string;
+    stars: number;
+    content: string | null;
+    authorName: string;
+    createdAt: string;
+    variant: { variantCode: string; sizeCode: string; colorCode: string };
+    media: ReviewMedia[];
+  }[];
+  pagination: { page: number; pageSize: number; totalItems: number; totalPages: number };
+}
+
+export async function getOrderReviewEligibility(
+  orderCode: string,
+): Promise<OrderReviewEligibility> {
+  return request(`/api/v1/reviews/orders/${encodeURIComponent(orderApiId(orderCode))}/eligibility`);
+}
+
+async function uploadReviewPhoto(orderId: string, variantId: string, file: File) {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type))
+    throw new ApiClientError(400, 'INVALID_REVIEW_MEDIA', 'Ảnh phải là JPEG, PNG hoặc WebP.');
+  if (file.size <= 0 || file.size > 10 * 1024 * 1024)
+    throw new ApiClientError(400, 'INVALID_REVIEW_MEDIA', 'Mỗi ảnh không được vượt quá 10 MB.');
+  const presigned = await request<{
+    objectKey: string;
+    uploadUrl: string;
+    fields: Record<string, string>;
+  }>('/api/v1/uploads/presign', {
+    method: 'POST',
+    body: JSON.stringify({
+      purpose: 'rental-review',
+      ownerType: 'rental-review',
+      ownerId: orderId,
+      variantId,
+      contentType: file.type,
+      size: file.size,
+    }),
+  });
+  const form = new FormData();
+  Object.entries(presigned.fields).forEach(([key, value]) => form.append(key, value));
+  form.append('file', file);
+  const uploaded = await fetch(presigned.uploadUrl, { method: 'POST', body: form });
+  if (!uploaded.ok)
+    throw new ApiClientError(
+      uploaded.status,
+      'REVIEW_PHOTO_UPLOAD_FAILED',
+      'Không tải được ảnh đánh giá.',
+    );
+  return presigned.objectKey;
+}
+
+export async function saveRentalReview(input: {
+  orderCode: string;
+  variantId: string;
+  reviewId?: string;
+  stars: number;
+  content: string;
+  isAnonymous: boolean;
+  keepMediaIds?: string[];
+  photos: File[];
+}): Promise<RentalReviewRecord> {
+  if (input.photos.length + (input.keepMediaIds?.length ?? 0) > 5)
+    throw new ApiClientError(400, 'TOO_MANY_REVIEW_PHOTOS', 'Mỗi đánh giá có tối đa 5 ảnh.');
+  const orderId = orderApiId(input.orderCode);
+  const uploadKeys = await Promise.all(
+    input.photos.map((file) => uploadReviewPhoto(orderId, input.variantId, file)),
+  );
+  const body = input.reviewId
+    ? {
+        stars: input.stars,
+        content: input.content,
+        isAnonymous: input.isAnonymous,
+        keepMediaIds: input.keepMediaIds ?? [],
+        uploadKeys,
+      }
+    : {
+        variantId: input.variantId,
+        stars: input.stars,
+        content: input.content,
+        isAnonymous: input.isAnonymous,
+        uploadKeys,
+      };
+  return request<RentalReviewRecord>(
+    input.reviewId
+      ? `/api/v1/reviews/${encodeURIComponent(input.reviewId)}`
+      : `/api/v1/reviews/orders/${encodeURIComponent(orderId)}`,
+    { method: input.reviewId ? 'PATCH' : 'POST', body: JSON.stringify(body) },
+  );
+}
+
+export async function getModelReviews(
+  modelId: string,
+  filters: { page?: number; pageSize?: number; rating?: number; hasPhotos?: boolean } = {},
+): Promise<ModelReviewPage> {
+  const query = new URLSearchParams({
+    page: String(filters.page ?? 1),
+    pageSize: String(filters.pageSize ?? 8),
+  });
+  if (filters.rating) query.set('rating', String(filters.rating));
+  if (filters.hasPhotos !== undefined) query.set('hasPhotos', String(filters.hasPhotos));
+  return request(`/api/v1/reviews/catalog/${encodeURIComponent(modelId)}?${query.toString()}`);
+}
+
+export async function listAdminReviews(
+  filters: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    status?: 'PUBLISHED' | 'HIDDEN';
+    rating?: number;
+  } = {},
+) {
+  const query = new URLSearchParams({
+    page: String(filters.page ?? 1),
+    pageSize: String(filters.pageSize ?? 20),
+  });
+  if (filters.search?.trim()) query.set('search', filters.search.trim());
+  if (filters.status) query.set('status', filters.status);
+  if (filters.rating) query.set('rating', String(filters.rating));
+  return request<Page<RentalReviewRecord>>(`/api/v1/reviews/admin?${query.toString()}`);
+}
+
+export async function moderateRentalReview(
+  reviewId: string,
+  status: 'PUBLISHED' | 'HIDDEN',
+  note?: string,
+) {
+  return request<RentalReviewRecord>(
+    `/api/v1/reviews/admin/${encodeURIComponent(reviewId)}/moderation`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ status, note }),
+    },
+  );
 }
 
 export async function recordCashPayment(

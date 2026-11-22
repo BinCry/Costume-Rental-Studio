@@ -32,6 +32,7 @@ export type Screen =
   | 'adminInventory'
   | 'adminTransfers'
   | 'adminCrm'
+  | 'adminReviews'
   | 'staffReports'
   | 'notFound';
 export type ActorGroup = 'ADMIN' | 'STAFF' | 'CUSTOMER' | 'UNASSIGNED';
@@ -75,6 +76,7 @@ export const paths: Record<Screen, string> = {
   adminInventory: '/quan-tri/kho',
   adminTransfers: '/quan-tri/dieu-chuyen',
   adminCrm: '/quan-tri/khach-hang',
+  adminReviews: '/quan-tri/danh-gia',
   staffReports: '/van-hanh/bao-cao',
   notFound: '/khong-tim-thay-trang',
 };
@@ -120,6 +122,7 @@ export function portalAreaForScreen(screen: Screen): PortalArea {
       'adminInventory',
       'adminTransfers',
       'adminCrm',
+      'adminReviews',
     ].includes(screen)
   )
     return 'ADMIN';

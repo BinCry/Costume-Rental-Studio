@@ -57,6 +57,11 @@ export const openApiDocument = {
       description:
         'Customer-support cases and append-only interaction/history timelines. Staff are restricted to their assigned branches unless granted CRM ALL permissions.',
     },
+    {
+      name: 'Reviews',
+      description:
+        'Verified rental reviews. Customers can review each distinct variant after a recorded return; catalog managers can hide or restore published reviews.',
+    },
   ],
   components: {
     securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },
@@ -76,6 +81,12 @@ export const openApiDocument = {
       },
       modelId: {
         name: 'modelId',
+        in: 'path',
+        required: true,
+        schema: { type: 'string', format: 'uuid' },
+      },
+      reviewId: {
+        name: 'reviewId',
         in: 'path',
         required: true,
         schema: { type: 'string', format: 'uuid' },
@@ -435,15 +446,43 @@ export const openApiDocument = {
         },
       },
       UploadPresignInput: {
-        type: 'object',
-        required: ['purpose', 'ownerType', 'ownerId', 'contentType', 'size'],
-        properties: {
-          purpose: { type: 'string', enum: ['catalog-media'] },
-          ownerType: { type: 'string', enum: ['model', 'variant'] },
-          ownerId: { type: 'string', format: 'uuid' },
-          contentType: { type: 'string', enum: ['image/jpeg', 'image/png', 'image/webp'] },
-          size: { type: 'integer', minimum: 1, maximum: 10485760 },
-        },
+        oneOf: [
+          {
+            type: 'object',
+            required: ['purpose', 'ownerType', 'ownerId', 'contentType', 'size'],
+            properties: {
+              purpose: { type: 'string', enum: ['catalog-media'] },
+              ownerType: { type: 'string', enum: ['model', 'variant'] },
+              ownerId: { type: 'string', format: 'uuid' },
+              contentType: { type: 'string', enum: ['image/jpeg', 'image/png', 'image/webp'] },
+              size: { type: 'integer', minimum: 1, maximum: 10485760 },
+            },
+          },
+          {
+            type: 'object',
+            required: ['purpose', 'ownerType', 'ownerId', 'variantId', 'contentType', 'size'],
+            properties: {
+              purpose: { type: 'string', enum: ['rental-review'] },
+              ownerType: { type: 'string', enum: ['rental-review'] },
+              ownerId: { type: 'string', format: 'uuid', description: 'Rental order id' },
+              variantId: { type: 'string', format: 'uuid' },
+              contentType: { type: 'string', enum: ['image/jpeg', 'image/png', 'image/webp'] },
+              size: { type: 'integer', minimum: 1, maximum: 10485760 },
+            },
+          },
+          {
+            type: 'object',
+            required: ['purpose', 'ownerType', 'ownerId', 'phase', 'contentType', 'size'],
+            properties: {
+              purpose: { type: 'string', enum: ['rental-evidence'] },
+              ownerType: { type: 'string', enum: ['rental-item'] },
+              ownerId: { type: 'string', format: 'uuid' },
+              phase: { type: 'string', enum: ['PICKUP', 'RETURN'] },
+              contentType: { type: 'string', enum: ['image/jpeg', 'image/png', 'image/webp'] },
+              size: { type: 'integer', minimum: 1, maximum: 10485760 },
+            },
+          },
+        ],
       },
       UploadPresignResponse: {
         type: 'object',
@@ -2632,6 +2671,132 @@ export const openApiDocument = {
         summary: 'Delete media',
         parameters: [{ $ref: '#/components/parameters/id' }],
         responses: { '204': { description: 'Media deleted' } },
+      },
+    },
+    '/reviews/catalog/{modelId}': {
+      get: {
+        tags: ['Reviews'],
+        summary: 'List published, verified rental reviews for a costume model',
+        parameters: [
+          { $ref: '#/components/parameters/modelId' },
+          { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1, default: 1 } },
+          {
+            name: 'pageSize',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 50, default: 10 },
+          },
+          { name: 'rating', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 5 } },
+          { name: 'hasPhotos', in: 'query', schema: { type: 'boolean' } },
+        ],
+        responses: { '200': { description: 'Published reviews and rating summary loaded' } },
+      },
+    },
+    '/reviews/orders/{orderId}/eligibility': {
+      get: {
+        tags: ['Reviews'],
+        security: [{ bearerAuth: [] }],
+        summary: 'List reviewable variants and existing reviews for a returned customer order',
+        parameters: [{ $ref: '#/components/parameters/orderId' }],
+        responses: {
+          '200': { description: 'Review eligibility loaded' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+        },
+      },
+    },
+    '/reviews/orders/{orderId}': {
+      post: {
+        tags: ['Reviews'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Submit one verified review for a distinct variant in a returned order',
+        parameters: [{ $ref: '#/components/parameters/orderId' }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['variantId', 'stars'],
+                properties: {
+                  variantId: { type: 'string', format: 'uuid' },
+                  stars: { type: 'integer', minimum: 1, maximum: 5 },
+                  content: { type: 'string', maxLength: 3000, nullable: true },
+                  isAnonymous: { type: 'boolean', default: true },
+                  uploadKeys: { type: 'array', maxItems: 5, items: { type: 'string' } },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '201': { description: 'Review submitted' },
+          '409': { description: 'Return has not been recorded or review already exists' },
+        },
+      },
+    },
+    '/reviews/{reviewId}': {
+      patch: {
+        tags: ['Reviews'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Edit your review within 30 days of submission',
+        parameters: [{ $ref: '#/components/parameters/reviewId' }],
+        responses: {
+          '200': { description: 'Review updated' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+          '409': { description: 'The 30-day editing window has closed' },
+        },
+      },
+    },
+    '/reviews/admin': {
+      get: {
+        tags: ['Reviews'],
+        security: [{ bearerAuth: [] }],
+        summary: 'List reviews for catalog moderation',
+        parameters: [
+          { $ref: '#/components/parameters/listQuery' },
+          {
+            name: 'pageSize',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          },
+          { name: 'search', in: 'query', schema: { type: 'string', maxLength: 100 } },
+          {
+            name: 'status',
+            in: 'query',
+            schema: { type: 'string', enum: ['PUBLISHED', 'HIDDEN'] },
+          },
+          { name: 'rating', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 5 } },
+        ],
+        responses: {
+          '200': { description: 'Admin review page loaded' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+        },
+      },
+    },
+    '/reviews/admin/{reviewId}/moderation': {
+      patch: {
+        tags: ['Reviews'],
+        security: [{ bearerAuth: [] }],
+        summary: 'Hide or restore a review',
+        parameters: [{ $ref: '#/components/parameters/reviewId' }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['status'],
+                properties: {
+                  status: { type: 'string', enum: ['PUBLISHED', 'HIDDEN'] },
+                  note: { type: 'string', maxLength: 1000, nullable: true },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Review moderation updated' },
+          '403': { $ref: '#/components/responses/Forbidden' },
+        },
       },
     },
   },

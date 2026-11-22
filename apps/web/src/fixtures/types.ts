@@ -41,6 +41,7 @@ export interface CatalogItem {
   /** Published image from the catalog API; absent in fixture data. */
   imageUrl?: string;
   imageAlt?: string;
+  reviewSummary?: { average: number; count: number };
   /** Public variant IDs and price snapshots used by availability checks. */
   apiVariants?: {
     id: string;
@@ -100,6 +101,7 @@ export interface Order {
   branch: string;
   pickup: string;
   returnAt: string;
+  returnedAt?: string;
   /** API timestamps used for availability checks; fixtures may omit them. */
   apiPlannedStartAt?: string;
   apiPlannedDueAt?: string;

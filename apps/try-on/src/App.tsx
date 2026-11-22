@@ -1,12 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { assetUrl } from './assetUrl';
 import { BitmapCanvas } from './components/BitmapCanvas';
-import { DebugCanvas, type GarmentOverlay } from './components/DebugCanvas';
+import type { GarmentOverlay } from './components/DebugCanvas';
 import { GarmentPicker } from './components/GarmentPicker';
-import { GarmentUpload } from './components/GarmentUpload';
-import { LooksPanel } from './components/LooksPanel';
+import { DeferredGarmentUpload } from './components/DeferredGarmentUpload';
 import { PerfStats } from './components/PerfStats';
-import { ReactionBar } from './components/ReactionBar';
 import { snapshotCanvas } from './components/snapshotCanvas';
 import { config } from './config';
 import { hasStudioSession, logoutStudioSession, restoreStudioSession } from './studioSession';
@@ -37,6 +35,16 @@ import type { SwipeDirection } from '@practics/tryon-core';
 import { depthToNormalMap } from '@practics/tryon-core';
 import { foreshortenFactor, selectGarmentView } from '@practics/tryon-core';
 import type { Accelerator, PipelineResult } from '@practics/tryon-core';
+
+const DebugCanvas = lazy(() =>
+  import('./components/DebugCanvas').then((module) => ({ default: module.DebugCanvas })),
+);
+const LooksPanel = lazy(() =>
+  import('./components/LooksPanel').then((module) => ({ default: module.LooksPanel })),
+);
+const ReactionBar = lazy(() =>
+  import('./components/ReactionBar').then((module) => ({ default: module.ReactionBar })),
+);
 
 /** The advanced-mode normal map(s) for the currently-selected garment
  * (Phase A3) — mirrors LoadedGarmentImages' single/lehenga-choli shape,
@@ -1296,18 +1304,26 @@ export default function App() {
                       🎨 Stylist put you in <strong>{agentApply.name}</strong>
                     </div>
                   )}
-                  <DebugCanvas
-                    ref={photoCanvasRef}
-                    image={displayImage}
-                    result={displayResult}
-                    showMask={showMask}
-                    showSkeleton={showSkeleton}
-                    garment={garmentOverlay}
-                    depthBitmap={mode === 'photo' && showDepth ? photoDepth : null}
-                    personDepthBitmap={mode === 'photo' ? photoDepth : liveDepth.depth}
-                    harmonize={showHarmonize}
-                    onTryOnStatus={setTryOnStatus}
-                  />
+                  <Suspense
+                    fallback={
+                      <div className="debug-canvas-loading" role="status">
+                        Đang chuẩn bị khung thử đồ…
+                      </div>
+                    }
+                  >
+                    <DebugCanvas
+                      ref={photoCanvasRef}
+                      image={displayImage}
+                      result={displayResult}
+                      showMask={showMask}
+                      showSkeleton={showSkeleton}
+                      garment={garmentOverlay}
+                      depthBitmap={mode === 'photo' && showDepth ? photoDepth : null}
+                      personDepthBitmap={mode === 'photo' ? photoDepth : liveDepth.depth}
+                      harmonize={showHarmonize}
+                      onTryOnStatus={setTryOnStatus}
+                    />
+                  </Suspense>
                   </>
                 ) : (
                   <div className="camera-placeholder" role="status">
@@ -1332,32 +1348,36 @@ export default function App() {
           )}
 
           {mode === 'photo' && !isFullscreen && (selectedTop || selectedBottom) && (
-            <ReactionBar pending={reaction.pending} last={reaction.last} onReact={reaction.submit} />
+            <Suspense fallback={null}>
+              <ReactionBar pending={reaction.pending} last={reaction.last} onReact={reaction.submit} />
+            </Suspense>
           )}
 
           {mode === 'photo' && !isFullscreen && (
             <>
               {lookNotice && <p className="hint">{lookNotice}</p>}
-              <LooksPanel
-                looks={looks.looks}
-                comparison={looks.comparison}
-                garmentLabel={garmentLabel}
-                canSave={!!image && (!!selectedTop || !!selectedBottom)}
-                onSaveCurrent={() => {
-                  const res = captureLook();
-                  if (!res.ok) setLookNotice(res.error);
-                }}
-                onToggleComparison={looks.toggleComparison}
-                onClearComparison={looks.clearComparison}
-                onRemove={looks.removeLook}
-              />
+              <Suspense fallback={null}>
+                <LooksPanel
+                  looks={looks.looks}
+                  comparison={looks.comparison}
+                  garmentLabel={garmentLabel}
+                  canSave={!!image && (!!selectedTop || !!selectedBottom)}
+                  onSaveCurrent={() => {
+                    const res = captureLook();
+                    if (!res.ok) setLookNotice(res.error);
+                  }}
+                  onToggleComparison={looks.toggleComparison}
+                  onClearComparison={looks.clearComparison}
+                  onRemove={looks.removeLook}
+                />
+              </Suspense>
             </>
           )}
         </div>
 
         <aside className="garment-sidebar">
           <div className="sidebar-upload-wrap">
-            <GarmentUpload
+            <DeferredGarmentUpload
               onGarmentAdded={async (stored) => {
                 const garment = await userGarments.addGarment(stored);
                 selectGarment(garment, { toggle: false });
@@ -1408,18 +1428,26 @@ export default function App() {
           <>
             <div className="fullscreen-canvas-wrap">
               {displayImage ? (
-                <DebugCanvas
-                  ref={fullscreenCanvasRef}
-                  image={displayImage}
-                  result={displayResult}
-                  showMask={showMask}
-                  showSkeleton={showSkeleton}
-                  garment={garmentOverlay}
-                  depthBitmap={null}
-                  personDepthBitmap={liveDepth.depth}
-                  harmonize={showHarmonize}
-                  onTryOnStatus={setTryOnStatus}
-                />
+                <Suspense
+                  fallback={
+                    <div className="debug-canvas-loading" role="status">
+                      Đang chuẩn bị khung thử đồ…
+                    </div>
+                  }
+                >
+                  <DebugCanvas
+                    ref={fullscreenCanvasRef}
+                    image={displayImage}
+                    result={displayResult}
+                    showMask={showMask}
+                    showSkeleton={showSkeleton}
+                    garment={garmentOverlay}
+                    depthBitmap={null}
+                    personDepthBitmap={liveDepth.depth}
+                    harmonize={showHarmonize}
+                    onTryOnStatus={setTryOnStatus}
+                  />
+                </Suspense>
               ) : (
                 <p className="hint">Đang chờ camera…</p>
               )}

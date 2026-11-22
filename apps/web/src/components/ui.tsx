@@ -564,11 +564,13 @@ export function DetailDialog({
   children,
   onClose,
   closeLabel = 'Đóng cửa sổ chi tiết',
+  className = '',
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   closeLabel?: string;
+  className?: string;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -608,7 +610,7 @@ export function DetailDialog({
       <div
         ref={dialogRef}
         tabIndex={-1}
-        className="dialog detail-dialog"
+        className={`dialog detail-dialog ${className}`.trim()}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

@@ -283,6 +283,16 @@ function CostumeCard({
             <h3>{item.name}</h3>
           </div>
         </div>
+        {item.reviewSummary && item.reviewSummary.count > 0 ? (
+          <p
+            className="catalog-rating"
+            aria-label={`${item.reviewSummary.average.toFixed(1)} trên 5 sao, ${item.reviewSummary.count} đánh giá`}
+          >
+            <span aria-hidden="true">★</span>{' '}
+            <strong>{item.reviewSummary.average.toFixed(1)}</strong>
+            <span>({item.reviewSummary.count} đánh giá)</span>
+          </p>
+        ) : null}
         {item.description.trim() && <p className="costume-description">{item.description}</p>}
         <p className="costume-variant">
           {item.sizes.join(', ')} <span>·</span> {item.colors.join(', ')}

@@ -9,7 +9,17 @@ import {
   type PromotionMutation,
   type PromotionRecord,
 } from '../api/client';
-import { Button, ConfirmDialog, DateTimeField, DetailDialog, EmptyState, Feedback, Field, SelectField, StatusLabel } from '../components/ui';
+import {
+  Button,
+  ConfirmDialog,
+  DateTimeField,
+  DetailDialog,
+  EmptyState,
+  Feedback,
+  Field,
+  SelectField,
+  StatusLabel,
+} from '../components/ui';
 import { money } from '../components/support';
 import { PageHeading, Panel } from '../components/studio';
 import { formatVietnamDateTime } from '../utils/date-format';
@@ -299,7 +309,9 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
                       : '+ Tạo mã'}
               </Button>
             )}
-            <Button variant="secondary" onClick={() => void reload()} loading={loading}>Tải lại</Button>
+            <Button variant="secondary" onClick={() => void reload()} loading={loading}>
+              Tải lại
+            </Button>
           </div>
         }
       />
@@ -335,156 +347,156 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
 
       <div className="promotion-admin-layout">
         {showForm && (
-        <DetailDialog
-          title={editing ? `Sửa mã ${editing.code}` : 'Tạo mã ưu đãi'}
-          closeLabel="Đóng biểu mẫu mã ưu đãi"
-          onClose={() => setShowForm(false)}
-        >
-          <form
-            className="promotion-form promotion-form--dialog"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void save();
-            }}
+          <DetailDialog
+            title={editing ? `Sửa mã ${editing.code}` : 'Tạo mã ưu đãi'}
+            closeLabel="Đóng biểu mẫu mã ưu đãi"
+            onClose={() => setShowForm(false)}
           >
-            {issue && (
-              <Feedback tone="danger" title="Chưa thể lưu mã ưu đãi">
-                {issue}
-              </Feedback>
-            )}
-            <fieldset disabled={!realApiMode || !canManage || busy}>
-              <div className="promotion-form-grid">
-                <h3 className="promotion-form-section-title">Chương trình</h3>
-                <Field
-                  label="Mã ưu đãi"
-                  value={form.code}
-                  maxLength={100}
-                  autoCapitalize="characters"
-                  placeholder="Ví dụ: STUDIO10"
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, code: event.target.value.toUpperCase() }))
-                  }
-                  required
-                />
-                <Field
-                  label="Tên chương trình"
-                  value={form.name}
-                  maxLength={255}
-                  placeholder="Ưu đãi khách hàng mới"
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, name: event.target.value }))
-                  }
-                  required
-                />
-                <SelectField
-                  label="Hình thức giảm"
-                  value={form.discountType}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      discountType: event.target.value as PromotionFormState['discountType'],
-                    }))
-                  }
-                >
-                  <option value="PERCENT">Theo phần trăm</option>
-                  <option value="FIXED_AMOUNT">Số tiền cố định</option>
-                </SelectField>
-                <Field
-                  label={form.discountType === 'PERCENT' ? 'Mức giảm (%)' : 'Số tiền giảm (đ)'}
-                  type="number"
-                  min="1"
-                  max={form.discountType === 'PERCENT' ? 100 : undefined}
-                  step="1"
-                  value={form.discountValue}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, discountValue: event.target.value }))
-                  }
-                  required
-                />
-                <h3 className="promotion-form-section-title">Điều kiện áp dụng</h3>
-                {form.discountType === 'PERCENT' && (
+            <form
+              className="promotion-form promotion-form--dialog"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void save();
+              }}
+            >
+              {issue && (
+                <Feedback tone="danger" title="Chưa thể lưu mã ưu đãi">
+                  {issue}
+                </Feedback>
+              )}
+              <fieldset disabled={!realApiMode || !canManage || busy}>
+                <div className="promotion-form-grid">
+                  <h3 className="promotion-form-section-title">Chương trình</h3>
                   <Field
-                    label="Giảm tối đa (đ, không bắt buộc)"
+                    label="Mã ưu đãi"
+                    value={form.code}
+                    maxLength={100}
+                    autoCapitalize="characters"
+                    placeholder="Ví dụ: STUDIO10"
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, code: event.target.value.toUpperCase() }))
+                    }
+                    required
+                  />
+                  <Field
+                    label="Tên chương trình"
+                    value={form.name}
+                    maxLength={255}
+                    placeholder="Ưu đãi khách hàng mới"
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, name: event.target.value }))
+                    }
+                    required
+                  />
+                  <SelectField
+                    label="Hình thức giảm"
+                    value={form.discountType}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        discountType: event.target.value as PromotionFormState['discountType'],
+                      }))
+                    }
+                  >
+                    <option value="PERCENT">Theo phần trăm</option>
+                    <option value="FIXED_AMOUNT">Số tiền cố định</option>
+                  </SelectField>
+                  <Field
+                    label={form.discountType === 'PERCENT' ? 'Mức giảm (%)' : 'Số tiền giảm (đ)'}
+                    type="number"
+                    min="1"
+                    max={form.discountType === 'PERCENT' ? 100 : undefined}
+                    step="1"
+                    value={form.discountValue}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, discountValue: event.target.value }))
+                    }
+                    required
+                  />
+                  <h3 className="promotion-form-section-title">Điều kiện áp dụng</h3>
+                  {form.discountType === 'PERCENT' && (
+                    <Field
+                      label="Giảm tối đa (đ, không bắt buộc)"
+                      type="number"
+                      min="0"
+                      step="1000"
+                      value={form.maxDiscountVnd}
+                      onChange={(event) =>
+                        setForm((current) => ({ ...current, maxDiscountVnd: event.target.value }))
+                      }
+                    />
+                  )}
+                  <Field
+                    label="Giá trị đơn tối thiểu (đ)"
                     type="number"
                     min="0"
                     step="1000"
-                    value={form.maxDiscountVnd}
+                    value={form.minOrderAmountVnd}
                     onChange={(event) =>
-                      setForm((current) => ({ ...current, maxDiscountVnd: event.target.value }))
+                      setForm((current) => ({ ...current, minOrderAmountVnd: event.target.value }))
+                    }
+                    required
+                  />
+                  <h3 className="promotion-form-section-title">Thời hạn & lượt sử dụng</h3>
+                  <DateTimeField
+                    label="Bắt đầu áp dụng"
+                    value={form.startAt}
+                    onChange={(startAt) => setForm((current) => ({ ...current, startAt }))}
+                    required
+                  />
+                  <DateTimeField
+                    label="Kết thúc"
+                    value={form.endAt}
+                    onChange={(endAt) => setForm((current) => ({ ...current, endAt }))}
+                    required
+                  />
+                  <Field
+                    label="Tổng lượt (để trống nếu không giới hạn)"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={form.totalUsageLimit}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, totalUsageLimit: event.target.value }))
                     }
                   />
-                )}
-                <Field
-                  label="Giá trị đơn tối thiểu (đ)"
-                  type="number"
-                  min="0"
-                  step="1000"
-                  value={form.minOrderAmountVnd}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, minOrderAmountVnd: event.target.value }))
-                  }
-                  required
-                />
-                <h3 className="promotion-form-section-title">Thời hạn & lượt sử dụng</h3>
-                <DateTimeField
-                  label="Bắt đầu áp dụng"
-                  value={form.startAt}
-                  onChange={(startAt) => setForm((current) => ({ ...current, startAt }))}
-                  required
-                />
-                <DateTimeField
-                  label="Kết thúc"
-                  value={form.endAt}
-                  onChange={(endAt) => setForm((current) => ({ ...current, endAt }))}
-                  required
-                />
-                <Field
-                  label="Tổng lượt (để trống nếu không giới hạn)"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={form.totalUsageLimit}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, totalUsageLimit: event.target.value }))
-                  }
-                />
-                <Field
-                  label="Lượt tối đa mỗi khách"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={form.perCustomerLimit}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, perCustomerLimit: event.target.value }))
-                  }
-                  required
-                />
-              </div>
-              <div className="promotion-form-actions">
-                <Button type="submit" loading={busy} disabled={!canManage}>
-                  {editing ? 'Lưu thay đổi' : 'Tạo mã'}
-                </Button>
-                {(Boolean(editing) || formDirty) && (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => {
-                      setEditing(undefined);
-                      const nextForm = newPromotionForm();
-                      setForm(nextForm);
-                      setFormBaseline(JSON.stringify(nextForm));
-                      setShowForm(false);
-                      setIssue('');
-                    }}
-                  >
-                    Bỏ bản nháp
+                  <Field
+                    label="Lượt tối đa mỗi khách"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={form.perCustomerLimit}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, perCustomerLimit: event.target.value }))
+                    }
+                    required
+                  />
+                </div>
+                <div className="promotion-form-actions">
+                  <Button type="submit" loading={busy} disabled={!canManage}>
+                    {editing ? 'Lưu thay đổi' : 'Tạo mã'}
                   </Button>
-                )}
-                {!canManage && <small>Tài khoản chỉ có quyền xem mã ưu đãi.</small>}
-              </div>
-            </fieldset>
-          </form>
-        </DetailDialog>
+                  {(Boolean(editing) || formDirty) && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        setEditing(undefined);
+                        const nextForm = newPromotionForm();
+                        setForm(nextForm);
+                        setFormBaseline(JSON.stringify(nextForm));
+                        setShowForm(false);
+                        setIssue('');
+                      }}
+                    >
+                      Bỏ bản nháp
+                    </Button>
+                  )}
+                  {!canManage && <small>Tài khoản chỉ có quyền xem mã ưu đãi.</small>}
+                </div>
+              </fieldset>
+            </form>
+          </DetailDialog>
         )}
 
         <Panel
@@ -514,9 +526,23 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
                 : 'Chọn “+ Tạo mã” để thêm chương trình đầu tiên.'}
             </EmptyState>
           ) : (
-            <div className="responsive-table catalog-admin-table promotion-admin-table" role="region" aria-label="Bảng mã ưu đãi" tabIndex={0}>
+            <div
+              className="responsive-table catalog-admin-table promotion-admin-table"
+              role="region"
+              aria-label="Bảng mã ưu đãi"
+              tabIndex={0}
+            >
               <table>
-                <thead><tr><th>Mã / chương trình</th><th>Mức giảm</th><th>Đơn tối thiểu</th><th>Hiệu lực</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>Mã / chương trình</th>
+                    <th>Mức giảm</th>
+                    <th>Đơn tối thiểu</th>
+                    <th>Hiệu lực</th>
+                    <th>Trạng thái</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {visibleItems.map((item) => {
                     const status = promotionStatus(item, now);
@@ -525,40 +551,66 @@ export function PromotionsPage({ canManage = true }: { canManage?: boolean }) {
                       <tr key={item.id}>
                         <td data-label="Chương trình">
                           <div className="promotion-admin-identity">
-                          <strong>{item.code}</strong>
-                          <span className="promotion-admin-name">{item.name}</span>
-                          <details className="promotion-admin-conditions">
-                            <summary>Giới hạn lượt</summary>
-                            {item.totalUsageLimit === null ? 'Không giới hạn tổng lượt' : `${item.totalUsageLimit} lượt tổng`} · {item.perCustomerLimit} lượt/khách
-                          </details>
+                            <strong>{item.code}</strong>
+                            <span className="promotion-admin-name">{item.name}</span>
+                            <details className="promotion-admin-conditions">
+                              <summary>Giới hạn lượt</summary>
+                              {item.totalUsageLimit === null
+                                ? 'Không giới hạn tổng lượt'
+                                : `${item.totalUsageLimit} lượt tổng`}{' '}
+                              · {item.perCustomerLimit} lượt/khách
+                            </details>
                           </div>
                         </td>
                         <td data-label="Mức giảm">
                           <div className="promotion-admin-identity">
-                          {item.discountType === 'PERCENT' ? `${item.discountValue}%` : money(item.discountValue)}
-                          {item.discountType === 'PERCENT' && item.maxDiscountVnd !== null && <small className="promotion-admin-name">Tối đa {money(item.maxDiscountVnd)}</small>}
+                            {item.discountType === 'PERCENT'
+                              ? `${item.discountValue}%`
+                              : money(item.discountValue)}
+                            {item.discountType === 'PERCENT' && item.maxDiscountVnd !== null && (
+                              <small className="promotion-admin-name">
+                                Tối đa {money(item.maxDiscountVnd)}
+                              </small>
+                            )}
                           </div>
                         </td>
                         <td data-label="Đơn tối thiểu">{money(item.minOrderAmountVnd)}</td>
-                        <td data-label="Hiệu lực" className="promotion-admin-dates">{formatVietnamDateTime(item.startAt)} – {formatVietnamDateTime(item.endAt)}</td>
-                        <td data-label="Trạng thái"><StatusLabel text={status.label} tone={status.tone} /></td>
+                        <td data-label="Hiệu lực" className="promotion-admin-dates">
+                          <div className="promotion-admin-date-range">
+                            <time dateTime={item.startAt}>
+                              {formatVietnamDateTime(item.startAt)}
+                            </time>
+                            <span aria-hidden="true">đến</span>
+                            <time dateTime={item.endAt}>{formatVietnamDateTime(item.endAt)}</time>
+                          </div>
+                        </td>
+                        <td data-label="Trạng thái">
+                          <StatusLabel text={status.label} tone={status.tone} />
+                        </td>
                         <td data-label="Thao tác">
                           <div className="promotion-admin-actions">
                             <Button
                               variant="secondary"
                               disabled={!canManage || !realApiMode || busy || busyId === item.id}
                               onClick={() => {
-                                if (editing?.id === item.id) { setShowForm(true); return; }
+                                if (editing?.id === item.id) {
+                                  setShowForm(true);
+                                  return;
+                                }
                                 if (formDirty) setPendingPromotion(item);
                                 else openPromotion(item);
                               }}
-                            >Sửa</Button>
+                            >
+                              Sửa
+                            </Button>
                             <Button
                               variant={item.isActive ? 'danger' : 'secondary'}
                               loading={busyId === item.id}
                               disabled={!canManage || !realApiMode || (!item.isActive && expired)}
                               onClick={() => void changeStatus(item)}
-                            >{item.isActive ? 'Tắt mã' : expired ? 'Đã hết hạn' : 'Bật mã'}</Button>
+                            >
+                              {item.isActive ? 'Tắt mã' : expired ? 'Đã hết hạn' : 'Bật mã'}
+                            </Button>
                           </div>
                         </td>
                       </tr>

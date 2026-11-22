@@ -32,6 +32,7 @@ import {
   RolesPage,
 } from '../pages/AdminFeatures';
 import { PromotionsPage } from '../pages/PromotionsPage';
+import { AdminReviewsPage } from '../pages/ReviewFeatures';
 import {
   actorGroupFromRoleCode,
   actorGroupFromRoles,
@@ -89,6 +90,7 @@ const adminNav: { screen: Screen; label: string; roles: DemoRole[] }[] = [
   { screen: 'adminInventory', label: 'Kho', roles: ['ADMIN'] },
   { screen: 'adminTransfers', label: 'Điều chuyển', roles: ['ADMIN'] },
   { screen: 'adminCrm', label: 'Khách hàng', roles: ['ADMIN'] },
+  { screen: 'adminReviews', label: 'Đánh giá', roles: ['ADMIN'] },
   { screen: 'adminCatalog', label: 'Danh mục', roles: ['ADMIN'] },
   { screen: 'employees', label: 'Nhân viên', roles: ['ADMIN'] },
   { screen: 'roles', label: 'Vai trò', roles: ['ADMIN'] },
@@ -112,6 +114,7 @@ const adminNavGroups: { id: string; label: string; screens: Screen[] }[] = [
   { id: 'inventory', label: 'Kho', screens: ['adminInventory'] },
   { id: 'transfers', label: 'Điều chuyển', screens: ['adminTransfers'] },
   { id: 'customers', label: 'Khách hàng', screens: ['adminCrm'] },
+  { id: 'reviews', label: 'Đánh giá', screens: ['adminReviews'] },
   { id: 'catalog', label: 'Danh mục', screens: ['adminCatalog'] },
   {
     id: 'settings',
@@ -178,6 +181,7 @@ const requiredPermissions: Partial<Record<Screen, string[]>> = {
     'transfers.manage.all',
   ],
   adminCrm: ['crm.read.branch', 'crm.read.all'],
+  adminReviews: ['catalog.manage.all'],
 };
 
 export default function StudioApp() {
@@ -715,7 +719,9 @@ export default function StudioApp() {
         staff ? 'app-staff work-portal-theme' : 'app-customer',
         staff && menuOpen ? 'nav-open' : '',
         portalClass,
-      ].filter(Boolean).join(' ')}
+      ]
+        .filter(Boolean)
+        .join(' ')}
     >
       <a className="skip-link" href="#main-content">
         Bỏ qua điều hướng
@@ -1477,6 +1483,11 @@ export default function StudioApp() {
             {route.screen === 'adminCatalog' && (
               <CatalogAdminPage
                 scenario={scenario}
+                canManage={!apiIdentity || effectivePermissions.includes('catalog.manage.all')}
+              />
+            )}
+            {route.screen === 'adminReviews' && (
+              <AdminReviewsPage
                 canManage={!apiIdentity || effectivePermissions.includes('catalog.manage.all')}
               />
             )}

@@ -654,7 +654,7 @@ export function CounterRentalPage({
         return (
           <div className="page">
             <PageHeading title="Tạo đơn thuê tại quầy" />
-            <div className="feature-two-column">
+            <div className="feature-two-column counter-rental-layout">
               <div>
                 <fieldset
                   className="fieldset-reset"

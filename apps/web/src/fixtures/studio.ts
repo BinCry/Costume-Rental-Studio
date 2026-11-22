@@ -234,7 +234,8 @@ export interface CustomerOrder {
   costume: string;
   variant: string;
   /** Full item summary for API orders; legacy fixtures use costume/variant. */
-  items?: { costume: string; variant: string }[];
+  items?: { costume: string; variant: string; variantId?: string }[];
+  returnedAt?: string;
   rental: number;
   deposit: number;
   extra: number;
