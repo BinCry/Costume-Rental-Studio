@@ -2360,7 +2360,8 @@ export function RolesPage({
                     <Panel title={role.name}>
                       <p className="muted">
                         Quyền được chọn áp dụng cho vai trò này. Phân công vai trò cho nhân viên
-                        theo chi nhánh ở màn hình nhân sự.
+                        theo chi nhánh ở màn hình nhân sự. Giao, nhận và trả đồ dùng quyền quản lý
+                        đơn thuê theo chi nhánh.
                       </p>
                       <KeyFacts
                         rows={[

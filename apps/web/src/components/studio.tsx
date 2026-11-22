@@ -345,6 +345,8 @@ export function PermissionGroup({
   filtered?: boolean;
   disabled?: boolean;
 }) {
+  if (!permissions.length) return null;
+
   return (
     <Panel
       title={title}
@@ -353,14 +355,18 @@ export function PermissionGroup({
           <div className="permission-group-actions">
             <button
               type="button"
-              disabled={disabled || permissions.every((permission) => selected.includes(permission.code))}
+              disabled={
+                disabled || permissions.every((permission) => selected.includes(permission.code))
+              }
               onClick={onSelectAll}
             >
               {filtered ? 'Chọn các quyền hiện ra' : 'Chọn cả nhóm'}
             </button>
             <button
               type="button"
-              disabled={disabled || permissions.every((permission) => !selected.includes(permission.code))}
+              disabled={
+                disabled || permissions.every((permission) => !selected.includes(permission.code))
+              }
               onClick={onClear}
             >
               {filtered ? 'Bỏ các quyền hiện ra' : 'Bỏ cả nhóm'}
@@ -369,12 +375,6 @@ export function PermissionGroup({
         ) : undefined
       }
     >
-      {!permissions.length && (
-        <p className="muted">
-          Chưa có mã quyền riêng trong seed. Giao/nhận trả hiện nằm trong rentals.manage.branch; cần
-          thêm mã quyền và kiểm tra API nếu muốn tick độc lập.
-        </p>
-      )}
       <div className="permission-list">
         {permissions.map((permission) => (
           <label className="permission-row" key={permission.code}>
