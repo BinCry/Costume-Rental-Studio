@@ -9325,8 +9325,34 @@ small {
   opacity: 0.82;
   transition: opacity 120ms ease;
 }
-.report-chart-bar:hover {
+.report-chart-hit-area:hover + .report-chart-bar,
+.report-chart-hit-area:focus-visible + .report-chart-bar {
   opacity: 1;
+}
+.report-chart-hit-area {
+  fill: transparent;
+  cursor: pointer;
+  outline: none;
+}
+.report-chart-hit-area:focus-visible {
+  stroke: var(--brand-primary);
+  stroke-width: 2;
+}
+.report-chart-tooltip rect {
+  fill: var(--surface, #fff);
+  stroke: var(--border);
+  stroke-width: 1;
+  filter: drop-shadow(0 3px 8px rgb(22 22 22 / 12%));
+}
+.report-chart-tooltip-date {
+  fill: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+}
+.report-chart-tooltip-value {
+  fill: var(--text-primary);
+  font-size: 11px;
+  font-weight: 700;
 }
 .report-chart-empty {
   display: grid;

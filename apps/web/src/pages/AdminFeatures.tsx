@@ -3092,6 +3092,8 @@ function RevenueTrendChart({
   points: NonNullable<ReportSnapshot['revenuePeriods']>;
   groupBy: ReportRange['groupBy'];
 }) {
+  const [activePointIndex, setActivePointIndex] = useState<number | null>(null);
+
   if (!points.length)
     return (
       <div className="report-chart-empty">
@@ -3114,13 +3116,15 @@ function RevenueTrendChart({
   const step = plotWidth / points.length;
   const barWidth = Math.max(2, Math.min(22, step * 0.58));
   const labelIndexes = new Set([0, Math.round((points.length - 1) / 2), points.length - 1]);
+  const tooltipWidth = 176;
+  const tooltipHeight = 48;
 
   return (
     <div className="report-chart-scroll">
       <svg
         className="report-revenue-chart"
         viewBox={`0 0 ${width} ${height}`}
-        role="img"
+        role="group"
         aria-label={`Biểu đồ doanh thu tiền thuê theo ${groupBy === 'day' ? 'ngày' : groupBy === 'week' ? 'tuần' : 'tháng'}`}
       >
         {[0, 0.5, 1].map((fraction) => {
@@ -3138,8 +3142,28 @@ function RevenueTrendChart({
           const barHeight = Math.max(0, (point.rentalVnd / ceiling) * plotHeight);
           const x = left + index * step + (step - barWidth) / 2;
           const y = baseline - barHeight;
+          const center = left + index * step + step / 2;
+          const hitHeight = Math.max(12, barHeight);
+          const hitY = baseline - hitHeight;
+          const pointLabel = `${formatReportBucket(point.period, groupBy)} · ${money(point.rentalVnd)}`;
           return (
             <g key={point.period}>
+              <rect
+                x={center - Math.max(12, barWidth) / 2}
+                y={hitY}
+                width={Math.max(12, barWidth)}
+                height={hitHeight}
+                className="report-chart-hit-area"
+                tabIndex={0}
+                role="img"
+                aria-label={pointLabel}
+                onMouseEnter={() => setActivePointIndex(index)}
+                onMouseLeave={() => setActivePointIndex(null)}
+                onFocus={() => setActivePointIndex(index)}
+                onBlur={() => setActivePointIndex(null)}
+              >
+                <title>{pointLabel}</title>
+              </rect>
               <rect
                 x={x}
                 y={y}
@@ -3147,22 +3171,14 @@ function RevenueTrendChart({
                 height={barHeight}
                 rx={Math.min(5, barWidth / 2)}
                 className="report-chart-bar"
-              >
-                <title>{`${formatReportBucket(point.period, groupBy)} · ${money(point.rentalVnd)}`}</title>
-              </rect>
+                pointerEvents="none"
+                aria-hidden="true"
+              />
               {labelIndexes.has(index) && (
                 <text
-                  x={left + index * step + step / 2}
+                  x={center}
                   y={baseline + 25}
-                  textAnchor={
-                    points.length === 1
-                      ? 'middle'
-                      : index === 0
-                        ? 'start'
-                        : index === points.length - 1
-                          ? 'end'
-                          : 'middle'
-                  }
+                  textAnchor="middle"
                   className="report-chart-axis-label"
                 >
                   {formatReportBucket(point.period, groupBy)}
@@ -3171,6 +3187,36 @@ function RevenueTrendChart({
             </g>
           );
         })}
+        {activePointIndex !== null &&
+          points[activePointIndex] &&
+          (() => {
+            const point = points[activePointIndex];
+            const barHeight = Math.max(0, (point.rentalVnd / ceiling) * plotHeight);
+            const barY = baseline - barHeight;
+            const center = left + activePointIndex * step + step / 2;
+            const tooltipX = Math.max(
+              left,
+              Math.min(center - tooltipWidth / 2, width - right - tooltipWidth),
+            );
+            const tooltipY = Math.max(top + 2, barY - tooltipHeight - 8);
+            return (
+              <g className="report-chart-tooltip" aria-hidden="true" pointerEvents="none">
+                <rect
+                  x={tooltipX}
+                  y={tooltipY}
+                  width={tooltipWidth}
+                  height={tooltipHeight}
+                  rx="7"
+                />
+                <text x={tooltipX + 10} y={tooltipY + 18} className="report-chart-tooltip-date">
+                  {formatReportBucket(point.period, groupBy)}
+                </text>
+                <text x={tooltipX + 10} y={tooltipY + 37} className="report-chart-tooltip-value">
+                  Tiền thuê: {money(point.rentalVnd)}
+                </text>
+              </g>
+            );
+          })()}
       </svg>
     </div>
   );
